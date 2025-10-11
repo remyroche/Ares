@@ -15,16 +15,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
-from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
-
-# Optimization utilities
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
-from ..base_calculations import (
+from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for native optimization
 try:
@@ -52,6 +43,21 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -59,6 +65,8 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
+
+from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,
     BaseCalculationConfig,
@@ -67,18 +75,19 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-class TrendFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for trend-based features."""
+class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Feature generator for trend-based features with VectorBT optimization."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.performance_stats = {
-            'vectorbt_operations': 0,
-            'pandas_fallbacks': 0,
-            'gpu_accelerations': 0
-        }
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -112,9 +121,9 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         close_prices = data['close']
         
         # Use VectorBT for SMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
             try:
-                sma = rolling_mean(close_prices, window=20)
+                sma = self.vectorbt_optimizer.rolling_mean(close_prices, window=20)
                 return sma.rename('sma_20')
             except Exception as e:
                 self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
@@ -128,28 +137,16 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period:
             return np.full(len(prices), np.nan)
 
-        # Use VectorBT for optimized rolling mean
-        if VECTORBT_AVAILABLE and len(prices) > 100:
-            try:
-                sma = rolling_mean(pd.Series(prices), window=period)
-                return sma.values
-            except Exception as e:
-                logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
-                sma = pd.Series(prices).rolling(window=period).mean()
-                return sma.values
-        else:
-            sma = pd.Series(prices).rolling(window=period).mean()
-            return sma.values
         prices_series = pd.Series(prices)
         
         # Use VectorBT if available and data is large enough
-        if self._should_use_vectorbt(pd.DataFrame({'close': prices_series})):
+        if self.vectorbt_optimizer and self._should_use_vectorbt(prices_series):
             try:
-                sma = self._vectorbt_rolling_operation(prices_series, 'mean', period)
-                self.performance_stats['vectorbt_operations'] += 1
+                sma = self.vectorbt_optimizer.rolling_mean(prices_series, window=period)
                 return sma.values
             except Exception as e:
                 self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                return prices_series.rolling(window=period).mean().values
                 self.performance_stats['pandas_fallbacks'] += 1
                 return self._calculate_sma_vectorized(prices_series, period).values
         else:
@@ -197,11 +194,11 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         dm_minus_series = pd.Series(dm_minus)
 
         # Calculate Directional Indicators using VectorBT optimization
-        if VECTORBT_AVAILABLE and len(dm_plus_series) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
             try:
-                dm_plus_mean = rolling_mean(dm_plus_series, window=period)
-                dm_minus_mean = rolling_mean(dm_minus_series, window=period)
-                tr_mean = rolling_mean(tr_series, window=period)
+                dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
+                dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
+                tr_mean = self.vectorbt_optimizer.rolling_mean(tr_series, window=period)
             except Exception as e:
                 logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
                 dm_plus_mean = dm_plus_series.rolling(period).mean()
@@ -218,9 +215,9 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
         
-        if VECTORBT_AVAILABLE and len(dx) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
             try:
-                adx = rolling_mean(pd.Series(dx), window=period)
+                adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
             except Exception as e:
                 logger.warning(f"VectorBT ADX rolling mean failed: {e}, using pandas fallback")
                 adx = pd.Series(dx).rolling(period).mean()
@@ -289,17 +286,17 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
@@ -324,6 +321,134 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
+class ADXGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Average Directional Index (ADX) with VectorBT optimization."""
+
+    def __init__(self, period: int = 14):
+        """
+        Initialize ADX generator.
+
+        Args:
+            period: ADX period (default 14)
+        """
+        config = FeatureConfig(
+            name=f"adx_{period}",
+            category=FeatureCategory.TREND,
+            description=f"Average Directional Index over {period} periods",
+            required_columns=["high", "low", "close"],
+            default_lookback=period * 2,  # Need more data for ADX calculation
+            min_lookback=period * 2,
+            max_lookback=period * 2,
+            parameters={
+                'period': period
+            }
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
+        high = data['high']
+        low = data['low']
+        close = data['close']
+
+        # Use VectorBT for ADX calculation
+        if self.vectorbt_optimizer and self._should_use_vectorbt(close):
+            try:
+                # VectorBT doesn't have direct ADX, so we use our custom calculation
+                adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+                return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+            except Exception as e:
+                self.logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+                return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+        else:
+            adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+            return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+
+    def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+        """Calculate Average Directional Index (ADX)."""
+        if len(high) < period or len(low) < period or len(close) < period:
+            return np.full(len(close), np.nan)
+
+        # Calculate True Range
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - np.roll(close, 1)),
+            np.abs(low - np.roll(close, 1))
+        ])
+        tr[0] = np.nan  # First value is NaN
+
+        # Calculate Directional Movement
+        dm_plus = np.maximum(high - np.roll(high, 1), 0)
+        dm_minus = np.maximum(np.roll(low, 1) - low, 0)
+
+        # Convert to pandas Series for rolling operations
+        dm_plus_series = pd.Series(dm_plus)
+        dm_minus_series = pd.Series(dm_minus)
+        tr_series = pd.Series(tr)
+
+        # Calculate Directional Indicators using VectorBT optimization
+        if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
+            try:
+                dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
+                dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
+                tr_mean = self.vectorbt_optimizer.rolling_mean(tr_series, window=period)
+            except Exception as e:
+                logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                dm_plus_mean = dm_plus_series.rolling(period).mean()
+                dm_minus_mean = dm_minus_series.rolling(period).mean()
+                tr_mean = tr_series.rolling(period).mean()
+        else:
+            dm_plus_mean = dm_plus_series.rolling(period).mean()
+            dm_minus_mean = dm_minus_series.rolling(period).mean()
+            tr_mean = tr_series.rolling(period).mean()
+
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus_mean / tr_mean)
+        di_minus = 100 * (dm_minus_mean / tr_mean)
+
+        # Calculate ADX
+        dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
+        
+        if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
+            try:
+                adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
+            except Exception as e:
+                logger.warning(f"VectorBT ADX rolling mean failed: {e}, using pandas fallback")
+                adx = pd.Series(dx).rolling(period).mean()
+        else:
+            adx = pd.Series(dx).rolling(period).mean()
+
+        return adx.values
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class DirectionalSignalGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Directional Signal (EMA_8 - EMA_20) with VectorBT optimization."""
 # ADXGenerator moved to oscillator.py to avoid duplication
 # Import from oscillator module instead
 from .oscillator import ADXGenerator
@@ -343,17 +468,22 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
             parameters={}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate directional signal values."""
         prices = data['close']
 
         # Use VectorBT for directional signal calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(prices):
             try:
                 # Calculate EMA using VectorBT
                 ema_8 = self._calculate_ema_vectorized(prices, 8)
@@ -384,6 +514,26 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         # Calculate directional signal
         directional_signal = ema_8 - ema_20
 
+        return directional_signal
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Trend Score (normalized directional signal * ADX) with VectorBT optimization."""
         class TrendScoreGenerator(VectorizedFeatureGenerator):
     """Generator for Trend Score (normalized directional signal * ADX)."""
 
@@ -408,20 +558,25 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.adx_period = adx_period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate trend score values."""
         prices = data['close']
         high = data['high']
         low = data['low']
         close = data['close']
 
         # Use VectorBT for trend score calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(prices):
             try:
                 # Calculate directional signal using VectorBT
                 ema_8 = self._calculate_ema_vectorized(prices, 8)
@@ -489,6 +644,26 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         # Calculate trend score
         trend_score = normalized_signal * adx
 
+        return trend_score
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Simple Moving Average with different base calculations and VectorBT optimization."""
         return trend_scoreclass SMAGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Moving Average with different base calculations."""
 
@@ -530,31 +705,25 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate SMA based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate SMA on base values using VectorBT optimization
-        if VECTORBT_AVAILABLE and len(base_values) > 100:
-            try:
-                sma = rolling_mean(base_values, window=self.period)
-            except Exception as e:
-                logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
-                sma = base_values.rolling(window=self.period).mean()
-        else:
-            sma = base_values.rolling(window=self.period).mean()
-        
-        return sma
         # Use VectorBT for SMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
-                sma = rolling_mean(base_values, window=self.period)
+                sma = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)
                 return sma
             except Exception as e:
                 self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
@@ -562,6 +731,26 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
                 return sma
         else:
             sma = base_values.rolling(window=self.period).mean()
+            return sma
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Exponential Moving Average with different base calculations and VectorBT optimization."""
             return smaclass EMAGenerator(VectorizedFeatureGenerator):
     """Generator for Exponential Moving Average with different base calculations."""
 
@@ -603,18 +792,23 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate EMA based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for EMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # VectorBT doesn't have direct EMA, so we use ewm
                 ema = base_values.ewm(span=self.period).mean()
@@ -701,7 +895,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for WMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # VectorBT doesn't have direct WMA, so we use rolling apply
                 weights = np.arange(1, self.period + 1)
@@ -774,7 +968,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for DEMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate DEMA using ewm
                 ema1 = base_values.ewm(span=self.period).mean()
@@ -844,7 +1038,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for TEMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate TEMA using ewm
                 ema1 = base_values.ewm(span=self.period).mean()
@@ -917,11 +1111,11 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for TRIMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate TRIMA using VectorBT rolling mean
                 half_period = self.period // 2
-                trima = rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
+                trima = self.vectorbt_optimizer.rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
                 return trima
             except Exception as e:
                 self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
@@ -988,7 +1182,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for MAMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate MAMA (simplified version) using ewm
                 mama = self._calculate_ema_vectorized(base_values, 20)
@@ -1055,10 +1249,10 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         volume = data['volume']
         
         # Calculate VWMA using VectorBT optimization
-        if VECTORBT_AVAILABLE and len(base_values) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
-                numerator = rolling_sum(base_values * volume, window=self.period)
-                denominator = rolling_sum(volume, window=self.period)
+                numerator = self.vectorbt_optimizer.rolling_sum(base_values * volume, window=self.period)
+                denominator = self.vectorbt_optimizer.rolling_sum(volume, window=self.period)
                 vwma = numerator / denominator
             except Exception as e:
                 logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
@@ -1067,6 +1261,25 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
+
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
         # Use VectorBT for VWMA calculation
         if VECTORBT_AVAILABLE:
             try:
@@ -1154,9 +1367,9 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             tr3 = abs(low - close.shift(1))
             true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             # Use VectorBT for optimized ATR calculation
-            if VECTORBT_AVAILABLE and len(true_range) > 100:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(true_range):
                 try:
-                    atr = rolling_mean(true_range, window=self.atr_period)
+                    atr = self.vectorbt_optimizer.rolling_mean(true_range, window=self.atr_period)
                 except Exception as e:
                     logger.warning(f"VectorBT ATR calculation failed: {e}, using pandas fallback")
                     atr = true_range.rolling(window=self.atr_period).mean()
@@ -1166,51 +1379,6 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             # Return middle line (EMA) as the main feature
             # Upper and lower bands would be: ema ± (multiplier * atr)
             return ema
-            # Use VectorBT for Keltner Channels calculation
-            if VECTORBT_AVAILABLE:
-                try:
-                    # Calculate EMA of close prices (middle line)
-                    ema = close.ewm(span=self.period).mean()
-                    
-                    # Calculate ATR using VectorBT rolling mean
-                    tr1 = high - low
-                    tr2 = abs(high - close.shift(1))
-                    tr3 = abs(low - close.shift(1))
-                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr = rolling_mean(true_range, window=self.atr_period)
-                    
-                    # Return middle line (EMA) as the main feature
-                    # Upper and lower bands would be: ema ± (multiplier * atr)
-                    return ema
-                except Exception as e:
-                    self.logger.warning(f"VectorBT Keltner Channels calculation failed: {e}, using pandas fallback")
-                    # Calculate EMA of close prices (middle line)
-                    ema = close.ewm(span=self.period).mean()
-                    
-                    # Calculate ATR
-                    tr1 = high - low
-                    tr2 = abs(high - close.shift(1))
-                    tr3 = abs(low - close.shift(1))
-                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr = true_range.rolling(window=self.atr_period).mean()
-                    
-                    # Return middle line (EMA) as the main feature
-                    # Upper and lower bands would be: ema ± (multiplier * atr)
-                    return ema
-            else:
-                # Calculate EMA of close prices (middle line)
-                ema = close.ewm(span=self.period).mean()
-                
-                # Calculate ATR
-                tr1 = high - low
-                tr2 = abs(high - close.shift(1))
-                tr3 = abs(low - close.shift(1))
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = true_range.rolling(window=self.atr_period).mean()
-                
-                # Return middle line (EMA) as the main feature
-                # Upper and lower bands would be: ema ± (multiplier * atr)
-                return ema
         else:
             # For other base calculations, use EMA of base values
             base_values = self.base_calculator.calculate(data)
@@ -1464,73 +1632,62 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
     generators = []
     
-    if VECTORBT_AVAILABLE:
-        # VectorBT-optimized generators
-        for period in [5, 10, 20, 50, 100]:
-            generators.append(VectorBTTrendFeatureGenerator(period))
-            generators.append(VectorBTSMAGenerator(period))
-            generators.append(VectorBTEMAGenerator(period))
-            
-        # ADX with different periods
-        for period in [9, 14, 21]:
-            generators.append(VectorBTADXGenerator(period))
-    else:
-        # Fallback to original generators
-        periods = {
-            'sma': [5, 10, 20, 50, 100],
-            'ema': [12, 26, 50],
-            'wma': [20],
-            'dema': [21],
-            'tema': [21],
-            'trima': [21],
-            'vwma': [20],
-            'keltner_channels': [20],
-            'adx': [14],
-            'trend_score': [14]
-        }
-        
-        # SMA generators
-        for period in periods.get('sma', [20]):
-            generators.append(SMAGenerator(period))
-        
-        # EMA generators
-        for period in periods.get('ema', [12, 26]):
-            generators.append(EMAGenerator(period))
-        
-        # WMA generators
-        for period in periods.get('wma', [20]):
-            generators.append(WMAGenerator(period))
-        
-        # DEMA generators
-        for period in periods.get('dema', [21]):
-            generators.append(DEMAGenerator(period))
-        
-        # TEMA generators
-        for period in periods.get('tema', [21]):
-            generators.append(TEMAGenerator(period))
-        
-        # TRIMA generators
-        for period in periods.get('trima', [21]):
-            generators.append(TRIMAGenerator(period))
-        
-        # VWMA generators
-        for period in periods.get('vwma', [20]):
-            generators.append(VWMAGenerator(period))
-        
-        # Keltner Channels generators
-        for period in periods.get('keltner_channels', [20]):
-            generators.append(KeltnerChannelsGenerator(period))
+    # All generators now use VectorBT optimization through the mixin
+    periods = {
+        'sma': [5, 10, 20, 50, 100],
+        'ema': [12, 26, 50],
+        'wma': [20],
+        'dema': [21],
+        'tema': [21],
+        'trima': [21],
+        'vwma': [20],
+        'keltner_channels': [20],
+        'adx': [14],
+        'trend_score': [14]
+    }
+    
+    # SMA generators
+    for period in periods.get('sma', [20]):
+        generators.append(SMAGenerator(period))
+    
+    # EMA generators
+    for period in periods.get('ema', [12, 26]):
+        generators.append(EMAGenerator(period))
+    
+    # WMA generators
+    for period in periods.get('wma', [20]):
+        generators.append(WMAGenerator(period))
+    
+    # DEMA generators
+    for period in periods.get('dema', [21]):
+        generators.append(DEMAGenerator(period))
+    
+    # TEMA generators
+    for period in periods.get('tema', [21]):
+        generators.append(TEMAGenerator(period))
+    
+    # TRIMA generators
+    for period in periods.get('trima', [21]):
+        generators.append(TRIMAGenerator(period))
+    
+    # VWMA generators
+    for period in periods.get('vwma', [20]):
+        generators.append(VWMAGenerator(period))
+    
+    # Keltner Channels generators
+    for period in periods.get('keltner_channels', [20]):
+        generators.append(KeltnerChannelsGenerator(period))
 
-        # ADX generators
-        for period in periods.get('adx', [14]):
-            generators.append(ADXGenerator(period))
+    # ADX generators
+    for period in periods.get('adx', [14]):
+        generators.append(ADXGenerator(period))
 
-        # Directional Signal generators
-        generators.append(DirectionalSignalGenerator())
+    # Directional Signal generators
+    generators.append(DirectionalSignalGenerator())
 
-        # Trend Score generators
-        for period in periods.get('trend_score', [14]):
-            generators.append(TrendScoreGenerator(adx_period=period))
+    # Trend Score generators
+    for period in periods.get('trend_score', [14]):
+        generators.append(TrendScoreGenerator(adx_period=period))
 
     return generators
 

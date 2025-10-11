@@ -109,6 +109,8 @@ except ImportError as e:
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
 from src.utils.data.klines_parquet import KlinesParquetManager
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer, ExchangeType
+from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, KlinesMetadata
 
 
 class ProcessingStep(Enum):
@@ -246,7 +248,7 @@ class EnhancedKlinesProcessingPipeline:
         self.enable_logging = self.config.enable_logging
         
         # Initialize components
-        self.data_standardizer = ExchangeDataStandardizer(str(self.data_dir))
+        self.data_standardizer = UnifiedExchangeStandardizer()
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
         
         # Initialize KlinesParquetManager
@@ -855,22 +857,19 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🔄 Standardizing data format for {symbol} {interval}")
             
-            # Use ExchangeDataStandardizer
-            standardized_df, report = self.data_standardizer.standardize_data(
-                df, self.exchange, symbol, interval, validate_quality=True
+            # Use UnifiedExchangeStandardizer
+            standardized_df = self.data_standardizer.standardize_to_dataframe(
+                df, ExchangeType(self.exchange.upper()), symbol, interval
             )
-            
-            if not report.get('success', False):
-                raise RuntimeError(f"Standardization failed: {report.get('errors', [])}")
             
             result.success = True
             result.data = standardized_df
             result.metadata = {
-                "original_shape": report.get('original_shape', (0, 0)),
-                "final_shape": report.get('final_shape', (0, 0)),
-                "processing_time": report.get('processing_time', 0.0)
+                "original_shape": df.shape,
+                "final_shape": standardized_df.shape,
+                "processing_time": 0.0
             }
-            result.warnings.extend(report.get('warnings', []))
+            # No warnings from unified standardizer
             
             if self.enable_logging:
                 tprint_success(f"✅ Data standardized: {len(standardized_df)} records")
@@ -1139,8 +1138,8 @@ class EnhancedKlinesProcessingPipeline:
                     gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
                     if not gap_df.empty:
                         # Standardize the gap data
-                        standardized_gap_df, _ = self.data_standardizer.standardize_data(
-                            gap_df, self.exchange, symbol, interval, validate_quality=False
+                        standardized_gap_df = self.data_standardizer.standardize_to_dataframe(
+                            gap_df, ExchangeType(self.exchange.upper()), symbol, interval
                         )
                         
                         # Merge with existing data

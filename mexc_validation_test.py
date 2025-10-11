@@ -27,7 +27,7 @@ try:
     from exchanges.mexc import MexcExchange, create_mexc_exchange
     from src.interfaces.base_interfaces import IExchangeClient, MarketData
     from exchanges.base_exchange.base_exchange import BaseExchange
-    from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
+    from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Please ensure you're running from the project root directory")

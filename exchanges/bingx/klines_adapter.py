@@ -18,8 +18,11 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 from exchanges.shared import KlinesDataProcessingPipeline
-from exchanges.shared.unified_exchange_interface import (
-    UnifiedExchangeAdapter, ExchangeType, get_standardized_klines
+from exchanges.shared.enhanced_unified_exchange_interface import (
+    EnhancedUnifiedExchangeAdapter, ExchangeType, get_enhanced_standardized_klines
+)
+from exchanges.shared.unified_exchange_standardizer import (
+    UnifiedExchangeStandardizer, DataQualityLevel
 )
 
 # Optional import to avoid circular dependencies
@@ -53,11 +56,12 @@ class BingXKlinesAdapter:
         # Initialize shared processing pipeline
         self.processing_pipeline = KlinesDataProcessingPipeline(self.exchange, data_dir)
         
-        # Initialize unified adapter for standardized data access
+        # Initialize enhanced unified adapter for standardized data access
         if self.bingx_exchange:
-            self.unified_adapter = UnifiedExchangeAdapter(
+            self.unified_adapter = EnhancedUnifiedExchangeAdapter(
                 self.bingx_exchange, 
-                ExchangeType.BINGX
+                ExchangeType.BINGX,
+                DataQualityLevel.STANDARD
             )
         else:
             self.unified_adapter = None

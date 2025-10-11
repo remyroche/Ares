@@ -196,6 +196,89 @@ from .advanced_statistical import (
     create_default_advanced_statistical_generators
 )
 
+# VECTORBT-OPTIMIZED GENERATORS
+from .vectorbt_order_flow import (
+    VectorBTTakerBuyRatioGenerator,
+    VectorBTTakerSellRatioGenerator,
+    VectorBTMarketAggressionIndexGenerator,
+    VectorBTOrderFlowImbalanceGenerator,
+    VectorBTBidAskImbalanceGenerator,
+    VectorBTMarketOrderFlowGenerator,
+    VectorBTVolumeWeightedOrderFlowGenerator,
+    VectorBTOrderFlowMomentumGenerator,
+    VectorBTOrderFlowVolatilityGenerator,
+    VectorBTOrderFlowTrendStrengthGenerator,
+    VectorBTOrderFlowConsistencyGenerator,
+    VectorBTOrderFlowAccelerationGenerator,
+    VectorBTOrderFlowJerkGenerator,
+    VectorBTOrderFlowRegimeGenerator,
+    create_vectorbt_order_flow_generators,
+    create_default_vectorbt_order_flow_generators
+)
+
+from .vectorbt_acceleration import (
+    VectorBTMomentumGenerator,
+    VectorBTPriceAccelerationGenerator,
+    VectorBTPriceJerkGenerator,
+    VectorBTTrendStrengthGenerator,
+    VectorBTTrendConsistencyGenerator,
+    VectorBTVolumeAccelerationGenerator,
+    VectorBTVolatilityAccelerationGenerator,
+    VectorBTMomentumAccelerationGenerator,
+    VectorBTAccelerationMomentumGenerator,
+    VectorBTAccelerationVolatilityGenerator,
+    VectorBTAccelerationTrendStrengthGenerator,
+    VectorBTAccelerationConsistencyGenerator,
+    VectorBTAccelerationRegimeGenerator,
+    VectorBTMultiTimeframeAccelerationGenerator,
+    VectorBTAccelerationCorrelationGenerator,
+    VectorBTAccelerationDivergenceGenerator,
+    create_vectorbt_acceleration_generators,
+    create_default_vectorbt_acceleration_generators
+)
+
+from .vectorbt_advanced_statistical import (
+    VectorBTHurstExponentGenerator,
+    VectorBTJumpIndicatorsGenerator,
+    VectorBTCVaRGenerator,
+    VectorBTMaxDrawdownGenerator,
+    VectorBTRollingSkewnessKurtosisGenerator,
+    VectorBTTrendPersistenceGenerator,
+    create_vectorbt_advanced_statistical_generators,
+    create_default_vectorbt_advanced_statistical_generators
+)
+
+from .vectorbt_support_resistance import (
+    VectorBTSupportLevelGenerator,
+    VectorBTResistanceLevelGenerator,
+    VectorBTPivotPointGenerator,
+    VectorBTFibonacciLevelGenerator,
+    VectorBTVolumeWeightedSupportResistanceGenerator,
+    VectorBTSupportResistanceStrengthGenerator,
+    VectorBTDynamicSupportResistanceGenerator,
+    create_vectorbt_support_resistance_generators,
+    create_default_vectorbt_support_resistance_generators
+)
+
+from .vectorbt_legacy import (
+    VectorBTLegacyRSIGenerator,
+    VectorBTLegacyMACDGenerator,
+    VectorBTLegacyMACDSignalGenerator,
+    VectorBTLegacyMACDHistogramGenerator,
+    VectorBTLegacyBollingerBandsUpperGenerator,
+    VectorBTLegacyBollingerBandsLowerGenerator,
+    VectorBTLegacyBollingerBandsMiddleGenerator,
+    VectorBTLegacySMAGenerator,
+    VectorBTLegacyEMAGenerator,
+    VectorBTLegacyATRGenerator,
+    VectorBTLegacyStochasticKGenerator,
+    VectorBTLegacyStochasticDGenerator,
+    VectorBTLegacyWilliamsRGenerator,
+    VectorBTLegacyOBVGenerator,
+    create_vectorbt_legacy_generators,
+    create_default_vectorbt_legacy_generators
+)
+
 from .spectral_wavelet import (
     WaveletEnergyGenerator,
     BandLimitedVolatilityGenerator,
@@ -366,5 +449,83 @@ __all__ = [
     # Regime feature integration
     "RegimeFeatureIntegration",
     "RegimeFeatureConfig",
-    "generate_regime_features"
+    "generate_regime_features",
+    
+    # VECTORBT-OPTIMIZED GENERATORS
+    # Order Flow
+    "VectorBTTakerBuyRatioGenerator",
+    "VectorBTTakerSellRatioGenerator",
+    "VectorBTMarketAggressionIndexGenerator",
+    "VectorBTOrderFlowImbalanceGenerator",
+    "VectorBTBidAskImbalanceGenerator",
+    "VectorBTMarketOrderFlowGenerator",
+    "VectorBTVolumeWeightedOrderFlowGenerator",
+    "VectorBTOrderFlowMomentumGenerator",
+    "VectorBTOrderFlowVolatilityGenerator",
+    "VectorBTOrderFlowTrendStrengthGenerator",
+    "VectorBTOrderFlowConsistencyGenerator",
+    "VectorBTOrderFlowAccelerationGenerator",
+    "VectorBTOrderFlowJerkGenerator",
+    "VectorBTOrderFlowRegimeGenerator",
+    "create_vectorbt_order_flow_generators",
+    "create_default_vectorbt_order_flow_generators",
+    
+    # Acceleration
+    "VectorBTMomentumGenerator",
+    "VectorBTPriceAccelerationGenerator",
+    "VectorBTPriceJerkGenerator",
+    "VectorBTTrendStrengthGenerator",
+    "VectorBTTrendConsistencyGenerator",
+    "VectorBTVolumeAccelerationGenerator",
+    "VectorBTVolatilityAccelerationGenerator",
+    "VectorBTMomentumAccelerationGenerator",
+    "VectorBTAccelerationMomentumGenerator",
+    "VectorBTAccelerationVolatilityGenerator",
+    "VectorBTAccelerationTrendStrengthGenerator",
+    "VectorBTAccelerationConsistencyGenerator",
+    "VectorBTAccelerationRegimeGenerator",
+    "VectorBTMultiTimeframeAccelerationGenerator",
+    "VectorBTAccelerationCorrelationGenerator",
+    "VectorBTAccelerationDivergenceGenerator",
+    "create_vectorbt_acceleration_generators",
+    "create_default_vectorbt_acceleration_generators",
+    
+    # Advanced Statistical
+    "VectorBTHurstExponentGenerator",
+    "VectorBTJumpIndicatorsGenerator",
+    "VectorBTCVaRGenerator",
+    "VectorBTMaxDrawdownGenerator",
+    "VectorBTRollingSkewnessKurtosisGenerator",
+    "VectorBTTrendPersistenceGenerator",
+    "create_vectorbt_advanced_statistical_generators",
+    "create_default_vectorbt_advanced_statistical_generators",
+    
+    # Support/Resistance
+    "VectorBTSupportLevelGenerator",
+    "VectorBTResistanceLevelGenerator",
+    "VectorBTPivotPointGenerator",
+    "VectorBTFibonacciLevelGenerator",
+    "VectorBTVolumeWeightedSupportResistanceGenerator",
+    "VectorBTSupportResistanceStrengthGenerator",
+    "VectorBTDynamicSupportResistanceGenerator",
+    "create_vectorbt_support_resistance_generators",
+    "create_default_vectorbt_support_resistance_generators",
+    
+    # Legacy
+    "VectorBTLegacyRSIGenerator",
+    "VectorBTLegacyMACDGenerator",
+    "VectorBTLegacyMACDSignalGenerator",
+    "VectorBTLegacyMACDHistogramGenerator",
+    "VectorBTLegacyBollingerBandsUpperGenerator",
+    "VectorBTLegacyBollingerBandsLowerGenerator",
+    "VectorBTLegacyBollingerBandsMiddleGenerator",
+    "VectorBTLegacySMAGenerator",
+    "VectorBTLegacyEMAGenerator",
+    "VectorBTLegacyATRGenerator",
+    "VectorBTLegacyStochasticKGenerator",
+    "VectorBTLegacyStochasticDGenerator",
+    "VectorBTLegacyWilliamsRGenerator",
+    "VectorBTLegacyOBVGenerator",
+    "create_vectorbt_legacy_generators",
+    "create_default_vectorbt_legacy_generators"
 ]

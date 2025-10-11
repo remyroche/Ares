@@ -32,6 +32,18 @@ except ImportError:
     MA = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT feature generators
+try:
+    from ..categories.vectorbt_order_flow import create_vectorbt_order_flow_generators
+    from ..categories.vectorbt_acceleration import create_vectorbt_acceleration_generators
+    from ..categories.vectorbt_advanced_statistical import create_vectorbt_advanced_statistical_generators
+    from ..categories.vectorbt_support_resistance import create_vectorbt_support_resistance_generators
+    from ..categories.vectorbt_legacy import create_vectorbt_legacy_generators
+    VECTORBT_GENERATORS_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_GENERATORS_AVAILABLE = False
+    logger.warning(f"VectorBT generators not available: {e}")
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -407,6 +419,93 @@ class FeatureRegistry:
         self._category_names.clear()
         self.logger.info("Registry cleared")
     
+    def register_vectorbt_generators(self) -> None:
+        """
+        Register all available VectorBT generators.
+        
+        This method registers all VectorBT-optimized feature generators
+        if VectorBT is available and the generators can be imported.
+        """
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("VectorBT not available, skipping VectorBT generator registration")
+            return
+        
+        if not VECTORBT_GENERATORS_AVAILABLE:
+            self.logger.warning("VectorBT generators not available, skipping registration")
+            return
+        
+        try:
+            # Register Order Flow generators
+            order_flow_generators = create_vectorbt_order_flow_generators()
+            for generator in order_flow_generators:
+                self.register(generator)
+            self.logger.info(f"✅ Registered {len(order_flow_generators)} VectorBT Order Flow generators")
+            
+            # Register Acceleration generators
+            acceleration_generators = create_vectorbt_acceleration_generators()
+            for generator in acceleration_generators:
+                self.register(generator)
+            self.logger.info(f"✅ Registered {len(acceleration_generators)} VectorBT Acceleration generators")
+            
+            # Register Advanced Statistical generators
+            advanced_statistical_generators = create_vectorbt_advanced_statistical_generators()
+            for generator in advanced_statistical_generators:
+                self.register(generator)
+            self.logger.info(f"✅ Registered {len(advanced_statistical_generators)} VectorBT Advanced Statistical generators")
+            
+            # Register Support/Resistance generators
+            support_resistance_generators = create_vectorbt_support_resistance_generators()
+            for generator in support_resistance_generators:
+                self.register(generator)
+            self.logger.info(f"✅ Registered {len(support_resistance_generators)} VectorBT Support/Resistance generators")
+            
+            # Register Legacy generators
+            legacy_generators = create_vectorbt_legacy_generators()
+            for generator in legacy_generators:
+                self.register(generator)
+            self.logger.info(f"✅ Registered {len(legacy_generators)} VectorBT Legacy generators")
+            
+            total_vectorbt_generators = (len(order_flow_generators) + 
+                                       len(acceleration_generators) + 
+                                       len(advanced_statistical_generators) + 
+                                       len(support_resistance_generators) + 
+                                       len(legacy_generators))
+            
+            self.logger.info(f"🚀 Successfully registered {total_vectorbt_generators} VectorBT generators total")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to register VectorBT generators: {e}")
+            raise
+    
+    def get_vectorbt_generators(self) -> List[FeatureGenerator]:
+        """
+        Get all VectorBT-optimized generators.
+        
+        Returns:
+            List of VectorBT generators
+        """
+        vectorbt_generators = []
+        for generator in self.get_all():
+            if hasattr(generator, '__class__') and 'VectorBT' in generator.__class__.__name__:
+                vectorbt_generators.append(generator)
+        return vectorbt_generators
+    
+    def get_vectorbt_generators_by_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
+        """
+        Get VectorBT generators for a specific category.
+        
+        Args:
+            category: Feature category
+            
+        Returns:
+            List of VectorBT generators for the category
+        """
+        vectorbt_generators = []
+        for generator in self.get_by_category(category):
+            if hasattr(generator, '__class__') and 'VectorBT' in generator.__class__.__name__:
+                vectorbt_generators.append(generator)
+        return vectorbt_generators
+    
     def get_summary(self) -> Dict[str, any]:
         """
         Get a summary of the registry.
@@ -414,9 +513,14 @@ class FeatureRegistry:
         Returns:
             Dictionary with registry summary
         """
+        vectorbt_generators = self.get_vectorbt_generators()
+        
         return {
             'total_generators': len(self._generators_by_name),
+            'vectorbt_generators': len(vectorbt_generators),
             'categories': list(self._category_names),
             'category_stats': self.get_category_stats(),
-            'missing_dependencies': self.validate_dependencies()
+            'missing_dependencies': self.validate_dependencies(),
+            'vectorbt_available': VECTORBT_AVAILABLE,
+            'vectorbt_generators_available': VECTORBT_GENERATORS_AVAILABLE
         }

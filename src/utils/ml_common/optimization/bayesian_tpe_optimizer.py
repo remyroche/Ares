@@ -94,6 +94,15 @@ class OptimizationConfig:
     vectorbt_use_gpu: bool = True
     vectorbt_enable_parallel: bool = True
 
+    # Adaptive grid refinement settings
+    enable_adaptive_grid_refinement: bool = True
+    adaptive_refinement_threshold: float = 0.01  # Minimum improvement to trigger refinement
+    max_adaptive_iterations: int = 3  # Maximum number of adaptive refinements
+    adaptive_refinement_factor: float = 0.1  # How much to shrink search space (10% of range)
+    convergence_window: int = 10  # Number of trials to check for convergence
+    min_grid_points: int = 3  # Minimum points per parameter in adaptive grid
+    max_grid_points: int = 15  # Maximum points per parameter in adaptive grid
+
     # Adaptive optimization settings
     enable_adaptive_optimization: bool = True
     performance_monitoring_interval: float = 1.0
@@ -171,6 +180,12 @@ class BayesianTPEOptimizer:
         # VectorBT optimization components
         self.vectorbt_manager = None
         self.vectorbt_available = VECTORBT_AVAILABLE
+
+        # Adaptive grid refinement state
+        self.adaptive_refinement_history = []
+        self.current_refinement_iteration = 0
+        self.convergence_history = []
+        self.adaptive_search_spaces = []  # Track search space evolution
 
         # Initialize hardware optimization if available
         if HARDWARE_OPTIMIZATION_AVAILABLE and self.config.enable_hardware_optimization:
@@ -345,17 +360,34 @@ class BayesianTPEOptimizer:
                 if coarse_results:
                     self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: {coarse_results['best_value']:.4f}")
 
-                # Stage 2: Fine Grid Search around best coarse results
-                if coarse_results and coarse_results['best_params']:
-                    fine_results = self._run_fine_grid_stage(objective, search_space, coarse_results['best_params'])
-                    if fine_results:
-                        all_trials.extend(fine_results['trials'])
-                        if self._is_better_result(fine_results['best_value'], best_value):
-                            best_params = fine_results['best_params']
-                            best_value = fine_results['best_value']
+            # Stage 2: Fine Grid Search around best coarse results
+            if coarse_results and coarse_results['best_params']:
+                fine_results = self._run_fine_grid_stage(objective, search_space, coarse_results['best_params'])
+                if fine_results:
+                    all_trials.extend(fine_results['trials'])
+                    if self._is_better_result(fine_results['best_value'], best_value):
+                        best_params = fine_results['best_params']
+                        best_value = fine_results['best_value']
 
-                    if fine_results:
-                        self.logger.info(f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}")
+                if fine_results:
+                    self.logger.info(f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}")
+
+            # Stage 2.5: Adaptive Grid Refinement (if enabled)
+            if (self.config.enable_adaptive_grid_refinement and 
+                fine_results and fine_results['best_params'] and 
+                self.vectorbt_manager and self.config.enable_vectorbt_optimization):
+                
+                adaptive_results = self._run_adaptive_refinement_stage(
+                    objective, search_space, fine_results['best_params'], all_trials
+                )
+                if adaptive_results:
+                    all_trials.extend(adaptive_results['trials'])
+                    if self._is_better_result(adaptive_results['best_value'], best_value):
+                        best_params = adaptive_results['best_params']
+                        best_value = adaptive_results['best_value']
+
+                    if adaptive_results:
+                        self.logger.info(f"   Adaptive refinement: {len(adaptive_results['trials'])} trials, best: {adaptive_results['best_value']:.4f}")
 
             # Stage 3: TPE Optimization
             tpe_trials_needed = self.config.n_trials - len(all_trials)
@@ -1049,6 +1081,257 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Fine grid stage failed: {e}")
             return None
+
+    def _run_adaptive_refinement_stage(self, objective: Callable, search_space: Dict[str, Any],
+                                     best_params: Dict[str, Any], all_trials: List[Dict]) -> Dict[str, Any]:
+        """Run VectorBT-optimized adaptive grid refinement stage."""
+        try:
+            self.logger.info("🔍 Stage 2.5: VectorBT adaptive grid refinement")
+
+            # Check if we should perform adaptive refinement
+            if not self._should_perform_adaptive_refinement(all_trials):
+                self.logger.info("   Skipping adaptive refinement - convergence criteria not met")
+                return None
+
+            # Generate adaptive search space around best parameters
+            adaptive_search_space = self._generate_adaptive_search_space(search_space, best_params)
+            self.adaptive_search_spaces.append(adaptive_search_space)
+
+            # Generate adaptive grid using VectorBT
+            adaptive_grid = self._generate_vectorbt_adaptive_grid(
+                adaptive_search_space, best_params, self._calculate_adaptive_grid_points()
+            )
+            
+            self.logger.info(f"   Generated {len(adaptive_grid)} adaptive grid points")
+            self.logger.info(f"   Refinement iteration: {self.current_refinement_iteration + 1}")
+
+            if not adaptive_grid:
+                self.logger.warning("⚠️ No adaptive grid points generated")
+                return None
+
+            # Use VectorBT batch evaluation for adaptive grid
+            adaptive_results = self._vectorbt_batch_evaluate_grid(objective, adaptive_grid, 'adaptive')
+
+            if adaptive_results:
+                # Update refinement history
+                self.adaptive_refinement_history.append({
+                    'iteration': self.current_refinement_iteration,
+                    'best_value': adaptive_results['best_value'],
+                    'improvement': adaptive_results['best_value'] - best_params.get('value', 0),
+                    'grid_size': len(adaptive_grid),
+                    'search_space': adaptive_search_space
+                })
+
+                self.current_refinement_iteration += 1
+
+                # Check if we should continue refining
+                if (self.current_refinement_iteration < self.config.max_adaptive_iterations and
+                    self._should_continue_refinement(adaptive_results['best_value'], all_trials)):
+                    
+                    # Recursively call adaptive refinement
+                    recursive_results = self._run_adaptive_refinement_stage(
+                        objective, adaptive_search_space, adaptive_results['best_params'], 
+                        all_trials + adaptive_results['trials']
+                    )
+                    
+                    if recursive_results:
+                        # Merge results
+                        adaptive_results['trials'].extend(recursive_results['trials'])
+                        if self._is_better_result(recursive_results['best_value'], adaptive_results['best_value']):
+                            adaptive_results['best_params'] = recursive_results['best_params']
+                            adaptive_results['best_value'] = recursive_results['best_value']
+
+            return adaptive_results
+
+        except Exception as e:
+            self.logger.error(f"❌ Adaptive refinement stage failed: {e}")
+            return None
+
+    def _should_perform_adaptive_refinement(self, all_trials: List[Dict]) -> bool:
+        """Check if adaptive refinement should be performed."""
+        if not all_trials or len(all_trials) < self.config.convergence_window:
+            return False
+
+        # Check if we've reached max iterations
+        if self.current_refinement_iteration >= self.config.max_adaptive_iterations:
+            return False
+
+        # Check recent improvement rate
+        recent_trials = all_trials[-self.config.convergence_window:]
+        if len(recent_trials) < 5:
+            return False
+
+        # Calculate improvement rate
+        values = [t['value'] for t in recent_trials if 'value' in t]
+        if len(values) < 3:
+            return False
+
+        # Check if improvement rate is above threshold
+        if self.config.direction == 'maximize':
+            improvement_rate = (max(values) - min(values)) / (abs(min(values)) + 1e-8)
+        else:
+            improvement_rate = (min(values) - max(values)) / (abs(max(values)) + 1e-8)
+
+        return improvement_rate > self.config.adaptive_refinement_threshold
+
+    def _should_continue_refinement(self, current_best_value: float, all_trials: List[Dict]) -> bool:
+        """Check if refinement should continue based on improvement."""
+        if not all_trials or len(all_trials) < 5:
+            return False
+
+        # Get previous best value
+        previous_values = [t['value'] for t in all_trials[-10:] if 'value' in t]
+        if not previous_values:
+            return False
+
+        previous_best = max(previous_values) if self.config.direction == 'maximize' else min(previous_values)
+
+        # Calculate improvement
+        if self.config.direction == 'maximize':
+            improvement = current_best_value - previous_best
+        else:
+            improvement = previous_best - current_best_value
+
+        return improvement > self.config.adaptive_refinement_threshold
+
+    def _generate_adaptive_search_space(self, original_search_space: Dict[str, Any], 
+                                      best_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate adaptive search space around best parameters."""
+        adaptive_space = {}
+
+        for param_name, param_config in original_search_space.items():
+            if param_name not in best_params:
+                adaptive_space[param_name] = param_config
+                continue
+
+            best_val = best_params[param_name]
+
+            if isinstance(param_config, tuple) and len(param_config) == 2:
+                # (low, high) format
+                low, high = param_config
+                rng = high - low
+                adaptive_rng = rng * self.config.adaptive_refinement_factor
+                adaptive_low = max(low, best_val - adaptive_rng)
+                adaptive_high = min(high, best_val + adaptive_rng)
+                adaptive_space[param_name] = (adaptive_low, adaptive_high)
+
+            elif isinstance(param_config, dict):
+                # Advanced configuration format
+                param_type = param_config.get('type', 'float')
+                if param_type in ['int', 'float']:
+                    low, high = param_config['low'], param_config['high']
+                    rng = high - low
+                    adaptive_rng = rng * self.config.adaptive_refinement_factor
+                    adaptive_low = max(low, best_val - adaptive_rng)
+                    adaptive_high = min(high, best_val + adaptive_rng)
+                    
+                    adaptive_config = param_config.copy()
+                    adaptive_config['low'] = adaptive_low
+                    adaptive_config['high'] = adaptive_high
+                    adaptive_space[param_name] = adaptive_config
+                else:
+                    # Keep categorical parameters as-is
+                    adaptive_space[param_name] = param_config
+            else:
+                # Keep other parameter types as-is
+                adaptive_space[param_name] = param_config
+
+        return adaptive_space
+
+    def _calculate_adaptive_grid_points(self) -> int:
+        """Calculate number of grid points for adaptive refinement."""
+        # Start with more points for first iteration, reduce for subsequent iterations
+        base_points = self.config.fine_grid_points
+        
+        # Reduce points as we refine more
+        reduction_factor = 0.8 ** self.current_refinement_iteration
+        adaptive_points = int(base_points * reduction_factor)
+        
+        # Clamp to min/max bounds
+        return max(self.config.min_grid_points, 
+                  min(self.config.max_grid_points, adaptive_points))
+
+    def _generate_vectorbt_adaptive_grid(self, search_space: Dict[str, Any], 
+                                       best_params: Dict[str, Any], 
+                                       grid_points: int) -> List[Dict[str, Any]]:
+        """Generate adaptive grid using VectorBT vectorized operations."""
+        try:
+            if not self.vectorbt_manager or not vbt:
+                # Fallback to original method
+                return build_fine_grid_around_best(search_space, best_params, grid_points)
+
+            self.logger.debug(f"🔄 Generating VectorBT adaptive grid with {grid_points} points...")
+            
+            param_combinations = []
+            
+            for param_name, param_config in search_space.items():
+                if param_name not in best_params:
+                    continue
+                    
+                best_val = best_params[param_name]
+                
+                if isinstance(param_config, tuple) and len(param_config) == 2:
+                    # (low, high) format
+                    low, high = param_config
+                    if isinstance(low, int) and isinstance(high, int):
+                        param_values = np.linspace(low, high, grid_points, dtype=int)
+                    else:
+                        param_values = np.linspace(low, high, grid_points)
+                        
+                elif isinstance(param_config, dict):
+                    # Advanced configuration format
+                    param_type = param_config.get('type', 'float')
+                    if param_type == 'int':
+                        low, high = param_config['low'], param_config['high']
+                        param_values = np.linspace(low, high, grid_points, dtype=int)
+                    elif param_type == 'float':
+                        low, high = param_config['low'], param_config['high']
+                        if param_config.get('log', False) and low > 0 and high > low:
+                            param_values = np.logspace(np.log10(low), np.log10(high), grid_points)
+                        else:
+                            param_values = np.linspace(low, high, grid_points)
+                    elif param_type == 'categorical':
+                        param_values = param_config.get('choices', [])
+                    else:
+                        continue
+                else:
+                    continue
+                
+                param_combinations.append([(param_name, val) for val in param_values])
+            
+            if not param_combinations:
+                return []
+            
+            # Use VectorBT for efficient adaptive grid generation
+            if vbt and len(param_combinations) > 1:
+                # Convert to VectorBT arrays
+                param_arrays = []
+                for param_list in param_combinations:
+                    values = [val for _, val in param_list]
+                    param_arrays.append(vbt.array(values))
+                
+                # Use VectorBT's efficient operations for adaptive grid
+                mesh_arrays = vbt.meshgrid(*param_arrays)
+                
+                # Convert back to parameter dictionaries
+                combinations = []
+                for i in range(len(mesh_arrays[0])):
+                    param_dict = {}
+                    for j, param_list in enumerate(param_combinations):
+                        param_name = param_list[0][0]
+                        param_dict[param_name] = mesh_arrays[j][i]
+                    combinations.append(param_dict)
+                
+                return combinations
+            else:
+                # Fallback to itertools
+                import itertools
+                combinations = list(itertools.product(*param_combinations))
+                return [dict(combo) for combo in combinations]
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT adaptive grid generation failed, using fallback: {e}")
+            return build_fine_grid_around_best(search_space, best_params, grid_points)
 
     def _run_tpe_stage(self, objective: Callable, search_space: Dict[str, Any],
                       current_best_params: Dict[str, Any], n_trials: int) -> Dict[str, Any]:
@@ -1744,11 +2027,13 @@ class BayesianTPEOptimizer:
         completed_trials = [t for t in self.optimization_history if t.get('stage') == 'tpe']
         coarse_trials = [t for t in self.optimization_history if t.get('stage') == 'coarse']
         fine_trials = [t for t in self.optimization_history if t.get('stage') == 'fine']
+        adaptive_trials = [t for t in self.optimization_history if t.get('stage') == 'adaptive']
 
         summary = {
             'total_trials': len(self.optimization_history),
             'coarse_trials': len(coarse_trials),
             'fine_trials': len(fine_trials),
+            'adaptive_trials': len(adaptive_trials),
             'tpe_trials': len(completed_trials),
             'best_params': self.best_params,
             'best_value': self.best_value,
@@ -1757,7 +2042,10 @@ class BayesianTPEOptimizer:
             'batch_processing_enabled': self.batch_processor is not None,
             'matrix_acceleration_enabled': self.matrix_processor is not None,
             'vectorbt_optimization_enabled': self.vectorbt_manager is not None,
-            'vectorbt_available': self.vectorbt_available
+            'vectorbt_available': self.vectorbt_available,
+            'adaptive_refinement_enabled': self.config.enable_adaptive_grid_refinement,
+            'adaptive_refinement_iterations': self.current_refinement_iteration,
+            'adaptive_refinement_history': self.adaptive_refinement_history
         }
 
         # Performance metrics summary
@@ -1794,6 +2082,62 @@ class BayesianTPEOptimizer:
             }
 
         return summary
+
+    def get_adaptive_refinement_stats(self) -> Dict[str, Any]:
+        """Get adaptive refinement statistics and analysis."""
+        if not self.adaptive_refinement_history:
+            return {'message': 'No adaptive refinement performed'}
+
+        stats = {
+            'total_iterations': len(self.adaptive_refinement_history),
+            'total_improvement': 0.0,
+            'average_improvement_per_iteration': 0.0,
+            'convergence_analysis': {},
+            'search_space_evolution': [],
+            'refinement_efficiency': {}
+        }
+
+        # Calculate improvement metrics
+        if len(self.adaptive_refinement_history) > 0:
+            initial_value = self.adaptive_refinement_history[0]['best_value']
+            final_value = self.adaptive_refinement_history[-1]['best_value']
+            
+            if self.config.direction == 'maximize':
+                stats['total_improvement'] = final_value - initial_value
+            else:
+                stats['total_improvement'] = initial_value - final_value
+            
+            stats['average_improvement_per_iteration'] = stats['total_improvement'] / len(self.adaptive_refinement_history)
+
+        # Analyze convergence
+        improvements = [h['improvement'] for h in self.adaptive_refinement_history]
+        if len(improvements) > 1:
+            stats['convergence_analysis'] = {
+                'improvement_trend': 'increasing' if improvements[-1] > improvements[0] else 'decreasing',
+                'volatility': np.std(improvements) if len(improvements) > 1 else 0.0,
+                'convergence_rate': self._calculate_convergence_rate()
+            }
+
+        # Track search space evolution
+        for i, history in enumerate(self.adaptive_refinement_history):
+            search_space = history.get('search_space', {})
+            stats['search_space_evolution'].append({
+                'iteration': i,
+                'search_space_size': len(search_space),
+                'parameter_ranges': {k: (v[0], v[1]) if isinstance(v, tuple) else str(v) 
+                                   for k, v in search_space.items()}
+            })
+
+        # Calculate refinement efficiency
+        if len(self.adaptive_refinement_history) > 0:
+            total_trials = sum(h['grid_size'] for h in self.adaptive_refinement_history)
+            stats['refinement_efficiency'] = {
+                'total_adaptive_trials': total_trials,
+                'improvement_per_trial': stats['total_improvement'] / total_trials if total_trials > 0 else 0.0,
+                'average_grid_size': np.mean([h['grid_size'] for h in self.adaptive_refinement_history])
+            }
+
+        return stats
 
     def get_parameter_importance(self) -> Dict[str, float]:
         """Get parameter importance scores."""

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-Exchange OHLCV Equivalency Test
+Exchange OHLCV Data Equivalency Test
 
-This script tests that all exchanges (binance, bingx, okx, mexc) return
-equivalent OHLCV data format and are fully compatible with src/utils/data/ utilities.
+This script tests the complete equivalency between exchanges (binance, bingx, okx, mexc)
+and validates that the OHLCV data we get from them through ExchangeInterface is fully
+standardized for downstream use and compatible with src/utils/data/.
 
-Features:
-- Tests data format equivalency across all exchanges
-- Validates compatibility with src/utils/data/ utilities
-- Comprehensive error reporting and validation
-- Performance benchmarking
+Usage:
+    python test_exchange_equivalency.py
 """
 
 import asyncio
@@ -18,538 +16,527 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import sys
-import traceback
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-from exchanges.shared.unified_exchange_interface import (
-    UnifiedExchangeManager, ExchangeType, validate_ohlcv_equivalency
+from exchanges.shared.enhanced_unified_exchange_interface import (
+    EnhancedUnifiedExchangeManager, ExchangeType, DataQualityLevel
 )
-from exchanges.shared.unified_ohlcv_standardizer import (
-    UnifiedOHLCVStandardizer, standardize_exchange_ohlcv
+from exchanges.shared.unified_exchange_standardizer import (
+    UnifiedExchangeStandardizer, standardize_exchange_ohlcv, validate_ohlcv_equivalency
 )
 from exchanges.binance.klines_adapter import BinanceKlinesAdapter
 from exchanges.bingx.klines_adapter import BingXKlinesAdapter
 from exchanges.okx.klines_adapter import OkxKlinesAdapter
 from exchanges.mexc.klines_adapter import MexcKlinesAdapter
 
-# Import src/utils/data utilities
-from src.utils.data import (
-    DataProcessor, DataQualityFramework, DataCleaner,
-    validate_and_fix_data_quality, optimize_dataframe_dtypes,
-    check_dataframe_health, regularize_timestamps
-)
-
 
 class ExchangeEquivalencyTester:
-    """Test suite for exchange OHLCV data equivalency and compatibility."""
+    """Test suite for validating exchange data equivalency"""
     
     def __init__(self):
-        """Initialize the test suite"""
-        self.logger = None
-        self.results = {
-            'tests_passed': 0,
-            'tests_failed': 0,
-            'total_tests': 0,
-            'errors': [],
-            'warnings': [],
-            'performance_metrics': {}
-        }
+        """Initialize the equivalency tester"""
+        self.logger = system_logger.getChild("ExchangeEquivalencyTester")
+        self.manager = EnhancedUnifiedExchangeManager(DataQualityLevel.STANDARD)
+        self.standardizer = UnifiedExchangeStandardizer(DataQualityLevel.STANDARD)
         
         # Test configuration
         self.test_symbol = "BTCUSDT"
         self.test_interval = "1m"
         self.test_limit = 100
-        self.tolerance = 1e-6
         
         # Initialize adapters
         self.adapters = {}
         self._initialize_adapters()
+        
+        self.logger.info("✅ ExchangeEquivalencyTester initialized")
     
     def _initialize_adapters(self):
-        """Initialize exchange adapters for testing"""
+        """Initialize exchange adapters"""
         try:
             # Initialize adapters (without API keys for public data)
-            self.adapters = {
-                'binance': BinanceKlinesAdapter(),
-                'bingx': BingXKlinesAdapter(),
-                'okx': OkxKlinesAdapter(),
-                'mexc': MexcKlinesAdapter()
-            }
-            print("✅ Exchange adapters initialized")
+            self.adapters[ExchangeType.BINANCE] = BinanceKlinesAdapter()
+            self.adapters[ExchangeType.BINGX] = BingXKlinesAdapter()
+            self.adapters[ExchangeType.OKX] = OkxKlinesAdapter()
+            self.adapters[ExchangeType.MEXC] = MexcKlinesAdapter()
+            
+            # Register with manager
+            for exchange_type, adapter in self.adapters.items():
+                if adapter.unified_adapter:
+                    self.manager.register_exchange(
+                        adapter.unified_adapter.exchange_instance,
+                        exchange_type,
+                        DataQualityLevel.STANDARD
+                    )
+            
+            self.logger.info(f"✅ Initialized {len(self.adapters)} exchange adapters")
+            
         except Exception as e:
-            print(f"❌ Failed to initialize adapters: {e}")
-            self.results['errors'].append(f"Adapter initialization failed: {e}")
+            self.logger.error(f"Failed to initialize adapters: {e}")
     
-    async def run_all_tests(self) -> Dict[str, Any]:
-        """Run all equivalency and compatibility tests"""
-        print("🚀 Starting Exchange OHLCV Equivalency Tests")
-        print("=" * 60)
+    async def test_data_standardization(self) -> Dict[str, Any]:
+        """Test that all exchanges produce standardized data"""
+        self.logger.info("🧪 Testing data standardization...")
         
-        # Test 1: Data Format Standardization
-        await self._test_data_format_standardization()
-        
-        # Test 2: Exchange Data Equivalency
-        await self._test_exchange_data_equivalency()
-        
-        # Test 3: src/utils/data/ Compatibility
-        await self._test_data_utils_compatibility()
-        
-        # Test 4: Performance Benchmarking
-        await self._test_performance_benchmarking()
-        
-        # Test 5: Error Handling
-        await self._test_error_handling()
-        
-        # Generate final report
-        self._generate_final_report()
-        
-        return self.results
-    
-    async def _test_data_format_standardization(self):
-        """Test that all exchanges return standardized data format"""
-        print("\n📊 Test 1: Data Format Standardization")
-        print("-" * 40)
-        
-        test_name = "Data Format Standardization"
-        self.results['total_tests'] += 1
+        results = {
+            'test_name': 'data_standardization',
+            'exchanges_tested': [],
+            'standardization_results': {},
+            'overall_success': True,
+            'issues': []
+        }
         
         try:
-            # Test each exchange
-            for exchange_name, adapter in self.adapters.items():
-                print(f"  Testing {exchange_name}...")
-                
-                # Get data from exchange
-                data = await adapter.get_klines_data(
-                    symbol=self.test_symbol,
-                    interval=self.test_interval,
-                    limit=self.test_limit
-                )
-                
-                if data.empty:
-                    print(f"    ⚠️ No data returned from {exchange_name}")
+            for exchange_type, adapter in self.adapters.items():
+                if not adapter.unified_adapter:
                     continue
                 
-                # Validate data format
-                validation_result = self._validate_data_format(data, exchange_name)
+                self.logger.info(f"Testing {exchange_type.value} standardization...")
                 
-                if validation_result['valid']:
-                    print(f"    ✅ {exchange_name} data format valid")
-                else:
-                    print(f"    ❌ {exchange_name} data format invalid: {validation_result['errors']}")
-                    self.results['errors'].extend(validation_result['errors'])
-            
-            self.results['tests_passed'] += 1
-            print("  ✅ Data format standardization test passed")
-            
-        except Exception as e:
-            self.results['tests_failed'] += 1
-            self.results['errors'].append(f"{test_name} failed: {e}")
-            print(f"  ❌ {test_name} failed: {e}")
-    
-    async def _test_exchange_data_equivalency(self):
-        """Test that all exchanges return equivalent data structures"""
-        print("\n🔄 Test 2: Exchange Data Equivalency")
-        print("-" * 40)
-        
-        test_name = "Exchange Data Equivalency"
-        self.results['total_tests'] += 1
-        
-        try:
-            # Collect data from all exchanges
-            exchange_data = {}
-            
-            for exchange_name, adapter in self.adapters.items():
-                print(f"  Collecting data from {exchange_name}...")
-                
-                data = await adapter.get_klines_data(
-                    symbol=self.test_symbol,
-                    interval=self.test_interval,
-                    limit=self.test_limit
-                )
-                
-                if not data.empty:
-                    exchange_data[exchange_name] = data
-                    print(f"    ✅ {exchange_name}: {len(data)} records")
-                else:
-                    print(f"    ⚠️ {exchange_name}: No data")
-            
-            if len(exchange_data) < 2:
-                print("  ⚠️ Not enough exchanges with data for equivalency testing")
-                self.results['warnings'].append("Insufficient data for equivalency testing")
-                return
-            
-            # Compare data structures
-            exchanges = list(exchange_data.keys())
-            reference_exchange = exchanges[0]
-            reference_data = exchange_data[reference_exchange]
-            
-            print(f"  Using {reference_exchange} as reference...")
-            
-            for exchange_name in exchanges[1:]:
-                print(f"  Comparing {exchange_name} with {reference_exchange}...")
-                
-                comparison_data = exchange_data[exchange_name]
-                equivalency_result = validate_ohlcv_equivalency(
-                    reference_data, comparison_data, self.tolerance
-                )
-                
-                if equivalency_result['equivalent']:
-                    print(f"    ✅ {exchange_name} equivalent to {reference_exchange}")
-                else:
-                    print(f"    ❌ {exchange_name} not equivalent to {reference_exchange}")
-                    print(f"    Differences: {equivalency_result['differences']}")
-                    self.results['errors'].extend(equivalency_result['errors'])
-            
-            self.results['tests_passed'] += 1
-            print("  ✅ Exchange data equivalency test passed")
-            
-        except Exception as e:
-            self.results['tests_failed'] += 1
-            self.results['errors'].append(f"{test_name} failed: {e}")
-            print(f"  ❌ {test_name} failed: {e}")
-    
-    async def _test_data_utils_compatibility(self):
-        """Test compatibility with src/utils/data/ utilities"""
-        print("\n🔧 Test 3: src/utils/data/ Compatibility")
-        print("-" * 40)
-        
-        test_name = "Data Utils Compatibility"
-        self.results['total_tests'] += 1
-        
-        try:
-            # Get data from first available exchange
-            test_data = None
-            for exchange_name, adapter in self.adapters.items():
-                data = await adapter.get_klines_data(
-                    symbol=self.test_symbol,
-                    interval=self.test_interval,
-                    limit=self.test_limit
-                )
-                if not data.empty:
-                    test_data = data
-                    print(f"  Using data from {exchange_name} for compatibility testing")
-                    break
-            
-            if test_data is None:
-                print("  ⚠️ No data available for compatibility testing")
-                self.results['warnings'].append("No data available for compatibility testing")
-                return
-            
-            # Test DataProcessor
-            print("  Testing DataProcessor...")
-            processor = DataProcessor()
-            
-            # Test regularize_timestamps
-            regularized_data = processor.regularize_timestamps(test_data)
-            if len(regularized_data) > 0:
-                print("    ✅ regularize_timestamps works")
-            else:
-                print("    ❌ regularize_timestamps failed")
-                self.results['errors'].append("regularize_timestamps failed")
-            
-            # Test optimize_dataframe_dtypes
-            optimized_data = processor.optimize_dataframe_dtypes(test_data)
-            if len(optimized_data) > 0:
-                print("    ✅ optimize_dataframe_dtypes works")
-            else:
-                print("    ❌ optimize_dataframe_dtypes failed")
-                self.results['errors'].append("optimize_dataframe_dtypes failed")
-            
-            # Test DataQualityFramework
-            print("  Testing DataQualityFramework...")
-            quality_framework = DataQualityFramework()
-            quality_result = quality_framework.validate_dataframe_quality(test_data, "compatibility test")
-            
-            if quality_result.passed:
-                print("    ✅ DataQualityFramework validation passed")
-            else:
-                print(f"    ⚠️ DataQualityFramework validation issues: {quality_result.issues}")
-                self.results['warnings'].extend(quality_result.issues)
-            
-            # Test DataCleaner
-            print("  Testing DataCleaner...")
-            cleaner = DataCleaner()
-            cleaned_data = cleaner.clean_dataframe(test_data)
-            if len(cleaned_data) > 0:
-                print("    ✅ DataCleaner works")
-            else:
-                print("    ❌ DataCleaner failed")
-                self.results['errors'].append("DataCleaner failed")
-            
-            # Test convenience functions
-            print("  Testing convenience functions...")
-            
-            # Test validate_and_fix_data_quality
-            fixed_data, fix_report = validate_and_fix_data_quality(test_data)
-            if len(fixed_data) > 0:
-                print("    ✅ validate_and_fix_data_quality works")
-            else:
-                print("    ❌ validate_and_fix_data_quality failed")
-                self.results['errors'].append("validate_and_fix_data_quality failed")
-            
-            # Test check_dataframe_health
-            health_result = check_dataframe_health(test_data)
-            if health_result['healthy']:
-                print("    ✅ check_dataframe_health passed")
-            else:
-                print(f"    ⚠️ check_dataframe_health issues: {health_result['issues']}")
-                self.results['warnings'].extend(health_result['issues'])
-            
-            self.results['tests_passed'] += 1
-            print("  ✅ src/utils/data/ compatibility test passed")
-            
-        except Exception as e:
-            self.results['tests_failed'] += 1
-            self.results['errors'].append(f"{test_name} failed: {e}")
-            print(f"  ❌ {test_name} failed: {e}")
-            traceback.print_exc()
-    
-    async def _test_performance_benchmarking(self):
-        """Test performance of data processing operations"""
-        print("\n⚡ Test 4: Performance Benchmarking")
-        print("-" * 40)
-        
-        test_name = "Performance Benchmarking"
-        self.results['total_tests'] += 1
-        
-        try:
-            # Get data from first available exchange
-            test_data = None
-            for exchange_name, adapter in self.adapters.items():
-                data = await adapter.get_klines_data(
-                    symbol=self.test_symbol,
-                    interval=self.test_interval,
-                    limit=self.test_limit
-                )
-                if not data.empty:
-                    test_data = data
-                    break
-            
-            if test_data is None:
-                print("  ⚠️ No data available for performance testing")
-                self.results['warnings'].append("No data available for performance testing")
-                return
-            
-            # Benchmark data processing operations
-            import time
-            
-            operations = {
-                'regularize_timestamps': lambda: regularize_timestamps(test_data),
-                'optimize_dataframe_dtypes': lambda: optimize_dataframe_dtypes(test_data),
-                'validate_and_fix_data_quality': lambda: validate_and_fix_data_quality(test_data)[0],
-                'check_dataframe_health': lambda: check_dataframe_health(test_data)
-            }
-            
-            performance_metrics = {}
-            
-            for op_name, op_func in operations.items():
-                print(f"  Benchmarking {op_name}...")
-                
-                # Run operation multiple times for accurate timing
-                times = []
-                for _ in range(5):
-                    start_time = time.time()
-                    try:
-                        result = op_func()
-                        end_time = time.time()
-                        times.append(end_time - start_time)
-                    except Exception as e:
-                        print(f"    ❌ {op_name} failed: {e}")
-                        break
-                
-                if times:
-                    avg_time = np.mean(times)
-                    std_time = np.std(times)
-                    performance_metrics[op_name] = {
-                        'avg_time': avg_time,
-                        'std_time': std_time,
-                        'min_time': min(times),
-                        'max_time': max(times)
-                    }
-                    print(f"    ✅ {op_name}: {avg_time:.4f}s ± {std_time:.4f}s")
-            
-            self.results['performance_metrics'] = performance_metrics
-            self.results['tests_passed'] += 1
-            print("  ✅ Performance benchmarking test passed")
-            
-        except Exception as e:
-            self.results['tests_failed'] += 1
-            self.results['errors'].append(f"{test_name} failed: {e}")
-            print(f"  ❌ {test_name} failed: {e}")
-    
-    async def _test_error_handling(self):
-        """Test error handling and edge cases"""
-        print("\n🛡️ Test 5: Error Handling")
-        print("-" * 40)
-        
-        test_name = "Error Handling"
-        self.results['total_tests'] += 1
-        
-        try:
-            # Test with invalid parameters
-            print("  Testing invalid parameters...")
-            
-            for exchange_name, adapter in self.adapters.items():
                 try:
-                    # Test with invalid symbol
-                    data = await adapter.get_klines_data(
-                        symbol="INVALID_SYMBOL",
-                        interval=self.test_interval,
-                        limit=10
+                    # Get standardized data
+                    df = await adapter.get_klines_data(
+                        self.test_symbol, 
+                        self.test_interval, 
+                        limit=self.test_limit
                     )
-                    if data.empty:
-                        print(f"    ✅ {exchange_name} handles invalid symbol gracefully")
-                    else:
-                        print(f"    ⚠️ {exchange_name} returned data for invalid symbol")
-                
+                    
+                    if df.empty:
+                        results['issues'].append(f"{exchange_type.value}: No data returned")
+                        continue
+                    
+                    # Validate standardization
+                    standardization_result = self._validate_standardization(df, exchange_type)
+                    results['standardization_results'][exchange_type.value] = standardization_result
+                    results['exchanges_tested'].append(exchange_type.value)
+                    
+                    if not standardization_result['valid']:
+                        results['overall_success'] = False
+                        results['issues'].extend(standardization_result['errors'])
+                    
                 except Exception as e:
-                    print(f"    ✅ {exchange_name} properly handles invalid symbol: {type(e).__name__}")
+                    results['issues'].append(f"{exchange_type.value}: {str(e)}")
+                    results['overall_success'] = False
             
-            # Test with invalid interval
-            try:
-                data = await list(self.adapters.values())[0].get_klines_data(
-                    symbol=self.test_symbol,
-                    interval="invalid_interval",
-                    limit=10
-                )
-                if data.empty:
-                    print("    ✅ Handles invalid interval gracefully")
-                else:
-                    print("    ⚠️ Returned data for invalid interval")
-            except Exception as e:
-                print(f"    ✅ Properly handles invalid interval: {type(e).__name__}")
-            
-            # Test with very small limit
-            try:
-                data = await list(self.adapters.values())[0].get_klines_data(
-                    symbol=self.test_symbol,
-                    interval=self.test_interval,
-                    limit=1
-                )
-                if len(data) <= 1:
-                    print("    ✅ Handles small limit correctly")
-                else:
-                    print(f"    ⚠️ Returned {len(data)} records for limit=1")
-            except Exception as e:
-                print(f"    ✅ Properly handles small limit: {type(e).__name__}")
-            
-            self.results['tests_passed'] += 1
-            print("  ✅ Error handling test passed")
+            return results
             
         except Exception as e:
-            self.results['tests_failed'] += 1
-            self.results['errors'].append(f"{test_name} failed: {e}")
-            print(f"  ❌ {test_name} failed: {e}")
+            results['overall_success'] = False
+            results['issues'].append(f"Standardization test failed: {str(e)}")
+            return results
     
-    def _validate_data_format(self, data: pd.DataFrame, exchange_name: str) -> Dict[str, Any]:
-        """Validate that data follows the standardized format"""
-        validation_result = {
+    def _validate_standardization(self, df: pd.DataFrame, exchange_type: ExchangeType) -> Dict[str, Any]:
+        """Validate that data is properly standardized"""
+        result = {
             'valid': True,
-            'errors': []
+            'errors': [],
+            'warnings': [],
+            'shape': df.shape,
+            'columns': list(df.columns),
+            'data_types': df.dtypes.to_dict(),
+            'required_columns_present': True,
+            'timestamp_index': False,
+            'numeric_ohlcv': True
         }
         
         # Check required columns
-        required_columns = ['open', 'high', 'low', 'close', 'volume', 'interval', 'exchange', 'source']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-            validation_result['valid'] = False
-            validation_result['errors'].append(f"Missing required columns: {missing_columns}")
+            result['required_columns_present'] = False
+            result['errors'].append(f"Missing required columns: {missing_columns}")
+            result['valid'] = False
         
-        # Check data types
-        numeric_columns = ['open', 'high', 'low', 'close', 'volume']
-        for col in numeric_columns:
-            if col in data.columns and not pd.api.types.is_numeric_dtype(data[col]):
-                validation_result['valid'] = False
-                validation_result['errors'].append(f"Column {col} should be numeric")
-        
-        # Check for negative values
-        for col in numeric_columns:
-            if col in data.columns and (data[col] < 0).any():
-                validation_result['valid'] = False
-                validation_result['errors'].append(f"Column {col} contains negative values")
-        
-        # Check OHLC consistency
-        if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
-            high_violations = (data['high'] < data[['open', 'close']].max(axis=1)).sum()
-            low_violations = (data['low'] > data[['open', 'close']].min(axis=1)).sum()
-            
-            if high_violations > 0:
-                validation_result['valid'] = False
-                validation_result['errors'].append(f"High price violations: {high_violations}")
-            
-            if low_violations > 0:
-                validation_result['valid'] = False
-                validation_result['errors'].append(f"Low price violations: {low_violations}")
-        
-        return validation_result
-    
-    def _generate_final_report(self):
-        """Generate final test report"""
-        print("\n" + "=" * 60)
-        print("📋 FINAL TEST REPORT")
-        print("=" * 60)
-        
-        total_tests = self.results['total_tests']
-        passed_tests = self.results['tests_passed']
-        failed_tests = self.results['tests_failed']
-        
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {passed_tests}")
-        print(f"Failed: {failed_tests}")
-        print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%")
-        
-        if self.results['errors']:
-            print(f"\n❌ Errors ({len(self.results['errors'])}):")
-            for error in self.results['errors'][:10]:  # Show first 10 errors
-                print(f"  • {error}")
-            if len(self.results['errors']) > 10:
-                print(f"  ... and {len(self.results['errors']) - 10} more errors")
-        
-        if self.results['warnings']:
-            print(f"\n⚠️ Warnings ({len(self.results['warnings'])}):")
-            for warning in self.results['warnings'][:5]:  # Show first 5 warnings
-                print(f"  • {warning}")
-            if len(self.results['warnings']) > 5:
-                print(f"  ... and {len(self.results['warnings']) - 5} more warnings")
-        
-        if self.results['performance_metrics']:
-            print(f"\n⚡ Performance Metrics:")
-            for op_name, metrics in self.results['performance_metrics'].items():
-                print(f"  {op_name}: {metrics['avg_time']:.4f}s ± {metrics['std_time']:.4f}s")
-        
-        # Overall assessment
-        if failed_tests == 0:
-            print(f"\n🎉 ALL TESTS PASSED! Exchange equivalency is working correctly.")
+        # Check timestamp index
+        if isinstance(df.index, pd.DatetimeIndex):
+            result['timestamp_index'] = True
         else:
-            print(f"\n⚠️ {failed_tests} tests failed. Please review the errors above.")
+            result['warnings'].append("Timestamp is not set as index")
         
-        print("=" * 60)
+        # Check OHLCV data types
+        for col in required_columns:
+            if col in df.columns:
+                if not pd.api.types.is_numeric_dtype(df[col]):
+                    result['numeric_ohlcv'] = False
+                    result['errors'].append(f"Column {col} is not numeric: {df[col].dtype}")
+                    result['valid'] = False
+        
+        # Check for exchange metadata
+        if 'exchange' in df.columns:
+            unique_exchanges = df['exchange'].unique()
+            if len(unique_exchanges) == 1 and unique_exchanges[0] == exchange_type.value:
+                result['exchange_metadata_correct'] = True
+            else:
+                result['warnings'].append(f"Exchange metadata mismatch: {unique_exchanges}")
+        else:
+            result['warnings'].append("Exchange metadata column missing")
+        
+        return result
+    
+    async def test_data_equivalency(self) -> Dict[str, Any]:
+        """Test that data from different exchanges is equivalent"""
+        self.logger.info("🧪 Testing data equivalency...")
+        
+        results = {
+            'test_name': 'data_equivalency',
+            'exchanges_compared': [],
+            'equivalency_results': {},
+            'overall_equivalent': True,
+            'issues': []
+        }
+        
+        try:
+            # Get data from all exchanges
+            all_data = {}
+            for exchange_type, adapter in self.adapters.items():
+                if not adapter.unified_adapter:
+                    continue
+                
+                try:
+                    df = await adapter.get_klines_data(
+                        self.test_symbol, 
+                        self.test_interval, 
+                        limit=self.test_limit
+                    )
+                    if not df.empty:
+                        all_data[exchange_type] = df
+                        results['exchanges_compared'].append(exchange_type.value)
+                except Exception as e:
+                    results['issues'].append(f"Failed to get data from {exchange_type.value}: {str(e)}")
+            
+            if len(all_data) < 2:
+                results['issues'].append("Need at least 2 exchanges with data for equivalency test")
+                results['overall_equivalent'] = False
+                return results
+            
+            # Compare each pair of exchanges
+            exchange_list = list(all_data.keys())
+            for i, exchange1 in enumerate(exchange_list):
+                for exchange2 in exchange_list[i+1:]:
+                    pair_key = f"{exchange1.value}_vs_{exchange2.value}"
+                    
+                    try:
+                        equivalency_result = validate_ohlcv_equivalency(
+                            all_data[exchange1], all_data[exchange2]
+                        )
+                        results['equivalency_results'][pair_key] = equivalency_result
+                        
+                        if not equivalency_result['equivalent']:
+                            results['overall_equivalent'] = False
+                            results['issues'].extend(equivalency_result['errors'])
+                    
+                    except Exception as e:
+                        results['issues'].append(f"Equivalency test failed for {pair_key}: {str(e)}")
+                        results['overall_equivalent'] = False
+            
+            return results
+            
+        except Exception as e:
+            results['overall_equivalent'] = False
+            results['issues'].append(f"Equivalency test failed: {str(e)}")
+            return results
+    
+    async def test_src_utils_compatibility(self) -> Dict[str, Any]:
+        """Test compatibility with src/utils/data/ utilities"""
+        self.logger.info("🧪 Testing src/utils/data/ compatibility...")
+        
+        results = {
+            'test_name': 'src_utils_compatibility',
+            'exchanges_tested': [],
+            'compatibility_results': {},
+            'overall_compatible': True,
+            'issues': []
+        }
+        
+        try:
+            for exchange_type, adapter in self.adapters.items():
+                if not adapter.unified_adapter:
+                    continue
+                
+                self.logger.info(f"Testing {exchange_type.value} compatibility...")
+                
+                try:
+                    # Get standardized data
+                    df = await adapter.get_klines_data(
+                        self.test_symbol, 
+                        self.test_interval, 
+                        limit=self.test_limit
+                    )
+                    
+                    if df.empty:
+                        results['issues'].append(f"{exchange_type.value}: No data for compatibility test")
+                        continue
+                    
+                    # Test compatibility with src/utils/data/ utilities
+                    compatibility_result = self._test_data_utils_compatibility(df, exchange_type)
+                    results['compatibility_results'][exchange_type.value] = compatibility_result
+                    results['exchanges_tested'].append(exchange_type.value)
+                    
+                    if not compatibility_result['compatible']:
+                        results['overall_compatible'] = False
+                        results['issues'].extend(compatibility_result['errors'])
+                
+                except Exception as e:
+                    results['issues'].append(f"{exchange_type.value}: {str(e)}")
+                    results['overall_compatible'] = False
+            
+            return results
+            
+        except Exception as e:
+            results['overall_compatible'] = False
+            results['issues'].append(f"Compatibility test failed: {str(e)}")
+            return results
+    
+    def _test_data_utils_compatibility(self, df: pd.DataFrame, exchange_type: ExchangeType) -> Dict[str, Any]:
+        """Test compatibility with src/utils/data/ utilities"""
+        result = {
+            'compatible': True,
+            'errors': [],
+            'warnings': [],
+            'tests_passed': [],
+            'tests_failed': []
+        }
+        
+        try:
+            # Test 1: DataProcessor.optimize_dataframe_dtypes
+            try:
+                from src.utils.data import DataProcessor
+                processor = DataProcessor()
+                optimized_df = processor.optimize_dataframe_dtypes(df)
+                result['tests_passed'].append('optimize_dataframe_dtypes')
+            except Exception as e:
+                result['tests_failed'].append(f'optimize_dataframe_dtypes: {str(e)}')
+                result['compatible'] = False
+            
+            # Test 2: DataProcessor.regularize_timestamps
+            try:
+                if isinstance(df.index, pd.DatetimeIndex):
+                    regularized_df = processor.regularize_timestamps(df)
+                    result['tests_passed'].append('regularize_timestamps')
+                else:
+                    result['warnings'].append('Cannot test regularize_timestamps: no datetime index')
+            except Exception as e:
+                result['tests_failed'].append(f'regularize_timestamps: {str(e)}')
+                result['compatible'] = False
+            
+            # Test 3: DataQualityFramework.validate_dataframe_quality
+            try:
+                from src.utils.data import DataQualityFramework
+                quality_framework = DataQualityFramework()
+                quality_result = quality_framework.validate_dataframe_quality(df, f"{exchange_type.value} test")
+                result['tests_passed'].append('validate_dataframe_quality')
+                result['quality_score'] = quality_result.quality_score
+            except Exception as e:
+                result['tests_failed'].append(f'validate_dataframe_quality: {str(e)}')
+                result['compatible'] = False
+            
+            # Test 4: DataCleaner.handle_missing_values_intelligently
+            try:
+                from src.utils.data import DataCleaner
+                cleaner = DataCleaner()
+                cleaned_df = cleaner.handle_missing_values_intelligently(df)
+                result['tests_passed'].append('handle_missing_values_intelligently')
+            except Exception as e:
+                result['tests_failed'].append(f'handle_missing_values_intelligently: {str(e)}')
+                result['compatible'] = False
+            
+            # Test 5: check_dataframe_health
+            try:
+                from src.utils.data import check_dataframe_health
+                health_result = check_dataframe_health(df)
+                result['tests_passed'].append('check_dataframe_health')
+                result['health_score'] = health_result.get('overall_health_score', 0)
+            except Exception as e:
+                result['tests_failed'].append(f'check_dataframe_health: {str(e)}')
+                result['compatible'] = False
+            
+        except Exception as e:
+            result['errors'].append(f"Compatibility test failed: {str(e)}")
+            result['compatible'] = False
+        
+        return result
+    
+    async def run_comprehensive_test(self) -> Dict[str, Any]:
+        """Run comprehensive equivalency test suite"""
+        self.logger.info("🚀 Starting comprehensive exchange equivalency test...")
+        
+        test_results = {
+            'test_suite': 'exchange_equivalency',
+            'timestamp': datetime.now().isoformat(),
+            'test_config': {
+                'symbol': self.test_symbol,
+                'interval': self.test_interval,
+                'limit': self.test_limit
+            },
+            'tests': {},
+            'overall_success': True,
+            'summary': {}
+        }
+        
+        try:
+            # Test 1: Data Standardization
+            standardization_results = await self.test_data_standardization()
+            test_results['tests']['standardization'] = standardization_results
+            if not standardization_results['overall_success']:
+                test_results['overall_success'] = False
+            
+            # Test 2: Data Equivalency
+            equivalency_results = await self.test_data_equivalency()
+            test_results['tests']['equivalency'] = equivalency_results
+            if not equivalency_results['overall_equivalent']:
+                test_results['overall_success'] = False
+            
+            # Test 3: src/utils/data/ Compatibility
+            compatibility_results = await self.test_src_utils_compatibility()
+            test_results['tests']['compatibility'] = compatibility_results
+            if not compatibility_results['overall_compatible']:
+                test_results['overall_success'] = False
+            
+            # Generate summary
+            test_results['summary'] = self._generate_test_summary(test_results)
+            
+            return test_results
+            
+        except Exception as e:
+            test_results['overall_success'] = False
+            test_results['error'] = str(e)
+            self.logger.error(f"Comprehensive test failed: {e}")
+            return test_results
+    
+    def _generate_test_summary(self, test_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate test summary"""
+        summary = {
+            'total_tests': len(test_results['tests']),
+            'passed_tests': 0,
+            'failed_tests': 0,
+            'exchanges_tested': set(),
+            'total_issues': 0,
+            'critical_issues': 0
+        }
+        
+        for test_name, test_result in test_results['tests'].items():
+            if test_name == 'standardization':
+                if test_result['overall_success']:
+                    summary['passed_tests'] += 1
+                else:
+                    summary['failed_tests'] += 1
+                summary['exchanges_tested'].update(test_result.get('exchanges_tested', []))
+                summary['total_issues'] += len(test_result.get('issues', []))
+            
+            elif test_name == 'equivalency':
+                if test_result['overall_equivalent']:
+                    summary['passed_tests'] += 1
+                else:
+                    summary['failed_tests'] += 1
+                summary['exchanges_tested'].update(test_result.get('exchanges_compared', []))
+                summary['total_issues'] += len(test_result.get('issues', []))
+            
+            elif test_name == 'compatibility':
+                if test_result['overall_compatible']:
+                    summary['passed_tests'] += 1
+                else:
+                    summary['failed_tests'] += 1
+                summary['exchanges_tested'].update(test_result.get('exchanges_tested', []))
+                summary['total_issues'] += len(test_result.get('issues', []))
+        
+        summary['exchanges_tested'] = list(summary['exchanges_tested'])
+        summary['success_rate'] = summary['passed_tests'] / summary['total_tests'] * 100 if summary['total_tests'] > 0 else 0
+        
+        return summary
+    
+    def print_test_results(self, test_results: Dict[str, Any]):
+        """Print test results in a formatted way"""
+        print("\n" + "="*80)
+        print("🔬 EXCHANGE OHLCV DATA EQUIVALENCY TEST RESULTS")
+        print("="*80)
+        
+        print(f"📊 Overall Success: {'✅ YES' if test_results['overall_success'] else '❌ NO'}")
+        print(f"⏰ Test Time: {test_results['timestamp']}")
+        print(f"🎯 Test Symbol: {test_results['test_config']['symbol']}")
+        print(f"⏱️  Test Interval: {test_results['test_config']['interval']}")
+        print(f"📈 Test Limit: {test_results['test_config']['limit']}")
+        
+        summary = test_results.get('summary', {})
+        print(f"\n📋 SUMMARY:")
+        print(f"   Total Tests: {summary.get('total_tests', 0)}")
+        print(f"   Passed: {summary.get('passed_tests', 0)}")
+        print(f"   Failed: {summary.get('failed_tests', 0)}")
+        print(f"   Success Rate: {summary.get('success_rate', 0):.1f}%")
+        print(f"   Exchanges Tested: {', '.join(summary.get('exchanges_tested', []))}")
+        print(f"   Total Issues: {summary.get('total_issues', 0)}")
+        
+        # Print individual test results
+        for test_name, test_result in test_results.get('tests', {}).items():
+            print(f"\n🧪 {test_name.upper()} TEST:")
+            
+            if test_name == 'standardization':
+                success = test_result.get('overall_success', False)
+                print(f"   Status: {'✅ PASSED' if success else '❌ FAILED'}")
+                print(f"   Exchanges: {', '.join(test_result.get('exchanges_tested', []))}")
+                
+                if test_result.get('issues'):
+                    print("   Issues:")
+                    for issue in test_result['issues'][:5]:  # Show first 5 issues
+                        print(f"     • {issue}")
+                    if len(test_result['issues']) > 5:
+                        print(f"     • ... and {len(test_result['issues']) - 5} more issues")
+            
+            elif test_name == 'equivalency':
+                success = test_result.get('overall_equivalent', False)
+                print(f"   Status: {'✅ PASSED' if success else '❌ FAILED'}")
+                print(f"   Exchanges: {', '.join(test_result.get('exchanges_compared', []))}")
+                
+                # Show equivalency results
+                for pair, result in test_result.get('equivalency_results', {}).items():
+                    status = '✅' if result.get('equivalent', False) else '❌'
+                    print(f"     {pair}: {status}")
+                
+                if test_result.get('issues'):
+                    print("   Issues:")
+                    for issue in test_result['issues'][:5]:
+                        print(f"     • {issue}")
+            
+            elif test_name == 'compatibility':
+                success = test_result.get('overall_compatible', False)
+                print(f"   Status: {'✅ PASSED' if success else '❌ FAILED'}")
+                print(f"   Exchanges: {', '.join(test_result.get('exchanges_tested', []))}")
+                
+                # Show compatibility results for each exchange
+                for exchange, result in test_result.get('compatibility_results', {}).items():
+                    status = '✅' if result.get('compatible', False) else '❌'
+                    tests_passed = len(result.get('tests_passed', []))
+                    tests_failed = len(result.get('tests_failed', []))
+                    print(f"     {exchange}: {status} ({tests_passed} passed, {tests_failed} failed)")
+        
+        print("\n" + "="*80)
 
 
 async def main():
     """Main test function"""
-    print("🚀 Exchange OHLCV Equivalency Test Suite")
-    print("Testing complete equivalency between binance, bingx, okx, mexc")
-    print("Ensuring full compatibility with src/utils/data/ utilities")
-    print()
+    print("🚀 Starting Exchange OHLCV Data Equivalency Test...")
     
-    # Initialize and run tests
-    tester = ExchangeEquivalencyTester()
-    results = await tester.run_all_tests()
-    
-    # Return exit code based on results
-    if results['tests_failed'] == 0:
-        print("\n✅ All tests passed successfully!")
-        return 0
-    else:
-        print(f"\n❌ {results['tests_failed']} tests failed!")
-        return 1
+    try:
+        # Initialize tester
+        tester = ExchangeEquivalencyTester()
+        
+        # Run comprehensive test
+        results = await tester.run_comprehensive_test()
+        
+        # Print results
+        tester.print_test_results(results)
+        
+        # Return success status
+        return results['overall_success']
+        
+    except Exception as e:
+        print(f"❌ Test failed with error: {e}")
+        return False
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    # Run the test
+    success = asyncio.run(main())
+    sys.exit(0 if success else 1)

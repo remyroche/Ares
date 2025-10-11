@@ -277,6 +277,7 @@ class UnifiedVectorizationManager:
                                config: OperationConfig) -> OptimizationStrategy:
         """
         Select the optimal optimization strategy based on operation type and constraints.
+        Enhanced with VectorBT prioritization for financial operations.
         """
         # VectorBT operations - prioritize VectorBT for financial operations
         if operation_type in [OperationType.VECTORBT_BACKTESTING,
@@ -290,25 +291,36 @@ class UnifiedVectorizationManager:
             else:
                 return OptimizationStrategy.VECTORBT_CPU
 
+        # Enhanced VectorBT integration for financial operations
+        if operation_type in [OperationType.BACKTESTING, OperationType.CROSS_VALIDATION]:
+            # Use VectorBT for backtesting if available and data is suitable
+            if (hasattr(self, 'vectorbt_backtesting_available') and 
+                self.vectorbt_backtesting_available and 
+                config.data_size > 1000):
+                if self.hardware_caps['gpu_available'] and config.data_size > 10000:
+                    return OptimizationStrategy.VECTORBT_GPU
+                elif self.hardware_caps['cpu_cores'] >= 4 and config.data_size > 5000:
+                    return OptimizationStrategy.VECTORBT_PARALLEL
+                else:
+                    return OptimizationStrategy.VECTORBT_CPU
+
         # GPU-first approach for supported operations
         if self.hardware_caps['gpu_available']:
             if operation_type in [OperationType.MATRIX_MULTIPLICATION,
                                 OperationType.HMM_TRAINING,
-                                OperationType.BACKTESTING,
                                 OperationType.FEATURE_ENGINEERING]:
                 if config.data_size > 10000:  # Large datasets benefit from GPU
                     return OptimizationStrategy.GPU_ACCELERATED
 
         # Parallel processing for CPU-bound operations
         if self.hardware_caps['cpu_cores'] >= 4:
-            if operation_type in [OperationType.CROSS_VALIDATION,
-                                OperationType.MODEL_TRAINING,
+            if operation_type in [OperationType.MODEL_TRAINING,
                                 OperationType.FEATURE_SELECTION]:
                 if config.data_size > 5000:
                     return OptimizationStrategy.PARALLEL_PROCESSING
 
         # Hybrid optimization for complex operations
-        if operation_type in [OperationType.BACKTESTING, OperationType.CROSS_VALIDATION]:
+        if operation_type in [OperationType.CROSS_VALIDATION]:
             if self.hardware_caps['gpu_available'] and self.hardware_caps['cpu_cores'] >= 4:
                 return OptimizationStrategy.HYBRID_OPTIMIZATION
 
@@ -433,6 +445,50 @@ class UnifiedVectorizationManager:
                 data.get('portfolio_values'), data.get('returns')
             )
             metadata['vectorbt_technical_analysis_used'] = True
+            
+        # Enhanced VectorBT integration for standard operations
+        elif operation_type == OperationType.BACKTESTING and self.vectorbt_backtesting_available:
+            # Use VectorBT for standard backtesting operations
+            signals = data.get('signals')
+            prices = data.get('prices')
+            timestamps = data.get('timestamps')
+            
+            # Determine VectorBT mode based on strategy
+            if strategy == OptimizationStrategy.VECTORBT_GPU:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_GPU
+            elif strategy == OptimizationStrategy.VECTORBT_PARALLEL:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_PARALLEL
+            else:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_CPU
+            
+            result = self.vectorbt_backtesting_engine.run_backtest(
+                signals, prices, timestamps, mode=mode, **kwargs
+            )
+            metadata['vectorbt_backtesting_used'] = True
+            metadata['enhanced_integration'] = True
+            
+        elif operation_type == OperationType.CROSS_VALIDATION and hasattr(self, 'cv_engine') and self.cv_available:
+            # Use VectorBT-enhanced cross-validation
+            X = data.get('X')
+            y = data.get('y')
+            model_class = data.get('model_class')
+            model_params = data.get('model_params', {})
+            
+            # Use VectorBT cross-validation if available
+            if hasattr(self.cv_engine, 'vectorbt_cross_validate'):
+                result = self.cv_engine.vectorbt_cross_validate(
+                    X, y, model_class, model_params, **kwargs
+                )
+                metadata['vectorbt_cv_used'] = True
+            else:
+                # Fallback to standard cross-validation
+                result = self.cv_engine.cross_validate(
+                    X, y, model_class, model_params, **kwargs
+                )
+                metadata['standard_cv_used'] = True
             
         else:
             # Fallback to CPU execution
@@ -869,6 +925,69 @@ def optimize_vectorbt_portfolio(returns: Union[np.ndarray, pd.DataFrame],
         'asset_names': asset_names
     }
     return manager.optimize_operation(OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION, data, config, **kwargs)
+
+
+def optimize_financial_operation(operation_type: str,
+                               data: Dict[str, Any],
+                               use_vectorbt: bool = True,
+                               **kwargs) -> OptimizationResult:
+    """
+    Enhanced convenience function for financial operations with automatic VectorBT integration.
+    
+    Args:
+        operation_type: Type of financial operation ('backtesting', 'metrics', 'portfolio', 'cv')
+        data: Data dictionary containing required inputs
+        use_vectorbt: Whether to prefer VectorBT optimization
+        **kwargs: Additional arguments
+        
+    Returns:
+        OptimizationResult with optimized execution
+    """
+    manager = UnifiedVectorizationManager()
+    
+    # Map operation types
+    operation_map = {
+        'backtesting': OperationType.BACKTESTING,
+        'metrics': OperationType.VECTORBT_METRICS,
+        'portfolio': OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION,
+        'cv': OperationType.CROSS_VALIDATION,
+        'cross_validation': OperationType.CROSS_VALIDATION
+    }
+    
+    if operation_type not in operation_map:
+        raise ValueError(f"Unsupported operation type: {operation_type}. "
+                        f"Supported types: {list(operation_map.keys())}")
+    
+    op_type = operation_map[operation_type]
+    
+    # Create configuration
+    data_size = 1000  # Default estimate
+    if 'signals' in data and hasattr(data['signals'], '__len__'):
+        data_size = len(data['signals'])
+    elif 'X' in data and hasattr(data['X'], '__len__'):
+        data_size = len(data['X'])
+    elif 'returns' in data and hasattr(data['returns'], '__len__'):
+        data_size = len(data['returns'])
+    
+    data_dimensions = (data_size,)
+    if 'signals' in data and hasattr(data['signals'], 'shape'):
+        data_dimensions = data['signals'].shape
+    elif 'X' in data and hasattr(data['X'], 'shape'):
+        data_dimensions = data['X'].shape
+    elif 'returns' in data and hasattr(data['returns'], 'shape'):
+        data_dimensions = data['returns'].shape
+    
+    config = OperationConfig(
+        operation_type=op_type,
+        data_size=data_size,
+        data_dimensions=data_dimensions
+    )
+    
+    # Add VectorBT preference to kwargs
+    if use_vectorbt:
+        kwargs['prefer_vectorbt'] = True
+    
+    return manager.optimize_operation(op_type, data, config, **kwargs)
 
 
 # Global instance for easy access

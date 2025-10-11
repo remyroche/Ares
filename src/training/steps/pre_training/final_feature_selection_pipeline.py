@@ -18,16 +18,13 @@ import math
 import os
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import average_precision_score, balanced_accuracy_score, mean_squared_error, accuracy_score
-from sklearn.base import clone
-from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+from sklearn.metrics import average_precision_score, balanced_accuracy_score
+from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import mutual_info_regression
 from scipy.stats import rankdata
 import joblib
-from functools import lru_cache
-import hashlib
 from collections import defaultdict
 from joblib import Parallel, delayed
 
@@ -219,11 +216,6 @@ class AdvancedSelectionConfig:
     selection_methods: List[str] = field(default_factory=lambda: [
         'mrmr', 'lasso', 'correlation_filtering', 'rfe', 'variance_filtering', 'mutual_info'
     ])
-    use_existing_framework: bool = True
-    existing_methods: List[str] = field(default_factory=lambda: [
-        'mrmr_selection', 'lasso_selection', 'correlation_filtering', 
-        'recursive_feature_elimination', 'variance_filtering'
-    ])
 
     # Directional feature selection
     direction_mode: str = 'both'
@@ -273,11 +265,6 @@ class AdvancedSelectionConfig:
     entropy_min_unique_values: int = 5
     entropy_use_time_index: bool = True
 
-    # Early termination
-    enable_early_termination: bool = True
-    early_termination_threshold: float = 0.01
-    adaptive_importance_threshold: bool = True
-    importance_percentile_cutoff: float = 20.0
 
     # RFE parameters
     enable_rfe: bool = True
@@ -287,11 +274,6 @@ class AdvancedSelectionConfig:
     rfe_early_stopping: bool = True
     rfe_early_stopping_patience: int = 3
 
-    # Mutual information
-    enable_mutual_information: bool = True
-    mutual_info_method: str = 'auto'
-    mutual_info_k: int = 10
-    mutual_info_discrete_features: bool = False
 
     # Chunked processing
     enable_chunked_processing: bool = True
@@ -299,9 +281,6 @@ class AdvancedSelectionConfig:
     max_chunks: int = 10
     chunk_overlap: int = 50
 
-    # Optional tool usage
-    use_shap: bool = True
-    use_lightgbm: bool = True
 
 
 @dataclass
@@ -462,10 +441,8 @@ class MultiStageFeatureSelector:
         tprint(f"📊 Feature Range: {self.config.min_features}-{self.config.max_features} (target: {self.config.target_features})")
         tprint(f"🎯 Direction Mode: {self.config.direction_mode}")
         tprint(f"🎯 Separate Features: {self.config.separate_directional_features}")
-        tprint(f"⚡ Early Termination: {self.config.enable_early_termination}")
         tprint(f"⚡ LightGBM: {LIGHTGBM_AVAILABLE}")
         tprint(f"⚡ RFE: {self.config.enable_rfe}")
-        tprint(f"⚡ Mutual Information: {self.config.enable_mutual_information}")
         tprint(f"⚡ Chunked Processing: {self.config.enable_chunked_processing}")
         tprint(f"⚡ Vectorization: Enabled")
         tprint(f"⚡ Caching: Enabled")
@@ -1196,8 +1173,6 @@ class MultiStageFeatureSelector:
 
     def _vectorized_mutual_information(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Vectorized mutual information computation."""
-        if not self.config.enable_mutual_information:
-            return np.zeros(len(X.columns))
         
         cache_key = self._get_cache_key("mutual_info", self._get_data_hash(X, y))
         
@@ -1227,17 +1202,9 @@ class MultiStageFeatureSelector:
             return normalized_scores
             
         except ImportError as e:
-            if self.config.enable_mutual_information:
-                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
-            else:
-                tprint("⚠️ sklearn not available for mutual information calculation (disabled in config)")
-                return np.zeros(len(X.columns))
+            raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
         except Exception as e:
-            if self.config.enable_mutual_information:
-                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
-            else:
-                tprint(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
-                return np.zeros(len(X.columns))
+            raise RuntimeError(f"Mutual information calculation failed: {e}") from e
 
     def _vectorized_stability_analysis(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Vectorized stability analysis across time periods."""
@@ -1696,8 +1663,6 @@ class MultiStageFeatureSelector:
                     'stage_1_target': self.config.stage_1_target,
                     'stage_2_target': self.config.stage_2_target,
                     'stage_3_target': self.config.stage_3_target,
-                    'use_shap': self.config.use_shap,
-                    'use_lightgbm': self.config.use_lightgbm,
                     'n_estimators': self.config.n_estimators,
                     'cv_folds': self.config.cv_folds,
                 },
@@ -1833,8 +1798,6 @@ class MultiStageFeatureSelector:
                     'stage_1_target': self.config.stage_1_target,
                     'stage_2_target': self.config.stage_2_target,
                     'stage_3_target': self.config.stage_3_target,
-                    'use_shap': self.config.use_shap,
-                    'use_lightgbm': self.config.use_lightgbm,
                     'n_estimators': self.config.n_estimators,
                     'cv_folds': self.config.cv_folds,
                     'enable_caching': self.config.enable_caching,
@@ -2184,108 +2147,7 @@ class MultiStageFeatureSelector:
 
         return to_drop
 
-    def _calculate_mutual_information_correlation(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
-        """Calculate mutual information scores for features - captures non-linear relationships."""
-        if not self.config.enable_mutual_information:
-            return {}
 
-        try:
-            from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
-
-            mi_scores = {}
-            if self._is_classification(y):
-                mi_scores = dict(zip(X.columns, mutual_info_classif(X, y, random_state=42)))
-            else:
-                mi_scores = dict(zip(X.columns, mutual_info_regression(X, y, random_state=42)))
-
-            # Normalize scores to 0-1 range
-            max_mi = max(mi_scores.values()) if mi_scores else 1.0
-            normalized_scores = {k: v / max_mi for k, v in mi_scores.items()}
-
-            # Log non-linear relationships detected
-            high_mi_features = [f for f, score in normalized_scores.items() if score > 0.5]
-            if high_mi_features:
-                tprint(f"🔗 Non-linear relationships detected in {len(high_mi_features)} features")
-
-            return normalized_scores
-
-        except ImportError as e:
-            if self.config.enable_mutual_information:
-                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
-            else:
-                self.logger.warning("⚠️ sklearn not available for mutual information calculation (disabled in config)")
-                return {}
-        except Exception as e:
-            if self.config.enable_mutual_information:
-                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
-            else:
-                self.logger.warning(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
-                return {}
-
-    def _calculate_feature_stability_score(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
-        """Calculate feature stability across different time periods/regimes."""
-        if len(X) < 100:  # Need sufficient data for stability analysis
-            return {}
-
-        try:
-            # Split data into chunks for stability analysis
-            chunk_size = min(500, len(X) // 3)  # At least 3 chunks
-            if chunk_size < 50:
-                return {}
-
-            stability_scores = {}
-            chunks = []
-
-            # Create overlapping chunks for stability analysis
-            for i in range(0, len(X) - chunk_size + 1, chunk_size // 2):
-                chunk_data = X.iloc[i:i + chunk_size]
-                chunk_target = y.iloc[i:i + chunk_size]
-                chunks.append((chunk_data, chunk_target))
-
-            if len(chunks) < 2:
-                return {}
-
-            # Calculate importance for each chunk
-            chunk_importances = []
-            for chunk_X, chunk_y in chunks:
-                try:
-                    model = self._train_optimized_model(chunk_X, chunk_y)
-                    if hasattr(model, 'feature_importances_'):
-                        importance = dict(zip(chunk_X.columns, model.feature_importances_))
-                        chunk_importances.append(importance)
-                except Exception:
-                    continue
-
-            if len(chunk_importances) < 2:
-                return {}
-
-            # Calculate stability as consistency across chunks
-            all_features = set()
-            for imp in chunk_importances:
-                all_features.update(imp.keys())
-
-            for feature in all_features:
-                feature_stabilities = []
-                for imp in chunk_importances:
-                    if feature in imp:
-                        # Normalize importance within each chunk
-                        max_imp = max(imp.values()) if imp else 1.0
-                        feature_stabilities.append(imp[feature] / max_imp)
-
-                if len(feature_stabilities) >= 2:
-                    # Stability = 1 - coefficient of variation (lower variation = higher stability)
-                    stability_scores[feature] = 1.0 / (1.0 + np.std(feature_stabilities) / (np.mean(feature_stabilities) + 1e-8))
-
-            # Log stability insights
-            stable_features = [f for f, score in stability_scores.items() if score > 0.7]
-            if stable_features:
-                tprint(f"🛡️ Stability analysis: {len(stable_features)} consistently important features")
-
-            return stability_scores
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
-            return {}
 
     def _train_lightgbm_model(self, X: pd.DataFrame, y: pd.Series):
         """Train LightGBM model with optimized parameters."""
@@ -2318,121 +2180,21 @@ class MultiStageFeatureSelector:
 
     def _train_optimized_model(self, X: pd.DataFrame, y: pd.Series):
         """Train either LightGBM or RandomForest based on availability and performance."""
-        # Check if LightGBM is required and available
-        if self.config.use_lightgbm and not LIGHTGBM_AVAILABLE:
-            raise ImportError("LightGBM is required but not available. Please install LightGBM: pip install lightgbm")
-
         try:
-            if self.config.use_lightgbm and LIGHTGBM_AVAILABLE and len(X.columns) > 50:
+            if LIGHTGBM_AVAILABLE and len(X.columns) > 50:
                 self.logger.info("🚀 Using LightGBM for faster training")
                 tprint(f"🚀 Optimized training — selecting LightGBM (features: {len(X.columns)})")
                 return self._train_lightgbm_model(X, y)
             else:
-                self.logger.info("📊 Using RandomForest (LightGBM not required/available or dataset too small)")
+                self.logger.info("📊 Using RandomForest (LightGBM not available or dataset too small)")
                 tprint("📊 Optimized training — selecting RandomForest")
                 return self._train_random_forest(X, y)
         except Exception as e:
-            if self.config.use_lightgbm:
-                raise RuntimeError(f"LightGBM training failed and is required: {e}") from e
-            else:
-                self.logger.info(f"📊 LightGBM training failed but not required, falling back to RandomForest: {e}")
-                tprint(f"📊 LightGBM training failed ({e}), falling back to RandomForest")
-                return self._train_random_forest(X, y)
+            self.logger.info(f"📊 LightGBM training failed, falling back to RandomForest: {e}")
+            tprint(f"📊 LightGBM training failed ({e}), falling back to RandomForest")
+            return self._train_random_forest(X, y)
 
-    def _calculate_adaptive_importance_threshold(self, importance_scores: Dict[str, float]) -> float:
-        """Calculate adaptive importance threshold based on feature distribution."""
-        if not self.config.adaptive_importance_threshold:
-            return self.config.early_termination_threshold
 
-        importances = list(importance_scores.values())
-        if not importances:
-            return self.config.early_termination_threshold
-
-        # Use percentile-based threshold - be less aggressive
-        threshold_percentile = max(10.0, self.config.importance_percentile_cutoff)  # At least 10th percentile
-        threshold = np.percentile(importances, threshold_percentile)
-
-        # For very large feature sets, be even more conservative
-        if len(importances) > 1000:
-            # Keep more features for large datasets - use 15th percentile instead of 10th
-            threshold = max(threshold, np.percentile(importances, 15.0))
-            tprint(f"📊 Large dataset detected ({len(importances)} features), using conservative threshold")
-
-        # Ensure minimum threshold but don't be too restrictive
-        min_threshold = self.config.early_termination_threshold
-        final_threshold = max(threshold, min_threshold)
-
-        # Log detailed threshold calculation for troubleshooting
-        sorted_importances = sorted(importances, reverse=True)
-        tprint(f"🔍 Threshold Analysis: {len(importances)} features")
-        tprint(f"   📈 Max importance: {sorted_importances[0]:.6f}")
-        tprint(f"   📉 Min importance: {sorted_importances[-1]:.6f}")
-        tprint(f"   🎯 {threshold_percentile:.1f}th percentile: {threshold:.6f}")
-        tprint(f"   ⚖️ Final threshold: {final_threshold:.6f}")
-
-        return final_threshold
-
-    def _apply_early_termination(self, X: pd.DataFrame, importance_scores: Dict[str, float]) -> pd.DataFrame:
-        """Apply early termination to remove low-importance features."""
-        if not self.config.enable_early_termination:
-            tprint("⏭️ Early termination disabled, keeping all features")
-            return X
-
-        threshold = self._calculate_adaptive_importance_threshold(importance_scores)
-
-        # Find features above threshold
-        selected_features = [f for f, score in importance_scores.items() if score >= threshold]
-
-        # Be conservative - don't allow pruning more than 20% of features
-        total_features = len(X.columns)
-        remaining_features = len(selected_features)
-        removal_rate = (total_features - remaining_features) / total_features
-
-        # If we're removing more than 20% of features, be much more conservative
-        if removal_rate > 0.2:
-            tprint(f"⚠️ High removal rate ({removal_rate:.1%}), applying very conservative pruning")
-            # Keep top 80% of features instead
-            sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
-            keep_count = max(1, int(len(sorted_features) * 0.8))  # Keep top 80%
-            selected_features = [f for f, _ in sorted_features[:keep_count]]
-            threshold = sorted_features[keep_count - 1][1] if keep_count > 0 else 0.0
-            tprint(f"🎯 Conservative fallback: keeping top 80% ({keep_count}) features")
-
-        if len(selected_features) == 0:
-            tprint("⚠️ No features above threshold, keeping top 80% to preserve top performers")
-            sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
-            # Keep top 80% to be very conservative
-            keep_count = max(1, int(len(sorted_features) * 0.8))
-            selected_features = [f for f, _ in sorted_features[:keep_count]]
-            threshold = sorted_features[keep_count - 1][1] if keep_count > 0 else 0.0
-
-        # Performance and feature information
-        removed_count = total_features - len(selected_features)
-        tprint("🗑️ Early Termination Results:")
-        tprint(f"   📊 Total features: {total_features}")
-        tprint(f"   ✅ Remaining features: {len(selected_features)}")
-        tprint(f"   🗑️ Removed features: {removed_count}")
-        tprint(f"   📈 Threshold used: {threshold:.6f}")
-        tprint(f"   📉 Removal rate: {removal_rate:.1%}")
-
-        # Show top 5 features being kept and bottom 5 being removed for troubleshooting
-        if len(selected_features) > 0:
-            sorted_selected = sorted([(f, importance_scores[f]) for f in selected_features],
-                                   key=lambda x: x[1], reverse=True)
-            tprint("🏆 Top 5 Kept Features:")
-            for i, (feature, score) in enumerate(sorted_selected[:5]):
-                tprint(f"   {i+1}. {feature}: {score:.6f}")
-
-        if removed_count > 0:
-            removed_features = [(f, importance_scores[f]) for f in X.columns if f not in selected_features]
-            sorted_removed = sorted(removed_features, key=lambda x: x[1], reverse=True)
-            tprint("💔 Bottom 5 Removed Features:")
-            for i, (feature, score) in enumerate(sorted_removed[:5]):
-                tprint(f"   {i+1}. {feature}: {score:.6f}")
-
-        self.logger.info(f"🗑️ Early termination: removed {removed_count} features below threshold {threshold:.6f}")
-
-        return X[selected_features]
 
     def _recursive_feature_elimination(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """Perform recursive feature elimination with early stopping."""

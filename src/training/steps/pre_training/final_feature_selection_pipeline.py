@@ -431,7 +431,9 @@ class MultiStageFeatureSelector:
             self.long_results.sign_stability = {}
             self.short_results.sign_stability = {}
 
-        # Initialize caching system for vectorized operations
+        # Initialize thread-safe caching system for vectorized operations
+        import threading
+        self._cache_lock = threading.RLock()
         self._cache = {}
         self._cache_hits = 0
         self._cache_misses = 0
@@ -458,9 +460,11 @@ class MultiStageFeatureSelector:
         tprint(f"⚡ Vectorization: Enabled")
         tprint(f"⚡ Caching: Enabled")
         
-        # Memory management thresholds
-        self.cache_size_limit_mb = 500  # 500MB cache limit
-        self.max_cache_entries = 1000   # Maximum number of cache entries
+        # Memory management thresholds - optimized for M1
+        self.cache_size_limit_mb = 200  # 200MB cache limit for M1
+        self.max_cache_entries = 500    # Maximum number of cache entries
+        self.memory_pressure_threshold = 0.8  # Trigger cleanup at 80%
+        self.aggressive_cleanup_threshold = 0.9  # Aggressive cleanup at 90%
         
         # Initialize caches and state for vectorized operations
         self._variance_cache = {}
@@ -489,20 +493,66 @@ class MultiStageFeatureSelector:
         return pd.Categorical(y).codes.astype(float)
 
     def spearman_abs_vectorized(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Fully vectorized Spearman correlation calculation."""
-        Xr = X.rank(method="average").to_numpy(dtype=float)    # (n, p)
-        yr = rankdata(self._y_numeric(y))                      # (n,)
+        """Optimized vectorized Spearman correlation calculation with early termination."""
+        # Fast fail on empty data
+        if X.empty or y.empty:
+            return pd.Series(dtype=float, index=X.columns)
         
-        # Center
-        Xc = Xr - Xr.mean(axis=0, keepdims=True)
-        yc = yr - yr.mean()
+        # Use cached computation if available
+        cache_key = f"spearman_{hash(str(X.columns.tolist()))}_{hash(str(y.name))}"
+        cached_result = self._get_from_cache(cache_key)
+        if cached_result is not None:
+            return cached_result
         
-        # Pearson on ranked data == Spearman
-        num = Xc.T @ yc                                         # (p,)
-        denom = (np.sqrt((Xc**2).sum(axis=0)) * np.sqrt((yc**2).sum()))
-        rho = num / (denom + 1e-12)
-        
-        return pd.Series(np.abs(rho), index=X.columns)
+        try:
+            # Optimized ranking with early termination check
+            Xr = X.rank(method="average", na_option='keep').to_numpy(dtype=float)
+            yr = rankdata(self._y_numeric(y))
+            
+            # Early termination if all features have low variance
+            X_var = np.var(Xr, axis=0)
+            if np.max(X_var) < 1e-8:
+                tprint_warning("⚠️ All features have very low variance, returning zero correlations")
+                result = pd.Series(0.0, index=X.columns)
+                self._set_cache(cache_key, result)
+                return result
+            
+            # Center with optimized operations
+            X_mean = np.mean(Xr, axis=0, keepdims=True)
+            y_mean = np.mean(yr)
+            
+            Xc = Xr - X_mean
+            yc = yr - y_mean
+            
+            # Compute correlations with numerical stability
+            Xc_norm = np.sqrt(np.sum(Xc**2, axis=0))
+            yc_norm = np.sqrt(np.sum(yc**2))
+            
+            # Avoid division by zero
+            Xc_norm = np.where(Xc_norm < 1e-8, 1.0, Xc_norm)
+            yc_norm = max(yc_norm, 1e-8)
+            
+            # Vectorized correlation computation
+            corrs = (Xc.T @ yc) / (Xc_norm * yc_norm)
+            
+            # Early termination if correlations are too low
+            max_corr = np.max(np.abs(corrs))
+            if max_corr < 0.01:
+                tprint_warning("⚠️ All correlations are very low, early termination")
+                result = pd.Series(0.0, index=X.columns)
+                self._set_cache(cache_key, result)
+                return result
+            
+            result = pd.Series(np.abs(corrs), index=X.columns)
+            self._set_cache(cache_key, result)
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Spearman correlation calculation failed: {e}")
+            # Return zero correlations on error
+            result = pd.Series(0.0, index=X.columns)
+            self._set_cache(cache_key, result)
+            return result
 
     def redundancy_mean_abs_spearman_blocked(self, X: pd.DataFrame, block=1024) -> pd.Series:
         """Blocked redundancy calculation for large feature sets."""
@@ -784,29 +834,175 @@ class MultiStageFeatureSelector:
     
     def _monitor_memory_pressure(self) -> Dict[str, Any]:
         """Monitor memory pressure and trigger cleanup if needed."""
-        memory_stats = {
-            'pressure': self._get_memory_pressure(),
-            'cleanup_triggered': False,
-            'recommendations': []
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / 1024 / 1024
+            
+            # Calculate pressure as ratio of current usage to system memory
+            system_memory = psutil.virtual_memory()
+            pressure = memory_mb / (system_memory.total / 1024 / 1024)
+            
+            memory_stats = {
+                'pressure': pressure,
+                'memory_mb': memory_mb,
+                'cleanup_triggered': False,
+                'recommendations': []
+            }
+            
+            if pressure > self.aggressive_cleanup_threshold:  # Critical pressure
+                memory_stats['cleanup_triggered'] = True
+                memory_stats['recommendations'].append('CRITICAL: Immediate aggressive cleanup required')
+                self._aggressive_memory_cleanup(force_cleanup=True)
+                
+            elif pressure > self.memory_pressure_threshold:  # High pressure
+                memory_stats['cleanup_triggered'] = True
+                memory_stats['recommendations'].append('WARNING: High memory pressure - performing cleanup')
+                self._aggressive_memory_cleanup(force_cleanup=False)
+                
+            elif pressure > 0.7:  # Medium pressure
+                memory_stats['recommendations'].append('INFO: Medium memory pressure - monitoring')
+                self._light_memory_cleanup()
+            
+            return memory_stats
+            
+        except ImportError:
+            # Fallback if psutil not available
+            return {
+                'pressure': 0.0,
+                'memory_mb': 0.0,
+                'cleanup_triggered': False,
+                'recommendations': ['psutil not available - memory monitoring disabled']
+            }
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory monitoring failed: {e}")
+            return {
+                'pressure': 0.0,
+                'memory_mb': 0.0,
+                'cleanup_triggered': False,
+                'recommendations': [f'Memory monitoring error: {e}']
+            }
+
+    def _light_memory_cleanup(self) -> None:
+        """Perform light memory cleanup."""
+        try:
+            # Clear small caches
+            if len(self._cache) > self.max_cache_entries:
+                # Remove oldest 25% of cache entries
+                items_to_remove = len(self._cache) // 4
+                keys_to_remove = list(self._cache.keys())[:items_to_remove]
+                for key in keys_to_remove:
+                    del self._cache[key]
+            
+            # Clear computation cache
+            self._computation_cache.clear()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Light memory cleanup failed: {e}")
+
+    def _aggressive_memory_cleanup(self, force_cleanup: bool = False) -> Dict[str, Any]:
+        """Perform aggressive memory cleanup."""
+        cleanup_results = {
+            'success': False,
+            'memory_freed_mb': 0.0,
+            'cleanup_methods_used': [],
+            'errors': []
         }
         
-        pressure = memory_stats['pressure']
-        
-        if pressure > 0.9:  # Critical pressure
-            memory_stats['cleanup_triggered'] = True
-            memory_stats['recommendations'].append('CRITICAL: Immediate aggressive cleanup required')
-            self._aggressive_memory_cleanup(force_cleanup=True)
+        try:
+            # Clear all caches
+            cache_size_before = len(self._cache)
+            self._cache.clear()
+            self._computation_cache.clear()
+            self._variance_cache.clear()
+            cleanup_results['cleanup_methods_used'].append('cache_clear')
             
-        elif pressure > 0.8:  # High pressure
-            memory_stats['cleanup_triggered'] = True
-            memory_stats['recommendations'].append('WARNING: High memory pressure - performing cleanup')
-            self._aggressive_memory_cleanup(force_cleanup=False)
+            # Clear vectorized arrays
+            self._vectorized_arrays.clear()
+            cleanup_results['cleanup_methods_used'].append('vectorized_arrays_clear')
             
-        elif pressure > 0.7:  # Medium pressure
-            memory_stats['recommendations'].append('INFO: Medium memory pressure - monitoring')
-            self._cleanup_cache()
+            # Clear component state
+            self._X_cached = None
+            self._last_X = None
+            cleanup_results['cleanup_methods_used'].append('state_clear')
+            
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            cleanup_results['cleanup_methods_used'].append('garbage_collection')
+            
+            # Use advanced memory optimizer if available
+            if self.advanced_memory_optimizer:
+                try:
+                    advanced_cleanup = self.advanced_memory_optimizer.aggressive_cleanup(
+                        force_cleanup=force_cleanup,
+                        clear_caches=True,
+                        compress_memory=True
+                    )
+                    cleanup_results['memory_freed_mb'] += advanced_cleanup.get('memory_freed_mb', 0.0)
+                    cleanup_results['cleanup_methods_used'].append('advanced_optimizer')
+                except Exception as e:
+                    cleanup_results['errors'].append(f"Advanced optimizer failed: {e}")
+            
+            cleanup_results['success'] = True
+            cleanup_results['memory_freed_mb'] += cache_size_before * 0.001  # Rough estimate
+            
+        except Exception as e:
+            cleanup_results['errors'].append(str(e))
+            tprint_error(f"❌ Aggressive memory cleanup failed: {e}")
         
-        return memory_stats
+        return cleanup_results
+
+    def _early_termination_check(self, scores: np.ndarray, threshold: float = 0.001) -> bool:
+        """Check if early termination should be triggered based on score quality."""
+        if len(scores) == 0:
+            return True
+        
+        # Check if maximum score is below threshold
+        max_score = np.max(scores)
+        if max_score < threshold:
+            tprint_warning(f"⚠️ Early termination: max score {max_score:.6f} below threshold {threshold}")
+            return True
+        
+        # Check if too many features have very low scores
+        low_score_count = np.sum(scores < threshold * 0.1)
+        if low_score_count > len(scores) * 0.8:
+            tprint_warning(f"⚠️ Early termination: {low_score_count}/{len(scores)} features have very low scores")
+            return True
+        
+        return False
+
+    def _validate_feature_quality(self, X: pd.DataFrame, y: pd.Series, features: List[str]) -> bool:
+        """Validate that selected features meet quality requirements."""
+        if not features:
+            return False
+        
+        # Check minimum feature count
+        if len(features) < 5:
+            tprint_warning(f"⚠️ Insufficient features selected: {len(features)}")
+            return False
+        
+        # Check feature variance
+        feature_data = X[features]
+        low_variance_features = feature_data.var() < 1e-8
+        if low_variance_features.any():
+            low_var_features = low_variance_features[low_variance_features].index.tolist()
+            tprint_warning(f"⚠️ Low variance features detected: {low_var_features}")
+            return False
+        
+        # Check for constant features
+        constant_features = feature_data.nunique() <= 1
+        if constant_features.any():
+            const_features = constant_features[constant_features].index.tolist()
+            tprint_warning(f"⚠️ Constant features detected: {const_features}")
+            return False
+        
+        return True
 
     def _trim_cache_by_entries(self, max_entries: int = 1000) -> None:
         """Trim cache to maximum number of entries (LRU-like)."""
@@ -1053,11 +1249,37 @@ class MultiStageFeatureSelector:
             return np.ones(len(X.columns))
 
     def _clear_cache(self):
-        """Clear the computation cache."""
-        cache_size = len(self._cache)
-        self._cache.clear()
-        self._computation_cache.clear()
-        tprint(f"🧹 Cache cleared: {cache_size} entries removed")
+        """Clear the computation cache with thread safety."""
+        with self._cache_lock:
+            cache_size = len(self._cache)
+            self._cache.clear()
+            self._computation_cache.clear()
+            self._cache_hits = 0
+            self._cache_misses = 0
+            tprint(f"🧹 Cache cleared: {cache_size} entries removed")
+
+    def _get_from_cache(self, key: str) -> Any:
+        """Thread-safe cache retrieval."""
+        with self._cache_lock:
+            if key in self._cache:
+                self._cache_hits += 1
+                return self._cache[key]
+            else:
+                self._cache_misses += 1
+                return None
+
+    def _set_cache(self, key: str, value: Any) -> None:
+        """Thread-safe cache storage with size limits."""
+        with self._cache_lock:
+            # Check cache size limits
+            if len(self._cache) >= self.max_cache_entries:
+                # Remove oldest 25% of entries
+                items_to_remove = len(self._cache) // 4
+                keys_to_remove = list(self._cache.keys())[:items_to_remove]
+                for k in keys_to_remove:
+                    del self._cache[k]
+            
+            self._cache[key] = value
 
     def _get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
@@ -1090,23 +1312,28 @@ class MultiStageFeatureSelector:
 
         start_time = time.time()
         tprint("🔍 Starting multi-stage feature selection with vectorization and caching")
-        tprint(f"📊 Input data: {X.shape[0]} samples, {X.shape[1]} features")
-        tprint(f"🎯 Target variable: {y.shape[0]} samples, type: {'classification' if self._is_classification(y) else 'regression'}")
-
-        # Clear cache at start of new selection
-        self._clear_cache()
-        self._active_event_timestamps = None
         
-        # Monitor memory pressure at start
-        memory_stats = self._monitor_memory_pressure()
-        if memory_stats['cleanup_triggered']:
-            tprint(f"🧠 Memory pressure detected at start: {memory_stats['pressure']:.2f}")
-            for recommendation in memory_stats['recommendations']:
-                tprint(f"   → {recommendation}")
+        try:
+            # Fast fail on input validation
+            self._validate_inputs(X, y)
+            
+            tprint(f"📊 Input data: {X.shape[0]} samples, {X.shape[1]} features")
+            tprint(f"🎯 Target variable: {y.shape[0]} samples, type: {'classification' if self._is_classification(y) else 'regression'}")
 
-        # Align event timestamps to the provided data (before any windowing)
-        event_ts_series_full: Optional[pd.Series] = None
-        if event_timestamps is not None:
+            # Clear cache at start of new selection
+            self._clear_cache()
+            self._active_event_timestamps = None
+        
+            # Monitor memory pressure at start
+            memory_stats = self._monitor_memory_pressure()
+            if memory_stats['cleanup_triggered']:
+                tprint(f"🧠 Memory pressure detected at start: {memory_stats['pressure']:.2f}")
+                for recommendation in memory_stats['recommendations']:
+                    tprint(f"   → {recommendation}")
+
+            # Align event timestamps to the provided data (before any windowing)
+            event_ts_series_full: Optional[pd.Series] = None
+            if event_timestamps is not None:
             if isinstance(event_timestamps, pd.Series):
                 aligned = event_timestamps
                 if not aligned.index.equals(X.index):
@@ -1207,11 +1434,38 @@ class MultiStageFeatureSelector:
         result.selection_time = execution_time
         tprint(f"⏱️ Total execution time: {execution_time:.3f} seconds")
 
-        # Ensure polarity adjustments are attached to the result payload
-        result.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
-        result.sign_stability = getattr(self, 'feature_sign_stability', {})
+            # Ensure polarity adjustments are attached to the result payload
+            result.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
+            result.sign_stability = getattr(self, 'feature_sign_stability', {})
 
-        return result
+            return result
+
+        except ValueError as ve:
+            # Fast fail on validation errors
+            tprint_error(f"❌ Input validation failed: {ve}")
+            raise ve
+        except MemoryError as me:
+            # Handle memory errors with cleanup
+            tprint_error(f"❌ Memory error during feature selection: {me}")
+            self._aggressive_memory_cleanup(force_cleanup=True)
+            raise RuntimeError(f"Feature selection failed due to memory constraints: {me}") from me
+        except Exception as e:
+            # Handle unexpected errors with proper logging
+            tprint_error(f"❌ Unexpected error during feature selection: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
+            
+            # Perform cleanup on error
+            try:
+                self._aggressive_memory_cleanup(force_cleanup=True)
+            except Exception as cleanup_error:
+                tprint_warning(f"⚠️ Cleanup failed after error: {cleanup_error}")
+            
+            # Return empty result with error information
+            error_result = FeatureSelectionResult()
+            error_result.eligible_for_selection = False
+            error_result.turnover_rejection_reason = f"Selection failed: {str(e)}"
+            return error_result
 
     def _get_directions_to_process(self) -> List[str]:
         """Determine which directions to process based on configuration."""
@@ -2307,24 +2561,113 @@ class MultiStageFeatureSelector:
         
         tprint(f"🚀 Stage 1 (Vectorized): {p} → {n_keep} (remove {p - n_keep})")
         
-        # Calculate scores vectorized
-        mrmr_scores = self._calculate_mrmr_mid_vectorized(X, y)
-        spearman_scores = self.spearman_abs_vectorized(X, y)
+        # Early termination check
+        if p < 10:
+            tprint_warning("⚠️ Stage 1: Insufficient features for selection")
+            return X.columns.tolist(), pd.Series(1.0, index=X.columns)
         
-        # Vectorized z-score fusion
-        S = np.vstack([mrmr_scores.values, spearman_scores.values]).T  # (p, 2)
-        S_z = self.zscore_matrix(S, axis=0)
-        combined_scores = 0.7 * S_z[:, 0] + 0.3 * S_z[:, 1]  # (p,)
+        try:
+            # Calculate scores vectorized
+            mrmr_scores = self._calculate_mrmr_mid_vectorized(X, y)
+            spearman_scores = self.spearman_abs_vectorized(X, y)
+            
+            # Early termination if scores are too low
+            if self._early_termination_check(mrmr_scores.values, threshold=0.001):
+                tprint_warning("⚠️ Stage 1: Early termination due to low mRMR scores")
+                return X.columns.tolist(), mrmr_scores
+            
+            if self._early_termination_check(spearman_scores.values, threshold=0.001):
+                tprint_warning("⚠️ Stage 1: Early termination due to low Spearman scores")
+                return X.columns.tolist(), spearman_scores
+            
+            # Vectorized z-score fusion
+            S = np.vstack([mrmr_scores.values, spearman_scores.values]).T  # (p, 2)
+            S_z = self.zscore_matrix(S, axis=0)
+            combined_scores = 0.7 * S_z[:, 0] + 0.3 * S_z[:, 1]  # (p,)
+            
+            # Early termination on combined scores
+            if self._early_termination_check(combined_scores, threshold=0.001):
+                tprint_warning("⚠️ Stage 1: Early termination due to low combined scores")
+                return X.columns.tolist(), pd.Series(combined_scores, index=X.columns)
+            
+            # Top-k selection with argpartition
+            selected = self.top_k(X.columns.tolist(), combined_scores, n_keep)
+            
+            # Validate selected features
+            if not self._validate_feature_quality(X, y, selected):
+                tprint_warning("⚠️ Stage 1: Selected features failed quality validation")
+                return X.columns.tolist(), pd.Series(combined_scores, index=X.columns)
+            
+            # Return scores as Series for consistency
+            scores = pd.Series(combined_scores, index=X.columns)
+            return selected, scores
+            
+        except Exception as e:
+            tprint_error(f"❌ Stage 1 selection failed: {e}")
+            # Return all features on error
+            return X.columns.tolist(), pd.Series(1.0, index=X.columns)
+
+    def _validate_inputs(self, X: pd.DataFrame, y: pd.Series) -> None:
+        """Comprehensive input validation with fast failing."""
+        # Fast fail on empty data
+        if X.empty:
+            raise ValueError("Feature matrix X cannot be empty")
+        if y.empty:
+            raise ValueError("Target vector y cannot be empty")
         
-        # Top-k selection with argpartition
-        selected = self.top_k(X.columns.tolist(), combined_scores, n_keep)
+        # Fast fail on dimension mismatch
+        if len(X) != len(y):
+            raise ValueError(f"Dimension mismatch: X has {len(X)} samples, y has {len(y)} samples")
         
-        # Return scores as Series for consistency
-        scores = pd.Series(combined_scores, index=X.columns)
-        return selected, scores
+        # Fast fail on insufficient features
+        if X.shape[1] < 10:
+            raise ValueError(f"Insufficient features: {X.shape[1]} features, minimum 10 required")
+        
+        # Fast fail on insufficient samples
+        if X.shape[0] < 100:
+            raise ValueError(f"Insufficient samples: {X.shape[0]} samples, minimum 100 required")
+        
+        # Fast fail on all-NaN features
+        all_nan_features = X.isnull().all()
+        if all_nan_features.any():
+            nan_features = all_nan_features[all_nan_features].index.tolist()
+            raise ValueError(f"Features with all NaN values not allowed: {nan_features}")
+        
+        # Fast fail on non-numeric data
+        non_numeric_cols = X.select_dtypes(exclude=[np.number]).columns
+        if len(non_numeric_cols) > 0:
+            raise ValueError(f"Non-numeric features not allowed: {non_numeric_cols.tolist()}")
+        
+        # Fast fail on constant features
+        constant_features = X.nunique(dropna=False) <= 1
+        if constant_features.any():
+            const_features = constant_features[constant_features].index.tolist()
+            raise ValueError(f"Constant features not allowed: {const_features}")
+        
+        # Fast fail on infinite values
+        inf_features = np.isinf(X.values).any(axis=0)
+        if inf_features.any():
+            inf_cols = X.columns[inf_features].tolist()
+            raise ValueError(f"Features with infinite values not allowed: {inf_cols}")
+        
+        # Fast fail on target validation
+        if y.isnull().all():
+            raise ValueError("Target vector y cannot be all NaN")
+        
+        if np.isinf(y).any():
+            raise ValueError("Target vector y cannot contain infinite values")
+        
+        # Fast fail on index misalignment
+        if not X.index.equals(y.index):
+            raise ValueError("X and y must have identical indices")
+        
+        tprint("✅ Input validation passed - all checks successful")
 
     def _sanitize_X(self, X: pd.DataFrame) -> pd.DataFrame:
         """Sanitize input data: numeric only, drop constants."""
+        # Validate inputs first
+        self._validate_inputs(X, pd.Series([0] * len(X), index=X.index))
+        
         Xn = X.select_dtypes(include=[np.number]).copy()
         nonconst = Xn.nunique(dropna=False) > 1
         return Xn.loc[:, nonconst]

@@ -123,15 +123,40 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         # Use standardized logging
         self.logger = get_logger('FinalFeatureSelectionComponent')
 
-        # Initialize hardware optimization tools
+        # Initialize hardware optimization tools with fast failing
         self._log_info(
             "🔧 [FinalFeatureSelection] Initializing hardware optimization tools...",
             event='final_feature_selection.initialization',
         )
-        self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-        self.adaptive_engine = AdaptiveOptimizationEngine()
-        self.hardware_manager = UnifiedHardwareManager()
-        self.gpu_manager = M1GPUManager()
+        
+        # Fast fail if critical hardware tools are not available
+        try:
+            self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
+            if self.memory_optimizer is None:
+                raise RuntimeError("Memory optimizer initialization failed")
+        except Exception as e:
+            raise RuntimeError(f"Memory optimizer initialization failed: {e}") from e
+        
+        try:
+            self.adaptive_engine = AdaptiveOptimizationEngine()
+            if self.adaptive_engine is None:
+                raise RuntimeError("Adaptive optimization engine initialization failed")
+        except Exception as e:
+            raise RuntimeError(f"Adaptive optimization engine initialization failed: {e}") from e
+        
+        try:
+            self.hardware_manager = UnifiedHardwareManager()
+            if self.hardware_manager is None:
+                raise RuntimeError("Hardware manager initialization failed")
+        except Exception as e:
+            raise RuntimeError(f"Hardware manager initialization failed: {e}") from e
+        
+        try:
+            self.gpu_manager = M1GPUManager()
+        except Exception as e:
+            # GPU manager is optional, but log the error
+            self._log_warning(f"⚠️ GPU manager initialization failed: {e}")
+            self.gpu_manager = None
         
         # Initialize advanced memory optimizer for aggressive cleanup
         try:
@@ -178,14 +203,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             "🔧 [FinalFeatureSelection] Initializing bayesian optimization tools...",
             event='final_feature_selection.initialization',
         )
-        self.bayesian_optimizer = BayesianEntryTimingOptimizer(
-            BayesianConfig(
-                n_trials=100,
-                timeout_minutes=30
-                # Note: early_stopping_patience, enable_parallel, use_m1_optimization 
-                # are not parameters of EntryTimingConfig
+        
+        # Fast fail if bayesian optimization is not available
+        try:
+            self.bayesian_optimizer = BayesianEntryTimingOptimizer(
+                BayesianConfig(
+                    n_trials=100,
+                    timeout_minutes=30
+                    # Note: early_stopping_patience, enable_parallel, use_m1_optimization 
+                    # are not parameters of EntryTimingConfig
+                )
             )
-        )
+        except Exception as e:
+            raise RuntimeError(f"Bayesian optimization initialization failed: {e}") from e
 
         self.hpo_utils = HyperparameterOptimization(
             config={

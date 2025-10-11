@@ -45,6 +45,20 @@ from .interaction_pruning import InteractionPruningSystem, InteractionPruningCon
 from .budgeted_optimization import BudgetedLookbackOptimizer, BudgetedOptimizationConfig, OptimizationResult
 from .optimized_pipeline import OptimizedPipelineConfig, OptimizedInteractiveFeaturePipeline
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimized_features import (
+        VectorBTFeatureGenerator, VectorBTFeatureConfig,
+        generate_vectorbt_features, create_vectorbt_config
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    VectorBTFeatureGenerator = None
+    VectorBTFeatureConfig = None
+    generate_vectorbt_features = None
+    create_vectorbt_config = None
+
 # Import existing utilities for backward compatibility - fast-fail
 from src.feature_generation.core.feature_cache import FeatureCacheService
 from src.feature_generation.core.feature_bank import FeatureBank
@@ -107,6 +121,13 @@ class EnhancedOptimizedConfig:
     coarse_grid_points: int = 10
     fine_search_evals: int = 16
     early_stop_patience: int = 5
+    
+    # VectorBT optimizations
+    enable_vectorbt: bool = True
+    vectorbt_use_gpu: bool = True
+    vectorbt_chunk_size: int = 50000
+    vectorbt_memory_limit_gb: float = 8.0
+    vectorbt_enable_parallel: bool = True
     
     # Performance monitoring
     enable_performance_monitoring: bool = True
@@ -463,10 +484,10 @@ class EnhancedOptimizedInteractionOrchestrator:
         tprint_debug(f"🔍 Input data columns: {list(data.columns)}")
         tprint_debug(f"🔍 Data types: {data.dtypes.to_dict()}")
         
-        # Use improved feature generation with fast-fail validation
+        # Use improved feature generation with VectorBT optimizations
         from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
         
-        # Create feature generation config
+        # Create feature generation config with VectorBT optimizations
         feature_config = FeatureGenerationConfig(
             enable_technical_indicators=True,
             enable_rolling_stats=True,
@@ -475,10 +496,16 @@ class EnhancedOptimizedInteractionOrchestrator:
             rolling_windows=[5, 10, 20, 50, 100],
             max_interactions=50,
             min_valid_ratio=0.8,  # Require 80% valid values
-            max_constant_ratio=0.1  # Allow max 10% constant features
+            max_constant_ratio=0.1,  # Allow max 10% constant features
+            # VectorBT optimizations
+            enable_vectorbt=self.config.enable_vectorbt,
+            vectorbt_use_gpu=self.config.vectorbt_use_gpu,
+            vectorbt_chunk_size=self.config.vectorbt_chunk_size,
+            vectorbt_memory_limit_gb=self.config.vectorbt_memory_limit_gb,
+            vectorbt_enable_parallel=self.config.vectorbt_enable_parallel
         )
         
-        # Generate base features using improved generator - fast-fail on error
+        # Generate base features using improved generator with VectorBT - fast-fail on error
         try:
             feature_generator = ImprovedFeatureGenerator(feature_config)
             generated_features = feature_generator.generate_meaningful_features(data)

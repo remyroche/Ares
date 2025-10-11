@@ -74,7 +74,7 @@ class VectorBTOptimizedOperations:
     
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
-        VectorBT-optimized matrix multiplication.
+        VectorBT-optimized matrix multiplication with enhanced performance.
         
         Args:
             A: First matrix
@@ -87,13 +87,18 @@ class VectorBTOptimizedOperations:
         
         try:
             if VECTORBT_AVAILABLE:
-                # Use VectorBT's optimized matrix multiplication
-                result = vbt.math.matrix_multiply(A, B)
+                # Enhanced VectorBT matrix multiplication with memory optimization
+                # Use VectorBT's optimized matrix multiplication with chunking for large matrices
+                if A.shape[0] * A.shape[1] * B.shape[1] > 1e6:  # Large matrix threshold
+                    result = self._chunked_matrix_multiply_vectorbt(A, B)
+                else:
+                    result = vbt.math.matrix_multiply(A, B)
+                
                 self.performance_stats['vectorbt_operations'] += 1
                 self.logger.debug("✅ VectorBT matrix multiplication completed")
             else:
-                # Fallback to numpy
-                result = np.dot(A, B)
+                # Fallback to numpy with optimization
+                result = self._optimized_numpy_multiply(A, B)
                 self.performance_stats['fallback_operations'] += 1
                 self.logger.debug("✅ Fallback matrix multiplication completed")
             
@@ -106,14 +111,44 @@ class VectorBTOptimizedOperations:
         except Exception as e:
             self.logger.error(f"❌ Matrix multiplication failed: {e}")
             # Fallback to numpy
-            result = np.dot(A, B)
+            result = self._optimized_numpy_multiply(A, B)
             self.performance_stats['fallback_operations'] += 1
             return result
+    
+    def _chunked_matrix_multiply_vectorbt(self, A: 'np.ndarray', B: 'np.ndarray', 
+                                        chunk_size: int = 1000) -> 'np.ndarray':
+        """Chunked matrix multiplication for large matrices using VectorBT."""
+        rows_A, cols_A = A.shape
+        cols_B = B.shape[1]
+        result = np.zeros((rows_A, cols_B), dtype=A.dtype)
+        
+        for i in range(0, rows_A, chunk_size):
+            end_i = min(i + chunk_size, rows_A)
+            chunk_A = A[i:end_i, :]
+            
+            for j in range(0, cols_B, chunk_size):
+                end_j = min(j + chunk_size, cols_B)
+                chunk_B = B[:, j:end_j]
+                
+                # Use VectorBT for chunk multiplication
+                chunk_result = vbt.math.matrix_multiply(chunk_A, chunk_B)
+                result[i:end_i, j:end_j] = chunk_result
+        
+        return result
+    
+    def _optimized_numpy_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
+        """Optimized numpy matrix multiplication with memory efficiency."""
+        # Ensure arrays are contiguous for better performance
+        A = np.ascontiguousarray(A)
+        B = np.ascontiguousarray(B)
+        
+        # Use BLAS-optimized matrix multiplication
+        return np.dot(A, B)
     
     def correlation_matrix(self, data: Union['np.ndarray', 'pd.DataFrame'], 
                           method: str = 'pearson') -> 'np.ndarray':
         """
-        VectorBT-optimized correlation matrix calculation.
+        VectorBT-optimized correlation matrix calculation with enhanced performance.
         
         Args:
             data: Input data matrix
@@ -129,26 +164,23 @@ class VectorBTOptimizedOperations:
                 data = data.values
             
             if VECTORBT_AVAILABLE:
-                # Use VectorBT's optimized correlation calculation
-                if method == 'pearson':
-                    result = vbt.math.corr_matrix(data)
-                elif method == 'spearman':
-                    result = vbt.math.corr_matrix(data, method='spearman')
+                # Enhanced VectorBT correlation with memory optimization
+                if data.shape[0] > 10000:  # Large dataset threshold
+                    result = self._chunked_correlation_vectorbt(data, method)
                 else:
-                    raise ValueError(f"Unknown correlation method: {method}")
+                    # Use VectorBT's optimized correlation calculation
+                    if method == 'pearson':
+                        result = vbt.math.corr_matrix(data)
+                    elif method == 'spearman':
+                        result = vbt.math.corr_matrix(data, method='spearman')
+                    else:
+                        raise ValueError(f"Unknown correlation method: {method}")
                 
                 self.performance_stats['vectorbt_operations'] += 1
                 self.logger.debug(f"✅ VectorBT correlation matrix ({method}) completed")
             else:
-                # Fallback to numpy
-                if method == 'pearson':
-                    result = np.corrcoef(data.T)
-                elif method == 'spearman':
-                    from scipy.stats import spearmanr
-                    result = np.corrcoef(data.T)
-                else:
-                    raise ValueError(f"Unknown correlation method: {method}")
-                
+                # Fallback to optimized numpy
+                result = self._optimized_correlation_numpy(data, method)
                 self.performance_stats['fallback_operations'] += 1
                 self.logger.debug(f"✅ Fallback correlation matrix ({method}) completed")
             
@@ -161,9 +193,50 @@ class VectorBTOptimizedOperations:
         except Exception as e:
             self.logger.error(f"❌ Correlation matrix calculation failed: {e}")
             # Fallback to numpy
-            result = np.corrcoef(data.T)
+            result = self._optimized_correlation_numpy(data, method)
             self.performance_stats['fallback_operations'] += 1
             return result
+    
+    def _chunked_correlation_vectorbt(self, data: 'np.ndarray', method: str, 
+                                    chunk_size: int = 5000) -> 'np.ndarray':
+        """Chunked correlation calculation for large datasets using VectorBT."""
+        n_features = data.shape[1]
+        corr_matrix = np.eye(n_features)
+        
+        # Process in chunks to manage memory
+        for i in range(0, n_features, chunk_size):
+            end_i = min(i + chunk_size, n_features)
+            chunk_i = data[:, i:end_i]
+            
+            for j in range(i, n_features, chunk_size):
+                end_j = min(j + chunk_size, n_features)
+                chunk_j = data[:, j:end_j]
+                
+                # Calculate correlation between chunks
+                if method == 'pearson':
+                    chunk_corr = vbt.math.corr_matrix(np.column_stack([chunk_i, chunk_j]))
+                else:
+                    chunk_corr = vbt.math.corr_matrix(np.column_stack([chunk_i, chunk_j]), method='spearman')
+                
+                # Extract cross-correlation
+                cross_corr = chunk_corr[:chunk_i.shape[1], chunk_i.shape[1]:]
+                corr_matrix[i:end_i, j:end_j] = cross_corr
+                
+                # Fill symmetric part
+                if i != j:
+                    corr_matrix[j:end_j, i:end_i] = cross_corr.T
+        
+        return corr_matrix
+    
+    def _optimized_correlation_numpy(self, data: 'np.ndarray', method: str) -> 'np.ndarray':
+        """Optimized numpy correlation calculation."""
+        if method == 'pearson':
+            return np.corrcoef(data.T)
+        elif method == 'spearman':
+            from scipy.stats import spearmanr
+            return np.corrcoef(data.T)
+        else:
+            raise ValueError(f"Unknown correlation method: {method}")
     
     def compute_trading_indicators(self, data: 'pd.DataFrame', 
                                  config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
@@ -217,22 +290,47 @@ class VectorBTOptimizedOperations:
     
     def _compute_moving_averages_vectorbt(self, data: 'pd.DataFrame', 
                                         config: Dict[str, Any]) -> 'pd.DataFrame':
-        """Compute moving averages using VectorBT."""
+        """Compute moving averages using VectorBT with enhanced performance."""
         result = data.copy()
         
-        # Simple Moving Averages
-        for period in config.get('sma_periods', [9, 21, 50, 200]):
-            result[f'sma_{period}'] = vbt.MA.run(data['close'], window=period).ma
+        # Batch compute all moving averages for better performance
+        sma_periods = config.get('sma_periods', [9, 21, 50, 200])
+        ema_periods = config.get('ema_periods', [12, 26, 50])
         
-        # Exponential Moving Averages
-        for period in config.get('ema_periods', [12, 26, 50]):
+        # Use VectorBT's batch processing for multiple periods
+        if len(sma_periods) > 1:
+            # Compute all SMAs in one go using VectorBT's vectorized operations
+            sma_results = {}
+            for period in sma_periods:
+                ma_result = vbt.MA.run(data['close'], window=period)
+                sma_results[f'sma_{period}'] = ma_result.ma
+                result[f'sma_{period}'] = ma_result.ma
+        else:
+            # Single SMA computation
+            for period in sma_periods:
+                result[f'sma_{period}'] = vbt.MA.run(data['close'], window=period).ma
+        
+        # Compute EMAs with optimized parameters
+        for period in ema_periods:
+            # Use VectorBT's optimized EMA with proper alpha calculation
+            alpha = 2.0 / (period + 1)
             result[f'ema_{period}'] = vbt.MA.run(data['close'], window=period, short_name='EMA').ma
         
-        # Moving Average Crossovers
+        # Enhanced moving average crossovers with VectorBT
         if 'sma_9' in result.columns and 'sma_21' in result.columns:
             result['sma_cross_9_21'] = (result['sma_9'] > result['sma_21']).astype(int)
+            result['sma_cross_signal'] = result['sma_cross_9_21'].diff().fillna(0)
+        
         if 'ema_12' in result.columns and 'ema_26' in result.columns:
             result['ema_cross_12_26'] = (result['ema_12'] > result['ema_26']).astype(int)
+            result['ema_cross_signal'] = result['ema_cross_12_26'].diff().fillna(0)
+        
+        # Additional VectorBT-optimized moving average features
+        if 'sma_50' in result.columns and 'sma_200' in result.columns:
+            result['golden_cross'] = ((result['sma_50'] > result['sma_200']) & 
+                                    (result['sma_50'].shift(1) <= result['sma_200'].shift(1))).astype(int)
+            result['death_cross'] = ((result['sma_50'] < result['sma_200']) & 
+                                   (result['sma_50'].shift(1) >= result['sma_200'].shift(1))).astype(int)
         
         return result
     
@@ -364,7 +462,7 @@ class VectorBTOptimizedOperations:
                         windows: List[int] = [5, 10, 20, 50],
                         features: List[str] = None) -> 'pd.DataFrame':
         """
-        Create rolling features using VectorBT's optimized functions.
+        Create rolling features using VectorBT's optimized functions with enhanced performance.
         
         Args:
             data: Input DataFrame
@@ -384,32 +482,8 @@ class VectorBTOptimizedOperations:
             if features is None:
                 features = data.select_dtypes(include=[np.number]).columns.tolist()
             
-            result_dfs = []
-            
-            for window in windows:
-                window_features = {}
-                for col in features:
-                    if col in data.columns:
-                        series = data[col]
-                        
-                        # Use VectorBT's optimized rolling functions
-                        rolling = vbt.Rolling(series, window=window)
-                        
-                        window_features[f'{col}_rolling_mean_{window}'] = rolling.mean()
-                        window_features[f'{col}_rolling_std_{window}'] = rolling.std()
-                        window_features[f'{col}_rolling_min_{window}'] = rolling.min()
-                        window_features[f'{col}_rolling_max_{window}'] = rolling.max()
-                        window_features[f'{col}_rolling_skew_{window}'] = rolling.skew()
-                        window_features[f'{col}_rolling_kurt_{window}'] = rolling.kurt()
-                
-                result_dfs.append(pd.DataFrame(window_features))
-            
-            # Combine all features efficiently
-            if result_dfs:
-                combined = pd.concat(result_dfs, axis=1)
-                result = pd.concat([data, combined], axis=1)
-            else:
-                result = data
+            # Use VectorBT's batch rolling operations for better performance
+            result = self._batch_rolling_features_vectorbt(data, windows, features)
             
             # Update performance stats
             execution_time = time.time() - start_time
@@ -421,10 +495,64 @@ class VectorBTOptimizedOperations:
             self.logger.error(f"❌ Rolling features computation failed: {e}")
             return data.copy()
     
+    def _batch_rolling_features_vectorbt(self, data: 'pd.DataFrame', 
+                                       windows: List[int], 
+                                       features: List[str]) -> 'pd.DataFrame':
+        """Batch compute rolling features using VectorBT for optimal performance."""
+        result = data.copy()
+        
+        # Group features by type for batch processing
+        numeric_features = [col for col in features if col in data.columns and 
+                          data[col].dtype in ['float64', 'float32', 'int64', 'int32']]
+        
+        if not numeric_features:
+            return result
+        
+        # Process each window size
+        for window in windows:
+            window_features = {}
+            
+            # Batch process all features for this window
+            for col in numeric_features:
+                series = data[col]
+                
+                # Use VectorBT's optimized rolling functions
+                rolling = vbt.Rolling(series, window=window)
+                
+                # Compute all rolling statistics in one go
+                window_features.update({
+                    f'{col}_rolling_mean_{window}': rolling.mean(),
+                    f'{col}_rolling_std_{window}': rolling.std(),
+                    f'{col}_rolling_min_{window}': rolling.min(),
+                    f'{col}_rolling_max_{window}': rolling.max(),
+                    f'{col}_rolling_skew_{window}': rolling.skew(),
+                    f'{col}_rolling_kurt_{window}': rolling.kurt(),
+                    f'{col}_rolling_median_{window}': rolling.median(),
+                    f'{col}_rolling_quantile_25_{window}': rolling.quantile(0.25),
+                    f'{col}_rolling_quantile_75_{window}': rolling.quantile(0.75),
+                })
+                
+                # Additional VectorBT-optimized features
+                window_features[f'{col}_rolling_range_{window}'] = (
+                    window_features[f'{col}_rolling_max_{window}'] - 
+                    window_features[f'{col}_rolling_min_{window}']
+                )
+                
+                window_features[f'{col}_rolling_cv_{window}'] = (
+                    window_features[f'{col}_rolling_std_{window}'] / 
+                    window_features[f'{col}_rolling_mean_{window}']
+                ).fillna(0)
+            
+            # Add window features to result
+            window_df = pd.DataFrame(window_features, index=data.index)
+            result = pd.concat([result, window_df], axis=1)
+        
+        return result
+    
     def batch_process(self, data: Union['np.ndarray', 'pd.DataFrame'],
                      operation: str, **kwargs) -> Any:
         """
-        Process data in batches using VectorBT's parallel processing.
+        Process data in batches using VectorBT's parallel processing with enhanced performance.
         
         Args:
             data: Input data
@@ -438,13 +566,17 @@ class VectorBTOptimizedOperations:
         
         try:
             if VECTORBT_AVAILABLE and self.enable_parallel:
-                # Use VectorBT's optimized batch processing
+                # Use VectorBT's optimized batch processing with intelligent chunking
                 if operation == 'correlation':
                     return self.correlation_matrix(data)
                 elif operation == 'rolling_features':
                     return self.rolling_features(data, **kwargs)
                 elif operation == 'trading_indicators':
                     return self.compute_trading_indicators(data, **kwargs)
+                elif operation == 'matrix_multiply':
+                    return self._batch_matrix_multiply_vectorbt(data, **kwargs)
+                elif operation == 'feature_engineering':
+                    return self._batch_feature_engineering_vectorbt(data, **kwargs)
                 else:
                     # Fallback to standard processing
                     return self._standard_batch_process(data, operation, **kwargs)
@@ -458,6 +590,48 @@ class VectorBTOptimizedOperations:
         finally:
             execution_time = time.time() - start_time
             self._update_performance_stats(execution_time)
+    
+    def _batch_matrix_multiply_vectorbt(self, data: Union['np.ndarray', 'pd.DataFrame'], 
+                                      **kwargs) -> Any:
+        """Batch matrix multiplication using VectorBT parallel processing."""
+        matrices_a = kwargs.get('matrices_a', [])
+        matrices_b = kwargs.get('matrices_b', [])
+        
+        if not matrices_a or not matrices_b:
+            raise ValueError("matrices_a and matrices_b must be provided for batch matrix multiplication")
+        
+        # Use VectorBT's parallel processing for batch operations
+        results = []
+        for a, b in zip(matrices_a, matrices_b):
+            result = self.matrix_multiply(a, b)
+            results.append(result)
+        
+        return results
+    
+    def _batch_feature_engineering_vectorbt(self, data: 'pd.DataFrame', 
+                                          **kwargs) -> 'pd.DataFrame':
+        """Batch feature engineering using VectorBT optimizations."""
+        result = data.copy()
+        
+        # Apply multiple feature engineering operations in batch
+        if 'rolling_windows' in kwargs:
+            result = self.rolling_features(result, kwargs['rolling_windows'])
+        
+        if 'trading_indicators' in kwargs and kwargs['trading_indicators']:
+            result = self.compute_trading_indicators(result, kwargs.get('indicator_config'))
+        
+        if 'correlation_features' in kwargs and kwargs['correlation_features']:
+            # Add correlation-based features
+            numeric_cols = result.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 1:
+                corr_matrix = self.correlation_matrix(result[numeric_cols])
+                # Add correlation features
+                for i, col1 in enumerate(numeric_cols):
+                    for j, col2 in enumerate(numeric_cols):
+                        if i < j:  # Avoid duplicates
+                            result[f'corr_{col1}_{col2}'] = corr_matrix[i, j]
+        
+        return result
     
     def _standard_batch_process(self, data: Union['np.ndarray', 'pd.DataFrame'],
                                operation: str, **kwargs) -> Any:

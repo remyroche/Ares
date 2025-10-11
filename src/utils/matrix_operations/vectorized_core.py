@@ -447,7 +447,7 @@ class VectorizedProcessingCore:
     def vectorized_rolling_features(self, data: 'pd.DataFrame',
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> 'pd.DataFrame':
-        """Create vectorized rolling features using VectorBT optimization."""
+        """Create vectorized rolling features using VectorBT optimization with enhanced performance."""
         # Try VectorBT optimization first if available
         if VECTORBT_OPTIMIZATIONS_AVAILABLE:
             try:
@@ -458,34 +458,60 @@ class VectorizedProcessingCore:
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
         
-        # Fallback to standard implementation
+        # Enhanced fallback implementation with better performance
         if features is None:
             features = data.select_dtypes(include=[np.number]).columns.tolist()
 
         with self.memory_checkpoint("rolling_features"):
+            # Optimize data types for better performance
+            data_optimized = self.optimize_dataframe_for_processing(data)
+            
             result_dfs = []
+            
+            # Process windows in batches for better memory efficiency
+            batch_size = min(5, len(windows))  # Process up to 5 windows at a time
+            for i in range(0, len(windows), batch_size):
+                batch_windows = windows[i:i + batch_size]
+                batch_features = {}
+                
+                for window in batch_windows:
+                    for col in features:
+                        if col in data_optimized.columns:
+                            series = data_optimized[col]
 
-            for window in windows:
-                window_features = {}
-                for col in features:
-                    if col in data.columns:
-                        series = data[col]
+                            # Enhanced vectorized rolling calculations with better performance
+                            rolling = series.rolling(window=window, min_periods=1)
+                            
+                            batch_features.update({
+                                f'{col}_rolling_mean_{window}': rolling.mean(),
+                                f'{col}_rolling_std_{window}': rolling.std(),
+                                f'{col}_rolling_min_{window}': rolling.min(),
+                                f'{col}_rolling_max_{window}': rolling.max(),
+                                f'{col}_rolling_skew_{window}': rolling.skew(),
+                                f'{col}_rolling_kurt_{window}': rolling.kurt(),
+                                f'{col}_rolling_median_{window}': rolling.median(),
+                                f'{col}_rolling_quantile_25_{window}': rolling.quantile(0.25),
+                                f'{col}_rolling_quantile_75_{window}': rolling.quantile(0.75),
+                            })
+                            
+                            # Additional enhanced features
+                            batch_features[f'{col}_rolling_range_{window}'] = (
+                                batch_features[f'{col}_rolling_max_{window}'] - 
+                                batch_features[f'{col}_rolling_min_{window}']
+                            )
+                            
+                            batch_features[f'{col}_rolling_cv_{window}'] = (
+                                batch_features[f'{col}_rolling_std_{window}'] / 
+                                batch_features[f'{col}_rolling_mean_{window}']
+                            ).fillna(0)
 
-                        # Vectorized rolling calculations
-                        window_features[f'{col}_rolling_mean_{window}'] = series.rolling(window=window, min_periods=1).mean()
-                        window_features[f'{col}_rolling_std_{window}'] = series.rolling(window=window, min_periods=1).std()
-                        window_features[f'{col}_rolling_min_{window}'] = series.rolling(window=window, min_periods=1).min()
-                        window_features[f'{col}_rolling_max_{window}'] = series.rolling(window=window, min_periods=1).max()
-                        window_features[f'{col}_rolling_skew_{window}'] = series.rolling(window=window, min_periods=3).skew()
-                        window_features[f'{col}_rolling_kurt_{window}'] = series.rolling(window=window, min_periods=4).kurt()
-
-                result_dfs.append(pd.DataFrame(window_features))
+                result_dfs.append(pd.DataFrame(batch_features, index=data_optimized.index))
 
             # Combine all features efficiently
             if result_dfs:
                 combined = pd.concat(result_dfs, axis=1)
-                return pd.concat([data, combined], axis=1)
-            return data
+                return pd.concat([data_optimized, combined], axis=1)
+            return data_optimized
 
     def matrix_correlation_analysis(self, data: 'pd.DataFrame',
                                    method: str = 'pearson') -> Tuple['np.ndarray', 'pd.DataFrame']:

@@ -218,9 +218,24 @@ class EnhancedKlinesProcessingPipeline:
         self.data_standardizer = UnifiedExchangeStandardizer()
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
         
-        # Initialize KlinesParquetManager
-        storage_config = self.config.storage_config or StorageConfig(base_dir=str(self.data_dir))
-        self.klines_manager = KlinesParquetManager(storage_config)
+        # Initialize KlinesParquetManager with optimized configuration
+        if self.config.storage_config:
+            self.klines_manager = KlinesParquetManager(self.config.storage_config)
+        else:
+            # Create optimized storage config
+            storage_config = StorageConfig(
+                base_dir=str(self.data_dir),
+                compression="zstd",  # Better compression than snappy
+                compression_level=3,  # ZSTD compression level
+                index=False,  # Don't store index as separate column
+                row_group_size=50000,  # Optimized row group size
+                use_dictionary_encoding=True,  # Enable dictionary encoding
+                enable_schema_optimization=True,  # Enable schema optimization
+                enable_compression_analysis=True,  # Enable compression analysis
+                enable_metadata=True,
+                enable_validation=True
+            )
+            self.klines_manager = KlinesParquetManager(storage_config)
         
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -1563,13 +1578,19 @@ class EnhancedKlinesProcessingPipeline:
             # Create consolidated batch ID
             consolidated_batch_id = f"{batch_id}_consolidated" if batch_id else "consolidated"
             
-            # Store using KlinesParquetManager
+            # Store using optimized KlinesParquetManager
             success = self.klines_manager.store_klines(
                 df, symbol, self.exchange, f"{interval}_consolidated", consolidated_batch_id
             )
             
             if not success:
                 raise RuntimeError("Failed to store consolidated file using KlinesParquetManager")
+            
+            # Log optimization benefits for consolidated file
+            if self.enable_logging:
+                compression_stats = self.klines_manager.get_compression_stats()
+                if compression_stats.get("total_files", 0) > 0:
+                    tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
             
             # Get the actual file path from the manager
             output_file = self.klines_manager._get_storage_path(
@@ -1618,20 +1639,30 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
             
-            # Store data using KlinesParquetManager
+            # Store data using optimized KlinesParquetManager
             success = self.klines_manager.store_klines(
                 df, symbol, self.exchange, interval, batch_id
             )
             
             if success:
                 result.success = True
+                
+                # Get compression statistics
+                compression_stats = self.klines_manager.get_compression_stats()
+                
                 result.metadata = {
                     "stored_files": [f"{symbol}_{interval}_original"],
-                    "record_count": len(df)
+                    "record_count": len(df),
+                    "compression_ratio": compression_stats.get("overall_compression_ratio", 0),
+                    "file_size_mb": compression_stats.get("total_file_size_mb", 0),
+                    "optimization_applied": True
                 }
                 
                 if self.enable_logging:
                     tprint_success(f"✅ Stored {len(df)} records for {symbol} {interval}")
+                    if compression_stats.get("total_files", 0) > 0:
+                        tprint_info(f"📊 Compression ratio: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
+                        tprint_info(f"💾 File size: {compression_stats.get('total_file_size_mb', 0):.2f} MB")
             else:
                 raise RuntimeError("Failed to store data using KlinesParquetManager")
             

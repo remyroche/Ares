@@ -65,24 +65,32 @@ class VectorBTRollingOptimizer:
     selection based on data size and available hardware.
     """
     
-    def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True):
+    def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True, 
+                 memory_efficient: bool = True, chunk_size: int = 1000):
         """
-        Initialize VectorBT rolling optimizer.
+        Initialize VectorBT rolling optimizer with enhanced optimization.
         
         Args:
             enable_gpu: Enable GPU acceleration if available
             enable_parallel: Enable parallel processing
+            memory_efficient: Enable memory optimization
+            chunk_size: Size of data chunks for processing
         """
         self.enable_gpu = enable_gpu and CUPY_AVAILABLE
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
+        self.memory_efficient = memory_efficient
+        self.chunk_size = chunk_size
         self.use_vectorbt = VECTORBT_AVAILABLE
         
-        # Performance tracking
+        # Enhanced performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
             'pandas_fallbacks': 0,
             'numpy_fallbacks': 0,
             'gpu_operations': 0,
+            'memory_optimizations': 0,
+            'chunk_operations': 0,
+            'parallel_operations': 0,
             'total_operations': 0,
             'total_time': 0.0
         }
@@ -93,7 +101,7 @@ class VectorBTRollingOptimizer:
             if self.enable_gpu:
                 vbt.settings.array_wrapper['freq'] = '1min'
         
-        logger.info(f"VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}")
+        logger.info(f"VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}")
     
     def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling mean calculation."""
@@ -131,6 +139,102 @@ class VectorBTRollingOptimizer:
         """Optimized rolling kurtosis calculation."""
         return self._rolling_operation(data, 'kurt', window, **kwargs)
     
+    def rolling_corr(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame], 
+                    window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling correlation calculation."""
+        return self._rolling_operation(data, 'corr', window, other=other, **kwargs)
+    
+    def rolling_cov(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame], 
+                   window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling covariance calculation."""
+        return self._rolling_operation(data, 'cov', window, other=other, **kwargs)
+    
+    def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], func: callable, 
+                     window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling apply calculation."""
+        return self._rolling_operation(data, 'apply', window, func=func, **kwargs)
+    
+    def rolling_median(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling median calculation."""
+        return self.rolling_quantile(data, window, q=0.5, **kwargs)
+    
+    def rolling_percentile(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                          percentile: float, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling percentile calculation."""
+        return self.rolling_quantile(data, window, q=percentile/100, **kwargs)
+    
+    def rolling_rank(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling rank calculation."""
+        return self._rolling_operation(data, 'rank', window, **kwargs)
+    
+    def rolling_ewm(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                   alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized exponentially weighted moving average."""
+        if alpha is not None:
+            return data.ewm(alpha=alpha, **kwargs).mean()
+        elif span is not None:
+            return data.ewm(span=span, **kwargs).mean()
+        else:
+            return data.ewm(span=window, **kwargs).mean()
+    
+    def rolling_ewm_std(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                       alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized exponentially weighted moving standard deviation."""
+        if alpha is not None:
+            return data.ewm(alpha=alpha, **kwargs).std()
+        elif span is not None:
+            return data.ewm(span=span, **kwargs).std()
+        else:
+            return data.ewm(span=window, **kwargs).std()
+    
+    def rolling_ewm_var(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                       alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized exponentially weighted moving variance."""
+        if alpha is not None:
+            return data.ewm(alpha=alpha, **kwargs).var()
+        elif span is not None:
+            return data.ewm(span=span, **kwargs).var()
+        else:
+            return data.ewm(span=window, **kwargs).var()
+    
+    def rolling_correlation_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+        """Optimized rolling correlation matrix calculation."""
+        if not self.use_vectorbt:
+            return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
+        
+        try:
+            result = rolling_corr(data, window=window, **kwargs)
+            self.performance_stats['vectorbt_operations'] += 1
+            return result
+        except Exception as e:
+            logger.warning(f"VectorBT rolling correlation matrix failed: {e}, using fallback")
+            return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
+    
+    def rolling_covariance_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+        """Optimized rolling covariance matrix calculation."""
+        if not self.use_vectorbt:
+            return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
+        
+        try:
+            result = rolling_cov(data, window=window, **kwargs)
+            self.performance_stats['vectorbt_operations'] += 1
+            return result
+        except Exception as e:
+            logger.warning(f"VectorBT rolling covariance matrix failed: {e}, using fallback")
+            return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
+    
+    def rolling_quantile(self, data: Union[pd.Series, pd.DataFrame], window: int, q: float = 0.5, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling quantile calculation."""
+        return self._rolling_operation(data, 'quantile', window, q=q, **kwargs)
+    
+    def rolling_skew(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling skewness calculation."""
+        return self._rolling_operation(data, 'skew', window, **kwargs)
+    
+    def rolling_kurt(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Optimized rolling kurtosis calculation."""
+        return self._rolling_operation(data, 'kurt', window, **kwargs)
+    
     def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], window: int, func: Callable, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling apply calculation."""
         return self._rolling_operation(data, 'apply', window, func=func, **kwargs)
@@ -148,7 +252,7 @@ class VectorBTRollingOptimizer:
     def _rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str, 
                           window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
-        Perform optimized rolling operation with intelligent method selection.
+        Perform optimized rolling operation with intelligent method selection and memory optimization.
         
         Args:
             data: Input data (Series or DataFrame)
@@ -162,17 +266,26 @@ class VectorBTRollingOptimizer:
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
         
+        # Optimize data for processing
+        if self.memory_efficient:
+            data = self._optimize_data_types(data)
+        
         try:
-            # Determine optimal processing method
-            if self._should_use_vectorbt(data, window):
-                result = self._vectorbt_rolling_operation(data, operation, window, **kwargs)
-                self.performance_stats['vectorbt_operations'] += 1
-            elif self._should_use_gpu(data, window):
-                result = self._gpu_rolling_operation(data, operation, window, **kwargs)
-                self.performance_stats['gpu_operations'] += 1
+            # Check if data is large enough for chunked processing
+            if len(data) > self.chunk_size and self.memory_efficient:
+                result = self._chunked_rolling_operation(data, operation, window, **kwargs)
+                self.performance_stats['chunk_operations'] += 1
             else:
-                result = self._pandas_rolling_operation(data, operation, window, **kwargs)
-                self.performance_stats['pandas_fallbacks'] += 1
+                # Determine optimal processing method
+                if self._should_use_vectorbt(data, window):
+                    result = self._vectorbt_rolling_operation(data, operation, window, **kwargs)
+                    self.performance_stats['vectorbt_operations'] += 1
+                elif self._should_use_gpu(data, window):
+                    result = self._gpu_rolling_operation(data, operation, window, **kwargs)
+                    self.performance_stats['gpu_operations'] += 1
+                else:
+                    result = self._pandas_rolling_operation(data, operation, window, **kwargs)
+                    self.performance_stats['pandas_fallbacks'] += 1
             
             # Update timing
             self.performance_stats['total_time'] += time.time() - start_time
@@ -182,6 +295,88 @@ class VectorBTRollingOptimizer:
             logger.warning(f"Rolling operation {operation} failed: {e}, using numpy fallback")
             self.performance_stats['numpy_fallbacks'] += 1
             return self._numpy_rolling_operation(data, operation, window, **kwargs)
+    
+    def _chunked_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str, 
+                                 window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Process large data in chunks for memory efficiency."""
+        if isinstance(data, pd.Series):
+            return self._chunked_series_operation(data, operation, window, **kwargs)
+        else:
+            return self._chunked_dataframe_operation(data, operation, window, **kwargs)
+    
+    def _chunked_series_operation(self, data: pd.Series, operation: str, 
+                                window: int, **kwargs) -> pd.Series:
+        """Process Series in chunks for memory efficiency."""
+        results = []
+        chunk_size = self.chunk_size
+        
+        for i in range(0, len(data), chunk_size):
+            chunk = data.iloc[i:i + chunk_size + window - 1]  # Include overlap for rolling window
+            
+            if self._should_use_vectorbt(chunk, window):
+                chunk_result = self._vectorbt_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['vectorbt_operations'] += 1
+            elif self._should_use_gpu(chunk, window):
+                chunk_result = self._gpu_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['gpu_operations'] += 1
+            else:
+                chunk_result = self._pandas_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['pandas_fallbacks'] += 1
+            
+            # Remove overlap from result (except for first chunk)
+            if i == 0:
+                results.append(chunk_result)
+            else:
+                results.append(chunk_result.iloc[window-1:])
+        
+        return pd.concat(results, ignore_index=False)
+    
+    def _chunked_dataframe_operation(self, data: pd.DataFrame, operation: str, 
+                                   window: int, **kwargs) -> pd.DataFrame:
+        """Process DataFrame in chunks for memory efficiency."""
+        results = []
+        chunk_size = self.chunk_size
+        
+        for i in range(0, len(data), chunk_size):
+            chunk = data.iloc[i:i + chunk_size + window - 1]  # Include overlap for rolling window
+            
+            if self._should_use_vectorbt(chunk, window):
+                chunk_result = self._vectorbt_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['vectorbt_operations'] += 1
+            elif self._should_use_gpu(chunk, window):
+                chunk_result = self._gpu_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['gpu_operations'] += 1
+            else:
+                chunk_result = self._pandas_rolling_operation(chunk, operation, window, **kwargs)
+                self.performance_stats['pandas_fallbacks'] += 1
+            
+            # Remove overlap from result (except for first chunk)
+            if i == 0:
+                results.append(chunk_result)
+            else:
+                results.append(chunk_result.iloc[window-1:])
+        
+        return pd.concat(results, ignore_index=False)
+    
+    def _optimize_data_types(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """Optimize data types for memory efficiency."""
+        if self.memory_efficient:
+            if isinstance(data, pd.Series):
+                if data.dtype == 'float64':
+                    if (data.min() >= np.finfo(np.float32).min and 
+                        data.max() <= np.finfo(np.float32).max):
+                        data = data.astype(np.float32)
+                        self.performance_stats['memory_optimizations'] += 1
+            elif isinstance(data, pd.DataFrame):
+                optimized_data = data.copy()
+                for column in optimized_data.columns:
+                    if optimized_data[column].dtype == 'float64':
+                        if (optimized_data[column].min() >= np.finfo(np.float32).min and 
+                            optimized_data[column].max() <= np.finfo(np.float32).max):
+                            optimized_data[column] = optimized_data[column].astype(np.float32)
+                            self.performance_stats['memory_optimizations'] += 1
+                return optimized_data
+        return data
     
     def _should_use_vectorbt(self, data: Union[pd.Series, pd.DataFrame], window: int) -> bool:
         """Determine if VectorBT should be used for this operation."""
@@ -473,3 +668,15 @@ if __name__ == "__main__":
     # Performance stats
     stats = optimizer.get_performance_stats()
     print(f"Performance stats: {stats}")
+
+
+def optimized_rolling_correlation_matrix(data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+    """Optimized rolling correlation matrix using VectorBT."""
+    optimizer = get_vectorbt_rolling_optimizer()
+    return optimizer.rolling_correlation_matrix(data, window, **kwargs)
+
+
+def optimized_rolling_covariance_matrix(data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+    """Optimized rolling covariance matrix using VectorBT."""
+    optimizer = get_vectorbt_rolling_optimizer()
+    return optimizer.rolling_covariance_matrix(data, window, **kwargs)

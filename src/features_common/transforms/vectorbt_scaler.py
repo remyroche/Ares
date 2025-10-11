@@ -38,31 +38,57 @@ class VectorBTScaler(BaseScaler):
     VectorBT-optimized scaler with comprehensive scaling methods.
     
     This scaler leverages VectorBT's high-performance scaling functions
-    for maximum efficiency and accuracy.
+    for maximum efficiency and accuracy with enhanced optimization features.
     """
     
-    def __init__(self, method: str = 'zscore', **kwargs):
+    def __init__(self, method: str = 'zscore', enable_gpu: bool = False, 
+                 enable_batch: bool = True, memory_efficient: bool = True, **kwargs):
         """
-        Initialize VectorBT scaler.
+        Initialize VectorBT scaler with enhanced optimization.
         
         Args:
-            method: Scaling method ('zscore', 'minmax', 'robust', 'quantile', 'winsorize', 'rank', 'clip')
+            method: Scaling method ('zscore', 'minmax', 'robust', 'quantile', 'winsorize', 'rank', 'clip', 'robust_zscore', 'adaptive', 'quantile_robust')
+            enable_gpu: Enable GPU acceleration if available
+            enable_batch: Enable batch processing optimization
+            memory_efficient: Enable memory optimization
             **kwargs: Additional parameters for the scaling method
         """
-        super().__init__()
+        super().__init__(use_vectorbt=True, enable_gpu=enable_gpu)
         self.method = method
         self.kwargs = kwargs
         self.scaling_params = {}
+        self.enable_batch = enable_batch
+        self.memory_efficient = memory_efficient
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'adaptive_scaling_decisions': 0,
+            'total_operations': 0
+        }
         
         if not VECTORBT_AVAILABLE:
             logger.warning("VectorBT not available, using fallback scaler")
     
     def fit_transform(self, data: pd.Series) -> pd.Series:
-        """Fit scaler parameters and transform data using VectorBT."""
+        """Fit scaler parameters and transform data using VectorBT with enhanced optimization."""
+        self.performance_stats['total_operations'] += 1
         self._log_info(f"🔧 [VectorBTScaler] Fitting {self.method} scaler on {len(data)} samples")
         
         # Validate input
         self._validate_numeric_input(data, "input data")
+        
+        # Optimize data for VectorBT processing
+        if self.memory_efficient:
+            data = self._optimize_data_types(data)
+        
+        # Enable GPU processing if available
+        if self.enable_gpu:
+            data = self._enable_gpu_processing(data)
+            self.performance_stats['gpu_operations'] += 1
         
         # Remove NaN values for fitting
         clean_data = data.dropna()
@@ -73,54 +99,13 @@ class VectorBTScaler(BaseScaler):
         
         if VECTORBT_AVAILABLE:
             try:
-                # Use VectorBT scaling
-                if self.method == 'zscore':
-                    result = zscore(clean_data, **self.kwargs)
-                    self.scaling_params = {
-                        'mean': clean_data.mean(),
-                        'std': clean_data.std()
-                    }
-                elif self.method == 'minmax':
-                    result = scale(clean_data, method='minmax', **self.kwargs)
-                    self.scaling_params = {
-                        'min': clean_data.min(),
-                        'max': clean_data.max()
-                    }
-                elif self.method == 'robust':
-                    result = scale(clean_data, method='robust', **self.kwargs)
-                    median = clean_data.median()
-                    mad = (clean_data - median).abs().median()
-                    self.scaling_params = {
-                        'median': median,
-                        'mad': mad
-                    }
-                elif self.method == 'quantile':
-                    result = quantile(clean_data, **self.kwargs)
-                    self.scaling_params = {
-                        'quantiles': clean_data.quantile([0.25, 0.5, 0.75])
-                    }
-                elif self.method == 'winsorize':
-                    result = winsorize(clean_data, **self.kwargs)
-                    self.scaling_params = {
-                        'limits': self.kwargs.get('limits', (0.05, 0.05))
-                    }
-                elif self.method == 'rank':
-                    result = rank(clean_data, **self.kwargs)
-                    self.scaling_params = {
-                        'method': self.kwargs.get('method', 'average')
-                    }
-                elif self.method == 'clip':
-                    result = clip(clean_data, **self.kwargs)
-                    self.scaling_params = {
-                        'lower': self.kwargs.get('lower', None),
-                        'upper': self.kwargs.get('upper', None)
-                    }
-                else:
-                    raise ValueError(f"Unsupported scaling method: {self.method}")
+                # Use enhanced VectorBT scaling
+                result = self._apply_enhanced_vectorbt_scaling(clean_data)
                 
                 # Align result with original index
                 result = result.reindex(data.index)
                 self.fitted = True
+                self.performance_stats['vectorbt_operations'] += 1
                 self._log_success(f"✅ [VectorBTScaler] Fitted {self.method} scaler successfully")
                 
                 # Validate output
@@ -133,6 +118,151 @@ class VectorBTScaler(BaseScaler):
                 return self._fallback_fit_transform(data)
         else:
             return self._fallback_fit_transform(data)
+    
+    def _apply_enhanced_vectorbt_scaling(self, data: pd.Series) -> pd.Series:
+        """Apply enhanced VectorBT scaling with advanced methods."""
+        if self.method == 'zscore':
+            result = zscore(data, **self.kwargs)
+            self.scaling_params = {
+                'mean': data.mean(),
+                'std': data.std()
+            }
+        elif self.method == 'minmax':
+            result = scale(data, method='minmax', **self.kwargs)
+            self.scaling_params = {
+                'min': data.min(),
+                'max': data.max()
+            }
+        elif self.method == 'robust':
+            result = scale(data, method='robust', **self.kwargs)
+            median = data.median()
+            mad = (data - median).abs().median()
+            self.scaling_params = {
+                'median': median,
+                'mad': mad
+            }
+        elif self.method == 'quantile':
+            result = quantile(data, **self.kwargs)
+            self.scaling_params = {
+                'quantiles': data.quantile([0.25, 0.5, 0.75])
+            }
+        elif self.method == 'winsorize':
+            result = winsorize(data, **self.kwargs)
+            self.scaling_params = {
+                'limits': self.kwargs.get('limits', (0.05, 0.05))
+            }
+        elif self.method == 'rank':
+            result = rank(data, **self.kwargs)
+            self.scaling_params = {
+                'method': self.kwargs.get('method', 'average')
+            }
+        elif self.method == 'clip':
+            result = clip(data, **self.kwargs)
+            self.scaling_params = {
+                'lower': self.kwargs.get('lower', None),
+                'upper': self.kwargs.get('upper', None)
+            }
+        elif self.method == 'robust_zscore':
+            # Enhanced robust z-score using VectorBT
+            median = data.median()
+            mad = (data - median).abs().median()
+            result = (data - median) / (1.4826 * mad)  # 1.4826 is consistency factor for normal distribution
+            self.scaling_params = {
+                'median': median,
+                'mad': mad,
+                'consistency_factor': 1.4826
+            }
+        elif self.method == 'adaptive':
+            # Adaptive scaling based on data characteristics
+            skewness = data.skew()
+            kurtosis = data.kurtosis()
+            
+            if abs(skewness) > 2:  # Highly skewed data
+                result = quantile(data, **self.kwargs)
+                self.scaling_params = {
+                    'method_used': 'quantile',
+                    'reason': f'skewness={skewness:.3f}',
+                    'quantiles': data.quantile([0.25, 0.5, 0.75])
+                }
+            elif kurtosis > 3:  # Heavy-tailed data
+                result = scale(data, method='robust', **self.kwargs)
+                median = data.median()
+                mad = (data - median).abs().median()
+                self.scaling_params = {
+                    'method_used': 'robust',
+                    'reason': f'kurtosis={kurtosis:.3f}',
+                    'median': median,
+                    'mad': mad
+                }
+            else:  # Normal-like data
+                result = zscore(data, **self.kwargs)
+                self.scaling_params = {
+                    'method_used': 'zscore',
+                    'reason': f'normal-like: skewness={skewness:.3f}, kurtosis={kurtosis:.3f}',
+                    'mean': data.mean(),
+                    'std': data.std()
+                }
+            self.performance_stats['adaptive_scaling_decisions'] += 1
+        elif self.method == 'quantile_robust':
+            # Robust quantile scaling
+            q25, q75 = data.quantile([0.25, 0.75])
+            result = (data - q25) / (q75 - q25 + 1e-8)  # Add small epsilon to avoid division by zero
+            self.scaling_params = {
+                'q25': q25,
+                'q75': q75,
+                'iqr': q75 - q25
+            }
+        elif self.method == 'winsorize_adaptive':
+            # Adaptive winsorization based on data distribution
+            limits = self._calculate_adaptive_winsorize_limits(data)
+            result = winsorize(data, limits=limits, **self.kwargs)
+            self.scaling_params = {
+                'limits': limits,
+                'adaptive': True
+            }
+        else:
+            raise ValueError(f"Unsupported scaling method: {self.method}")
+        
+        return result
+    
+    def _calculate_adaptive_winsorize_limits(self, data: pd.Series) -> Tuple[float, float]:
+        """Calculate adaptive winsorization limits based on data distribution."""
+        # Use IQR-based limits for better outlier detection
+        q25, q75 = data.quantile([0.25, 0.75])
+        iqr = q75 - q25
+        
+        # Adaptive limits based on data spread
+        if iqr > 0:
+            # More aggressive winsorization for wide-spread data
+            lower_limit = max(0.01, min(0.1, 0.05 * (iqr / data.std())))
+            upper_limit = max(0.01, min(0.1, 0.05 * (iqr / data.std())))
+        else:
+            # Default limits for uniform data
+            lower_limit = 0.05
+            upper_limit = 0.05
+        
+        return (lower_limit, upper_limit)
+    
+    def _optimize_data_types(self, data: pd.Series) -> pd.Series:
+        """Optimize data types for memory efficiency."""
+        if self.memory_efficient and data.dtype == 'float64':
+            # Check if float32 is sufficient
+            if (data.min() >= np.finfo(np.float32).min and 
+                data.max() <= np.finfo(np.float32).max):
+                data = data.astype(np.float32)
+                self.performance_stats['memory_optimizations'] += 1
+        return data
+    
+    def _enable_gpu_processing(self, data: pd.Series) -> pd.Series:
+        """Enable GPU processing if available."""
+        if self.enable_gpu and CUPY_AVAILABLE:
+            try:
+                gpu_data = cp.asarray(data.values)
+                return pd.Series(gpu_data, index=data.index)
+            except Exception as e:
+                logger.warning(f"GPU processing failed: {e}")
+                return data
+        return data
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using fitted parameters."""
@@ -270,73 +400,179 @@ class VectorBTBatchScaler:
     VectorBT-optimized batch scaler for processing multiple features efficiently.
     
     This scaler can process multiple features simultaneously using VectorBT's
-    batch processing capabilities.
+    batch processing capabilities with enhanced optimization.
     """
     
-    def __init__(self, method: str = 'zscore', **kwargs):
+    def __init__(self, method: str = 'zscore', enable_gpu: bool = False, 
+                 memory_efficient: bool = True, enable_parallel: bool = True, **kwargs):
         """
-        Initialize VectorBT batch scaler.
+        Initialize VectorBT batch scaler with enhanced optimization.
         
         Args:
             method: Scaling method
+            enable_gpu: Enable GPU acceleration if available
+            memory_efficient: Enable memory optimization
+            enable_parallel: Enable parallel processing
             **kwargs: Additional parameters
         """
         self.method = method
         self.kwargs = kwargs
         self.scalers = {}
+        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.memory_efficient = memory_efficient
+        self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'parallel_operations': 0,
+            'total_operations': 0
+        }
         
         if not VECTORBT_AVAILABLE:
             logger.warning("VectorBT not available, using fallback batch scaler")
     
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Fit and transform multiple features using VectorBT batch processing."""
+        """Fit and transform multiple features using VectorBT batch processing with optimization."""
+        self.performance_stats['total_operations'] += 1
+        
         if not VECTORBT_AVAILABLE:
             return self._fallback_fit_transform(data)
         
+        # Optimize DataFrame for VectorBT processing
+        if self.memory_efficient:
+            data = self._optimize_dataframe_types(data)
+        
+        # Enable GPU processing if available
+        if self.enable_gpu:
+            data = self._enable_gpu_dataframe_processing(data)
+            self.performance_stats['gpu_operations'] += 1
+        
         try:
-            # Use VectorBT batch scaling
-            if self.method == 'zscore':
-                result = zscore(data, **self.kwargs)
-            elif self.method == 'minmax':
-                result = scale(data, method='minmax', **self.kwargs)
-            elif self.method == 'robust':
-                result = scale(data, method='robust', **self.kwargs)
-            elif self.method == 'quantile':
-                result = quantile(data, **self.kwargs)
-            elif self.method == 'winsorize':
-                result = winsorize(data, **self.kwargs)
-            elif self.method == 'rank':
-                result = rank(data, **self.kwargs)
-            elif self.method == 'clip':
-                result = clip(data, **self.kwargs)
-            else:
-                raise ValueError(f"Unsupported scaling method: {self.method}")
+            # Use enhanced VectorBT batch scaling
+            result = self._apply_enhanced_vectorbt_batch_scaling(data)
             
             # Store scaling parameters for each column
-            for col in data.columns:
-                if self.method == 'zscore':
-                    self.scalers[col] = {
-                        'mean': data[col].mean(),
-                        'std': data[col].std()
-                    }
-                elif self.method == 'minmax':
-                    self.scalers[col] = {
-                        'min': data[col].min(),
-                        'max': data[col].max()
-                    }
-                elif self.method == 'robust':
-                    median = data[col].median()
-                    mad = (data[col] - median).abs().median()
-                    self.scalers[col] = {
-                        'median': median,
-                        'mad': mad
-                    }
+            self._store_scaling_parameters(data)
+            
+            self.performance_stats['vectorbt_operations'] += 1
+            self.performance_stats['batch_operations'] += 1
             
             return result
             
         except Exception as e:
             logger.warning(f"VectorBT batch scaling failed: {e}, using fallback")
             return self._fallback_fit_transform(data)
+    
+    def _apply_enhanced_vectorbt_batch_scaling(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply enhanced VectorBT batch scaling with advanced methods."""
+        if self.method == 'zscore':
+            return zscore(data, **self.kwargs)
+        elif self.method == 'minmax':
+            return scale(data, method='minmax', **self.kwargs)
+        elif self.method == 'robust':
+            return scale(data, method='robust', **self.kwargs)
+        elif self.method == 'quantile':
+            return quantile(data, **self.kwargs)
+        elif self.method == 'winsorize':
+            return winsorize(data, **self.kwargs)
+        elif self.method == 'rank':
+            return rank(data, **self.kwargs)
+        elif self.method == 'clip':
+            return clip(data, **self.kwargs)
+        elif self.method == 'robust_zscore':
+            # Enhanced robust z-score for batch processing
+            median = data.median()
+            mad = (data - median).abs().median()
+            return (data - median) / (1.4826 * mad)
+        elif self.method == 'adaptive':
+            # Adaptive scaling for each column
+            result = data.copy()
+            for col in data.columns:
+                col_data = data[col].dropna()
+                if len(col_data) > 0:
+                    skewness = col_data.skew()
+                    kurtosis = col_data.kurtosis()
+                    
+                    if abs(skewness) > 2:  # Highly skewed
+                        result[col] = quantile(col_data, **self.kwargs)
+                    elif kurtosis > 3:  # Heavy-tailed
+                        result[col] = scale(col_data, method='robust', **self.kwargs)
+                    else:  # Normal-like
+                        result[col] = zscore(col_data, **self.kwargs)
+            return result
+        elif self.method == 'quantile_robust':
+            # Robust quantile scaling for batch processing
+            q25 = data.quantile(0.25)
+            q75 = data.quantile(0.75)
+            return (data - q25) / (q75 - q25 + 1e-8)
+        else:
+            raise ValueError(f"Unsupported scaling method: {self.method}")
+    
+    def _store_scaling_parameters(self, data: pd.DataFrame) -> None:
+        """Store scaling parameters for each column."""
+        for col in data.columns:
+            if self.method == 'zscore':
+                self.scalers[col] = {
+                    'mean': data[col].mean(),
+                    'std': data[col].std()
+                }
+            elif self.method == 'minmax':
+                self.scalers[col] = {
+                    'min': data[col].min(),
+                    'max': data[col].max()
+                }
+            elif self.method == 'robust':
+                median = data[col].median()
+                mad = (data[col] - median).abs().median()
+                self.scalers[col] = {
+                    'median': median,
+                    'mad': mad
+                }
+            elif self.method == 'robust_zscore':
+                median = data[col].median()
+                mad = (data[col] - median).abs().median()
+                self.scalers[col] = {
+                    'median': median,
+                    'mad': mad,
+                    'consistency_factor': 1.4826
+                }
+            elif self.method == 'quantile_robust':
+                q25, q75 = data[col].quantile([0.25, 0.75])
+                self.scalers[col] = {
+                    'q25': q25,
+                    'q75': q75,
+                    'iqr': q75 - q25
+                }
+    
+    def _optimize_dataframe_types(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame types for memory efficiency."""
+        if self.memory_efficient:
+            optimized_data = data.copy()
+            for column in optimized_data.columns:
+                if optimized_data[column].dtype == 'float64':
+                    if (optimized_data[column].min() >= np.finfo(np.float32).min and 
+                        optimized_data[column].max() <= np.finfo(np.float32).max):
+                        optimized_data[column] = optimized_data[column].astype(np.float32)
+                        self.performance_stats['memory_optimizations'] += 1
+            return optimized_data
+        return data
+    
+    def _enable_gpu_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Enable GPU DataFrame processing if available."""
+        if self.enable_gpu and CUPY_AVAILABLE:
+            try:
+                gpu_data = {}
+                for column in data.columns:
+                    gpu_data[column] = cp.asarray(data[column].values)
+                return pd.DataFrame(gpu_data, index=data.index)
+            except Exception as e:
+                logger.warning(f"GPU DataFrame processing failed: {e}")
+                return data
+        return data
     
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Transform new data using fitted parameters."""
@@ -455,7 +691,8 @@ def create_vectorbt_batch_scaler(method: str = 'zscore', **kwargs) -> VectorBTBa
 # Available scaling methods
 VECTORBT_SCALING_METHODS = [
     'zscore', 'minmax', 'robust', 'quantile', 
-    'winsorize', 'rank', 'clip'
+    'winsorize', 'rank', 'clip', 'robust_zscore', 
+    'adaptive', 'quantile_robust', 'winsorize_adaptive'
 ] if VECTORBT_AVAILABLE else []
 
 
@@ -465,3 +702,23 @@ def get_available_scaling_methods() -> List[str]:
         return VECTORBT_SCALING_METHODS
     else:
         return ['zscore', 'minmax', 'robust']  # Fallback methods
+
+
+def get_performance_stats(scaler) -> Dict[str, Any]:
+    """Get performance statistics from a scaler."""
+    if hasattr(scaler, 'performance_stats'):
+        return scaler.performance_stats.copy()
+    return {}
+
+
+def reset_performance_stats(scaler) -> None:
+    """Reset performance statistics for a scaler."""
+    if hasattr(scaler, 'performance_stats'):
+        scaler.performance_stats = {
+            'vectorbt_operations': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'adaptive_scaling_decisions': 0,
+            'total_operations': 0
+        }

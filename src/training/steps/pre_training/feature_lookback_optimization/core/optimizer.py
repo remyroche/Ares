@@ -251,11 +251,19 @@ class CoreOptimizer:
             'best_scores': []
         }
         
+        # Thread safety for caching
+        import threading
+        self._cache_lock = threading.RLock()
+        self.max_cache_size = 50000  # Prevent memory leaks
+        
         # Feature calculation cache with LRU tracking using OrderedDict for O(1) operations
         self.feature_cache = OrderedDict()
         self.cache_hits = 0
         self.cache_misses = 0
-        self.max_cache_size = 1000  # Maximum number of cached features
+        
+        # Memory monitoring for cache management
+        self._last_cache_cleanup = 0
+        self._cache_cleanup_interval = 1000  # Cleanup every 1000 operations
 
         # Track lag metadata for generated features
         self.feature_lag_metadata: Dict[str, Dict[int, Dict[str, Any]]] = {}
@@ -3529,38 +3537,60 @@ class CoreOptimizer:
             return f"{feature_name}_{horizon}"
 
     def _cached_feature_calculation(self, data: pd.DataFrame, feature_name: str, horizon: int) -> Optional[np.ndarray]:
-        """Calculate feature with caching to avoid recomputation using LRU eviction.
+        """Calculate feature with thread-safe caching to avoid recomputation using LRU eviction.
         
-        Uses OrderedDict for efficient O(1) LRU operations:
+        Uses OrderedDict with thread safety for efficient O(1) LRU operations:
         - Cache hit: O(1) move_to_end
         - Cache miss with eviction: O(1) popitem(last=False)
         - Memory: ~50k entries * ~10KB = ~500MB max
+        - Thread-safe: Uses locks to prevent race conditions
         """
         cache_key = self._get_data_hash(data, feature_name, horizon)
         
-        if cache_key in self.feature_cache:
-            self.cache_hits += 1
-            # Move to end = most recently used (O(1) operation in OrderedDict)
-            self.feature_cache.move_to_end(cache_key)
-            return self.feature_cache[cache_key]
+        # Thread-safe cache access
+        with getattr(self, '_cache_lock', type('MockLock', (), {'__enter__': lambda self: None, '__exit__': lambda self, *args: None})()):
+            if cache_key in self.feature_cache:
+                self.cache_hits += 1
+                # Move to end = most recently used (O(1) operation in OrderedDict)
+                self.feature_cache.move_to_end(cache_key)
+                return self.feature_cache[cache_key]
         
         # Calculate feature
         feature_values = self._calculate_feature_for_lookback(data, feature_name, horizon)
         
-        # Add to cache (at end = most recently used)
-        self.feature_cache[cache_key] = feature_values
+        # Thread-safe cache update
+        with getattr(self, '_cache_lock', type('MockLock', (), {'__enter__': lambda self: None, '__exit__': lambda self, *args: None})()):
+            # Add to cache (at end = most recently used)
+            self.feature_cache[cache_key] = feature_values
+            self.cache_misses += 1
+            
+            # Enforce cache size limit to prevent memory leaks
+            if len(self.feature_cache) > self.max_cache_size:
+                # Remove oldest entry (first item)
+                self.feature_cache.popitem(last=False)
         
-        # Evict old entries if cache is too large
-        self._evict_cache_if_needed()
+        # Periodic cache cleanup
+        self._cleanup_cache_if_needed()
         
-        # Check memory pressure and cleanup if needed
-        if self.memory_monitor.should_cleanup():
-            cleanup_results = self.memory_monitor.perform_cleanup([self])
-            if cleanup_results['success']:
-                tprint_debug(f"🧹 Memory cleanup: {cleanup_results['memory_freed_mb']:.1f}MB freed")
-        
-        self.cache_misses += 1
         return feature_values
+    
+    def _cleanup_cache_if_needed(self):
+        """Clean up cache if it exceeds size limits or memory pressure is high."""
+        total_operations = self.cache_hits + self.cache_misses
+        
+        # Periodic cleanup
+        if total_operations - self._last_cache_cleanup > self._cache_cleanup_interval:
+            self._last_cache_cleanup = total_operations
+            
+            # Remove oldest entries if cache is too large
+            while len(self.feature_cache) > self.max_cache_size:
+                self.feature_cache.popitem(last=False)
+            
+            # Force garbage collection if memory pressure is high
+            if hasattr(self, 'memory_monitor') and self.memory_monitor.should_cleanup():
+                import gc
+                gc.collect()
+                self.logger.debug(f"🧹 Cache cleanup: {len(self.feature_cache)} entries remaining")
 
     def _vectorized_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
         """Calculate mutual information for multiple feature-return pairs using vectorized operations with GPU acceleration."""
@@ -3604,8 +3634,8 @@ class CoreOptimizer:
                 for corr in mi_scores:
                     if abs(corr) < 0.999:
                         try:
-                            mi_approx = 0.5 * np.log(1 - corr**2) if corr**2 < 1 else 0.0
-                            mi_approximations.append(max(0.0, -mi_approx))
+                            mi_approx = -0.5 * np.log(1 - corr**2) if corr**2 < 1 else 0.0
+                            mi_approximations.append(max(0.0, mi_approx))
                         except (ValueError, OverflowError):
                             mi_approximations.append(0.0)
                     else:
@@ -3621,33 +3651,75 @@ class CoreOptimizer:
             return self._cpu_vectorized_mi_calculation(features_list, returns_list)
 
     def _cpu_vectorized_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
-        """CPU vectorized MI calculation."""
-        mi_scores = []
-        for features, returns in zip(features_list, returns_list):
-            # Align arrays
-            min_length = min(len(features), len(returns))
-            if min_length < 10:
-                mi_scores.append(0.0)
-                continue
-            
-            # Use safe_correlation from math_validation for robust calculation
-            aligned_features = features[:min_length]
-            aligned_returns = returns[:min_length]
-            
-            # Calculate correlation using safe_correlation
-            correlation = safe_correlation(aligned_features, aligned_returns)
-            
-            # Convert correlation to MI approximation: MI ≈ 0.5 * log(1 - corr²)
-            if abs(correlation) < 0.999:  # Avoid log(0)
-                try:
-                    mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
-                    mi_scores.append(max(0.0, -mi_approx))  # Ensure positive
-                except (ValueError, OverflowError):
-                    mi_scores.append(0.0)
-            else:
-                mi_scores.append(0.0)
+        """CPU vectorized MI calculation using true vectorization."""
+        if not features_list or not returns_list:
+            return []
         
-        return mi_scores
+        # Pre-allocate result array
+        n_pairs = len(features_list)
+        mi_scores = np.zeros(n_pairs, dtype=float)
+        
+        # Find minimum length across all pairs for efficient processing
+        min_lengths = np.array([min(len(f), len(r)) for f, r in zip(features_list, returns_list)])
+        valid_pairs = min_lengths >= 10
+        
+        if not np.any(valid_pairs):
+            return [0.0] * n_pairs
+        
+        # Process valid pairs in batches
+        valid_indices = np.where(valid_pairs)[0]
+        
+        for batch_start in range(0, len(valid_indices), 100):  # Process in batches of 100
+            batch_end = min(batch_start + 100, len(valid_indices))
+            batch_indices = valid_indices[batch_start:batch_end]
+            
+            # Align all arrays in the batch to the same length
+            batch_min_length = np.min(min_lengths[batch_indices])
+            
+            # Create aligned arrays for batch processing
+            aligned_features = np.zeros((len(batch_indices), batch_min_length), dtype=float)
+            aligned_returns = np.zeros((len(batch_indices), batch_min_length), dtype=float)
+            
+            for i, idx in enumerate(batch_indices):
+                aligned_features[i] = features_list[idx][:batch_min_length]
+                aligned_returns[i] = returns_list[idx][:batch_min_length]
+            
+            # Vectorized correlation calculation
+            try:
+                # Calculate correlations for all pairs in the batch
+                correlations = np.array([
+                    safe_correlation(aligned_features[i], aligned_returns[i]) 
+                    for i in range(len(batch_indices))
+                ])
+                
+                # Vectorized MI approximation: MI ≈ -0.5 * log(1 - corr²)
+                valid_corrs = np.abs(correlations) < 0.999
+                mi_approximations = np.zeros_like(correlations)
+                
+                # Only calculate MI for valid correlations
+                if np.any(valid_corrs):
+                    corr_squared = correlations[valid_corrs] ** 2
+                    mi_approximations[valid_corrs] = -0.5 * np.log(1 - corr_squared)
+                    mi_approximations[valid_corrs] = np.maximum(0.0, mi_approximations[valid_corrs])
+                
+                # Store results
+                for i, idx in enumerate(batch_indices):
+                    mi_scores[idx] = mi_approximations[i]
+                    
+            except (ValueError, OverflowError) as e:
+                # Fallback to individual calculation for this batch
+                for i, idx in enumerate(batch_indices):
+                    try:
+                        correlation = safe_correlation(aligned_features[i], aligned_returns[i])
+                        if abs(correlation) < 0.999:
+                            mi_approx = -0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                            mi_scores[idx] = max(0.0, mi_approx)
+                        else:
+                            mi_scores[idx] = 0.0
+                    except (ValueError, OverflowError):
+                        mi_scores[idx] = 0.0
+        
+        return mi_scores.tolist()
 
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage by converting data types."""
@@ -3808,10 +3880,12 @@ class CoreOptimizer:
         # tprint_debug("🧠 Entering _get_shared_forward_returns_matrix")  # Commented out for reduced verbosity
         data_hash = self._get_data_hash(data, f"shared_returns_{target_column}", max_horizon)
 
+        # Check if we can reuse existing cache
         if (
             self.shared_forward_returns_hash == data_hash and
             isinstance(self.shared_forward_returns, dict) and
             target_column in self.shared_forward_returns and
+            len(self.shared_forward_returns[target_column]) > 0 and
             max(self.shared_forward_returns[target_column].keys(), default=0) >= max_horizon
         ):
             self.logger.info(f"♻️ Reusing cached multi-horizon opportunity matrix for '{target_column}'")
@@ -3821,12 +3895,21 @@ class CoreOptimizer:
             f"🔄 Building multi-horizon opportunity matrices up to horizon {max_horizon} for target '{target_column}'"
         )
 
+        # Initialize cache if needed
+        if not isinstance(self.shared_forward_returns, dict):
+            self.shared_forward_returns = {}
+        
         matrices = self._precompute_forward_returns_matrix(data, target_column, max_horizon)
-        self.shared_forward_returns = matrices
+        
+        # Store in cache with proper structure
+        if target_column not in self.shared_forward_returns:
+            self.shared_forward_returns[target_column] = {}
+        
+        self.shared_forward_returns[target_column] = matrices.get(target_column, {})
         self.shared_forward_returns_hash = data_hash
 
-        if target_column in matrices:
-            return matrices[target_column]
+        if target_column in self.shared_forward_returns and self.shared_forward_returns[target_column]:
+            return self.shared_forward_returns[target_column]
 
         # Fallback: create a direct matrix from the target column if available
         if target_column in data.columns:
@@ -4188,7 +4271,8 @@ class CoreOptimizer:
         """
         tprint_debug("🧠 Entering _create_time_split")
         train_end_idx = int(data_length * train_ratio)
-        return train_end_idx, train_end_idx
+        val_start_idx = train_end_idx + 1  # FIXED: Add 1 to avoid overlap
+        return train_end_idx, val_start_idx
 
     def _generate_coarse_horizons(self, min_horizon: int = 1, max_horizon: int = 200) -> List[int]:
         """
@@ -4521,7 +4605,7 @@ class CoreOptimizer:
     def _vectorized_feature_generation(self, data: pd.DataFrame, feature_name: str,
                                      horizons: List[int]) -> Dict[int, np.ndarray]:
         """
-        Vectorized feature generation for multiple horizons using numpy operations.
+        Truly vectorized feature generation for multiple horizons using numpy operations.
 
         Args:
             data: Input data
@@ -4537,63 +4621,110 @@ class CoreOptimizer:
                 return {}
             
             close_prices = data['close'].values
+            n_samples = len(close_prices)
             
-            # Generate features for all horizons at once using numpy broadcasting
+            # Filter valid horizons
+            valid_horizons = [h for h in horizons if 0 < h < n_samples]
+            if not valid_horizons:
+                return {}
+            
+            # Pre-allocate results dictionary
             results = {}
             
-            for horizon in horizons:
-                if horizon <= 0 or horizon >= len(close_prices):
-                    continue
-
-                # Vectorized feature generation based on feature type
-                if 'returns' in feature_name.lower():
-                    # Simple returns: (price[t] - price[t-horizon]) / price[t-horizon]
-                    shifted_prices = np.roll(close_prices, horizon)
-                    returns = (close_prices - shifted_prices) / np.maximum(shifted_prices, 1e-8)
-                    returns[:horizon] = np.nan  # Remove invalid values
-                    lagged = self._apply_minimum_lag(returns)
+            # Vectorized feature generation based on feature type
+            if 'returns' in feature_name.lower():
+                # Vectorized returns calculation for all horizons at once
+                max_horizon = max(valid_horizons)
+                
+                # Create shifted price matrix: shape (n_horizons, n_samples)
+                horizon_array = np.array(valid_horizons)[:, np.newaxis]  # Shape: (n_horizons, 1)
+                indices = np.arange(n_samples)[np.newaxis, :]  # Shape: (1, n_samples)
+                shift_indices = indices - horizon_array  # Broadcasting: (n_horizons, n_samples)
+                
+                # Handle negative indices (before start of data)
+                valid_mask = shift_indices >= 0
+                shift_indices = np.maximum(shift_indices, 0)
+                
+                # Get shifted prices using advanced indexing
+                shifted_prices = close_prices[shift_indices]
+                current_prices = np.tile(close_prices, (len(valid_horizons), 1))
+                
+                # Calculate returns: (current - shifted) / shifted
+                returns = (current_prices - shifted_prices) / np.maximum(shifted_prices, 1e-8)
+                
+                # Set invalid values to NaN
+                returns[~valid_mask] = np.nan
+                
+                # Apply minimum lag and store results
+                for i, horizon in enumerate(valid_horizons):
+                    lagged = self._apply_minimum_lag(returns[i])
                     self._assert_lag_requirements(feature_name, horizon, lagged)
                     results[horizon] = lagged
 
-                elif 'momentum' in feature_name.lower():
-                    # Momentum: price[t] - price[t-horizon]
-                    shifted_prices = np.roll(close_prices, horizon)
-                    momentum = close_prices - shifted_prices
-                    momentum[:horizon] = np.nan
-                    lagged = self._apply_minimum_lag(momentum)
+            elif 'momentum' in feature_name.lower():
+                # Vectorized momentum calculation for all horizons at once
+                max_horizon = max(valid_horizons)
+                
+                # Create shifted price matrix
+                horizon_array = np.array(valid_horizons)[:, np.newaxis]
+                indices = np.arange(n_samples)[np.newaxis, :]
+                shift_indices = indices - horizon_array
+                
+                valid_mask = shift_indices >= 0
+                shift_indices = np.maximum(shift_indices, 0)
+                
+                shifted_prices = close_prices[shift_indices]
+                current_prices = np.tile(close_prices, (len(valid_horizons), 1))
+                
+                # Calculate momentum: current - shifted
+                momentum = current_prices - shifted_prices
+                momentum[~valid_mask] = np.nan
+                
+                # Apply minimum lag and store results
+                for i, horizon in enumerate(valid_horizons):
+                    lagged = self._apply_minimum_lag(momentum[i])
                     self._assert_lag_requirements(feature_name, horizon, lagged)
                     results[horizon] = lagged
 
-                elif 'sma' in feature_name.lower() or 'moving_average' in feature_name.lower():
-                    # Simple Moving Average - Vectorized
-                    if horizon <= len(close_prices):
-                        sma = pd.Series(close_prices).rolling(window=horizon, min_periods=horizon).mean().values
-                        lagged = self._apply_minimum_lag(sma)
-                        self._assert_lag_requirements(feature_name, horizon, lagged)
-                        results[horizon] = lagged
+            elif 'sma' in feature_name.lower() or 'moving_average' in feature_name.lower():
+                # Vectorized SMA calculation using pandas rolling
+                close_series = pd.Series(close_prices)
+                
+                for horizon in valid_horizons:
+                    sma = close_series.rolling(window=horizon, min_periods=horizon).mean().values
+                    lagged = self._apply_minimum_lag(sma)
+                    self._assert_lag_requirements(feature_name, horizon, lagged)
+                    results[horizon] = lagged
 
-                elif 'ema' in feature_name.lower() or 'exponential' in feature_name.lower():
-                    # Exponential Moving Average - Vectorized
+            elif 'ema' in feature_name.lower() or 'exponential' in feature_name.lower():
+                # Vectorized EMA calculation
+                close_series = pd.Series(close_prices)
+                
+                for horizon in valid_horizons:
                     alpha = 2.0 / (horizon + 1)
-                    ema = pd.Series(close_prices).ewm(alpha=alpha, adjust=False).mean().values
+                    ema = close_series.ewm(alpha=alpha, adjust=False).mean().values
                     lagged = self._apply_minimum_lag(ema)
                     self._assert_lag_requirements(feature_name, horizon, lagged)
                     results[horizon] = lagged
 
-                elif 'volatility' in feature_name.lower():
-                    # Rolling volatility (standard deviation of returns) - Vectorized
-                    if horizon < len(close_prices):
-                        returns = np.diff(close_prices) / close_prices[:-1]
-                        volatility = pd.Series(returns).rolling(window=horizon, min_periods=horizon).std().values
+            elif 'volatility' in feature_name.lower():
+                # Vectorized volatility calculation
+                returns = np.diff(close_prices) / close_prices[:-1]
+                returns_series = pd.Series(returns)
+                
+                for horizon in valid_horizons:
+                    if horizon < len(returns):
+                        volatility = returns_series.rolling(window=horizon, min_periods=horizon).std().values
                         # Pad with NaN to match original length
-                        volatility_padded = np.full(len(close_prices), np.nan)
+                        volatility_padded = np.full(n_samples, np.nan)
                         volatility_padded[1:len(volatility)+1] = volatility
                         lagged = self._apply_minimum_lag(volatility_padded)
                         self._assert_lag_requirements(feature_name, horizon, lagged)
                         results[horizon] = lagged
 
-                else:
-                    # Fallback to individual calculation
+            else:
+                # Fallback to individual calculation for complex features
+                for horizon in valid_horizons:
                     try:
                         feature_values = self._cached_feature_calculation(data, feature_name, horizon)
                         if feature_values is not None:

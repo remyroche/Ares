@@ -81,17 +81,17 @@ class StandardizedErrorHandler:
         context: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
-        Handle errors with fast failing - immediately raise exceptions.
+        Handle errors with configurable behavior.
 
         Args:
             error: The exception that occurred
             operation: Name of the operation that failed
-            return_value: Ignored - exceptions are always raised
+            return_value: Value to return if reraise=False
             reraise: Whether to re-raise the exception (default: True for fast failing)
             context: Additional context information
 
-        Raises:
-            Exception: Always re-raises the original error for fast failing
+        Returns:
+            return_value if reraise=False, otherwise raises the error
         """
         try:
             # Create error details
@@ -111,17 +111,17 @@ class StandardizedErrorHandler:
             if len(self.recent_errors) > 100:  # Keep only recent errors
                 self.recent_errors = self.recent_errors[-100:]
 
-            # Fast failing: always re-raise the original error
+            # Respect the reraise parameter
             if reraise:
                 raise error
-
-            # If reraise is False, still raise the error (fast failing behavior)
-            raise error
+            else:
+                tprint_warning(f"⚠️ Error suppressed in {operation}, returning fallback value")
+                return return_value
 
         except Exception as e:
             self.logger.critical(f"Error handler failed: {e}")
             tprint_error(f"🚨 Error handler itself failed: {e}")
-            # Always re-raise for fast failing behavior
+            # Always re-raise the original error if handler fails
             raise error
 
     def handle_warning(self, warning_msg: str, operation: str, context: Optional[Dict[str, Any]] = None):

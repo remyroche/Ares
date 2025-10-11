@@ -1088,16 +1088,27 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     timeframe = ctx.get('timeframe')
                     tprint_debug(f"   → From execution context: {symbol}, {exchange}, {timeframe}")
             
-            # Fallback to config
+            # Fallback to config with validation
             if not symbol:
                 symbol = getattr(self.config, 'symbol', 'ETHUSDT') if hasattr(self, 'config') else 'ETHUSDT'
+                tprint_warning(f"⚠️ No symbol provided, using fallback: {symbol}")
                 tprint_debug(f"   → Symbol from config: {symbol}")
             if not exchange:
                 exchange = getattr(self.config, 'exchange', 'binance') if hasattr(self, 'config') else 'binance'
+                tprint_warning(f"⚠️ No exchange provided, using fallback: {exchange}")
                 tprint_debug(f"   → Exchange from config: {exchange}")
             if not timeframe:
                 timeframe = getattr(self.config, 'timeframe', '15m') if hasattr(self, 'config') else '15m'
+                tprint_warning(f"⚠️ No timeframe provided, using fallback: {timeframe}")
                 tprint_debug(f"   → Timeframe from config: {timeframe}")
+            
+            # Validate fallback parameters
+            if not symbol or symbol == 'UNKNOWN':
+                raise ValueError("❌ Invalid symbol: Cannot proceed with unknown or empty symbol")
+            if not exchange or exchange == 'UNKNOWN':
+                raise ValueError("❌ Invalid exchange: Cannot proceed with unknown or empty exchange")
+            if not timeframe or timeframe == 'UNKNOWN':
+                raise ValueError("❌ Invalid timeframe: Cannot proceed with unknown or empty timeframe")
             
             tprint_info(f"📊 [FEATURE_OPTIMIZER] Configuration resolved:")
             tprint_info(f"   → Symbol: {symbol}")

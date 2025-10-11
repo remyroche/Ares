@@ -129,31 +129,37 @@ class VectorBTOptimizationMixin:
     
     def _execute_vectorbt_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Execute VectorBT operation."""
+        """Execute VectorBT operation using native functions."""
         if operation == 'mean':
-            return rolling_mean(data, window=window, **kwargs)
+            return vbt.rolling_mean(data, window=window, **kwargs)
         elif operation == 'std':
-            return rolling_std(data, window=window, **kwargs)
+            return vbt.rolling_std(data, window=window, **kwargs)
         elif operation == 'var':
-            return rolling_var(data, window=window, **kwargs)
+            return vbt.rolling_var(data, window=window, **kwargs)
         elif operation == 'min':
-            return rolling_min(data, window=window, **kwargs)
+            return vbt.rolling_min(data, window=window, **kwargs)
         elif operation == 'max':
-            return rolling_max(data, window=window, **kwargs)
+            return vbt.rolling_max(data, window=window, **kwargs)
         elif operation == 'sum':
-            return rolling_sum(data, window=window, **kwargs)
+            return vbt.rolling_sum(data, window=window, **kwargs)
         elif operation == 'corr':
             other = kwargs.get('other')
             if other is not None:
-                return rolling_corr(data, other, window=window, **kwargs)
+                return vbt.rolling_corr(data, other, window=window, **kwargs)
             else:
                 raise ValueError("Correlation operation requires 'other' parameter")
         elif operation == 'cov':
             other = kwargs.get('other')
             if other is not None:
-                return rolling_cov(data, other, window=window, **kwargs)
+                return vbt.rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError("Covariance operation requires 'other' parameter")
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            if func is not None:
+                return vbt.rolling_apply(data, func, window=window, **kwargs)
+            else:
+                raise ValueError("Apply operation requires 'func' parameter")
         else:
             raise ValueError(f"Unsupported VectorBT operation: {operation}")
     
@@ -231,61 +237,89 @@ class VectorBTOptimizationMixin:
             raise ValueError(f"Unsupported technical indicator: {indicator}")
     
     def _calculate_rsi_vectorbt(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate RSI using VectorBT."""
-        close = data['close']
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        
-        avg_gain = rolling_mean(gain, window=window)
-        avg_loss = rolling_mean(loss, window=window)
-        
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
+        """Calculate RSI using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native RSI calculation
+            rsi_result = vbt.RSI.run(data['close'], window=window)
+            return rsi_result.rsi
+        except Exception as e:
+            self.logger.warning(f"VectorBT RSI failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            delta = close.diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            
+            avg_gain = vbt.rolling_mean(gain, window=window)
+            avg_loss = vbt.rolling_mean(loss, window=window)
+            
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
     
     def _calculate_macd_vectorbt(self, data: pd.DataFrame, 
                                fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD using VectorBT."""
-        close = data['close']
-        
-        ema_fast = close.ewm(span=fast).mean()
-        ema_slow = close.ewm(span=slow).mean()
-        
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
-        
-        return macd_line - signal_line
+        """Calculate MACD using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native MACD calculation
+            macd_result = vbt.MACD.run(data['close'], fast=fast, slow=slow, signal=signal)
+            return macd_result.macd
+        except Exception as e:
+            self.logger.warning(f"VectorBT MACD failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            
+            ema_fast = close.ewm(span=fast).mean()
+            ema_slow = close.ewm(span=slow).mean()
+            
+            macd_line = ema_fast - ema_slow
+            signal_line = macd_line.ewm(span=signal).mean()
+            
+            return macd_line - signal_line
     
     def _calculate_bollinger_bands_vectorbt(self, data: pd.DataFrame, 
                                           window: int = 20, std_dev: float = 2.0) -> pd.Series:
-        """Calculate Bollinger Bands using VectorBT."""
-        close = data['close']
-        
-        sma = rolling_mean(close, window=window)
-        std = rolling_std(close, window=window)
-        
-        upper_band = sma + (std * std_dev)
-        lower_band = sma - (std * std_dev)
-        
-        # Return the middle band (SMA) as the main feature
-        return sma
+        """Calculate Bollinger Bands using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native Bollinger Bands calculation
+            bb_result = vbt.BBANDS.run(data['close'], window=window, alpha=std_dev)
+            return bb_result.middle
+        except Exception as e:
+            self.logger.warning(f"VectorBT Bollinger Bands failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            
+            sma = vbt.rolling_mean(close, window=window)
+            std = vbt.rolling_std(close, window=window)
+            
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
+            
+            # Return the middle band (SMA) as the main feature
+            return sma
     
     def _calculate_atr_vectorbt(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using VectorBT."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = rolling_mean(true_range, window=window)
-        
-        return atr
+        """Calculate ATR using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native ATR calculation
+            atr_result = vbt.ATR.run(data['high'], data['low'], data['close'], window=window)
+            return atr_result.atr
+        except Exception as e:
+            self.logger.warning(f"VectorBT ATR failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = vbt.rolling_mean(true_range, window=window)
+            
+            return atr
     
     def _vectorbt_batch_operations(self, data: pd.DataFrame, 
                                  operations: List[Dict[str, Any]]) -> pd.DataFrame:

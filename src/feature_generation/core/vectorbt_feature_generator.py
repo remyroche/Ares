@@ -86,16 +86,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         # Cache for computed features
         self._feature_cache = {}
         self._cache_enabled = True
+        
+        # Memory optimization
+        self._memory_usage = 0
+        self._max_memory_usage = 0
     
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
         if not VECTORBT_AVAILABLE:
             return
         
-        # Configure VectorBT settings
+        # Configure VectorBT settings for optimal memory usage
         vbt.settings.setting('array_wrapper', 'pandas')
         vbt.settings.setting('caching', True)
         vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
+        
+        # Memory optimization settings
+        vbt.settings.setting('memory_limit', self.vectorbt_memory_limit_gb * 1024**3)  # Convert GB to bytes
+        vbt.settings.setting('chunk_size', 10000)  # Process data in chunks for memory efficiency
         
         if self.enable_gpu:
             try:
@@ -108,6 +116,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         if self.enable_parallel:
             try:
                 vbt.settings.setting('use_parallel', True)
+                vbt.settings.setting('n_threads', min(8, os.cpu_count()))  # Limit threads for memory efficiency
                 logger.info("✅ VectorBT parallel processing enabled")
             except Exception as e:
                 logger.warning(f"⚠️ Parallel processing not available: {e}")
@@ -116,7 +125,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
         """
-        Perform rolling operation using pandas (VectorBT optimized).
+        Perform rolling operation using VectorBT native functions for maximum performance.
         
         Args:
             data: Input data series
@@ -130,33 +139,34 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         self.vectorbt_stats['vectorbt_operations'] += 1
         
         try:
+            # Use VectorBT native rolling functions for better performance
             if operation == 'mean':
-                return data.rolling(window=window, **kwargs).mean()
+                return vbt.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return data.rolling(window=window, **kwargs).std()
+                return vbt.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return data.rolling(window=window, **kwargs).var()
+                return vbt.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return data.rolling(window=window, **kwargs).min()
+                return vbt.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return data.rolling(window=window, **kwargs).max()
+                return vbt.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return data.rolling(window=window, **kwargs).sum()
+                return vbt.rolling_sum(data, window=window, **kwargs)
             elif operation == 'corr':
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for correlation")
-                return data.rolling(window=window, **kwargs).corr(other)
+                return vbt.rolling_corr(data, other, window=window, **kwargs)
             elif operation == 'cov':
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for covariance")
-                return data.rolling(window=window, **kwargs).cov(other)
+                return vbt.rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         
         except Exception as e:
-            logger.warning(f"Rolling operation failed: {e}, using fallback")
+            logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
     
     def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
@@ -237,7 +247,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     
     def _vectorbt_technical_indicator(self, data: pd.DataFrame, indicator: str, **kwargs) -> pd.Series:
         """
-        Calculate technical indicator using VectorBT.
+        Calculate technical indicator using VectorBT native implementations for maximum performance.
         
         Args:
             data: OHLCV data
@@ -253,44 +263,61 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         self.vectorbt_stats['vectorbt_operations'] += 1
         
         try:
+            # Use VectorBT native indicator implementations
             if indicator == 'rsi':
-                return RSI.run(data['close'], **kwargs).rsi
+                return vbt.RSI.run(data['close'], **kwargs).rsi
             elif indicator == 'macd':
-                macd_result = MACD.run(data['close'], **kwargs)
+                macd_result = vbt.MACD.run(data['close'], **kwargs)
                 return macd_result.macd
             elif indicator == 'macd_signal':
-                macd_result = MACD.run(data['close'], **kwargs)
+                macd_result = vbt.MACD.run(data['close'], **kwargs)
                 return macd_result.signal
             elif indicator == 'macd_histogram':
-                macd_result = MACD.run(data['close'], **kwargs)
+                macd_result = vbt.MACD.run(data['close'], **kwargs)
                 return macd_result.histogram
             elif indicator == 'atr':
-                return ATR.run(data['high'], data['low'], data['close'], **kwargs).atr
+                return vbt.ATR.run(data['high'], data['low'], data['close'], **kwargs).atr
             elif indicator == 'bbands_upper':
-                bb_result = BBANDS.run(data['close'], **kwargs)
+                bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.upper
             elif indicator == 'bbands_middle':
-                bb_result = BBANDS.run(data['close'], **kwargs)
+                bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.middle
             elif indicator == 'bbands_lower':
-                bb_result = BBANDS.run(data['close'], **kwargs)
+                bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.lower
             elif indicator == 'bbands_width':
-                bb_result = BBANDS.run(data['close'], **kwargs)
+                bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.width
             elif indicator == 'bbands_percent':
-                bb_result = BBANDS.run(data['close'], **kwargs)
+                bb_result = vbt.BBANDS.run(data['close'], **kwargs)
                 return bb_result.percent
             elif indicator == 'stoch_k':
-                stoch_result = STOCH.run(data['high'], data['low'], data['close'], **kwargs)
+                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], **kwargs)
                 return stoch_result.stoch_k
             elif indicator == 'stoch_d':
-                stoch_result = STOCH.run(data['high'], data['low'], data['close'], **kwargs)
+                stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], **kwargs)
                 return stoch_result.stoch_d
             elif indicator == 'obv':
-                return OBV.run(data['close'], data['volume'], **kwargs).obv
+                return vbt.OBV.run(data['close'], data['volume'], **kwargs).obv
             elif indicator == 'sma':
-                return MA.run(data['close'], **kwargs).ma
+                return vbt.MA.run(data['close'], **kwargs).ma
+            elif indicator == 'ema':
+                return vbt.EMA.run(data['close'], **kwargs).ema
+            elif indicator == 'wma':
+                return vbt.WMA.run(data['close'], **kwargs).wma
+            elif indicator == 'willr':
+                return vbt.WILLR.run(data['high'], data['low'], data['close'], **kwargs).willr
+            elif indicator == 'cci':
+                return vbt.CCI.run(data['high'], data['low'], data['close'], **kwargs).cci
+            elif indicator == 'mfi':
+                return vbt.MFI.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).mfi
+            elif indicator == 'adx':
+                return vbt.ADX.run(data['high'], data['low'], data['close'], **kwargs).adx
+            elif indicator == 'roc':
+                return vbt.ROC.run(data['close'], **kwargs).roc
+            elif indicator == 'mom':
+                return vbt.MOM.run(data['close'], **kwargs).mom
             else:
                 raise ValueError(f"Unsupported indicator: {indicator}")
         
@@ -631,6 +658,78 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'gpu_accelerations': 0,
             'parallel_operations': 0,
             'memory_optimizations': 0
+        }
+    
+    def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame for VectorBT processing with memory efficiency.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Optimized DataFrame
+        """
+        try:
+            # Create a copy to avoid modifying original data
+            optimized_data = data.copy()
+            
+            # Optimize data types for memory efficiency
+            for column in optimized_data.columns:
+                if optimized_data[column].dtype == 'float64':
+                    # Use float32 for better memory usage if precision allows
+                    if optimized_data[column].min() >= np.finfo(np.float32).min and \
+                       optimized_data[column].max() <= np.finfo(np.float32).max:
+                        optimized_data[column] = optimized_data[column].astype(np.float32)
+                
+                elif optimized_data[column].dtype == 'int64':
+                    # Use int32 for better memory usage if range allows
+                    if optimized_data[column].min() >= np.iinfo(np.int32).min and \
+                       optimized_data[column].max() <= np.iinfo(np.int32).max:
+                        optimized_data[column] = optimized_data[column].astype(np.int32)
+            
+            # Ensure index is optimized
+            if isinstance(optimized_data.index, pd.DatetimeIndex):
+                # Use period index for better memory usage if possible
+                try:
+                    optimized_data.index = optimized_data.index.to_period('T')
+                except:
+                    pass
+            
+            # Track memory usage
+            memory_usage = optimized_data.memory_usage(deep=True).sum()
+            self._memory_usage = memory_usage
+            self._max_memory_usage = max(self._max_memory_usage, memory_usage)
+            
+            self.vectorbt_stats['memory_optimizations'] += 1
+            
+            return optimized_data
+            
+        except Exception as e:
+            logger.warning(f"DataFrame optimization failed: {e}")
+            return data
+    
+    def _cleanup_memory(self):
+        """Clean up memory usage."""
+        try:
+            import gc
+            gc.collect()
+            
+            # Clear feature cache if memory usage is high
+            if self._memory_usage > self.vectorbt_memory_limit_gb * 1024**3 * 0.8:
+                self._feature_cache.clear()
+                logger.info("🧹 Cleared feature cache due to high memory usage")
+            
+        except Exception as e:
+            logger.warning(f"Memory cleanup failed: {e}")
+    
+    def get_memory_stats(self) -> Dict[str, Any]:
+        """Get memory usage statistics."""
+        return {
+            'current_memory_usage': self._memory_usage,
+            'max_memory_usage': self._max_memory_usage,
+            'memory_limit': self.vectorbt_memory_limit_gb * 1024**3,
+            'memory_usage_percentage': (self._memory_usage / (self.vectorbt_memory_limit_gb * 1024**3)) * 100
         }
 
 

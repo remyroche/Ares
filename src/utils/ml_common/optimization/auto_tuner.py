@@ -41,7 +41,7 @@ class DatasetCharacteristics:
 
 class AutoTuner:
     """
-    Automatic hyperparameter optimization parameter tuner.
+    Automatic hyperparameter optimization parameter tuner with VectorBT enhancements.
     
     Analyzes dataset characteristics and automatically selects optimal:
     - Number of trials (n_trials)
@@ -49,6 +49,8 @@ class AutoTuner:
     - Grid vs TPE balance
     - Search space granularity
     - Timeout values
+    - VectorBT-accelerated parameter search
+    - Portfolio-style optimization strategies
     
     Example:
         auto_tuner = AutoTuner()

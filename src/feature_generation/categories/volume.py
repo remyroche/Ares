@@ -149,17 +149,17 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:

@@ -282,9 +282,9 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                     typical_price = (high + low + close) / 3
                     
                     # Calculate CCI using VectorBT rolling operations
-                    sma_tp = rolling_mean(typical_price, window=self.period)
+                    sma_tp = self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)
                     # Vectorized MAD: use rolling mean of absolute deviations
-                    mad = rolling_mean((typical_price - rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
+                    mad = self.vectorbt_optimizer.rolling_mean((typical_price - self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
                     cci = (typical_price - sma_tp) / (0.015 * mad)
                     
                     return cci
@@ -432,13 +432,13 @@ class ADXGenerator(VectorizedFeatureGenerator):
                     dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
                     
                     # Calculate smoothed values using VectorBT
-                    atr = rolling_mean(tr, window=self.period)
-                    di_plus = 100 * (rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
-                    di_minus = 100 * (rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
+                    atr = self.vectorbt_optimizer.rolling_mean(tr, window=self.period)
+                    di_plus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
+                    di_minus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
                     
                     # Calculate ADX
                     dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-                    adx = rolling_mean(dx, window=self.period)
+                    adx = self.vectorbt_optimizer.rolling_mean(dx, window=self.period)
                     
                     return adx
                 except Exception as e:
@@ -780,7 +780,7 @@ class SARGenerator(VectorizedFeatureGenerator):
             if VECTORBT_AVAILABLE:
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    sar = rolling_mean(base_values, window=20)
+                    sar = self.vectorbt_optimizer.rolling_mean(base_values, window=20)
                     return sar
                 except Exception as e:
                     self.logger.warning(f"VectorBT SAR base calculation failed: {e}, using pandas fallback")
@@ -937,7 +937,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
             if VECTORBT_AVAILABLE:
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    uo = rolling_mean(base_values, window=self.period3)
+                    uo = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period3)
                     return uo
                 except Exception as e:
                     self.logger.warning(f"VectorBT Ultimate Oscillator base calculation failed: {e}, using pandas fallback")
@@ -1058,10 +1058,10 @@ class KSTGenerator(VectorizedFeatureGenerator):
                     roc4 = close.pct_change(periods=self.roc4) * 100
                     
                     # Calculate SMA of ROC using VectorBT
-                    sma_roc1 = rolling_mean(roc1, window=self.sma1)
-                    sma_roc2 = rolling_mean(roc2, window=self.sma2)
-                    sma_roc3 = rolling_mean(roc3, window=self.sma3)
-                    sma_roc4 = rolling_mean(roc4, window=self.sma4)
+                    sma_roc1 = self.vectorbt_optimizer.rolling_mean(roc1, window=self.sma1)
+                    sma_roc2 = self.vectorbt_optimizer.rolling_mean(roc2, window=self.sma2)
+                    sma_roc3 = self.vectorbt_optimizer.rolling_mean(roc3, window=self.sma3)
+                    sma_roc4 = self.vectorbt_optimizer.rolling_mean(roc4, window=self.sma4)
                     
                     # Calculate KST
                     kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
@@ -1109,7 +1109,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
             if VECTORBT_AVAILABLE:
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    kst = rolling_mean(base_values, window=max(self.roc4, self.sma4))
+                    kst = self.vectorbt_optimizer.rolling_mean(base_values, window=max(self.roc4, self.sma4))
                     return kst
                 except Exception as e:
                     self.logger.warning(f"VectorBT KST base calculation failed: {e}, using pandas fallback")
@@ -1660,17 +1660,17 @@ class KAMAGenerator(VectorizedFeatureGenerator):
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:

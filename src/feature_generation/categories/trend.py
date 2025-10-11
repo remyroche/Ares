@@ -194,9 +194,9 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         # Calculate Directional Indicators using VectorBT optimization
         if VECTORBT_AVAILABLE and len(dm_plus_series) > 100:
             try:
-                dm_plus_mean = rolling_mean(dm_plus_series, window=period)
-                dm_minus_mean = rolling_mean(dm_minus_series, window=period)
-                tr_mean = rolling_mean(tr_series, window=period)
+                dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
+                dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
+                tr_mean = self.vectorbt_optimizer.rolling_mean(tr_series, window=period)
             except Exception as e:
                 logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
                 dm_plus_mean = dm_plus_series.rolling(period).mean()
@@ -215,7 +215,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         
         if VECTORBT_AVAILABLE and len(dx) > 100:
             try:
-                adx = rolling_mean(pd.Series(dx), window=period)
+                adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
             except Exception as e:
                 logger.warning(f"VectorBT ADX rolling mean failed: {e}, using pandas fallback")
                 adx = pd.Series(dx).rolling(period).mean()
@@ -302,17 +302,17 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
@@ -1218,7 +1218,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
             try:
                 # Calculate TRIMA using VectorBT rolling mean
                 half_period = self.period // 2
-                trima = rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
+                trima = self.vectorbt_optimizer.rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
                 return trima
             except Exception as e:
                 self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
@@ -1504,9 +1504,9 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             tr3 = abs(low - close.shift(1))
             true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             # Use VectorBT for optimized ATR calculation
-            if VECTORBT_AVAILABLE and len(true_range) > 100:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(true_range):
                 try:
-                    atr = rolling_mean(true_range, window=self.atr_period)
+                    atr = self.vectorbt_optimizer.rolling_mean(true_range, window=self.atr_period)
                 except Exception as e:
                     logger.warning(f"VectorBT ATR calculation failed: {e}, using pandas fallback")
                     atr = true_range.rolling(window=self.atr_period).mean()
@@ -1527,7 +1527,7 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
                     tr2 = abs(high - close.shift(1))
                     tr3 = abs(low - close.shift(1))
                     true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr = rolling_mean(true_range, window=self.atr_period)
+                    atr = self.vectorbt_optimizer.rolling_mean(true_range, window=self.atr_period)
                     
                     # Return middle line (EMA) as the main feature
                     # Upper and lower bands would be: ema ± (multiplier * atr)
@@ -1899,17 +1899,17 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:

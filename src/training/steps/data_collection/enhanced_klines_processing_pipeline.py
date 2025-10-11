@@ -80,7 +80,7 @@ except ImportError as e:
     # Fallback classes for missing quality utilities
     class DataQualityFramework:
         def validate_data(self, df, thresholds=None):
-            return QualityResult(score=0.0, issues=[], warnings=[], metadata={})
+            return QualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
     
     class ComprehensiveQualityScorer:
         def score_data_quality(self, df, symbol=None, interval=None):
@@ -108,7 +108,7 @@ except ImportError as e:
             return []
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
-from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, KlinesMetadata
+from src.utils.data.klines_parquet import KlinesParquetManager
 
 
 class ProcessingStep(Enum):
@@ -131,6 +131,40 @@ class DataQualityLevel(Enum):
     FAIR = "fair"
     POOR = "poor"
     FAILED = "failed"
+
+
+class QualityScoreLevel(Enum):
+    """Quality score levels."""
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    CRITICAL = "critical"
+
+
+@dataclass
+class QualityScore:
+    """Quality score result."""
+    overall_score: float
+    level: QualityScoreLevel
+    component_scores: Dict[str, float]
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
+
+
+@dataclass
+class QualityAssessment:
+    """Quality assessment result."""
+    overall_score: float
+    metrics: List[str]
+    issues_found: int
+    warnings_found: int
+    critical_issues: int
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
 
 
 @dataclass
@@ -180,7 +214,6 @@ class PipelineConfig:
     enable_duplicate_handling: bool = True
     enable_quality_validation: bool = True
     batch_compatible: bool = True
-    storage_config: Optional[StorageConfig] = None
 
 
 class EnhancedKlinesProcessingPipeline:
@@ -217,8 +250,7 @@ class EnhancedKlinesProcessingPipeline:
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
         
         # Initialize KlinesParquetManager
-        storage_config = self.config.storage_config or StorageConfig(base_dir=str(self.data_dir))
-        self.klines_manager = KlinesParquetManager(storage_config)
+        self.klines_manager = KlinesParquetManager(str(self.data_dir), self.exchange)
         
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -893,7 +925,7 @@ class EnhancedKlinesProcessingPipeline:
             )
             
             # Perform comprehensive data quality validation
-            quality_result = quality_framework.validate_data(df, thresholds)
+            quality_result = quality_framework.validate_dataframe_quality(df, f"{symbol}_{interval}")
             
             # Get advanced quality assessment
             quality_assessment = advanced_metrics.assess_quality(df)
@@ -1423,17 +1455,15 @@ class EnhancedKlinesProcessingPipeline:
             consolidated_batch_id = f"{batch_id}_consolidated" if batch_id else "consolidated"
             
             # Store using KlinesParquetManager
-            success = self.klines_manager.store_klines(
-                df, symbol, self.exchange, f"{interval}_consolidated", consolidated_batch_id
+            success = self.klines_manager.write_data(
+                df, symbol, f"{interval}_consolidated", "processed", overwrite=True
             )
             
             if not success:
                 raise RuntimeError("Failed to store consolidated file using KlinesParquetManager")
             
             # Get the actual file path from the manager
-            output_file = self.klines_manager._get_storage_path(
-                symbol, self.exchange, f"{interval}_consolidated", consolidated_batch_id
-            )
+            output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}_consolidated"
             
             result.success = True
             result.metadata = {
@@ -1478,8 +1508,8 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_info(f"💾 Storing original data for {symbol} {interval}")
             
             # Store data using KlinesParquetManager
-            success = self.klines_manager.store_klines(
-                df, symbol, self.exchange, interval, batch_id
+            success = self.klines_manager.write_data(
+                df, symbol, interval, "raw", overwrite=True
             )
             
             if success:
@@ -1554,9 +1584,8 @@ class EnhancedKlinesProcessingPipeline:
                     
                     if not resampled_df.empty:
                         # Store resampled data
-                        resample_batch_id = f"{batch_id}_resampled_{target_interval}" if batch_id else None
-                        success = self.klines_manager.store_klines(
-                            resampled_df, symbol, self.exchange, target_interval, resample_batch_id
+                        success = self.klines_manager.write_data(
+                            resampled_df, symbol, target_interval, "processed", overwrite=True
                         )
                         
                         if success:

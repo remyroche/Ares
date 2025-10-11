@@ -351,13 +351,23 @@ class VectorBTBatchProcessor:
     ) -> pd.DataFrame:
         """Process a single generator using VectorBT optimizations."""
         try:
+            # Optimize data for VectorBT processing
+            if hasattr(generator, '_optimize_dataframe_for_vectorbt'):
+                data = generator._optimize_dataframe_for_vectorbt(data)
+            
             # Check if generator has VectorBT optimization
             if hasattr(generator, 'use_vectorbt') and generator.use_vectorbt:
                 # Use VectorBT-optimized processing with enhanced batch processing
                 if hasattr(generator, 'process_batch_vectorized'):
-                    return generator.process_batch_vectorized(data, use_vectorbt=True, **kwargs)
+                    result = generator.process_batch_vectorized(data, use_vectorbt=True, **kwargs)
                 else:
-                    return generator.process_batch(data, use_vectorbt=True, **kwargs)
+                    result = generator.process_batch(data, use_vectorbt=True, **kwargs)
+                
+                # Apply VectorBT-specific optimizations
+                if VECTORBT_AVAILABLE and not result.empty:
+                    result = self._apply_vectorbt_optimizations(result)
+                
+                return result
             else:
                 # Fallback to standard processing
                 return generator.process_batch(data, **kwargs)
@@ -365,6 +375,32 @@ class VectorBTBatchProcessor:
         except Exception as e:
             logger.error(f"Error processing generator {generator.__class__.__name__}: {e}")
             return pd.DataFrame()
+    
+    def _apply_vectorbt_optimizations(self, result: pd.DataFrame) -> pd.DataFrame:
+        """Apply VectorBT-specific optimizations to results with array wrappers."""
+        try:
+            # Use VectorBT's optimized data types
+            optimized_result = result.copy()
+            
+            # Convert to VectorBT array wrapper for better performance
+            if VECTORBT_AVAILABLE:
+                for column in optimized_result.columns:
+                    if optimized_result[column].dtype in ['float64', 'float32', 'int64', 'int32']:
+                        try:
+                            # Use VectorBT's optimized array wrapper
+                            optimized_result[column] = vbt.array_wrapper(
+                                optimized_result[column],
+                                freq=result.index.freq if hasattr(result.index, 'freq') else None
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to convert column {column} to VectorBT array: {e}")
+                            continue
+            
+            return optimized_result
+            
+        except Exception as e:
+            logger.warning(f"VectorBT optimization failed: {e}")
+            return result
     
     def _prepare_gpu_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare data for GPU processing."""

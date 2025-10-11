@@ -65,7 +65,9 @@ class VectorBTOptimizationMixin:
             'pandas_fallbacks': 0,
             'gpu_accelerations': 0,
             'total_operations': 0,
-            'total_time': 0.0
+            'total_time': 0.0,
+            'cache_hits': 0,
+            'cache_misses': 0
         }
         
         # VectorBT configuration
@@ -75,8 +77,35 @@ class VectorBTOptimizationMixin:
         self.enable_parallel = getattr(self, 'enable_parallel', True)
         self.vectorbt_memory_limit_gb = getattr(self, 'vectorbt_memory_limit_gb', 8.0)
         
+        # Advanced caching configuration
+        self.enable_caching = getattr(self, 'enable_caching', True)
+        self.cache_size = getattr(self, 'cache_size', 1000)  # MB
+        self.cache_ttl = getattr(self, 'cache_ttl', 3600)  # seconds
+        
+        # Initialize VectorBT caching
+        self._configure_vectorbt_caching()
+        
         # Setup logger
         self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _configure_vectorbt_caching(self):
+        """Configure VectorBT advanced caching."""
+        if not VECTORBT_AVAILABLE or not self.enable_caching:
+            return
+        
+        try:
+            # Configure advanced caching
+            vbt.settings.setting('caching', True)
+            vbt.settings.setting('cache_size', self.cache_size)
+            vbt.settings.setting('cache_ttl', self.cache_ttl)
+            vbt.settings.setting('cache_compression', True)
+            vbt.settings.setting('caching_dir', 'data_cache/vectorbt_advanced_cache')
+            
+            self.logger.info(f"✅ VectorBT advanced caching enabled: {self.cache_size}MB, TTL: {self.cache_ttl}s")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT caching configuration failed: {e}")
+            self.enable_caching = False
     
     def _should_use_vectorbt(self, data: Union[pd.DataFrame, pd.Series]) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -100,9 +129,18 @@ class VectorBTOptimizationMixin:
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
+        """Perform VectorBT rolling operation with caching and fallback to pandas."""
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
+        
+        # Check cache first if enabled
+        if self.enable_caching and VECTORBT_AVAILABLE:
+            cache_key = self._generate_cache_key(data, operation, window, **kwargs)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                self.performance_stats['cache_hits'] += 1
+                return cached_result
+            self.performance_stats['cache_misses'] += 1
         
         if not self._should_use_vectorbt(data):
             result = self._pandas_rolling_operation(data, operation, window, **kwargs)
@@ -122,6 +160,10 @@ class VectorBTOptimizationMixin:
                 result = self._pandas_rolling_operation(data, operation, window, **kwargs)
                 self.performance_stats['pandas_fallbacks'] += 1
         
+        # Cache result if enabled
+        if self.enable_caching and VECTORBT_AVAILABLE:
+            self._put_in_cache(cache_key, result)
+        
         # Update timing
         self.performance_stats['total_time'] += time.time() - start_time
         
@@ -129,31 +171,37 @@ class VectorBTOptimizationMixin:
     
     def _execute_vectorbt_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Execute VectorBT operation."""
+        """Execute VectorBT operation using native functions."""
         if operation == 'mean':
-            return rolling_mean(data, window=window, **kwargs)
+            return vbt.rolling_mean(data, window=window, **kwargs)
         elif operation == 'std':
-            return rolling_std(data, window=window, **kwargs)
+            return vbt.rolling_std(data, window=window, **kwargs)
         elif operation == 'var':
-            return rolling_var(data, window=window, **kwargs)
+            return vbt.rolling_var(data, window=window, **kwargs)
         elif operation == 'min':
-            return rolling_min(data, window=window, **kwargs)
+            return vbt.rolling_min(data, window=window, **kwargs)
         elif operation == 'max':
-            return rolling_max(data, window=window, **kwargs)
+            return vbt.rolling_max(data, window=window, **kwargs)
         elif operation == 'sum':
-            return rolling_sum(data, window=window, **kwargs)
+            return vbt.rolling_sum(data, window=window, **kwargs)
         elif operation == 'corr':
             other = kwargs.get('other')
             if other is not None:
-                return rolling_corr(data, other, window=window, **kwargs)
+                return vbt.rolling_corr(data, other, window=window, **kwargs)
             else:
                 raise ValueError("Correlation operation requires 'other' parameter")
         elif operation == 'cov':
             other = kwargs.get('other')
             if other is not None:
-                return rolling_cov(data, other, window=window, **kwargs)
+                return vbt.rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError("Covariance operation requires 'other' parameter")
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            if func is not None:
+                return vbt.rolling_apply(data, func, window=window, **kwargs)
+            else:
+                raise ValueError("Apply operation requires 'func' parameter")
         else:
             raise ValueError(f"Unsupported VectorBT operation: {operation}")
     
@@ -231,61 +279,89 @@ class VectorBTOptimizationMixin:
             raise ValueError(f"Unsupported technical indicator: {indicator}")
     
     def _calculate_rsi_vectorbt(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate RSI using VectorBT."""
-        close = data['close']
-        delta = close.diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        
-        avg_gain = rolling_mean(gain, window=window)
-        avg_loss = rolling_mean(loss, window=window)
-        
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
+        """Calculate RSI using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native RSI calculation
+            rsi_result = vbt.RSI.run(data['close'], window=window)
+            return rsi_result.rsi
+        except Exception as e:
+            self.logger.warning(f"VectorBT RSI failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            delta = close.diff()
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            
+            avg_gain = vbt.rolling_mean(gain, window=window)
+            avg_loss = vbt.rolling_mean(loss, window=window)
+            
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
     
     def _calculate_macd_vectorbt(self, data: pd.DataFrame, 
                                fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD using VectorBT."""
-        close = data['close']
-        
-        ema_fast = close.ewm(span=fast).mean()
-        ema_slow = close.ewm(span=slow).mean()
-        
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
-        
-        return macd_line - signal_line
+        """Calculate MACD using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native MACD calculation
+            macd_result = vbt.MACD.run(data['close'], fast=fast, slow=slow, signal=signal)
+            return macd_result.macd
+        except Exception as e:
+            self.logger.warning(f"VectorBT MACD failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            
+            ema_fast = close.ewm(span=fast).mean()
+            ema_slow = close.ewm(span=slow).mean()
+            
+            macd_line = ema_fast - ema_slow
+            signal_line = macd_line.ewm(span=signal).mean()
+            
+            return macd_line - signal_line
     
     def _calculate_bollinger_bands_vectorbt(self, data: pd.DataFrame, 
                                           window: int = 20, std_dev: float = 2.0) -> pd.Series:
-        """Calculate Bollinger Bands using VectorBT."""
-        close = data['close']
-        
-        sma = rolling_mean(close, window=window)
-        std = rolling_std(close, window=window)
-        
-        upper_band = sma + (std * std_dev)
-        lower_band = sma - (std * std_dev)
-        
-        # Return the middle band (SMA) as the main feature
-        return sma
+        """Calculate Bollinger Bands using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native Bollinger Bands calculation
+            bb_result = vbt.BBANDS.run(data['close'], window=window, alpha=std_dev)
+            return bb_result.middle
+        except Exception as e:
+            self.logger.warning(f"VectorBT Bollinger Bands failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            close = data['close']
+            
+            sma = vbt.rolling_mean(close, window=window)
+            std = vbt.rolling_std(close, window=window)
+            
+            upper_band = sma + (std * std_dev)
+            lower_band = sma - (std * std_dev)
+            
+            # Return the middle band (SMA) as the main feature
+            return sma
     
     def _calculate_atr_vectorbt(self, data: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate ATR using VectorBT."""
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        tr1 = high - low
-        tr2 = abs(high - close.shift(1))
-        tr3 = abs(low - close.shift(1))
-        
-        true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-        atr = rolling_mean(true_range, window=window)
-        
-        return atr
+        """Calculate ATR using VectorBT native implementation."""
+        try:
+            # Use VectorBT's native ATR calculation
+            atr_result = vbt.ATR.run(data['high'], data['low'], data['close'], window=window)
+            return atr_result.atr
+        except Exception as e:
+            self.logger.warning(f"VectorBT ATR failed: {e}, using manual calculation")
+            # Fallback to manual calculation
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            atr = vbt.rolling_mean(true_range, window=window)
+            
+            return atr
     
     def _vectorbt_batch_operations(self, data: pd.DataFrame, 
                                  operations: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -356,6 +432,50 @@ class VectorBTOptimizationMixin:
         
         return pd.DataFrame(results, index=data.index)
     
+    def _generate_cache_key(self, data: pd.Series, operation: str, window: int, **kwargs) -> str:
+        """Generate cache key for operation."""
+        import hashlib
+        
+        # Create hash of data characteristics and parameters
+        data_hash = hashlib.md5(str(data.shape).encode()).hexdigest()[:8]
+        params_hash = hashlib.md5(str(sorted(kwargs.items())).encode()).hexdigest()[:8]
+        
+        return f"{operation}_{window}_{data_hash}_{params_hash}"
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[pd.Series]:
+        """Get result from cache."""
+        if not hasattr(self, '_cache') or not self.enable_caching:
+            return None
+        
+        try:
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        except Exception as e:
+            self.logger.warning(f"Cache retrieval failed: {e}")
+        
+        return None
+    
+    def _put_in_cache(self, cache_key: str, result: pd.Series):
+        """Put result in cache."""
+        if not hasattr(self, '_cache') or not self.enable_caching:
+            return
+        
+        try:
+            # Initialize cache if needed
+            if not hasattr(self, '_cache'):
+                self._cache = {}
+            
+            # Limit cache size
+            if len(self._cache) >= 1000:  # Max 1000 entries
+                # Remove oldest entries (simple FIFO)
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+            
+            self._cache[cache_key] = result
+            
+        except Exception as e:
+            self.logger.warning(f"Cache storage failed: {e}")
+    
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         stats = self.performance_stats.copy()
@@ -370,10 +490,18 @@ class VectorBTOptimizationMixin:
             stats['average_operation_time'] = (
                 stats['total_time'] / stats['total_operations']
             )
+            
+            # Cache statistics
+            total_cache_ops = stats['cache_hits'] + stats['cache_misses']
+            if total_cache_ops > 0:
+                stats['cache_hit_rate'] = (stats['cache_hits'] / total_cache_ops) * 100
+            else:
+                stats['cache_hit_rate'] = 0
         else:
             stats['vectorbt_usage_percentage'] = 0
             stats['pandas_fallback_percentage'] = 0
             stats['average_operation_time'] = 0
+            stats['cache_hit_rate'] = 0
         
         return stats
     

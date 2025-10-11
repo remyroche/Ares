@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
+import warnings
+import logging
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -90,13 +92,16 @@ class MomentumDivergenceGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate momentum divergence."""
+        """Generate momentum divergence using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         price_momentum = base_values.pct_change(self.period)
         volume_momentum = data['volume'].pct_change(self.period)
@@ -143,13 +148,16 @@ class MomentumVolumeGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate momentum-volume interaction."""
+        """Generate momentum-volume interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         price_momentum = base_values.pct_change(self.period)
         volume_momentum = data['volume'].pct_change(self.period)
@@ -197,16 +205,68 @@ class MomentumVolatilityGenerator(FeatureGenerator):
         self.period = period
         self.volatility_window = volatility_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate momentum-volatility interaction."""
+        """Generate momentum-volatility interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         price_momentum = base_values.pct_change(self.period)
-        volatility = base_values.rolling(window=self.volatility_window).std()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
         # Normalize momentum by volatility
         interaction = price_momentum / (volatility + 1e-8)  # Add small epsilon to prevent division by zero
         return interaction
@@ -252,13 +312,65 @@ class MomentumTrendGenerator(FeatureGenerator):
         self.momentum_period = momentum_period
         self.trend_window = trend_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate momentum-trend interaction."""
+        """Generate momentum-trend interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         price_momentum = base_values.pct_change(self.momentum_period)
         
@@ -272,7 +384,15 @@ class MomentumTrendGenerator(FeatureGenerator):
             except:
                 return 0.0
         
-        trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        # Use VectorBT rolling apply if available, fallback to pandas
+        if self._should_use_vectorbt(base_values):
+            try:
+                trend_strength = rolling_apply(base_values, calculate_trend_strength, window=self.trend_window)
+            except Exception:
+                trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        else:
+            trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        
         interaction = price_momentum * trend_strength
         return interaction
 
@@ -317,16 +437,68 @@ class VolatilityVolumeGenerator(FeatureGenerator):
         self.volatility_window = volatility_window
         self.volume_window = volume_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility-volume interaction."""
+        """Generate volatility-volume interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.volatility_window).std()
-        volume_ma = data['volume'].rolling(window=self.volume_window).mean()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
+        volume_ma = self._vectorbt_rolling_operation(data['volume'], 'mean', self.volume_window)
         interaction = volatility * volume_ma
         return interaction
 
@@ -370,15 +542,67 @@ class VolatilityPriceGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.volatility_window = volatility_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility-price interaction."""
+        """Generate volatility-price interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.volatility_window).std()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
         # Use close price for interaction
         if 'close' in data.columns:
             interaction = volatility * data['close']
@@ -426,15 +650,67 @@ class VolatilityHighLowGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.volatility_window = volatility_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility-high-low range interaction."""
+        """Generate volatility-high-low range interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.volatility_window).std()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
         hl_range_pct = (data['high'] - data['low']) / data['close']
         interaction = volatility * hl_range_pct
         return interaction
@@ -480,15 +756,67 @@ class VolatilityMomentumGenerator(FeatureGenerator):
         self.volatility_window = volatility_window
         self.momentum_period = momentum_period
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility-momentum interaction."""
+        """Generate volatility-momentum interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.volatility_window).std()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
         momentum = base_values.pct_change(self.momentum_period)
         interaction = volatility * momentum
         return interaction
@@ -534,15 +862,67 @@ class VolatilityTrendGenerator(FeatureGenerator):
         self.volatility_window = volatility_window
         self.trend_window = trend_window
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility-trend interaction."""
+        """Generate volatility-trend interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.volatility_window).std()
+        volatility = self._vectorbt_rolling_operation(base_values, 'std', self.volatility_window)
         
         def calculate_trend_strength(series):
             if len(series) < 2:
@@ -554,7 +934,15 @@ class VolatilityTrendGenerator(FeatureGenerator):
             except:
                 return 0.0
         
-        trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        # Use VectorBT rolling apply if available, fallback to pandas
+        if self._should_use_vectorbt(base_values):
+            try:
+                trend_strength = rolling_apply(base_values, calculate_trend_strength, window=self.trend_window)
+            except Exception:
+                trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        else:
+            trend_strength = base_values.rolling(window=self.trend_window).apply(calculate_trend_strength, raw=False)
+        
         interaction = volatility * trend_strength
         return interaction
 
@@ -636,18 +1024,70 @@ class CrossTimeframeInteractionGenerator(FeatureGenerator):
         self.long_period = long_period
         self.interaction_type = interaction_type
         self.base_calculation = base_calculation
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe interaction."""
+        """Generate cross-timeframe interaction using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate short and long period features
-        short_ma = base_values.rolling(window=self.short_period).mean()
-        long_ma = base_values.rolling(window=self.long_period).mean()
+        # Calculate short and long period features using VectorBT
+        short_ma = self._vectorbt_rolling_operation(base_values, 'mean', self.short_period)
+        long_ma = self._vectorbt_rolling_operation(base_values, 'mean', self.long_period)
         
         if self.interaction_type == "ratio":
             interaction = short_ma / (long_ma + 1e-8)  # Add small epsilon to prevent division by zero
@@ -698,19 +1138,71 @@ class FeatureRatioGenerator(FeatureGenerator):
         self.numerator_column = numerator_column
         self.denominator_column = denominator_column
         self.window = window
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate feature ratio."""
+        """Generate feature ratio using VectorBT."""
         numerator = data[self.numerator_column]
         denominator = data[self.denominator_column]
         
         if self.window > 1:
-            numerator = numerator.rolling(window=self.window).mean()
-            denominator = denominator.rolling(window=self.window).mean()
+            numerator = self._vectorbt_rolling_operation(numerator, 'mean', self.window)
+            denominator = self._vectorbt_rolling_operation(denominator, 'mean', self.window)
         
         ratio = numerator / (denominator + 1e-8)  # Add small epsilon to prevent division by zero
         return ratio
@@ -750,17 +1242,77 @@ class PolynomialFeatureGenerator(FeatureGenerator):
         self.column = column
         self.degree = degree
         self.include_bias = include_bias
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate polynomial transformation."""
+        """Generate polynomial transformation using VectorBT."""
         values = data[self.column]
         
-        # Normalize values to prevent numerical overflow
-        values_normalized = (values - values.mean()) / (values.std() + 1e-8)
+        # Normalize values to prevent numerical overflow using VectorBT if available
+        if self._should_use_vectorbt(values):
+            try:
+                values_mean = rolling_mean(values, window=len(values)).iloc[-1] if len(values) > 0 else values.mean()
+                values_std = rolling_std(values, window=len(values)).iloc[-1] if len(values) > 0 else values.std()
+                values_normalized = (values - values_mean) / (values_std + 1e-8)
+            except Exception:
+                values_normalized = (values - values.mean()) / (values.std() + 1e-8)
+        else:
+            values_normalized = (values - values.mean()) / (values.std() + 1e-8)
         
         # Create polynomial features
         result = values_normalized ** self.degree
@@ -806,18 +1358,76 @@ class CorrelationInteractionGenerator(FeatureGenerator):
         self.column2 = column2
         self.window = window
         self.method = method
+        self.use_vectorbt = True
+        self.vectorbt_threshold = 1000
+        self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate correlation interaction."""
+        """Generate correlation interaction using VectorBT."""
         values1 = data[self.column1]
         values2 = data[self.column2]
         
-        # Calculate rolling correlation
-        correlation = values1.rolling(window=self.window).corr(values2)
+        # Calculate rolling correlation using VectorBT if available
+        if self._should_use_vectorbt(values1):
+            try:
+                correlation = rolling_corr(values1, values2, window=self.window)
+            except Exception:
+                correlation = values1.rolling(window=self.window).corr(values2)
+        else:
+            correlation = values1.rolling(window=self.window).corr(values2)
         
         return correlation
 

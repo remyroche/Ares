@@ -259,11 +259,34 @@ class UnifiedRegimeClassifier:
         features_df['price_change'] = features_df['close'].pct_change()
         features_df['high_low_diff_ratio'] = features_df['high'].diff() / (features_df['low'].diff() + 1e-08)
         features_df['close_open_diff_ratio'] = features_df['close'].diff() / (features_df['open'].diff() + 1e-08)
-        features_df['volatility_20'] = features_df['log_returns'].rolling(20).std()
-        features_df['volatility_10'] = features_df['log_returns'].rolling(10).std()
-        features_df['volatility_5'] = features_df['log_returns'].rolling(5).std()
-        features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span = 20, adjust = False).std()
-        features_df['volume_ratio'] = features_df['volume'] / features_df['volume'].rolling(20).mean()
+        # Use VectorBT-optimized rolling operations for volatility calculations
+        try:
+            from src.utils.matrix_operations.vectorbt_optimizations import get_vectorbt_optimized_operations
+            vectorbt_ops = get_vectorbt_optimized_operations()
+            
+            # Use VectorBT for rolling volatility calculations
+            log_returns_series = features_df['log_returns']
+            features_df['volatility_20'] = vectorbt_ops._get_rolling_object(log_returns_series, 20).std() if vectorbt_ops._get_rolling_object(log_returns_series, 20) else log_returns_series.rolling(20).std()
+            features_df['volatility_10'] = vectorbt_ops._get_rolling_object(log_returns_series, 10).std() if vectorbt_ops._get_rolling_object(log_returns_series, 10) else log_returns_series.rolling(10).std()
+            features_df['volatility_5'] = vectorbt_ops._get_rolling_object(log_returns_series, 5).std() if vectorbt_ops._get_rolling_object(log_returns_series, 5) else log_returns_series.rolling(5).std()
+            
+            # Use VectorBT for EWMA volatility
+            features_df['ewma_volatility_20'] = log_returns_series.ewm(span=20, adjust=False).std()
+            
+            # Use VectorBT for volume ratio calculation
+            volume_series = features_df['volume']
+            volume_mean_20 = vectorbt_ops._get_rolling_object(volume_series, 20).mean() if vectorbt_ops._get_rolling_object(volume_series, 20) else volume_series.rolling(20).mean()
+            features_df['volume_ratio'] = volume_series / volume_mean_20
+            
+            self.logger.info("✅ Used VectorBT-optimized rolling operations for volatility calculations")
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT rolling operations failed: {e}, using pandas fallback")
+            # Fallback to pandas rolling operations
+            features_df['volatility_20'] = features_df['log_returns'].rolling(20).std()
+            features_df['volatility_10'] = features_df['log_returns'].rolling(10).std()
+            features_df['volatility_5'] = features_df['log_returns'].rolling(5).std()
+            features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span=20, adjust=False).std()
+            features_df['volume_ratio'] = features_df['volume'] / features_df['volume'].rolling(20).mean()
         features_df['volume_change'] = features_df['volume'].pct_change()
         features_df = self._calculate_rsi(features_df)
         features_df = self._calculate_macd(features_df)

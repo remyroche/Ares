@@ -574,6 +574,46 @@ class VectorBTOptimizedOperations:
         """Get performance statistics."""
         return self.performance_stats.copy()
     
+    def _get_rolling_object(self, series: 'pd.Series', window: int):
+        """Get VectorBT rolling object for optimized operations."""
+        if VECTORBT_AVAILABLE:
+            try:
+                return vbt.Rolling(series, window=window)
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT rolling object creation failed: {e}")
+                return None
+        return None
+    
+    def _vectorized_mean(self, data: 'np.ndarray', axis: int = 0) -> 'np.ndarray':
+        """VectorBT-optimized mean calculation."""
+        if VECTORBT_AVAILABLE:
+            try:
+                return vbt.math.mean(data, axis=axis)
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT mean calculation failed: {e}")
+                return np.mean(data, axis=axis)
+        return np.mean(data, axis=axis)
+    
+    def _vectorized_max(self, data: 'np.ndarray', axis: int = 0) -> 'np.ndarray':
+        """VectorBT-optimized max calculation."""
+        if VECTORBT_AVAILABLE:
+            try:
+                return vbt.math.max(data, axis=axis)
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT max calculation failed: {e}")
+                return np.max(data, axis=axis)
+        return np.max(data, axis=axis)
+    
+    def _vectorized_std(self, data: 'np.ndarray', axis: int = 0) -> 'np.ndarray':
+        """VectorBT-optimized std calculation."""
+        if VECTORBT_AVAILABLE:
+            try:
+                return vbt.math.std(data, axis=axis)
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT std calculation failed: {e}")
+                return np.std(data, axis=axis)
+        return np.std(data, axis=axis)
+
     def get_hardware_info(self) -> Dict[str, Any]:
         """Get hardware capability information."""
         return {

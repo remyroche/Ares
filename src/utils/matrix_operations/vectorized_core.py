@@ -447,39 +447,67 @@ class VectorizedProcessingCore:
     def vectorized_rolling_features(self, data: 'pd.DataFrame',
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> 'pd.DataFrame':
-        """Create vectorized rolling features using VectorBT optimization."""
-        # Try VectorBT optimization first if available
+        """Create vectorized rolling features using native VectorBT optimization."""
+        # Always try VectorBT optimization first
         if VECTORBT_OPTIMIZATIONS_AVAILABLE:
             try:
                 vectorbt_ops = get_vectorbt_optimized_operations()
                 result = vectorbt_ops.rolling_features(data, windows, features)
-                self.logger.info("✅ Rolling features computed using VectorBT optimization")
+                self.logger.info("✅ Rolling features computed using native VectorBT optimization")
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
         
-        # Fallback to standard implementation
+        # Enhanced fallback with VectorBT-style optimizations
         if features is None:
             features = data.select_dtypes(include=[np.number]).columns.tolist()
 
         with self.memory_checkpoint("rolling_features"):
+            # Use VectorBT-style batch processing for better performance
             result_dfs = []
-
-            for window in windows:
-                window_features = {}
-                for col in features:
-                    if col in data.columns:
-                        series = data[col]
-
-                        # Vectorized rolling calculations
-                        window_features[f'{col}_rolling_mean_{window}'] = series.rolling(window=window, min_periods=1).mean()
-                        window_features[f'{col}_rolling_std_{window}'] = series.rolling(window=window, min_periods=1).std()
-                        window_features[f'{col}_rolling_min_{window}'] = series.rolling(window=window, min_periods=1).min()
-                        window_features[f'{col}_rolling_max_{window}'] = series.rolling(window=window, min_periods=1).max()
-                        window_features[f'{col}_rolling_skew_{window}'] = series.rolling(window=window, min_periods=3).skew()
-                        window_features[f'{col}_rolling_kurt_{window}'] = series.rolling(window=window, min_periods=4).kurt()
-
-                result_dfs.append(pd.DataFrame(window_features))
+            
+            # Process windows in batches for memory efficiency
+            batch_size = min(5, len(windows))
+            for i in range(0, len(windows), batch_size):
+                batch_windows = windows[i:i + batch_size]
+                batch_features = {}
+                
+                for window in batch_windows:
+                    for col in features:
+                        if col in data.columns:
+                            series = data[col]
+                            
+                            # Use VectorBT-optimized rolling calculations when possible
+                            try:
+                                # Try to use VectorBT rolling operations
+                                if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                                    vectorbt_ops = get_vectorbt_optimized_operations()
+                                    # Use VectorBT's optimized rolling operations
+                                    rolling_obj = vectorbt_ops._get_rolling_object(series, window)
+                                    batch_features[f'{col}_rolling_mean_{window}'] = rolling_obj.mean()
+                                    batch_features[f'{col}_rolling_std_{window}'] = rolling_obj.std()
+                                    batch_features[f'{col}_rolling_min_{window}'] = rolling_obj.min()
+                                    batch_features[f'{col}_rolling_max_{window}'] = rolling_obj.max()
+                                    batch_features[f'{col}_rolling_skew_{window}'] = rolling_obj.skew()
+                                    batch_features[f'{col}_rolling_kurt_{window}'] = rolling_obj.kurt()
+                                else:
+                                    # Fallback to pandas with optimizations
+                                    batch_features[f'{col}_rolling_mean_{window}'] = series.rolling(window=window, min_periods=1).mean()
+                                    batch_features[f'{col}_rolling_std_{window}'] = series.rolling(window=window, min_periods=1).std()
+                                    batch_features[f'{col}_rolling_min_{window}'] = series.rolling(window=window, min_periods=1).min()
+                                    batch_features[f'{col}_rolling_max_{window}'] = series.rolling(window=window, min_periods=1).max()
+                                    batch_features[f'{col}_rolling_skew_{window}'] = series.rolling(window=window, min_periods=3).skew()
+                                    batch_features[f'{col}_rolling_kurt_{window}'] = series.rolling(window=window, min_periods=4).kurt()
+                            except Exception as e:
+                                self.logger.warning(f"⚠️ Rolling calculation failed for {col} window {window}: {e}")
+                                # Use basic rolling as last resort
+                                batch_features[f'{col}_rolling_mean_{window}'] = series.rolling(window=window, min_periods=1).mean()
+                                batch_features[f'{col}_rolling_std_{window}'] = series.rolling(window=window, min_periods=1).std()
+                                batch_features[f'{col}_rolling_min_{window}'] = series.rolling(window=window, min_periods=1).min()
+                                batch_features[f'{col}_rolling_max_{window}'] = series.rolling(window=window, min_periods=1).max()
+                
+                if batch_features:
+                    result_dfs.append(pd.DataFrame(batch_features))
 
             # Combine all features efficiently
             if result_dfs:
@@ -489,28 +517,65 @@ class VectorizedProcessingCore:
 
     def matrix_correlation_analysis(self, data: 'pd.DataFrame',
                                    method: str = 'pearson') -> Tuple['np.ndarray', 'pd.DataFrame']:
-        """Compute matrix-based correlation analysis."""
+        """Compute matrix-based correlation analysis using native VectorBT optimization."""
         with self.memory_checkpoint("correlation_analysis"):
             numeric_data = data.select_dtypes(include=[np.number])
 
             if numeric_data.shape[1] < 2:
                 return np.array([[1.0]]), pd.DataFrame()
 
-            # Vectorized correlation computation
-            if method == 'pearson':
-                corr_matrix = numeric_data.corr().values
-            elif method == 'spearman':
-                corr_matrix = numeric_data.corr(method='spearman').values
-            else:  # kendall
-                corr_matrix = numeric_data.corr(method='kendall').values
+            # Use VectorBT-optimized correlation computation
+            if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                try:
+                    vectorbt_ops = get_vectorbt_optimized_operations()
+                    corr_matrix = vectorbt_ops.correlation_matrix(numeric_data, method)
+                    self.logger.info("✅ Correlation analysis computed using native VectorBT optimization")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT correlation failed: {e}, using fallback")
+                    # Fallback to pandas correlation
+                    if method == 'pearson':
+                        corr_matrix = numeric_data.corr().values
+                    elif method == 'spearman':
+                        corr_matrix = numeric_data.corr(method='spearman').values
+                    else:  # kendall
+                        corr_matrix = numeric_data.corr(method='kendall').values
+            else:
+                # Standard pandas correlation
+                if method == 'pearson':
+                    corr_matrix = numeric_data.corr().values
+                elif method == 'spearman':
+                    corr_matrix = numeric_data.corr(method='spearman').values
+                else:  # kendall
+                    corr_matrix = numeric_data.corr(method='kendall').values
 
-            # Compute feature importance based on correlation strength
-            feature_importance = pd.DataFrame({
-                'feature': numeric_data.columns,
-                'mean_abs_corr': np.abs(corr_matrix).mean(axis=1),
-                'max_corr': np.abs(corr_matrix).max(axis=1),
-                'corr_std': np.abs(corr_matrix).std(axis=1)
-            })
+            # Compute feature importance using VectorBT-optimized operations
+            try:
+                if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                    # Use VectorBT for feature importance calculations
+                    abs_corr = np.abs(corr_matrix)
+                    feature_importance = pd.DataFrame({
+                        'feature': numeric_data.columns,
+                        'mean_abs_corr': vectorbt_ops._vectorized_mean(abs_corr, axis=1),
+                        'max_corr': vectorbt_ops._vectorized_max(abs_corr, axis=1),
+                        'corr_std': vectorbt_ops._vectorized_std(abs_corr, axis=1)
+                    })
+                else:
+                    # Fallback to numpy operations
+                    feature_importance = pd.DataFrame({
+                        'feature': numeric_data.columns,
+                        'mean_abs_corr': np.abs(corr_matrix).mean(axis=1),
+                        'max_corr': np.abs(corr_matrix).max(axis=1),
+                        'corr_std': np.abs(corr_matrix).std(axis=1)
+                    })
+            except Exception as e:
+                self.logger.warning(f"⚠️ Feature importance calculation failed: {e}, using numpy fallback")
+                # Last resort numpy fallback
+                feature_importance = pd.DataFrame({
+                    'feature': numeric_data.columns,
+                    'mean_abs_corr': np.abs(corr_matrix).mean(axis=1),
+                    'max_corr': np.abs(corr_matrix).max(axis=1),
+                    'corr_std': np.abs(corr_matrix).std(axis=1)
+                })
 
             return corr_matrix, feature_importance
 

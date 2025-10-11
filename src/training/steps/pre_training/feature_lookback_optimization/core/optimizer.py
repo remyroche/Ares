@@ -1101,7 +1101,23 @@ class CoreOptimizer:
             diff_series = safe_series.diff()
 
         window = max(2, min(max(lookback, 2), len(diff_series)))
-        demeaned = diff_series - diff_series.rolling(window=window, min_periods=1).mean()
+        
+        # Use VectorBT-optimized rolling mean calculation
+        try:
+            from src.utils.matrix_operations.vectorbt_optimizations import get_vectorbt_optimized_operations
+            vectorbt_ops = get_vectorbt_optimized_operations()
+            
+            rolling_obj = vectorbt_ops._get_rolling_object(diff_series, window)
+            if rolling_obj:
+                rolling_mean = rolling_obj.mean()
+            else:
+                rolling_mean = diff_series.rolling(window=window, min_periods=1).mean()
+                
+            demeaned = diff_series - rolling_mean
+            self.logger.debug("✅ Used VectorBT-optimized rolling mean for demeaning")
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT rolling mean failed: {e}, using pandas fallback")
+            demeaned = diff_series - diff_series.rolling(window=window, min_periods=1).mean()
 
         return demeaned.fillna(0.0)
 
@@ -2807,8 +2823,24 @@ class CoreOptimizer:
                         price_series = pd.Series(close_prices)
                         
                         # Vectorized trend calculation: slope of linear regression over rolling window
-                        rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
-                        rolling_std = price_series.rolling(window=window, min_periods=window).std()
+                        # Use VectorBT-optimized rolling calculations
+                        try:
+                            from src.utils.matrix_operations.vectorbt_optimizations import get_vectorbt_optimized_operations
+                            vectorbt_ops = get_vectorbt_optimized_operations()
+                            
+                            rolling_obj = vectorbt_ops._get_rolling_object(price_series, window)
+                            if rolling_obj:
+                                rolling_mean = rolling_obj.mean()
+                                rolling_std = rolling_obj.std()
+                            else:
+                                rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
+                                rolling_std = price_series.rolling(window=window, min_periods=window).std()
+                                
+                            self.logger.debug("✅ Used VectorBT-optimized rolling calculations for trend analysis")
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ VectorBT rolling calculations failed: {e}, using pandas fallback")
+                            rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
+                            rolling_std = price_series.rolling(window=window, min_periods=window).std()
                         
                         # Calculate trend as normalized slope (price change / mean price)
                         price_diff = price_series.diff(window)

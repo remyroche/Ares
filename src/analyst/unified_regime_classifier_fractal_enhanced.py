@@ -257,7 +257,27 @@ class UnifiedRegimeClassifierFractalEnhanced:
             price_changes = df['close'].pct_change().iloc[-20:]
             volume_changes = df['volume'].pct_change().iloc[-20:]
             if len(price_changes.dropna()) >= 10:
-                features['price_volume_correlation'] = price_changes.corr(volume_changes)
+                # Use VectorBT-optimized correlation calculation
+                try:
+                    from src.utils.matrix_operations.vectorbt_optimizations import get_vectorbt_optimized_operations
+                    vectorbt_ops = get_vectorbt_optimized_operations()
+                    
+                    # Create DataFrame for VectorBT correlation calculation
+                    corr_data = pd.DataFrame({
+                        'price_changes': price_changes,
+                        'volume_changes': volume_changes
+                    }).dropna()
+                    
+                    if len(corr_data) >= 10:
+                        corr_matrix = vectorbt_ops.correlation_matrix(corr_data, method='pearson')
+                        features['price_volume_correlation'] = corr_matrix[0, 1] if corr_matrix.shape[0] > 1 else 0.0
+                    else:
+                        features['price_volume_correlation'] = 0.0
+                        
+                    self.logger.debug("✅ Used VectorBT-optimized correlation calculation")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT correlation failed: {e}, using pandas fallback")
+                    features['price_volume_correlation'] = price_changes.corr(volume_changes)
             else:
                 features['price_volume_correlation'] = 0.0
         return features

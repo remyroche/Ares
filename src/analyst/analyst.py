@@ -378,6 +378,40 @@ class Analyst:
         except ImportError as e:
             self.logger.error(
                 failed(f"❌ Failed to import liquidation risk model: {e}")
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             )
             self.liquidation_risk_model = None
         except Exception as e:
@@ -650,7 +684,7 @@ class Analyst:
         # Fallback: derive naive probabilities from volatility
         if "close" in features_df.columns and len(features_df) > 50:
             returns = features_df["close"].pct_change().dropna()
-            vol = float(returns.rolling(window=20).std().iloc[-1] or 0.0)
+            vol = float(self._vectorbt_rolling_operation(returns, "std", 20).iloc[-1] or 0.0)
         else:
             vol = 0.01
         
@@ -1177,12 +1211,12 @@ class Analyst:
 
             return {
                 "current_volume": market_data["volume"].iloc[-1],
-                "volume_ma": market_data["volume"].rolling(window=20).mean().iloc[-1],
+                "volume_ma": market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1],
                 "volume_ratio": market_data["volume"].iloc[-1]
-                / market_data["volume"].rolling(window=20).mean().iloc[-1],
+                / market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1],
                 "volume_trend": "high"
                 if market_data["volume"].iloc[-1]
-                > market_data["volume"].rolling(window=20).mean().iloc[-1]
+                > market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1]
                 else "low",
             }
 
@@ -1256,13 +1290,13 @@ class Analyst:
 
             returns = market_data["close"].pct_change()
             return {
-                "current_volatility": returns.rolling(window=20).std().iloc[-1],
+                "current_volatility": self._vectorbt_rolling_operation(returns, "std", 20).iloc[-1],
                 "volatility_regime": "high"
-                if returns.rolling(window=20).std().iloc[-1] > 0.04
+                if self._vectorbt_rolling_operation(returns, "std", 20).iloc[-1] > 0.04
                 else "normal",
                 "volatility_trend": "increasing"
-                if returns.rolling(window=20).std().iloc[-1]
-                > returns.rolling(window=50).std().iloc[-1]
+                if self._vectorbt_rolling_operation(returns, "std", 20).iloc[-1]
+                > self._vectorbt_rolling_operation(returns, "std", 50).iloc[-1]
                 else "decreasing",
             }
 

@@ -403,7 +403,7 @@ class FeatureEngineer:
             # Moving averages
             for period in self.config.moving_averages:
                 if 'close' in data.columns:
-                    features[f'sma_{period}'] = data['close'].rolling(window=period).mean()
+                    features[f'sma_{period}'] = rolling_mean(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).mean()
                     features[f'ema_{period}'] = data['close'].ewm(span=period).mean()
             
             # RSI
@@ -418,8 +418,8 @@ class FeatureEngineer:
             # Bollinger Bands
             for period in self.config.bollinger_periods:
                 if 'close' in data.columns:
-                    sma = data['close'].rolling(window=period).mean()
-                    std = data['close'].rolling(window=period).std()
+                    sma = rolling_mean(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).mean()
+                    std = rolling_std(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).std()
                     features[f'bb_upper_{period}'] = sma + (std * 2)
                     features[f'bb_lower_{period}'] = sma - (std * 2)
                     features[f'bb_middle_{period}'] = sma
@@ -484,13 +484,13 @@ class FeatureEngineer:
                 # Volume ratios
                 if self.config.volume_ratios:
                     for period in self.config.moving_averages:
-                        volume_sma = data['volume'].rolling(window=period).mean()
+                        volume_sma = rolling_mean(data["volume"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=period).mean()
                         features[f'volume_ratio_{period}'] = data['volume'] / volume_sma
                 
                 # Volume volatility
                 if self.config.volume_volatility:
                     for period in self.config.volatility_periods:
-                        features[f'volume_volatility_{period}'] = data['volume'].rolling(window=period).std()
+                        features[f'volume_volatility_{period}'] = rolling_std(data["volume"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=period).std()
             
         except Exception as e:
             self.logger.warning(f"⚠️ Volume features generation failed: {e}")
@@ -505,7 +505,7 @@ class FeatureEngineer:
             if 'close' in data.columns:
                 # Rolling volatility
                 for period in self.config.volatility_periods:
-                    features[f'volatility_{period}'] = data['close'].rolling(window=period).std()
+                    features[f'volatility_{period}'] = rolling_std(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).std()
                     features[f'volatility_ratio_{period}'] = features[f'volatility_{period}'] / features[f'volatility_{period}'].rolling(window=period).mean()
                 
                 # GARCH-like features
@@ -589,16 +589,16 @@ class FeatureEngineer:
                     for period in self.config.regime_periods:
                         # Volatility regime
                         if self.config.regime_volatility:
-                            volatility = data['close'].rolling(window=period).std()
-                            features[f'regime_volatility_{period}'] = (volatility > volatility.rolling(window=period).mean()).astype(int)
+                            volatility = rolling_std(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).std()
+                            features[f'regime_volatility_{period}'] = (volatility > self._vectorbt_rolling_operation(volatility, "mean", period)).astype(int)
                         
                         # Trend regime
                         if self.config.regime_trend:
-                            features[f'regime_trend_{period}'] = (data['close'] > data['close'].rolling(window=period).mean()).astype(int)
+                            features[f'regime_trend_{period}'] = (data['close'] > rolling_mean(data["close"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=period).mean()).astype(int)
                         
                         # Volume regime
                         if self.config.regime_volume and 'volume' in data.columns:
-                            volume_ma = data['volume'].rolling(window=period).mean()
+                            volume_ma = rolling_mean(data["volume"], window=period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=period).mean()
                             features[f'regime_volume_{period}'] = (data['volume'] > volume_ma).astype(int)
             else:
                 # Use provided regime data
@@ -813,6 +813,40 @@ class FeatureEngineer:
             # Save metadata
             metadata_file = output_dir / f"feature_metadata_{timestamp}.json"
             import json
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             metadata = {
                 'feature_names': result.feature_names,
                 'feature_types': result.feature_types,

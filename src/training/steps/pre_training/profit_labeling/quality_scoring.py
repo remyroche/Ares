@@ -71,6 +71,40 @@ except ImportError:
 # Import OOF stacking utilities
 try:
     from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     OOF_AVAILABLE = True
 except ImportError:
     OOF_AVAILABLE = False
@@ -678,8 +712,8 @@ class LabelQualityScorer:
                 return {'stability': 1.0 - psi_score, 'psi_score': psi_score}
             
             # Rolling window analysis
-            rolling_means = target_labels.rolling(window=window_size).mean()
-            rolling_stds = target_labels.rolling(window=window_size).std()
+            rolling_means = self._vectorbt_rolling_operation(target_labels, "mean", window_size)
+            rolling_stds = self._vectorbt_rolling_operation(target_labels, "std", window_size)
             
             # Stability based on consistency of rolling statistics
             mean_consistency = 1.0 - (rolling_means.std() / rolling_means.mean()) if rolling_means.mean() != 0 else 0.0

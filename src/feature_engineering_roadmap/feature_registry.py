@@ -142,9 +142,18 @@ class PriceReturnsFeatures:
     
     @staticmethod
     def bollz20(data: pd.DataFrame) -> pd.Series:
-        """Bollinger z-score: (Ct - MA20) / SD20(C)"""
-        ma20 = data['close'].rolling(20).mean()
-        sd20 = data['close'].rolling(20).std()
+        """Bollinger z-score: (Ct - MA20) / SD20(C) using VectorBT"""
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                ma20 = rolling_mean(data['close'], window=20)
+                sd20 = rolling_std(data['close'], window=20)
+            except Exception as e:
+                logger.warning(f"VectorBT Bollinger calculation failed: {e}, using pandas fallback")
+                ma20 = data['close'].rolling(20).mean()
+                sd20 = data['close'].rolling(20).std()
+        else:
+            ma20 = data['close'].rolling(20).mean()
+            sd20 = data['close'].rolling(20).std()
         return (data['close'] - ma20) / sd20
 
 
@@ -210,9 +219,18 @@ class MeanReversionFeatures:
     
     @staticmethod
     def stochk14(data: pd.DataFrame) -> pd.Series:
-        """14-period Stochastic %K."""
-        low14 = data['low'].rolling(14).min()
-        high14 = data['high'].rolling(14).max()
+        """14-period Stochastic %K using VectorBT."""
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                low14 = rolling_min(data['low'], window=14)
+                high14 = rolling_max(data['high'], window=14)
+            except Exception as e:
+                logger.warning(f"VectorBT Stochastic calculation failed: {e}, using pandas fallback")
+                low14 = data['low'].rolling(14).min()
+                high14 = data['high'].rolling(14).max()
+        else:
+            low14 = data['low'].rolling(14).min()
+            high14 = data['high'].rolling(14).max()
         return 100 * (data['close'] - low14) / (high14 - low14)
     
     @staticmethod

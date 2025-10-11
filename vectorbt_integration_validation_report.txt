@@ -5,43 +5,28 @@ VECTORBT INTEGRATION VALIDATION REPORT
 📊 SUMMARY STATISTICS:
   Total files validated: 56
   Files with VectorBT imports: 56
-  Files with VectorBT operations: 49
+  Files with VectorBT operations: 50
   Files with pandas fallbacks: 46
   Validation errors: 0
 
 📈 INTEGRATION RATES:
   VectorBT imports: 100.0%
-  VectorBT operations: 87.5%
+  VectorBT operations: 89.3%
 
-⚠️  FILES WITH ISSUES (5):
-
-  📁 /workspace/src/feature_generation/categories/negative_learning_examples.py
-    - More pandas operations than VectorBT operations
-    VectorBT operations: 7
-    Pandas operations: 8
+⚠️  FILES WITH ISSUES (2):
 
   📁 /workspace/src/feature_generation/categories/representation_learning.py
     - More pandas operations than VectorBT operations
-    VectorBT operations: 10
-    Pandas operations: 17
-
-  📁 /workspace/src/feature_engineering_roadmap/feature_registry.py
-    - More pandas operations than VectorBT operations
-    VectorBT operations: 7
-    Pandas operations: 8
+    VectorBT operations: 20
+    Pandas operations: 26
 
   📁 /workspace/src/feature_generation/core/vectorbt_batch_processor.py
-    - No VectorBT operations found, only pandas operations
-    VectorBT operations: 0
-    Pandas operations: 2
-
-  📁 /workspace/src/feature_generation/core/feature_generator.py
     - More pandas operations than VectorBT operations
-    VectorBT operations: 13
-    Pandas operations: 14
+    VectorBT operations: 2
+    Pandas operations: 4
 
 ✅ BEST PRACTICES COMPLIANCE:
-  Proper VectorBT usage: 80.4%
+  Proper VectorBT usage: 85.7%
 
 🎯 OVERALL ASSESSMENT:
   🟢 EXCELLENT: VectorBT integration is comprehensive and well-implemented

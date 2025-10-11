@@ -55,8 +55,8 @@ class StandardizedFeatureCalculator:
         
         # 2-3. Volatility features: 20 and 12 period rolling volatility (5*4 and 3*4 for 15m)
         price_returns = df['close'].pct_change().fillna(0)
-        features['volatility_20'] = price_returns.rolling(window=20).std()
-        features['volatility_12'] = price_returns.rolling(window=12).std()
+        features['volatility_20'] = self._vectorbt_rolling_operation(price_returns, "std", 20)
+        features['volatility_12'] = self._vectorbt_rolling_operation(price_returns, "std", 12)
         
         # 4-5. Momentum features: 20 and 12 period price momentum (5*4 and 3*4 for 15m)
         features['momentum_20'] = df['close'].pct_change(20)
@@ -74,8 +74,8 @@ class StandardizedFeatureCalculator:
         features['adx'] = StandardizedFeatureCalculator._calculate_adx(df, period=20)
         
         # Normalize DS using rolling z-score with 20-period window
-        ds_mean = directional_signal.rolling(window=20).mean()
-        ds_std = directional_signal.rolling(window=20).std()
+        ds_mean = self._vectorbt_rolling_operation(directional_signal, "mean", 20)
+        ds_std = self._vectorbt_rolling_operation(directional_signal, "std", 20)
         ds_normalized = (directional_signal - ds_mean) / (ds_std + 1e-8)
         
         # Trend Score = DS_normalized × ADX
@@ -185,6 +185,40 @@ class StandardizedFeatureCalculator:
 
 # Convenience functions for direct import
 def calculate_all_features(df: pd.DataFrame) -> pd.DataFrame:
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     """Calculate the 6 core standardized features for 15m timeframe."""
     return StandardizedFeatureCalculator.calculate_all_features(df)
 

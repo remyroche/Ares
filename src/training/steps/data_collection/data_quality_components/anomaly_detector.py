@@ -13,6 +13,40 @@ from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 class AnomalyDetector:
     """Detects anomalies in market data using multiple detection methods.
     
@@ -354,8 +388,8 @@ class AnomalyDetector:
         # Calculate rolling statistics
         rolling_window = self.config['volume_params']['rolling_window']
         self.logger.info(f'🔧 Calculating rolling statistics (window: {rolling_window})')
-        rolling_mean = volume.rolling(window=rolling_window).mean()
-        rolling_std = volume.rolling(window=rolling_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(volume, "mean", rolling_window)
+        rolling_std = self._vectorbt_rolling_operation(volume, "std", rolling_window)
         
         # Detect volume spikes
         spike_threshold = self.config['volume_params']['spike_threshold']

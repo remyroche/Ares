@@ -11,6 +11,40 @@ import numpy as np
 from ..core.decorators import handles_errors
 import datetime
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 # src/analyst/meta_labeling_system.py
 
 class MetaLabelingSystem:
@@ -806,7 +840,7 @@ class MetaLabelingSystem:
 
             # Calculate basic features from data
             current_price = data["close"].iloc[-1]
-            vwap = data["close"].rolling(window=20).mean().iloc[-1]
+            vwap = rolling_mean(data["close"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=20).mean().iloc[-1]
             price_vwap_ratio = current_price / vwap if vwap > 0 else 1.0
 
             # Calculate momentum
@@ -820,7 +854,7 @@ class MetaLabelingSystem:
             # Calculate volume spike
             volume_spike = (
                 volume_data["volume"].iloc[-1]
-                / volume_data["volume"].rolling(window=20).mean().iloc[-1]
+                / volume_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1]
                 if len(volume_data) >= 20
                 else 1.0
             )
@@ -1235,3 +1269,65 @@ class MetaLabelingSystem:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error stopping meta-labeling system: {e}")
+
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)

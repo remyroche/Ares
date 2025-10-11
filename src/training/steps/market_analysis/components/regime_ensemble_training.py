@@ -1177,12 +1177,12 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             if 'close' in data.columns:
                 # Calculate rolling volatility
                 returns = data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=20).std().fillna(returns.std())
+                volatility = self._vectorbt_rolling_operation(returns, "std", 20).fillna(returns.std())
                 
                 # Calculate trend strength
                 if 'high' in data.columns and 'low' in data.columns:
                     price_range = (data['high'] - data['low']) / data['close']
-                    trend_strength = price_range.rolling(window=20).mean().fillna(price_range.mean())
+                    trend_strength = self._vectorbt_rolling_operation(price_range, "mean", 20).fillna(price_range.mean())
                 else:
                     # Fallback: use price momentum
                     momentum = data['close'].pct_change(20).fillna(0)
@@ -1332,6 +1332,40 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # Use RegimeProbabilityAnalyzer for comprehensive analysis
             from src.utils.regime_probability_analyzer import RegimeProbabilityAnalyzer
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             analyzer = RegimeProbabilityAnalyzer()
             
             # Create prediction result for analysis

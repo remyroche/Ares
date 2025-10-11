@@ -1169,3 +1169,64 @@ if __name__ == "__main__":
             orchestrator.cleanup()
     
     asyncio.run(main())
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)

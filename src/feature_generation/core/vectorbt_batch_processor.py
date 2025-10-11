@@ -566,8 +566,18 @@ if __name__ == "__main__":
         def generate_features(self, data, **kwargs):
             # Mock feature generation
             features = pd.DataFrame(index=data.index)
-            features[f'{self.name}_feature_1'] = data['close'].rolling(window=20).mean()
-            features[f'{self.name}_feature_2'] = data['volume'].rolling(window=20).std()
+            # Use VectorBT operations for better performance
+            if VECTORBT_AVAILABLE:
+                try:
+                    features[f'{self.name}_feature_1'] = rolling_mean(data['close'], window=20)
+                    features[f'{self.name}_feature_2'] = rolling_std(data['volume'], window=20)
+                except Exception as e:
+                    logger.warning(f"VectorBT operations failed: {e}, using pandas fallback")
+                    features[f'{self.name}_feature_1'] = data['close'].rolling(window=20).mean()
+                    features[f'{self.name}_feature_2'] = data['volume'].rolling(window=20).std()
+            else:
+                features[f'{self.name}_feature_1'] = data['close'].rolling(window=20).mean()
+                features[f'{self.name}_feature_2'] = data['volume'].rolling(window=20).std()
             return features
     
     # Create feature generators

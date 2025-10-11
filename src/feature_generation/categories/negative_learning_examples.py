@@ -74,8 +74,15 @@ class ETHUSDTNegativeLearningExamples:
         # Define momentum features
         momentum_features = ['momentum_5m', 'momentum_15m', 'momentum_1h']
         
-        # Create high volatility context
-        data['volatility'] = data['close'].rolling(20).std()
+        # Create high volatility context using VectorBT
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                data['volatility'] = rolling_std(data['close'], window=20)
+            except Exception as e:
+                logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+                data['volatility'] = data['close'].rolling(20).std()
+        else:
+            data['volatility'] = data['close'].rolling(20).std()
         vol_threshold = data['volatility'].quantile(0.7)
         data['p_highvol'] = (data['volatility'] > vol_threshold).astype(float)
         
@@ -489,10 +496,21 @@ class ETHUSDTNegativeLearningExamples:
         """Create Analyst (1h) features"""
         features = data.copy()
         
-        # HTF parent features
-        features['trend_strength'] = data['close'].rolling(20).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
-        features['volatility_regime'] = data['close'].rolling(20).std()
-        features['volume_profile'] = data['volume'].rolling(20).mean()
+        # HTF parent features using VectorBT
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                features['trend_strength'] = rolling_apply(data['close'], lambda x: np.polyfit(range(len(x)), x, 1)[0], window=20)
+                features['volatility_regime'] = rolling_std(data['close'], window=20)
+                features['volume_profile'] = rolling_mean(data['volume'], window=20)
+            except Exception as e:
+                logger.warning(f"VectorBT HTF features failed: {e}, using pandas fallback")
+                features['trend_strength'] = data['close'].rolling(20).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+                features['volatility_regime'] = data['close'].rolling(20).std()
+                features['volume_profile'] = data['volume'].rolling(20).mean()
+        else:
+            features['trend_strength'] = data['close'].rolling(20).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0])
+            features['volatility_regime'] = data['close'].rolling(20).std()
+            features['volume_profile'] = data['volume'].rolling(20).mean()
         features['momentum_htf'] = data['close'].pct_change(20)
         
         return features
@@ -511,11 +529,24 @@ class ETHUSDTNegativeLearningExamples:
         return features
     
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator"""
+        """Calculate RSI indicator using VectorBT"""
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        
+        if VECTORBT_AVAILABLE and len(prices) > 1000:
+            try:
+                gain_mean = rolling_mean(gain, window=period)
+                loss_mean = rolling_mean(loss, window=period)
+            except Exception as e:
+                logger.warning(f"VectorBT RSI calculation failed: {e}, using pandas fallback")
+                gain_mean = gain.rolling(window=period).mean()
+                loss_mean = loss.rolling(window=period).mean()
+        else:
+            gain_mean = gain.rolling(window=period).mean()
+            loss_mean = loss.rolling(window=period).mean()
+        
+        rs = gain_mean / loss_mean
         rsi = 100 - (100 / (1 + rs))
         return rsi
     

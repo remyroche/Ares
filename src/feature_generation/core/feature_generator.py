@@ -840,18 +840,10 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                     series = data[col]
                     
                     for operation in operations:
-                        if operation == 'mean':
-                            result[f'{col}_rolling_mean_{window}'] = series.rolling(window=window).mean()
-                        elif operation == 'std':
-                            result[f'{col}_rolling_std_{window}'] = series.rolling(window=window).std()
-                        elif operation == 'var':
-                            result[f'{col}_rolling_var_{window}'] = series.rolling(window=window).var()
-                        elif operation == 'min':
-                            result[f'{col}_rolling_min_{window}'] = series.rolling(window=window).min()
-                        elif operation == 'max':
-                            result[f'{col}_rolling_max_{window}'] = series.rolling(window=window).max()
-                        elif operation == 'sum':
-                            result[f'{col}_rolling_sum_{window}'] = series.rolling(window=window).sum()
+                        # Use VectorBT helper methods for consistency
+                        result[f'{col}_rolling_{operation}_{window}'] = self._pandas_rolling_operation(
+                            series, operation, window
+                        )
         
         return result
     
@@ -869,10 +861,22 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         """
         if operation == 'rolling_mean':
             window = kwargs.get('window', 20)
-            return pd.Series(data).rolling(window=window).mean().values
+            series = pd.Series(data)
+            if VECTORBT_AVAILABLE and len(series) > 1000:
+                try:
+                    return rolling_mean(series, window=window).values
+                except Exception:
+                    pass
+            return series.rolling(window=window).mean().values
         elif operation == 'rolling_std':
             window = kwargs.get('window', 20)
-            return pd.Series(data).rolling(window=window).std().values
+            series = pd.Series(data)
+            if VECTORBT_AVAILABLE and len(series) > 1000:
+                try:
+                    return rolling_std(series, window=window).values
+                except Exception:
+                    pass
+            return series.rolling(window=window).std().values
         elif operation == 'ewm_mean':
             span = kwargs.get('span', 20)
             return pd.Series(data).ewm(span=span).mean().values

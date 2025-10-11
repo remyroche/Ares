@@ -133,6 +133,40 @@ except ImportError as e:
 # Import matrix operations for advanced computations
 try:
     from src.utils.matrix_operations import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
         safe_correlation_matrix, correlation_matrix_gpu, 
         batch_correlation_analysis, optimize_matrix_operation_with_hardware
     )
@@ -1394,16 +1428,16 @@ class MRMRLookbackOptimizer:
                     tprint_warning(
                         f"⚠️ Feature '{feature_name}' not found; using 'close' as fallback for technical indicator"
                     )
-                    return data['close'].rolling(window=lookback_period).mean().values
+                    return rolling_mean(data["close"], window=lookback_period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=lookback_period).mean().values
 
             elif parameter_type == "moving_average":
                 # For moving averages
-                return data['close'].rolling(window=lookback_period).mean().values
+                return rolling_mean(data["close"], window=lookback_period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=lookback_period).mean().values
             
             elif parameter_type == "volatility":
                 # For volatility indicators
                 returns = data['close'].pct_change()
-                return returns.rolling(window=lookback_period).std().values
+                return self._vectorbt_rolling_operation(returns, "std", lookback_period).values
             
             elif parameter_type == "momentum":
                 # For momentum indicators
@@ -1411,7 +1445,7 @@ class MRMRLookbackOptimizer:
             
             else:
                 # Default to simple moving average
-                return data['close'].rolling(window=lookback_period).mean().values
+                return rolling_mean(data["close"], window=lookback_period) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=lookback_period).mean().values
                 
         except Exception as e:
             self.logger.warning(f"Failed to generate feature with lookback {lookback_period}: {e}")

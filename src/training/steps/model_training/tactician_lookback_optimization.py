@@ -882,6 +882,40 @@ class TacticianLookbackOptimizer:
         except Exception as e:
             tprint_error(f"❌ Data validation failed with exception: {e}")
             import traceback
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             tprint_debug(f"Validation traceback: {traceback.format_exc()}")
             return False
     
@@ -1268,7 +1302,7 @@ class TacticianLookbackOptimizer:
                 features_list.append(analyst_signal_series)
                 
                 # Analyst signal momentum
-                analyst_momentum = analyst_signal_series.rolling(window=5).mean()
+                analyst_momentum = self._vectorbt_rolling_operation(analyst_signal_series, "mean", 5)
                 analyst_momentum.name = 'analyst_signal_momentum'
                 features_list.append(analyst_momentum)
             
@@ -1353,13 +1387,13 @@ class TacticianLookbackOptimizer:
             
             # Calculate volatility-adjusted returns for short-term movements
             returns = market_data['close'].pct_change()
-            volatility = returns.rolling(window=10).std()  # Shorter window for 1m data
+            volatility = self._vectorbt_rolling_operation(returns, "std", 10)  # Shorter window for 1m data
             
             # Identify high-risk periods for 0.4% target movements
             # More sensitive thresholds for short-term trading
             high_risk_periods = (
                 (volatility > volatility.quantile(0.75)) |  # Lower threshold for 1m
-                (returns.rolling(window=3).mean() < -0.0015) |  # 0.15% negative momentum
+                (self._vectorbt_rolling_operation(returns, "mean", 3) < -0.0015) |  # 0.15% negative momentum
                 (returns.abs() > 0.005)  # Large movements (>0.5%) indicate instability
             )
             
@@ -1378,7 +1412,7 @@ class TacticianLookbackOptimizer:
             momentum_signals = pd.Series(False, index=features.index)
             if len(returns) > 3:
                 # Exit when recent momentum turns negative
-                recent_momentum = returns.rolling(window=3).mean()
+                recent_momentum = self._vectorbt_rolling_operation(returns, "mean", 3)
                 momentum_signals = recent_momentum < -0.001  # 0.1% negative momentum
             
             # Combine exit signals (more sensitive for short-term trading)

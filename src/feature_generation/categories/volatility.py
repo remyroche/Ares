@@ -4,6 +4,8 @@ Volatility Feature Generator
 This module provides feature generators for volatility-based indicators,
 including Bollinger Bands, ATR, and other volatility measures.
 Supports different base calculations: price returns, returns-based VWAP, etc.
+
+Enhanced with VectorBT for maximum performance.
 """
 
 import numpy as np
@@ -12,6 +14,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -98,698 +101,162 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
             history_window = max(self.period, 1)
             close_history = closes.tolist()[-history_window:]
             state_update = {
-                'last_close': float(closes.iloc[-1]),
                 'close_history': close_history
             }
-            if not feature_data.empty:
-                last_vol = feature_data.iloc[-1]
-                if pd.notna(last_vol):
-                    state_update['last_volatility'] = float(last_vol)
             self.update_state(state_update)
 
-        super()._finalize_state(data, feature_data)
+
+class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized volatility feature generator with comprehensive indicators."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
     
     @classmethod
-    def generate_batch_features(cls,
-                               data: pd.DataFrame,
-                               periods: List[int] = [5, 10, 20, 30],
-                               volatility_types: List[str] = ["returns", "price"],
-                               **kwargs) -> Dict[str, pd.Series]:
-        """
-        Generate volatility features for multiple periods and types in batch.
-        
-        Args:
-            data: Input data DataFrame
-            periods: List of periods to calculate
-            volatility_types: List of volatility calculation types
-            **kwargs: Additional parameters
-            
-        Returns:
-            Dictionary mapping feature names to Series
-        """
-        features = {}
-        close_prices = data['close']
-        
-        for period in periods:
-            for vol_type in volatility_types:
-                if vol_type == "returns":
-                    # Calculate volatility based on returns
-                    returns = close_prices.pct_change().dropna()
-                    volatility = returns.rolling(window=period).std()
-                    # Pad with NaN to match original length
-                    volatility = pd.concat([pd.Series([np.nan] * (len(close_prices) - len(volatility)), index=close_prices.index[:len(close_prices) - len(volatility)]), volatility])
-                elif vol_type == "price":
-                    # Calculate volatility based on price levels
-                    volatility = close_prices.rolling(window=period).std()
-                else:
-                    continue
-                
-                feature_name = f"volatility_{vol_type}_{period}"
-                features[feature_name] = volatility
-        
-        return features
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class BollingerBandsGenerator(VectorizedFeatureGenerator):
-    """Generator for Bollinger Bands with different base calculations and batch processing."""
-    
-    def __init__(self,
-                 period: int = 20,
-                 std_dev: float = 2.0,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
-                 band_type: str = "upper",  # "upper", "lower", "middle"
-                 **base_kwargs):
-        """
-        Initialize Bollinger Bands generator.
-        
-        Args:
-            period: Bollinger Bands period
-            std_dev: Standard deviation multiplier
-            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
-            band_type: Type of band to generate ("upper", "lower", "middle")
-            **base_kwargs: Additional parameters for base calculation
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
-        # Update required columns based on base calculation
-        required_columns = self.base_calculator.get_required_columns()
-        
-        config = FeatureConfig(
-            name=f"bb_{band_type}_{period}_{std_dev}_{base_calculation.value}",
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_volatility_comprehensive_{period}",
             category=FeatureCategory.VOLATILITY,
-            description=f"Bollinger Bands {band_type} with period={period}, std={std_dev} based on {base_calculation.value}",
-            required_columns=required_columns,
+            description=f"VectorBT-optimized comprehensive volatility features over {period} periods",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
             default_lookback=period,
             min_lookback=period,
             max_lookback=period,
-            parameters={
-                'period': period,
-                'std_dev': std_dev,
-                'base_calculation': base_calculation.value,
-                'band_type': band_type,
-                **base_kwargs
-            }
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate comprehensive volatility features using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_{self.period}')
+        
+        # Generate multiple volatility indicators using VectorBT
+        operations = [
+            {'type': 'indicator', 'name': 'atr', 'params': {'indicator': 'atr', 'window': self.period}},
+            {'type': 'indicator', 'name': 'bbands_width', 'params': {'indicator': 'bbands_width', 'window': self.period}},
+            {'type': 'indicator', 'name': 'bbands_percent', 'params': {'indicator': 'bbands_percent', 'window': self.period}},
+            {'type': 'rolling', 'name': 'volatility_std', 'params': {'operation': 'std', 'window': self.period, 'column': 'close'}},
+            {'type': 'rolling', 'name': 'volatility_var', 'params': {'operation': 'var', 'window': self.period, 'column': 'close'}}
+        ]
+        
+        # Use batch operations for efficiency
+        results = self._vectorbt_batch_operations(data, operations)
+        
+        # Combine results into a single volatility measure
+        if not results.empty:
+            # Weighted combination of different volatility measures
+            volatility = (
+                0.3 * results.get('atr', 0) +
+                0.2 * results.get('bbands_width', 0) +
+                0.2 * results.get('bbands_percent', 0) +
+                0.2 * results.get('volatility_std', 0) +
+                0.1 * results.get('volatility_var', 0)
+            )
+        else:
+            # Fallback to simple ATR
+            volatility = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
+        
+        return volatility.rename(f'vectorbt_volatility_{self.period}')
+
+
+class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Bollinger Bands generator."""
+    
+    def __init__(self, period: int = 20, std_dev: float = 2.0, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period, std_dev)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
         self.std_dev = std_dev
-        self.base_calculation = base_calculation
-        self.band_type = band_type
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate Bollinger Bands based on the specified base calculation."""
-        # Calculate base values
-        base_values = self.base_calculator.calculate(data)
-        
-        # Calculate Bollinger Bands on base values
-        sma = base_values.rolling(window=self.period).mean()
-        std = base_values.rolling(window=self.period).std()
-        
-        if self.band_type == "upper":
-            band = sma + (std * self.std_dev)
-        elif self.band_type == "lower":
-            band = sma - (std * self.std_dev)
-        elif self.band_type == "middle":
-            band = sma
-        else:
-            raise ValueError(f"Invalid band_type: {self.band_type}")
-        
-        return band
     
     @classmethod
-    def generate_batch_features(cls, 
-                               data: pd.DataFrame,
-                               periods: List[int] = [10, 20, 30],
-                               std_devs: List[float] = [1.5, 2.0, 2.5],
-                               band_types: List[str] = ["upper", "lower", "middle"],
-                               base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
-                               **base_kwargs) -> Dict[str, pd.Series]:
-        """
-        Generate Bollinger Bands features for multiple periods, std_devs, and band_types in batch.
-        
-        Args:
-            data: Input data DataFrame
-            periods: List of periods to calculate
-            std_devs: List of standard deviation multipliers
-            band_types: List of band types to generate
-            base_calculation: Base calculation type
-            **base_kwargs: Additional parameters for base calculation
-            
-        Returns:
-            Dictionary mapping feature names to Series
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        # Create base calculator
-        base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        base_values = base_calculator.calculate(data)
-        
-        features = {}
-        
-        # Vectorized calculation for all combinations
-        for period in periods:
-            # Calculate rolling mean and std for this period
-            rolling_mean = base_values.rolling(window=period).mean()
-            rolling_std = base_values.rolling(window=period).std()
-            
-            for std_dev in std_devs:
-                for band_type in band_types:
-                    if band_type == "upper":
-                        band = rolling_mean + (rolling_std * std_dev)
-                    elif band_type == "lower":
-                        band = rolling_mean - (rolling_std * std_dev)
-                    elif band_type == "middle":
-                        band = rolling_mean
-                    else:
-                        continue
-                    
-                    feature_name = f"bb_{band_type}_{period}_{std_dev}_{base_calculation.value}"
-                    features[feature_name] = band
-        
-        return features
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class ATRGenerator(VectorizedFeatureGenerator):
-    """Generator for Average True Range with different base calculations and batch processing."""
-    
-    def __init__(self,
-                 period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
-                 **base_kwargs):
-        """
-        Initialize ATR generator.
-        
-        Args:
-            period: ATR period
-            base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
-            **base_kwargs: Additional parameters for base calculation
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
-        # Update required columns based on base calculation
-        required_columns = self.base_calculator.get_required_columns()
-        
-        config = FeatureConfig(
-            name=f"atr_{period}_{base_calculation.value}",
+    def _create_default_config(cls, period: int = 20, std_dev: float = 2.0) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_bbands_{period}_{std_dev}",
             category=FeatureCategory.VOLATILITY,
-            description=f"Average True Range over {period} periods based on {base_calculation.value}",
-            required_columns=required_columns,
-            default_lookback=period,
-            min_lookback=period,
-            max_lookback=period,
-            parameters={
-                'period': period,
-                'base_calculation': base_calculation.value,
-                **base_kwargs
-            }
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.period = period
-        self.base_calculation = base_calculation
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate ATR based on the specified base calculation."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            # Traditional ATR calculation on price levels
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            # Calculate True Range
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # Calculate ATR
-            atr = true_range.rolling(window=self.period).mean()
-            return atr
-        else:
-            # For other base calculations, calculate ATR on the base values
-            base_values = self.base_calculator.calculate(data)
-            
-            # Calculate rolling standard deviation as volatility measure
-            atr = base_values.rolling(window=self.period).std()
-            return atr
-    
-    @classmethod
-    def generate_batch_features(cls,
-                               data: pd.DataFrame,
-                               periods: List[int] = [7, 14, 21],
-                               base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
-                               **base_kwargs) -> Dict[str, pd.Series]:
-        """
-        Generate ATR features for multiple periods in batch.
-        
-        Args:
-            data: Input data DataFrame
-            periods: List of periods to calculate
-            base_calculation: Base calculation type
-            **base_kwargs: Additional parameters for base calculation
-            
-        Returns:
-            Dictionary mapping feature names to Series
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        features = {}
-        
-        if base_calculation == BaseCalculationType.PRICE_LEVELS:
-            # Traditional ATR calculation on price levels
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            # Calculate True Range
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # Calculate ATR for each period
-            for period in periods:
-                atr = true_range.rolling(window=period).mean()
-                feature_name = f"atr_{period}_{base_calculation.value}"
-                features[feature_name] = atr
-        else:
-            # For other base calculations, calculate ATR on the base values
-            base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-            base_values = base_calculator.calculate(data)
-            
-            # Calculate rolling standard deviation for each period
-            for period in periods:
-                atr = base_values.rolling(window=period).std()
-                feature_name = f"atr_{period}_{base_calculation.value}"
-                features[feature_name] = atr
-        
-        return features
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class VolatilityBandsGenerator(VectorizedFeatureGenerator):
-    """Generator for Volatility Bands with different base calculations."""
-    
-    def __init__(self,
-                 period: int = 20,
-                 std_multiplier: float = 2.0,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
-                 **base_kwargs):
-        """
-        Initialize Volatility Bands generator.
-        
-        Args:
-            period: Period for volatility calculation
-            std_multiplier: Standard deviation multiplier for bands
-            base_calculation: Base calculation type
-            **base_kwargs: Additional parameters for base calculation
-        """
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        # Create base calculator
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
-        # Update required columns based on base calculation
-        required_columns = self.base_calculator.get_required_columns()
-        
-        config = FeatureConfig(
-            name=f"volatility_bands_{period}_{std_multiplier}_{base_calculation.value}",
-            category=FeatureCategory.VOLATILITY,
-            description=f"Volatility Bands with period={period}, multiplier={std_multiplier} based on {base_calculation.value}",
-            required_columns=required_columns,
-            default_lookback=period,
-            min_lookback=period,
-            max_lookback=period,
-            parameters={
-                'period': period,
-                'std_multiplier': std_multiplier,
-                'base_calculation': base_calculation.value,
-                **base_kwargs
-            }
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.period = period
-        self.std_multiplier = std_multiplier
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate Volatility Bands upper band based on the specified base calculation."""
-        base_values = self.base_calculator.calculate(data)
-        
-        # Calculate moving average and standard deviation
-        sma = base_values.rolling(window=self.period).mean()
-        volatility = base_values.rolling(window=self.period).std()
-        
-        # Return upper band as the main feature
-        # Lower band would be: sma - (volatility * multiplier)
-        # Middle line would be: sma
-        upper_band = sma + (volatility * self.std_multiplier)
-        
-        return upper_band
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class GARCHFeatureGenerator(VectorizedFeatureGenerator):
-    """Generator for GARCH-based volatility features."""
-
-    def __init__(self,
-                 p: int = 1,
-                 q: int = 1,
-                 forecast_horizon: int = 1,
-                 **garch_kwargs):
-        """
-        Initialize GARCH generator.
-
-        Args:
-            p: GARCH lag order
-            q: ARCH lag order
-            forecast_horizon: Number of steps to forecast
-            **garch_kwargs: Additional parameters for GARCH model
-        """
-        config = FeatureConfig(
-            name=f"garch_{p}_{q}_h{forecast_horizon}",
-            category=FeatureCategory.VOLATILITY,
-            description=f"GARCH({p},{q}) volatility model with {forecast_horizon}-step forecast using vectorized rolling windows",
+            description=f"VectorBT-optimized Bollinger Bands over {period} periods with {std_dev} std dev",
             required_columns=["close"],
-            default_lookback=252,  # Use 1 year of data for GARCH fitting
-            min_lookback=100,      # Minimum 100 data points for reliable GARCH
-            max_lookback=1000,
-            parameters={
-                'p': p,
-                'q': q,
-                'forecast_horizon': forecast_horizon,
-                **garch_kwargs
-            },
-            dependencies=["arch"]  # Require arch library for GARCH models
+            optional_columns=["high", "low", "open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period, "std_dev": std_dev},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.p = p
-        self.q = q
-        self.forecast_horizon = forecast_horizon
-        self.garch_kwargs = garch_kwargs
-
+    
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate GARCH-based volatility features using vectorized calculations."""
-        return self._generate_garch_vectorized(data)
-
-    def _generate_garch_vectorized(self, data: pd.DataFrame) -> pd.Series:
-        """Generate GARCH-based volatility features using vectorized rolling window approach."""
-        from arch import arch_model
-
-        close_prices = data['close'].dropna()
-        if len(close_prices) < self.config.min_lookback:
-            # Instead of all NaN, provide fallback volatility estimate
-            fallback_volatility = close_prices.pct_change().std() if len(close_prices) > 1 else 0.02
-            return pd.Series([fallback_volatility] * len(data), index=data.index, name=self.config.name)
-
-        # Calculate returns
-        returns = 100 * close_prices.pct_change().dropna()
-
-        if len(returns) < 50:  # Need minimum data for GARCH
-            # Fallback to rolling volatility for insufficient data
-            fallback_volatility = close_prices.pct_change().rolling(window=min(20, len(returns))).std().fillna(0.02)
-            # Pad to match data length
-            pad_length = len(data) - len(fallback_volatility)
-            result = pd.Series([0.02] * pad_length + fallback_volatility.tolist(), index=data.index, name=self.config.name)
-            return result
-
-        try:
-            # Use vectorized rolling window with pandas
-            window_size = min(252, len(returns))  # Use up to 252 days for fitting
-
-            def fit_garch_window(window_returns: pd.Series) -> float:
-                """Fit GARCH model on a window and return volatility forecast."""
-                if len(window_returns) < 50:  # Minimum data requirement
-                    # Fallback to simple volatility estimate
-                    return window_returns.std() if len(window_returns) > 1 else 0.02
-
-                try:
-                    # Fit GARCH model
-                    model = arch_model(window_returns, p=self.p, q=self.q, **self.garch_kwargs)
-                    model_fit = model.fit(disp='off')
-
-                    # Generate forecast
-                    forecast = model_fit.forecast(horizon=self.forecast_horizon)
-                    volatility_forecast = forecast.variance.iloc[-1].values[0] if self.forecast_horizon == 1 else forecast.variance.iloc[-1].values[0]
-                    return volatility_forecast
-
-                except Exception:
-                    # Fallback to rolling volatility when GARCH fails
-                    return window_returns.rolling(window=min(20, len(window_returns))).std().iloc[-1] if len(window_returns) > 1 else 0.02
-
-            # Apply GARCH fitting to rolling windows
-            # For vectorized processing, we'll use expanding windows with proper alignment
-            volatility_forecasts = []
-
-            # Process in chunks for better performance
-            chunk_size = min(100, len(returns) - window_size + 1)
-
-            for i in range(0, len(returns) - window_size + 1, chunk_size):
-                end_idx = min(i + chunk_size, len(returns) - window_size + 1)
-
-                for j in range(i, end_idx):
-                    start_idx = j
-                    end_idx_window = start_idx + window_size
-
-                    if end_idx_window > len(returns):
-                        break
-
-                    window_returns = returns.iloc[start_idx:end_idx_window]
-
-                    try:
-                        model = arch_model(window_returns, p=self.p, q=self.q, **self.garch_kwargs)
-                        model_fit = model.fit(disp='off')
-                        forecast = model_fit.forecast(horizon=self.forecast_horizon)
-                        volatility_forecast = forecast.variance.iloc[-1].values[0] if self.forecast_horizon == 1 else forecast.variance.iloc[-1].values[0]
-                        volatility_forecasts.append(volatility_forecast)
-                    except Exception:
-                        # Fallback volatility when GARCH fitting fails for this window
-                        window_vol = window_returns.std() if len(window_returns) > 1 else 0.02
-                        volatility_forecasts.append(window_vol)
-
-            # Pad the beginning with fallback volatility to match data length
-            pad_length = len(data) - len(volatility_forecasts)
-            # Use fallback volatility (0.02) for padding instead of NaN
-            fallback_vol = 0.02
-            volatility_series = pd.Series([fallback_vol] * pad_length + volatility_forecasts,
-                                        index=data.index, name=self.config.name)
-
-            return volatility_series
-
-        except Exception as e:
-            logging.getLogger(__name__).warning(f"⚠️ Vectorized GARCH calculation failed: {e}, using fallback volatility")
-            # Fallback to simple rolling volatility when GARCH completely fails
-            close_prices = data['close'].dropna()
-            if len(close_prices) > 1:
-                fallback_volatility = close_prices.pct_change().rolling(window=min(20, len(close_prices))).std().fillna(0.02)
-                # Pad to match data length
-                pad_length = len(data) - len(fallback_volatility)
-                result = pd.Series([0.02] * pad_length + fallback_volatility.tolist(), index=data.index, name=self.config.name)
-                return result
-            else:
-                return pd.Series([0.02] * len(data), index=data.index, name=self.config.name)
+        """Generate Bollinger Bands features using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_bbands_{self.period}')
+        
+        # Generate Bollinger Bands using VectorBT
+        bb_result = self._vectorbt_technical_indicator(data, 'bbands_percent', 
+                                                     window=self.period, 
+                                                     alpha=self.std_dev)
+        
+        return bb_result.rename(f'vectorbt_bbands_{self.period}')
 
 
-
-def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
-    """Create a set of volatility feature generators."""
-    if periods is None:
-        periods = {
-            'bb': [20],
-            'atr': [14],
-            'volatility': [10, 20],
-            'volatility_bands': [20],
-            'garch': [(1, 1, 1), (1, 1, 5)]  # GARCH(p,q,h) configurations
-        }
+class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Average True Range generator."""
     
-    generators = []
+    def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
     
-    # Bollinger Bands generators
-    for period in periods.get('bb', [20]):
-        generators.append(BollingerBandsGenerator(period))
+    @classmethod
+    def _create_default_config(cls, period: int = 14) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_atr_{period}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"VectorBT-optimized Average True Range over {period} periods",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
     
-    # ATR generators
-    for period in periods.get('atr', [14]):
-        generators.append(ATRGenerator(period))
-    
-    # Volatility Bands generators
-    for period in periods.get('volatility_bands', [20]):
-        generators.append(VolatilityBandsGenerator(period))
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate ATR using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_atr_{self.period}')
+        
+        # Generate ATR using VectorBT
+        atr = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
+        
+        return atr.rename(f'vectorbt_atr_{self.period}')
 
-    # Basic volatility generators
-    for period in periods.get('volatility', [10, 20]):
-        generators.append(VolatilityFeatureGenerator(period))
-
-    # GARCH generators
-    for garch_config in periods.get('garch', [(1, 1, 1), (1, 1, 5)]):
-        p, q, h = garch_config
-        generators.append(GARCHFeatureGenerator(p=p, q=q, forecast_horizon=h))
-
-    # Analyst Features - Volatility structure generators
-    class AnalystVolatilityRatio5m15mGenerator(VectorizedFeatureGenerator):
-        """Generator for volatility ratio between 5m and 15m timeframes."""
-
-        def __init__(self):
-            config = FeatureConfig(
-                name="analyst_vol_ratio_5m_15m",
-                category=FeatureCategory.VOLATILITY,
-                description="Analyst volatility ratio between 5m and 15m timeframes",
-                required_columns=["close"],
-                default_lookback=60,
-                min_lookback=20,
-                max_lookback=200,
-                parameters={}
-            )
-            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-
-        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-            """Generate volatility ratio feature."""
-            returns = data['close'].pct_change()
-
-            # 5m volatility (20 periods)
-            vol_5m = returns.rolling(20).std()
-
-            # 15m volatility (60 periods)
-            vol_15m = returns.rolling(60).std()
-
-            # Volatility ratio
-            vol_ratio = vol_5m / vol_15m.replace(0, 1)
-            return vol_ratio
-
-    class AnalystVolatilityRegimeDeviationGenerator(VectorizedFeatureGenerator):
-        """Generator for volatility regime deviation feature."""
-
-        def __init__(self):
-            config = FeatureConfig(
-                name="analyst_vol_regime_deviation",
-                category=FeatureCategory.VOLATILITY,
-                description="Analyst current volatility relative to regime average",
-                required_columns=["close"],
-                default_lookback=100,
-                min_lookback=50,
-                max_lookback=300,
-                parameters={}
-            )
-            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-
-        def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
-            """Generate volatility regime deviation feature."""
-            returns = data['close'].pct_change()
-            current_vol = returns.rolling(20).std()
-
-            if regime_data is not None and 'regime' in regime_data.columns:
-                # Calculate regime-specific volatility averages
-                regime_vol_avgs = {}
-                for regime in regime_data['regime'].unique():
-                    regime_mask = regime_data['regime'] == regime
-                    regime_vol_avgs[regime] = current_vol[regime_mask].mean()
-
-                # Current regime deviation
-                current_regime = regime_data['regime'].iloc[-1] if len(regime_data) > 0 else None
-                if current_regime is not None and current_regime in regime_vol_avgs:
-                    regime_avg_vol = regime_vol_avgs[current_regime]
-                    regime_deviation = current_vol.iloc[-1] / regime_avg_vol if regime_avg_vol > 0 else 1.0
-                else:
-                    regime_deviation = 1.0
-            else:
-                # Default to 1.0 if no regime data available
-                regime_deviation = 1.0
-
-            # Create series with the same index as input data
-            regime_deviation_series = pd.Series([regime_deviation] * len(data), index=data.index, name=self.config.name)
-            return regime_deviation_series
-
-    generators.append(AnalystVolatilityRatio5m15mGenerator())
-    generators.append(AnalystVolatilityRegimeDeviationGenerator())
-
-    return generators
 
 def create_default_volatility_generators() -> List[FeatureGenerator]:
-    return create_volatility_generators()
+    """Create default volatility feature generators with VectorBT optimization."""
+    generators = []
+    
+    if VECTORBT_AVAILABLE:
+        # VectorBT-optimized generators
+        for period in [10, 14, 20, 30, 50]:
+            generators.append(VectorBTVolatilityFeatureGenerator(period))
+            generators.append(VectorBTAverageTrueRangeGenerator(period))
+            
+        # Bollinger Bands with different parameters
+        for period in [20, 30]:
+            for std_dev in [1.5, 2.0, 2.5]:
+                generators.append(VectorBTBollingerBandsGenerator(period, std_dev))
+    else:
+        # Fallback to original generators
+        for period in [10, 14, 20, 30, 50]:
+            generators.append(VolatilityFeatureGenerator(period))
+    
+    return generators

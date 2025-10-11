@@ -58,6 +58,14 @@ except ImportError as e:
     logging.warning(f"Vectorized processing core not available: {e}")
     VECTORIZED_CORE_AVAILABLE = False
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimizations import get_vectorbt_optimized_operations
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBT optimizations not available: {e}")
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+
 # Import hardware optimizations
 try:
     from ..hardware.m1_gpu_utils import M1GPUManager
@@ -216,7 +224,7 @@ class UnifiedMatrixOperations:
 
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
-        Optimized matrix multiplication with automatic hardware selection.
+        Optimized matrix multiplication with automatic hardware selection and VectorBT optimization.
 
         Args:
             A: First matrix
@@ -231,6 +239,40 @@ class UnifiedMatrixOperations:
         if A.shape[1] != B.shape[0]:
             raise ValueError(f"Matrix dimensions incompatible: {A.shape} @ {B.shape}")
 
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE and self._should_use_vectorbt(A, B):
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                result = vectorbt_ops.matrix_multiply(A, B)
+                self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
+                self.logger.debug("✅ VectorBT matrix multiplication completed")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
+                result = self._standard_matrix_multiply(A, B)
+        else:
+            result = self._standard_matrix_multiply(A, B)
+        
+        # Update performance stats
+        execution_time = time.time() - start_time
+        self.performance_stats['total_operations'] += 1
+        self.performance_stats['average_execution_time'] = (
+            (self.performance_stats['average_execution_time'] *
+             (self.performance_stats['total_operations'] - 1)) + execution_time
+        ) / self.performance_stats['total_operations']
+
+        return result
+    
+    def _should_use_vectorbt(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
+        """Determine if VectorBT should be used for the operation."""
+        if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            return False
+        
+        # Use VectorBT for medium to large matrices
+        total_elements = A.size + B.size
+        return total_elements > 10000  # 10K elements threshold
+    
+    def _standard_matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
+        """Standard matrix multiplication with hardware selection."""
         # Choose optimal method based on size and available hardware
         if self._should_use_gpu(A, B):
             result = self._gpu_matrix_multiply(A, B)
@@ -242,14 +284,6 @@ class UnifiedMatrixOperations:
             result = self._cpu_matrix_multiply(A, B)
             self.performance_stats['cpu_operations'] += 1
         
-        # Update performance stats
-        execution_time = time.time() - start_time
-        self.performance_stats['total_operations'] += 1
-        self.performance_stats['average_execution_time'] = (
-            (self.performance_stats['average_execution_time'] *
-             (self.performance_stats['total_operations'] - 1)) + execution_time
-        ) / self.performance_stats['total_operations']
-
         return result
 
     def _should_use_gpu(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
@@ -326,7 +360,7 @@ class UnifiedMatrixOperations:
     def safe_correlation_matrix(self, data: Union['np.ndarray', 'pd.DataFrame'],
                                method: str = 'pearson') -> 'np.ndarray':
         """
-        Safe correlation matrix computation using existing math validation utilities.
+        Safe correlation matrix computation using VectorBT optimization and existing math validation utilities.
 
         Args:
             data: Input data matrix
@@ -335,6 +369,18 @@ class UnifiedMatrixOperations:
         Returns:
             Correlation matrix with safe operations
         """
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                result = vectorbt_ops.correlation_matrix(data, method)
+                self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
+                self.logger.debug("✅ VectorBT correlation matrix completed")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
+        
+        # Fallback to standard implementation
         if isinstance(data, pd.DataFrame):
             data = data.values
 

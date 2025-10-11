@@ -45,6 +45,20 @@ from .interaction_pruning import InteractionPruningSystem, InteractionPruningCon
 from .budgeted_optimization import BudgetedLookbackOptimizer, BudgetedOptimizationConfig, OptimizationResult
 from .optimized_pipeline import OptimizedPipelineConfig, OptimizedInteractiveFeaturePipeline
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimized_features import (
+        VectorBTFeatureGenerator, VectorBTFeatureConfig,
+        generate_vectorbt_features, create_vectorbt_config
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    VectorBTFeatureGenerator = None
+    VectorBTFeatureConfig = None
+    generate_vectorbt_features = None
+    create_vectorbt_config = None
+
 # Import existing utilities for backward compatibility - fast-fail
 from src.feature_generation.core.feature_cache import FeatureCacheService
 from src.feature_generation.core.feature_bank import FeatureBank
@@ -107,6 +121,13 @@ class EnhancedOptimizedConfig:
     coarse_grid_points: int = 10
     fine_search_evals: int = 16
     early_stop_patience: int = 5
+    
+    # VectorBT optimizations
+    enable_vectorbt: bool = True
+    vectorbt_use_gpu: bool = True
+    vectorbt_chunk_size: int = 50000
+    vectorbt_memory_limit_gb: float = 8.0
+    vectorbt_enable_parallel: bool = True
     
     # Performance monitoring
     enable_performance_monitoring: bool = True
@@ -478,7 +499,7 @@ class EnhancedOptimizedInteractionOrchestrator:
             max_constant_ratio=0.1  # Allow max 10% constant features
         )
         
-        # Generate base features using improved generator - fast-fail on error
+        # Generate base features using improved generator with VectorBT - fast-fail on error
         try:
             feature_generator = ImprovedFeatureGenerator(feature_config)
             generated_features = feature_generator.generate_meaningful_features(data)

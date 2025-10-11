@@ -64,6 +64,15 @@ except ImportError as e:
     optimize_matrix_operation = None
     HardwareConfig = None
 
+# VectorBT optimizations
+try:
+    from .vectorbt_optimizations import get_vectorbt_optimized_operations
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBT optimizations not available: {e}")
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    get_vectorbt_optimized_operations = None
+
 logger = logging.getLogger(__name__)
 T = TypeVar('T')
 
@@ -438,7 +447,18 @@ class VectorizedProcessingCore:
     def vectorized_rolling_features(self, data: 'pd.DataFrame',
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> 'pd.DataFrame':
-        """Create vectorized rolling features."""
+        """Create vectorized rolling features using VectorBT optimization."""
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                result = vectorbt_ops.rolling_features(data, windows, features)
+                self.logger.info("✅ Rolling features computed using VectorBT optimization")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
+        
+        # Fallback to standard implementation
         if features is None:
             features = data.select_dtypes(include=[np.number]).columns.tolist()
 
@@ -497,7 +517,7 @@ class VectorizedProcessingCore:
     def compute_trading_indicators(self, data: 'pd.DataFrame', 
                                  config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
         """
-        Compute comprehensive trading indicators in vectorized fashion with hardware optimization.
+        Compute comprehensive trading indicators in vectorized fashion with VectorBT and hardware optimization.
         
         Args:
             data: DataFrame with OHLCV data (columns: open, high, low, close, volume)
@@ -508,6 +528,16 @@ class VectorizedProcessingCore:
         """
         if config is None:
             config = self._get_default_indicator_config()
+        
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                result = vectorbt_ops.compute_trading_indicators(data, config)
+                self.logger.info("✅ Trading indicators computed using VectorBT optimization")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT trading indicators failed: {e}, falling back to standard method")
         
         # Use hardware optimization if available
         if self.hardware_optimization_enabled and self.hardware_processor:

@@ -38,6 +38,25 @@ from .unified_operations import (
     safe_matrix_inverse as _safe_matrix_inverse
 )
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimizations import (
+        get_vectorbt_optimized_operations,
+        vectorbt_matrix_multiply,
+        vectorbt_correlation_matrix,
+        vectorbt_trading_indicators,
+        vectorbt_rolling_features,
+        vectorbt_batch_processing
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    vectorbt_matrix_multiply = None
+    vectorbt_correlation_matrix = None
+    vectorbt_trading_indicators = None
+    vectorbt_rolling_features = None
+    vectorbt_batch_processing = None
+
 from .vectorized_core import (
     get_vectorized_processing_core,
     optimize_dataframe as _optimize_dataframe,
@@ -69,11 +88,25 @@ from .enhanced_operations import (
 
 # Matrix operations convenience functions
 def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
-    """Safe matrix multiplication with validation."""
+    """Safe matrix multiplication with VectorBT optimization and validation."""
+    # Try VectorBT optimization first if available
+    if VECTORBT_OPTIMIZATIONS_AVAILABLE and vectorbt_matrix_multiply:
+        try:
+            return vectorbt_matrix_multiply(A, B)
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
+    
     return _safe_matrix_multiply(A, B)
 
 def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
-    """Safe correlation matrix computation."""
+    """Safe correlation matrix computation with VectorBT optimization."""
+    # Try VectorBT optimization first if available
+    if VECTORBT_OPTIMIZATIONS_AVAILABLE and vectorbt_correlation_matrix:
+        try:
+            return vectorbt_correlation_matrix(data)
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
+    
     return _safe_correlation_matrix(data)
 
 def safe_matrix_inverse(matrix: 'np.ndarray') -> 'np.ndarray':
@@ -104,7 +137,14 @@ def optimize_dataframe(df: 'pd.DataFrame') -> 'pd.DataFrame':
 def vectorized_rolling_features(data: 'pd.DataFrame',
                               windows: List[int] = None,
                               features: List[str] = None) -> 'pd.DataFrame':
-    """Create vectorized rolling features."""
+    """Create vectorized rolling features with VectorBT optimization."""
+    # Try VectorBT optimization first if available
+    if VECTORBT_OPTIMIZATIONS_AVAILABLE and vectorbt_rolling_features:
+        try:
+            return vectorbt_rolling_features(data, windows, features)
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
+    
     return _vectorized_rolling_features(data, windows, features)
 
 def matrix_correlation_analysis(data: 'pd.DataFrame',
@@ -121,7 +161,14 @@ def parallel_feature_engineering(data: 'pd.DataFrame',
 
 # Batch operations convenience functions
 def batch_matrix_multiply(matrices_a: List['np.ndarray'], matrices_b: List['np.ndarray']) -> List['np.ndarray']:
-    """Convenience function for batch matrix multiplication."""
+    """Convenience function for batch matrix multiplication with VectorBT optimization."""
+    # Try VectorBT optimization first if available
+    if VECTORBT_OPTIMIZATIONS_AVAILABLE and vectorbt_batch_processing:
+        try:
+            return vectorbt_batch_processing(matrices_a, 'batch_matrix_multiply', matrices_b=matrices_b)
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT batch processing failed: {e}, falling back to standard method")
+    
     return _batch_matrix_multiply(matrices_a, matrices_b)
 
 def batch_feature_transformation(data: Union['np.ndarray', 'pd.DataFrame'], 
@@ -216,7 +263,14 @@ def get_batch_optimization_stats() -> Dict[str, Any]:
 def compute_trading_indicators(data: 'pd.DataFrame', 
                               config: Optional[Dict[str, Any]] = None,
                               use_hardware_optimization: bool = True) -> 'pd.DataFrame':
-    """Compute comprehensive trading indicators in vectorized fashion with hardware optimization."""
+    """Compute comprehensive trading indicators with VectorBT and hardware optimization."""
+    # Try VectorBT optimization first if available
+    if VECTORBT_OPTIMIZATIONS_AVAILABLE and vectorbt_trading_indicators:
+        try:
+            return vectorbt_trading_indicators(data, config)
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT trading indicators failed: {e}, falling back to standard method")
+    
     core = get_vectorized_processing_core()
     return core.compute_trading_indicators(data, config)
 

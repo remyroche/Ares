@@ -4,6 +4,8 @@ Momentum Feature Generator
 This module provides feature generators for momentum-based indicators,
 including RSI, MACD, Stochastic, and other momentum oscillators.
 Wires up existing momentum features from legacy and entropy modules.
+
+Enhanced with VectorBT for maximum performance.
 """
 
 import numpy as np
@@ -11,6 +13,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
 
 # Optimization utilities
 try:
@@ -1328,22 +1331,217 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
         return volume_momentum
 
 
+class VectorBTMomentumFeatureGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized momentum feature generator with comprehensive indicators."""
+    
+    def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 14) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_momentum_comprehensive_{period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"VectorBT-optimized comprehensive momentum features over {period} periods",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate comprehensive momentum features using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_{self.period}')
+        
+        # Generate multiple momentum indicators using VectorBT
+        operations = [
+            {'type': 'indicator', 'name': 'rsi', 'params': {'indicator': 'rsi', 'window': self.period}},
+            {'type': 'indicator', 'name': 'macd', 'params': {'indicator': 'macd', 'fast': 12, 'slow': 26}},
+            {'type': 'indicator', 'name': 'macd_signal', 'params': {'indicator': 'macd_signal', 'fast': 12, 'slow': 26}},
+            {'type': 'indicator', 'name': 'macd_histogram', 'params': {'indicator': 'macd_histogram', 'fast': 12, 'slow': 26}},
+            {'type': 'indicator', 'name': 'stoch_k', 'params': {'indicator': 'stoch_k', 'window': self.period}},
+            {'type': 'indicator', 'name': 'stoch_d', 'params': {'indicator': 'stoch_d', 'window': self.period}},
+            {'type': 'indicator', 'name': 'willr', 'params': {'indicator': 'willr', 'window': self.period}},
+            {'type': 'indicator', 'name': 'cci', 'params': {'indicator': 'cci', 'window': self.period}},
+            {'type': 'indicator', 'name': 'mfi', 'params': {'indicator': 'mfi', 'window': self.period}},
+            {'type': 'indicator', 'name': 'roc', 'params': {'indicator': 'roc', 'window': self.period}},
+            {'type': 'indicator', 'name': 'mom', 'params': {'indicator': 'mom', 'window': self.period}}
+        ]
+        
+        # Use batch operations for efficiency
+        results = self._vectorbt_batch_operations(data, operations)
+        
+        # Combine results into a single momentum measure
+        if not results.empty:
+            # Weighted combination of different momentum measures
+            momentum = (
+                0.25 * results.get('rsi', 0) +
+                0.15 * results.get('macd', 0) +
+                0.15 * results.get('macd_signal', 0) +
+                0.10 * results.get('macd_histogram', 0) +
+                0.10 * results.get('stoch_k', 0) +
+                0.10 * results.get('stoch_d', 0) +
+                0.05 * results.get('willr', 0) +
+                0.05 * results.get('cci', 0) +
+                0.05 * results.get('mfi', 0)
+            )
+        else:
+            # Fallback to simple RSI
+            momentum = self._vectorbt_technical_indicator(data, 'rsi', window=self.period)
+        
+        return momentum.rename(f'vectorbt_momentum_{self.period}')
+
+
+class VectorBTRSIGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized RSI generator."""
+    
+    def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 14) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_rsi_{period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"VectorBT-optimized RSI over {period} periods",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate RSI using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rsi_{self.period}')
+        
+        # Generate RSI using VectorBT
+        rsi = self._vectorbt_technical_indicator(data, 'rsi', window=self.period)
+        
+        return rsi.rename(f'vectorbt_rsi_{self.period}')
+
+
+class VectorBTMACDGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized MACD generator."""
+    
+    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(fast, slow, signal)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.fast = fast
+        self.slow = slow
+        self.signal = signal
+    
+    @classmethod
+    def _create_default_config(cls, fast: int = 12, slow: int = 26, signal: int = 9) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_macd_{fast}_{slow}_{signal}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"VectorBT-optimized MACD with fast={fast}, slow={slow}, signal={signal}",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=slow,
+            min_lookback=slow,
+            max_lookback=slow,
+            parameters={"fast": fast, "slow": slow, "signal": signal},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MACD using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_macd_{self.fast}_{self.slow}')
+        
+        # Generate MACD using VectorBT
+        macd = self._vectorbt_technical_indicator(data, 'macd', 
+                                                fast=self.fast, 
+                                                slow=self.slow, 
+                                                signal=self.signal)
+        
+        return macd.rename(f'vectorbt_macd_{self.fast}_{self.slow}')
+
+
+class VectorBTStochasticGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Stochastic generator."""
+    
+    def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 14) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_stoch_{period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"VectorBT-optimized Stochastic over {period} periods",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Stochastic %K using VectorBT."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_stoch_{self.period}')
+        
+        # Generate Stochastic %K using VectorBT
+        stoch_k = self._vectorbt_technical_indicator(data, 'stoch_k', window=self.period)
+        
+        return stoch_k.rename(f'vectorbt_stoch_{self.period}')
+
+
 def create_default_momentum_generators() -> List[FeatureGenerator]:
     """Create default momentum generators including legacy and entropy features."""
     generators = []
     
-    # Add new momentum generators
-    generators.extend(create_momentum_generators())
-    
-    # Add legacy momentum generators
-    generators.extend([
-        LegacyRSIGenerator(14),
-        LegacyMACDGenerator(12, 26, 9),
-        LegacyStochasticGenerator(14, 3),
-    ])
-    
-    # Add entropy-based momentum generators
-    generators.extend([
+    if VECTORBT_AVAILABLE:
+        # VectorBT-optimized generators
+        for period in [9, 14, 21, 30]:
+            generators.append(VectorBTMomentumFeatureGenerator(period))
+            generators.append(VectorBTRSIGenerator(period))
+            generators.append(VectorBTStochasticGenerator(period))
+            
+        # MACD with different parameters
+        for fast in [8, 12, 16]:
+            for slow in [21, 26, 34]:
+                generators.append(VectorBTMACDGenerator(fast, slow))
+    else:
+        # Fallback to original generators
+        # Add new momentum generators
+        generators.extend(create_momentum_generators())
+        
+        # Add legacy momentum generators
+        generators.extend([
+            LegacyRSIGenerator(14),
+            LegacyMACDGenerator(12, 26, 9),
+            LegacyStochasticGenerator(14, 3),
+        ])
+        
+        # Add entropy-based momentum generators
+        generators.extend([
         RSIEntropyGenerator(20, 14),
         MACDEntropyGenerator(20, 12, 26),
     ])

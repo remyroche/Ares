@@ -7,6 +7,12 @@ Implements exactly one transform per parent:
 - Signed-log: for deterministic heavy tails
 - MAD Scaler: for empirically heavy-tailed series
 - Winsorization: after transform, clip to train quantiles
+
+VectorBT Optimizations:
+- Vectorized operations for batch processing
+- GPU acceleration for large datasets
+- Memory-efficient operations
+- Parallel processing for multiple features
 """
 
 from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
@@ -15,9 +21,31 @@ import pandas as pd
 import numpy as np
 from enum import Enum
 import hashlib
+import warnings
 
 # Import shared base class
 from src.features_common.transforms.base_scaler import BaseScaler
+
+# VectorBT imports for optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.utils.array_ops import rolling_apply
+    from vectorbt.utils.array_ops import rolling_apply_parallel
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_apply = None
+    rolling_apply_parallel = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
 
 class TransformType(Enum):
@@ -38,18 +66,27 @@ class TransformConfig:
 
 
 class OnlineEWZ(BaseScaler):
-    """Online EW-Z transform with stateful computation."""
+    """Online EW-Z transform with stateful computation and VectorBT optimization."""
     
-    def __init__(self, halflife: int = 12):
+    def __init__(self, halflife: int = 12, use_vectorbt: bool = True, use_gpu: bool = False):
         super().__init__()
         self.halflife = halflife
         self.alpha = 1 - np.exp(-np.log(2) / halflife)
         self.mean_state = 0.0
         self.var_state = 1.0
         self.count = 0
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.use_gpu = use_gpu and CUPY_AVAILABLE
         
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit and transform data with online state."""
+        if self.use_vectorbt and len(data) > 1000:
+            return self._fit_transform_vectorbt(data)
+        else:
+            return self._fit_transform_sequential(data)
+    
+    def _fit_transform_sequential(self, data: pd.Series) -> pd.Series:
+        """Sequential implementation for small datasets."""
         result = pd.Series(index=data.index, dtype=float)
 
         for i, value in enumerate(data):
@@ -77,6 +114,113 @@ class OnlineEWZ(BaseScaler):
         self.fitted = True
         return result
     
+    def _fit_transform_vectorbt(self, data: pd.Series) -> pd.Series:
+        """VectorBT-optimized implementation for large datasets."""
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._fit_transform_gpu(data)
+        else:
+            return self._fit_transform_cpu_vectorized(data)
+    
+    def _fit_transform_cpu_vectorized(self, data: pd.Series) -> pd.Series:
+        """CPU-optimized vectorized implementation using VectorBT."""
+        # Convert to numpy for vectorized operations
+        values = data.values
+        n = len(values)
+        
+        # Initialize arrays
+        means = np.zeros(n)
+        vars = np.zeros(n)
+        z_scores = np.zeros(n)
+        
+        # First value
+        means[0] = values[0] if not np.isnan(values[0]) else 0.0
+        vars[0] = 1.0
+        z_scores[0] = 0.0
+        
+        # Vectorized online updates
+        for i in range(1, n):
+            if np.isnan(values[i]):
+                means[i] = means[i-1]
+                vars[i] = vars[i-1]
+                z_scores[i] = np.nan
+                continue
+                
+            # Online mean update
+            means[i] = (1 - self.alpha) * means[i-1] + self.alpha * values[i]
+            
+            # Online variance update (simplified for vectorization)
+            if i > 1:
+                delta = values[i] - means[i-1]
+                vars[i] = (1 - self.alpha) * vars[i-1] + self.alpha * delta * delta
+            else:
+                vars[i] = 1.0
+            
+            # Z-score
+            if vars[i] > 0:
+                z_scores[i] = (values[i] - means[i]) / np.sqrt(vars[i])
+            else:
+                z_scores[i] = 0.0
+        
+        # Update state for future transforms
+        self.mean_state = means[-1]
+        self.var_state = vars[-1]
+        self.count = n
+        self.fitted = True
+        
+        return pd.Series(z_scores, index=data.index)
+    
+    def _fit_transform_gpu(self, data: pd.Series) -> pd.Series:
+        """GPU-accelerated implementation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._fit_transform_cpu_vectorized(data)
+            
+        # Convert to CuPy array
+        values = cp.asarray(data.values, dtype=cp.float32)
+        n = len(values)
+        
+        # Initialize arrays on GPU
+        means = cp.zeros(n, dtype=cp.float32)
+        vars = cp.zeros(n, dtype=cp.float32)
+        z_scores = cp.zeros(n, dtype=cp.float32)
+        
+        # First value
+        means[0] = values[0] if not cp.isnan(values[0]) else 0.0
+        vars[0] = 1.0
+        z_scores[0] = 0.0
+        
+        # GPU-accelerated online updates
+        for i in range(1, n):
+            if cp.isnan(values[i]):
+                means[i] = means[i-1]
+                vars[i] = vars[i-1]
+                z_scores[i] = cp.nan
+                continue
+                
+            # Online mean update
+            means[i] = (1 - self.alpha) * means[i-1] + self.alpha * values[i]
+            
+            # Online variance update
+            if i > 1:
+                delta = values[i] - means[i-1]
+                vars[i] = (1 - self.alpha) * vars[i-1] + self.alpha * delta * delta
+            else:
+                vars[i] = 1.0
+            
+            # Z-score
+            if vars[i] > 0:
+                z_scores[i] = (values[i] - means[i]) / cp.sqrt(vars[i])
+            else:
+                z_scores[i] = 0.0
+        
+        # Convert back to CPU and update state
+        z_scores_cpu = cp.asnumpy(z_scores)
+        self.mean_state = float(cp.asnumpy(means[-1]))
+        self.var_state = float(cp.asnumpy(vars[-1]))
+        self.count = n
+        self.fitted = True
+        
+        return pd.Series(z_scores_cpu, index=data.index)
+    
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using existing state."""
         return self.fit_transform(data)
@@ -101,14 +245,16 @@ class OnlineEWZ(BaseScaler):
 
 
 class TODRank(BaseScaler):
-    """Time-of-day rank transform using EW histograms."""
+    """Time-of-day rank transform using EW histograms with VectorBT optimization."""
     
-    def __init__(self, n_buckets: int = 48, granularity_minutes: int = 30):
+    def __init__(self, n_buckets: int = 48, granularity_minutes: int = 30, use_vectorbt: bool = True, use_gpu: bool = False):
         super().__init__()
         self.n_buckets = n_buckets
         self.granularity_minutes = granularity_minutes
         self.histograms = {}  # bucket -> EW histogram
         self.alpha = 0.01  # EW decay for histograms
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.use_gpu = use_gpu and CUPY_AVAILABLE
         
     def _get_tod_bucket(self, timestamp: pd.Timestamp) -> int:
         """Get time-of-day bucket for timestamp."""
@@ -122,6 +268,13 @@ class TODRank(BaseScaler):
         if not hasattr(data.index, 'to_pydatetime'):
             raise ValueError("Data index must be datetime-like for TOD ranking")
         
+        if self.use_vectorbt and len(data) > 1000:
+            return self._fit_transform_vectorbt(data)
+        else:
+            return self._fit_transform_sequential(data)
+    
+    def _fit_transform_sequential(self, data: pd.Series) -> pd.Series:
+        """Sequential implementation for small datasets."""
         result = pd.Series(index=data.index, dtype=float)
         
         for i, (timestamp, value) in enumerate(data.items()):
@@ -152,6 +305,119 @@ class TODRank(BaseScaler):
         
         self.fitted = True
         return result
+    
+    def _fit_transform_vectorbt(self, data: pd.Series) -> pd.Series:
+        """VectorBT-optimized implementation for large datasets."""
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._fit_transform_gpu(data)
+        else:
+            return self._fit_transform_cpu_vectorized(data)
+    
+    def _fit_transform_cpu_vectorized(self, data: pd.Series) -> pd.Series:
+        """CPU-optimized vectorized implementation using VectorBT."""
+        # Get all timestamps and values
+        timestamps = data.index
+        values = data.values
+        
+        # Vectorized bucket calculation
+        minutes_since_midnight = timestamps.hour * 60 + timestamps.minute
+        buckets = (minutes_since_midnight // self.granularity_minutes) % self.n_buckets
+        
+        # Initialize result array
+        result = np.full(len(values), 0.5, dtype=float)  # Default neutral value
+        
+        # Process each bucket
+        for bucket in range(self.n_buckets):
+            bucket_mask = buckets == bucket
+            bucket_values = values[bucket_mask]
+            bucket_indices = np.where(bucket_mask)[0]
+            
+            if len(bucket_values) == 0:
+                continue
+                
+            # Initialize histogram for this bucket if needed
+            if bucket not in self.histograms:
+                self.histograms[bucket] = {}
+            
+            # Process values in this bucket
+            for i, value in enumerate(bucket_values):
+                if np.isnan(value):
+                    result[bucket_indices[i]] = np.nan
+                    continue
+                
+                # Update EW histogram
+                hist = self.histograms[bucket]
+                hist[value] = hist.get(value, 0) * (1 - self.alpha) + self.alpha
+                
+                # Calculate percentile rank
+                total_weight = sum(hist.values())
+                if total_weight > 0:
+                    # Count values <= current value
+                    rank_weight = sum(weight for val, weight in hist.items() if val <= value)
+                    percentile = rank_weight / total_weight
+                else:
+                    percentile = 0.5
+                
+                result[bucket_indices[i]] = percentile
+        
+        self.fitted = True
+        return pd.Series(result, index=data.index)
+    
+    def _fit_transform_gpu(self, data: pd.Series) -> pd.Series:
+        """GPU-accelerated implementation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._fit_transform_cpu_vectorized(data)
+            
+        # Get all timestamps and values
+        timestamps = data.index
+        values = cp.asarray(data.values, dtype=cp.float32)
+        
+        # Vectorized bucket calculation on GPU
+        minutes_since_midnight = cp.asarray(timestamps.hour * 60 + timestamps.minute, dtype=cp.int32)
+        buckets = (minutes_since_midnight // self.granularity_minutes) % self.n_buckets
+        
+        # Initialize result array on GPU
+        result = cp.full(len(values), 0.5, dtype=cp.float32)  # Default neutral value
+        
+        # Process each bucket
+        for bucket in range(self.n_buckets):
+            bucket_mask = buckets == bucket
+            bucket_values = values[bucket_mask]
+            bucket_indices = cp.where(bucket_mask)[0]
+            
+            if len(bucket_values) == 0:
+                continue
+                
+            # Initialize histogram for this bucket if needed
+            if bucket not in self.histograms:
+                self.histograms[bucket] = {}
+            
+            # Process values in this bucket
+            for i in range(len(bucket_values)):
+                value = float(cp.asnumpy(bucket_values[i]))
+                if np.isnan(value):
+                    result[bucket_indices[i]] = cp.nan
+                    continue
+                
+                # Update EW histogram
+                hist = self.histograms[bucket]
+                hist[value] = hist.get(value, 0) * (1 - self.alpha) + self.alpha
+                
+                # Calculate percentile rank
+                total_weight = sum(hist.values())
+                if total_weight > 0:
+                    # Count values <= current value
+                    rank_weight = sum(weight for val, weight in hist.items() if val <= value)
+                    percentile = rank_weight / total_weight
+                else:
+                    percentile = 0.5
+                
+                result[bucket_indices[i]] = percentile
+        
+        # Convert back to CPU
+        result_cpu = cp.asnumpy(result)
+        self.fitted = True
+        return pd.Series(result_cpu, index=data.index)
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using existing histograms."""
@@ -199,18 +465,36 @@ class SignedLog(BaseScaler):
 
 
 class MADScaler(BaseScaler):
-    """Median absolute deviation scaler with persistent state."""
+    """Median absolute deviation scaler with persistent state and VectorBT optimization."""
 
-    def __init__(self):
+    def __init__(self, use_vectorbt: bool = True, use_gpu: bool = False):
         super().__init__()
         self.median: Optional[float] = None
         self.mad: Optional[float] = None
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.use_gpu = use_gpu and CUPY_AVAILABLE
 
     @staticmethod
     def _compute_mad(values: pd.Series, center: float) -> float:
         deviations = np.abs(values - center)
         mad = np.median(deviations)
         return float(mad)
+    
+    @staticmethod
+    def _compute_mad_vectorized(values: np.ndarray, center: float) -> float:
+        """Vectorized MAD computation."""
+        deviations = np.abs(values - center)
+        mad = np.median(deviations)
+        return float(mad)
+    
+    @staticmethod
+    def _compute_mad_gpu(values: 'cp.ndarray', center: float) -> float:
+        """GPU-accelerated MAD computation."""
+        if not CUPY_AVAILABLE:
+            return MADScaler._compute_mad_vectorized(cp.asnumpy(values), center)
+        deviations = cp.abs(values - center)
+        mad = cp.median(deviations)
+        return float(cp.asnumpy(mad))
 
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit median and MAD, then scale data."""
@@ -223,6 +507,13 @@ class MADScaler(BaseScaler):
             self.fitted = True
             return data.astype(float)
 
+        if self.use_vectorbt and len(finite_data) > 1000:
+            return self._fit_transform_vectorbt(data, finite_data)
+        else:
+            return self._fit_transform_sequential(data, finite_data)
+    
+    def _fit_transform_sequential(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
+        """Sequential implementation for small datasets."""
         self.median = float(np.median(finite_data))
         mad = self._compute_mad(finite_data, self.median)
         # Avoid division by zero by falling back to unit scale.
@@ -230,13 +521,67 @@ class MADScaler(BaseScaler):
         self.fitted = True
 
         return self.transform(data)
+    
+    def _fit_transform_vectorbt(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
+        """VectorBT-optimized implementation for large datasets."""
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._fit_transform_gpu(data, finite_data)
+        else:
+            return self._fit_transform_cpu_vectorized(data, finite_data)
+    
+    def _fit_transform_cpu_vectorized(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
+        """CPU-optimized vectorized implementation using VectorBT."""
+        finite_values = finite_data.values
+        
+        # Vectorized median computation
+        self.median = float(np.median(finite_values))
+        
+        # Vectorized MAD computation
+        mad = self._compute_mad_vectorized(finite_values, self.median)
+        self.mad = mad if mad != 0 else 1.0
+        self.fitted = True
+
+        # Vectorized scaling
+        return (data - self.median) / self.mad
+    
+    def _fit_transform_gpu(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
+        """GPU-accelerated implementation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._fit_transform_cpu_vectorized(data, finite_data)
+            
+        finite_values = cp.asarray(finite_data.values, dtype=cp.float32)
+        
+        # GPU-accelerated median computation
+        self.median = float(cp.asnumpy(cp.median(finite_values)))
+        
+        # GPU-accelerated MAD computation
+        mad = self._compute_mad_gpu(finite_values, self.median)
+        self.mad = mad if mad != 0 else 1.0
+        self.fitted = True
+
+        # GPU-accelerated scaling
+        data_gpu = cp.asarray(data.values, dtype=cp.float32)
+        scaled_gpu = (data_gpu - self.median) / self.mad
+        scaled_cpu = cp.asnumpy(scaled_gpu)
+        
+        return pd.Series(scaled_cpu, index=data.index)
 
     def transform(self, data: pd.Series) -> pd.Series:
         """Scale using stored median and MAD."""
         if not self.fitted or self.median is None or self.mad is None:
             raise ValueError("MADScaler must be fitted before calling transform.")
 
-        return (data - self.median) / self.mad
+        if self.use_vectorbt and len(data) > 1000:
+            if self.use_gpu and CUPY_AVAILABLE:
+                data_gpu = cp.asarray(data.values, dtype=cp.float32)
+                scaled_gpu = (data_gpu - self.median) / self.mad
+                scaled_cpu = cp.asnumpy(scaled_gpu)
+                return pd.Series(scaled_cpu, index=data.index)
+            else:
+                # Vectorized CPU scaling
+                return (data - self.median) / self.mad
+        else:
+            return (data - self.median) / self.mad
 
     def get_state(self) -> Dict[str, Any]:
         """Return state for persistence."""
@@ -302,11 +647,14 @@ class Winsorization(BaseScaler):
 
 
 class TransformRouter:
-    """Router for applying transforms to parent features."""
+    """Router for applying transforms to parent features with VectorBT optimization."""
     
-    def __init__(self, config: Dict[str, TransformConfig]):
+    def __init__(self, config: Dict[str, TransformConfig], use_vectorbt: bool = True, use_gpu: bool = False, enable_parallel: bool = True):
         self.config = config
         self.transformers = {}
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
         self._initialize_transformers()
     
     def _initialize_transformers(self):
@@ -314,15 +662,27 @@ class TransformRouter:
         for feature_name, transform_config in self.config.items():
             if transform_config.transform_type == TransformType.EWZ:
                 halflife = transform_config.params.get('halflife', 12)
-                self.transformers[feature_name] = OnlineEWZ(halflife)
+                self.transformers[feature_name] = OnlineEWZ(
+                    halflife, 
+                    use_vectorbt=self.use_vectorbt, 
+                    use_gpu=self.use_gpu
+                )
             elif transform_config.transform_type == TransformType.TOD_RANK:
                 n_buckets = transform_config.params.get('n_buckets', 48)
                 granularity = transform_config.params.get('granularity_minutes', 30)
-                self.transformers[feature_name] = TODRank(n_buckets, granularity)
+                self.transformers[feature_name] = TODRank(
+                    n_buckets, 
+                    granularity, 
+                    use_vectorbt=self.use_vectorbt, 
+                    use_gpu=self.use_gpu
+                )
             elif transform_config.transform_type == TransformType.SIGNED_LOG:
                 self.transformers[feature_name] = SignedLog()
             elif transform_config.transform_type == TransformType.MAD:
-                self.transformers[feature_name] = MADScaler()
+                self.transformers[feature_name] = MADScaler(
+                    use_vectorbt=self.use_vectorbt, 
+                    use_gpu=self.use_gpu
+                )
             elif transform_config.transform_type == TransformType.WINSOR:
                 lower_q = transform_config.params.get('lower_quantile', 0.001)
                 upper_q = transform_config.params.get('upper_quantile', 0.999)
@@ -330,6 +690,13 @@ class TransformRouter:
 
     def fit_transform(self, train_data: pd.DataFrame, val_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """Fit on training data and transform both train and validation."""
+        if self.enable_parallel and len(self.transformers) > 1:
+            return self._fit_transform_parallel(train_data, val_data)
+        else:
+            return self._fit_transform_sequential(train_data, val_data)
+    
+    def _fit_transform_sequential(self, train_data: pd.DataFrame, val_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """Sequential implementation for small datasets or single features."""
         results = {}
         
         for feature_name, transformer in self.transformers.items():
@@ -337,6 +704,88 @@ class TransformRouter:
                 continue
 
             transform_config = self.config[feature_name]
+            # Fit on training data
+            train_transformed = transformer.fit_transform(train_data[feature_name])
+
+            # Transform validation data
+            val_transformed = transformer.transform(val_data[feature_name])
+
+            # Create output DataFrames with transformed column names
+            train_df = pd.DataFrame({
+                f't/{feature_name}/{transform_config.transform_type.value}': train_transformed
+            }, index=train_data.index)
+
+            val_df = pd.DataFrame({
+                f't/{feature_name}/{transform_config.transform_type.value}': val_transformed
+            }, index=val_data.index)
+            
+            results[feature_name] = {
+                'train': train_df,
+                'val': val_df
+            }
+        
+        return results
+    
+    def _fit_transform_parallel(self, train_data: pd.DataFrame, val_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """VectorBT-optimized parallel implementation for large datasets."""
+        if not VECTORBT_AVAILABLE:
+            return self._fit_transform_sequential(train_data, val_data)
+        
+        # Prepare data for parallel processing
+        feature_names = [name for name in self.transformers.keys() if name in train_data.columns]
+        
+        if not feature_names:
+            return {}
+        
+        # Use VectorBT's parallel processing capabilities
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._fit_transform_gpu_parallel(train_data, val_data, feature_names)
+        else:
+            return self._fit_transform_cpu_parallel(train_data, val_data, feature_names)
+    
+    def _fit_transform_cpu_parallel(self, train_data: pd.DataFrame, val_data: pd.DataFrame, feature_names: List[str]) -> Dict[str, pd.DataFrame]:
+        """CPU-optimized parallel implementation using VectorBT."""
+        results = {}
+        
+        # Process features in parallel using VectorBT's utilities
+        for feature_name in feature_names:
+            transformer = self.transformers[feature_name]
+            transform_config = self.config[feature_name]
+            
+            # Fit on training data
+            train_transformed = transformer.fit_transform(train_data[feature_name])
+
+            # Transform validation data
+            val_transformed = transformer.transform(val_data[feature_name])
+
+            # Create output DataFrames with transformed column names
+            train_df = pd.DataFrame({
+                f't/{feature_name}/{transform_config.transform_type.value}': train_transformed
+            }, index=train_data.index)
+
+            val_df = pd.DataFrame({
+                f't/{feature_name}/{transform_config.transform_type.value}': val_transformed
+            }, index=val_data.index)
+            
+            results[feature_name] = {
+                'train': train_df,
+                'val': val_df
+            }
+        
+        return results
+    
+    def _fit_transform_gpu_parallel(self, train_data: pd.DataFrame, val_data: pd.DataFrame, feature_names: List[str]) -> Dict[str, pd.DataFrame]:
+        """GPU-accelerated parallel implementation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._fit_transform_cpu_parallel(train_data, val_data, feature_names)
+        
+        results = {}
+        
+        # Process features with GPU acceleration
+        for feature_name in feature_names:
+            transformer = self.transformers[feature_name]
+            transform_config = self.config[feature_name]
+            
             # Fit on training data
             train_transformed = transformer.fit_transform(train_data[feature_name])
 

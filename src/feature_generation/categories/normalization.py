@@ -191,8 +191,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
 
                         elif method == "quantile":
                             # Quantile normalization
-                            rolling_q25 = values.rolling(window=window).quantile(0.25)
-                            rolling_q75 = values.rolling(window=window).quantile(0.75)
+                            rolling_q25 = self._calculate_rolling_quantile_vectorized(values, window, 0.25)
+                            rolling_q75 = self._calculate_rolling_quantile_vectorized(values, window, 0.75)
                             quantile_norm = (values - rolling_q25) / (rolling_q75 - rolling_q25 + 1e-8)
                             features[f"quantile_{column}_{window}"] = quantile_norm.fillna(0).values
 
@@ -422,26 +422,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     detrended = data[column] - rolling_mean
                     features[f"detrended_{column}_{window}"] = detrended.fillna(0).values
 
-        return features
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class RollingZScoreGenerator(FeatureGenerator):
+        return featuresclass RollingZScoreGenerator(FeatureGenerator):
     """Generator for rolling z-score normalization features."""
 
     def __init__(self, window: int = 50, column: str = "close"):
@@ -473,26 +454,7 @@ class RollingZScoreGenerator(FeatureGenerator):
         rolling_std = values.rolling(window=self.window).std()
 
         zscore = (values - rolling_mean) / rolling_std
-        return zscore.fillna(0)
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class VolatilityScalingGenerator(FeatureGenerator):
+        return zscore.fillna(0)class VolatilityScalingGenerator(FeatureGenerator):
     """Generator for volatility scaling features."""
 
     def __init__(self, window: int = 20, column: str = "close"):
@@ -528,26 +490,7 @@ class VolatilityScalingGenerator(FeatureGenerator):
             price_changes = data[self.column].pct_change()
             scaled = price_changes / rolling_vol
 
-        return scaled.fillna(0)
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class CrossSectionalNormalizer(FeatureGenerator):
+        return scaled.fillna(0)class CrossSectionalNormalizer(FeatureGenerator):
     """Generator for cross-sectional normalization features."""
 
     def __init__(self, group_by: str = "price", method: str = "rank"):
@@ -833,16 +776,16 @@ class MinMaxScaler(BaseScaler):
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return self._calculate_sma_vectorized(data, window)
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return self._calculate_rolling_std_vectorized(data, window)
         elif operation == 'var':
             return data.rolling(window=window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return self._calculate_rolling_min_vectorized(data, window)
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return self._calculate_rolling_max_vectorized(data, window)
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return self._calculate_rolling_sum_vectorized(data, window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")

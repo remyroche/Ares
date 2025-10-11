@@ -172,24 +172,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             momentum = prices - np.roll(prices, period)
             return momentum
 
-# Analyst Features - Cross-timeframe momentum generators
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
+# Analyst Features - Cross-timeframe momentum generatorsclass AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
     """Generator for 5-minute timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -225,25 +208,7 @@ class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentum
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
+            return momentumclass AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
     """Generator for 15-minute timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -279,25 +244,7 @@ class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentum
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
+            return momentumclass AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
     """Generator for 1-hour timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -322,25 +269,7 @@ class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
         """Generate 1-hour momentum feature."""
         returns = data['close'].pct_change()
         momentum = returns.rolling(self.lookback).mean()
-        return momentum
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
+        return momentumclass AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
     """Generator for momentum alignment across timeframes."""
 
     def __init__(self, lookback: int = 20):
@@ -374,25 +303,7 @@ class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
         alignment = ((np.sign(mom_5m) == np.sign(mom_15m)) &
                     (np.sign(mom_15m) == np.sign(mom_1h))).astype(int)
 
-        return alignment
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class RSIGenerator(VectorizedFeatureGenerator):
+        return alignmentclass RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
 
     def __init__(self,
@@ -475,25 +386,7 @@ class RSIGenerator(VectorizedFeatureGenerator):
             rs = gain / loss.replace(0, 1)
             rsi = 100 - (100 / (1 + rs))
             
-            return rsi
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class MACDGenerator(VectorizedFeatureGenerator):
+            return rsiclass MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
     def __init__(self,
@@ -557,25 +450,7 @@ class MACDGenerator(VectorizedFeatureGenerator):
         ema_slow = base_values.ewm(span=self.slow).mean()
         macd = ema_fast - ema_slow
         
-        return macd
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class StochasticGenerator(VectorizedFeatureGenerator):
+        return macdclass StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -658,25 +533,7 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             highest_high = base_values.rolling(window=self.k_period).max()
             k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
             
-            return k_percent
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class WilliamsRGenerator(VectorizedFeatureGenerator):
+            return k_percentclass WilliamsRGenerator(VectorizedFeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
     def __init__(self, 
@@ -755,25 +612,7 @@ class WilliamsRGenerator(VectorizedFeatureGenerator):
             lowest_low = base_values.rolling(window=self.period).min()
             williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
             
-            return williams_r
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
+            return williams_rclass MomentumOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Momentum Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -827,25 +666,7 @@ class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
         # Calculate momentum
         momentum = base_values - base_values.shift(self.period)
         
-        return momentum
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class RateOfChangeGenerator(VectorizedFeatureGenerator):
+        return momentumclass RateOfChangeGenerator(VectorizedFeatureGenerator):
     """Generator for Rate of Change (ROC) with different base calculations."""
     
     def __init__(self, 
@@ -1300,25 +1121,7 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
     for period in periods.get('donchian_periods', [20]):
         generators.append(DonchianChannelGenerator(period))
     
-    return generators
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
+    return generatorsclass AdvancedMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for advanced momentum indicators for regime detection."""
 
     def __init__(self, fast_period: int = 5, slow_period: int = 20):
@@ -1366,26 +1169,7 @@ class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
         # Combine momentum with regime transition awareness
         regime_aware_momentum = enhanced_momentum * (1 - regime_transition)
 
-        return regime_aware_momentum
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class PriceAccelerationGenerator(VectorizedFeatureGenerator):
+        return regime_aware_momentumclass PriceAccelerationGenerator(VectorizedFeatureGenerator):
     """Generator for price acceleration indicators."""
 
     def __init__(self, period: int = 10):
@@ -1415,26 +1199,7 @@ class PriceAccelerationGenerator(VectorizedFeatureGenerator):
         # Acceleration (change in velocity)
         acceleration = velocity.diff(self.config.parameters["period"])
 
-        return acceleration
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class VolumeMomentumGenerator(VectorizedFeatureGenerator):
+        return accelerationclass VolumeMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for volume-based momentum indicators."""
 
     def __init__(self, period: int = 10):
@@ -1711,19 +1476,3 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     generators.append(AnalystMomentumAlignmentGenerator())
 
     return generators
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-

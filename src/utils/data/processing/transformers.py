@@ -14,6 +14,18 @@ import logging
 import numpy as np
 import time
 
+# Import BaseScaler for consistent transformation interface
+try:
+    from src.features_common.transforms.base_scaler import BaseScaler, create_optimized_scaler
+    from src.features_common.transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
+    SCALER_AVAILABLE = True
+except ImportError:
+    SCALER_AVAILABLE = False
+    BaseScaler = None
+    create_optimized_scaler = None
+    VectorBTScaler = None
+    VectorBTBatchScaler = None
+
 class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
     
@@ -61,14 +73,52 @@ class DataStreamingManager:
 
 
 class DataTransformer:
-    """Data transformation utilities for feature engineering."""
+    """Data transformation utilities for feature engineering using BaseScaler."""
 
-    def __init__(self):
-        """Initialize the DataTransformer."""
+    def __init__(self, use_vectorbt: bool = True, enable_batch_processing: bool = True):
+        """Initialize the DataTransformer with BaseScaler integration.
+        
+        Args:
+            use_vectorbt: Whether to use VectorBT-optimized scalers
+            enable_batch_processing: Whether to enable batch processing for large datasets
+        """
         self.logger = system_logger.getChild('DataTransformer')
+        self.use_vectorbt = use_vectorbt and SCALER_AVAILABLE
+        self.enable_batch_processing = enable_batch_processing
+        
+        # Initialize scalers
+        self.scalers = {}
+        self._initialize_scalers()
+
+    def _initialize_scalers(self):
+        """Initialize scalers for different transformation types."""
+        if not SCALER_AVAILABLE:
+            self.logger.warning("BaseScaler not available, using fallback implementations")
+            return
+        
+        try:
+            # Create optimized scalers
+            self.scalers = {
+                'zscore': create_optimized_scaler('zscore') if create_optimized_scaler else None,
+                'minmax': create_optimized_scaler('minmax') if create_optimized_scaler else None,
+                'robust': create_optimized_scaler('robust') if create_optimized_scaler else None,
+                'quantile': create_optimized_scaler('quantile') if create_optimized_scaler else None,
+            }
+            
+            # Use VectorBT scalers if available and requested
+            if self.use_vectorbt and VectorBTScaler:
+                self.scalers['vectorbt_zscore'] = VectorBTScaler()
+                if self.enable_batch_processing and VectorBTBatchScaler:
+                    self.scalers['vectorbt_batch'] = VectorBTBatchScaler()
+            
+            self.logger.info(f"Initialized {len(self.scalers)} scalers")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize scalers: {e}")
+            self.scalers = {}
 
     def transform_features(self, data: pd.DataFrame, transformations: List[str] = None) -> pd.DataFrame:
-        """Apply transformations to features.
+        """Apply transformations to features using BaseScaler.
 
         Args:
             data: Input DataFrame
@@ -92,6 +142,10 @@ class DataTransformer:
                     transformed_data = self._log_transform_features(transformed_data)
                 elif transformation == 'sqrt':
                     transformed_data = self._sqrt_transform_features(transformed_data)
+                elif transformation == 'robust':
+                    transformed_data = self._robust_scale_features(transformed_data)
+                elif transformation == 'quantile':
+                    transformed_data = self._quantile_scale_features(transformed_data)
                 else:
                     self.logger.warning(f"Unknown transformation: {transformation}")
             except Exception as e:
@@ -101,24 +155,47 @@ class DataTransformer:
         return transformed_data
 
     def _normalize_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Normalize features to [0, 1] range."""
-        normalized_data = data.copy()
-        for col in data.select_dtypes(include=[np.number]).columns:
-            min_val = data[col].min()
-            max_val = data[col].max()
-            if max_val != min_val:
-                normalized_data[col] = (data[col] - min_val) / (max_val - min_val)
-        return normalized_data
+        """Normalize features to [0, 1] range using BaseScaler."""
+        if 'minmax' in self.scalers and self.scalers['minmax']:
+            return self._apply_scaler_to_dataframe(data, self.scalers['minmax'])
+        else:
+            return self._fallback_normalize_features(data)
 
     def _standardize_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Standardize features to mean=0, std=1."""
-        standardized_data = data.copy()
+        """Standardize features to mean=0, std=1 using BaseScaler."""
+        if 'zscore' in self.scalers and self.scalers['zscore']:
+            return self._apply_scaler_to_dataframe(data, self.scalers['zscore'])
+        else:
+            return self._fallback_standardize_features(data)
+
+    def _robust_scale_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply robust scaling using BaseScaler."""
+        if 'robust' in self.scalers and self.scalers['robust']:
+            return self._apply_scaler_to_dataframe(data, self.scalers['robust'])
+        else:
+            return self._fallback_robust_scale_features(data)
+
+    def _quantile_scale_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply quantile scaling using BaseScaler."""
+        if 'quantile' in self.scalers and self.scalers['quantile']:
+            return self._apply_scaler_to_dataframe(data, self.scalers['quantile'])
+        else:
+            return self._fallback_quantile_scale_features(data)
+
+    def _apply_scaler_to_dataframe(self, data: pd.DataFrame, scaler: BaseScaler) -> pd.DataFrame:
+        """Apply a scaler to all numeric columns in a DataFrame."""
+        transformed_data = data.copy()
+        
         for col in data.select_dtypes(include=[np.number]).columns:
-            mean_val = data[col].mean()
-            std_val = data[col].std()
-            if std_val > 0:
-                standardized_data[col] = (data[col] - mean_val) / std_val
-        return standardized_data
+            try:
+                # Fit and transform the column
+                transformed_data[col] = scaler.fit_transform(data[col])
+            except Exception as e:
+                self.logger.warning(f"Failed to transform column {col}: {e}")
+                # Keep original values if transformation fails
+                transformed_data[col] = data[col]
+        
+        return transformed_data
 
     def _log_transform_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply log transformation to features."""
@@ -135,6 +212,49 @@ class DataTransformer:
             if (data[col] >= 0).all():
                 sqrt_data[col] = np.sqrt(data[col])
         return sqrt_data
+
+    # Fallback implementations for when BaseScaler is not available
+    def _fallback_normalize_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback normalize features to [0, 1] range."""
+        normalized_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            min_val = data[col].min()
+            max_val = data[col].max()
+            if max_val != min_val:
+                normalized_data[col] = (data[col] - min_val) / (max_val - min_val)
+        return normalized_data
+
+    def _fallback_standardize_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback standardize features to mean=0, std=1."""
+        standardized_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            mean_val = data[col].mean()
+            std_val = data[col].std()
+            if std_val > 0:
+                standardized_data[col] = (data[col] - mean_val) / std_val
+        return standardized_data
+
+    def _fallback_robust_scale_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback robust scaling using median and IQR."""
+        robust_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            median_val = data[col].median()
+            q75 = data[col].quantile(0.75)
+            q25 = data[col].quantile(0.25)
+            iqr = q75 - q25
+            if iqr > 0:
+                robust_data[col] = (data[col] - median_val) / iqr
+        return robust_data
+
+    def _fallback_quantile_scale_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback quantile scaling."""
+        quantile_data = data.copy()
+        for col in data.select_dtypes(include=[np.number]).columns:
+            q_low = data[col].quantile(0.25)
+            q_high = data[col].quantile(0.75)
+            if q_high > q_low:
+                quantile_data[col] = (data[col] - q_low) / (q_high - q_low)
+        return quantile_data
 
     def get_memory_usage(self) -> float:
         """Get current memory usage as percentage."""

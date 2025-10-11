@@ -291,15 +291,15 @@ class UnifiedVectorizationManager:
             else:
                 return OptimizationStrategy.VECTORBT_CPU
 
-        # Enhanced VectorBT integration for financial operations
+        # Enhanced VectorBT integration for financial operations - prioritize VectorBT
         if operation_type in [OperationType.BACKTESTING, OperationType.CROSS_VALIDATION]:
-            # Use VectorBT for backtesting if available and data is suitable
+            # Use VectorBT for backtesting if available (lower threshold for default usage)
             if (hasattr(self, 'vectorbt_backtesting_available') and 
                 self.vectorbt_backtesting_available and 
-                config.data_size > 1000):
-                if self.hardware_caps['gpu_available'] and config.data_size > 10000:
+                config.data_size > 100):  # Lowered threshold to use VectorBT by default
+                if self.hardware_caps['gpu_available'] and config.data_size > 5000:  # Lowered threshold
                     return OptimizationStrategy.VECTORBT_GPU
-                elif self.hardware_caps['cpu_cores'] >= 4 and config.data_size > 5000:
+                elif self.hardware_caps['cpu_cores'] >= 2 and config.data_size > 1000:  # Lowered threshold
                     return OptimizationStrategy.VECTORBT_PARALLEL
                 else:
                     return OptimizationStrategy.VECTORBT_CPU
@@ -836,7 +836,7 @@ def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
                            y: Union[np.ndarray, pd.Series],
                            model_class: Any,
                            **kwargs) -> OptimizationResult:
-    """Convenience function for optimized cross-validation."""
+    """Convenience function for optimized cross-validation with VectorBT by default."""
     manager = UnifiedVectorizationManager()
     data_size = len(X) if hasattr(X, '__len__') else 1
     data_dimensions = X.shape if hasattr(X, 'shape') else (data_size,)
@@ -846,13 +846,16 @@ def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
         data_dimensions=data_dimensions
     )
     data = {'X': X, 'y': y, 'model_class': model_class}
+    # Force VectorBT preference
+    kwargs['prefer_vectorbt'] = True
     return manager.optimize_operation(OperationType.CROSS_VALIDATION, data, config, **kwargs)
 
 
 def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
                        prices: Union[np.ndarray, pd.DataFrame],
+                       timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
                        **kwargs) -> OptimizationResult:
-    """Convenience function for optimized backtesting."""
+    """Convenience function for optimized backtesting with VectorBT by default."""
     manager = UnifiedVectorizationManager()
     data_size = len(signals) if hasattr(signals, '__len__') else 1
     data_dimensions = signals.shape if hasattr(signals, 'shape') else (data_size,)
@@ -861,7 +864,9 @@ def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
         data_size=data_size,
         data_dimensions=data_dimensions
     )
-    data = {'signals': signals, 'prices': prices}
+    data = {'signals': signals, 'prices': prices, 'timestamps': timestamps}
+    # Force VectorBT preference
+    kwargs['prefer_vectorbt'] = True
     return manager.optimize_operation(OperationType.BACKTESTING, data, config, **kwargs)
 
 

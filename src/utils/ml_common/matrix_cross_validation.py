@@ -592,9 +592,9 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
                          model_params: Dict[str, Any] = None,
                          n_splits: int = 5,
                          use_gpu: bool = True,
-                         parallel: bool = True,
+                         parallel: bool = False,  # Changed default to False to prefer VectorBT
                          max_workers: int = 4,
-                         use_vectorbt: bool = True,
+                         use_vectorbt: bool = True,  # VectorBT is now the default
                          portfolio_evaluation: bool = True) -> Dict[str, Any]:
     """
     Convenience function for matrix-based cross-validation with VectorBT optimization.
@@ -620,7 +620,8 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
         use_vectorbt=use_vectorbt
     )
 
-    if use_vectorbt and not parallel:
+    # Prioritize VectorBT over parallel processing
+    if use_vectorbt:
         return validator.vectorbt_cross_validate(
             X, y, model_class, model_params,
             portfolio_evaluation=portfolio_evaluation

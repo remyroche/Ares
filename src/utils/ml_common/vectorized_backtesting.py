@@ -181,7 +181,7 @@ class VectorizedBacktestingEngine:
     def run_vectorized_backtest(self, signals: Union[np.ndarray, pd.DataFrame],
                                prices: Union[np.ndarray, pd.DataFrame],
                                timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
-                               mode: BacktestMode = BacktestMode.VECTORIZED) -> VectorizedBacktestResults:
+                               mode: BacktestMode = BacktestMode.VECTORBT_CPU) -> VectorizedBacktestResults:
         """
         Run vectorized backtest simulation.
 
@@ -936,7 +936,7 @@ def run_vectorized_backtest(signals: Union[np.ndarray, pd.DataFrame],
                            prices: Union[np.ndarray, pd.DataFrame],
                            timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
                            config: Optional[VectorizedBacktestConfig] = None,
-                           mode: BacktestMode = BacktestMode.VECTORIZED) -> VectorizedBacktestResults:
+                           mode: BacktestMode = BacktestMode.VECTORBT_CPU) -> VectorizedBacktestResults:
     """
     Convenience function to run vectorized backtest with VectorBT support.
 

@@ -603,7 +603,7 @@ class EnhancedDataLabelsSystem:
             
             # Calculate volatility for regime conditioning
             returns = market_data['close'].pct_change().dropna()
-            volatility = returns.rolling(window=20).std() * np.sqrt(252)  # Annualized
+            volatility = self._vectorbt_rolling_operation(returns, "std", 20) * np.sqrt(252)  # Annualized
             
             # Generate analyst labels (Should we trade?)
             analyst_labels, analyst_confidence = self.label_definitions.generate_analyst_labels(
@@ -857,6 +857,40 @@ class EnhancedDataLabelsSystem:
                             drift_details[f'{col}_ks_pvalue'] = ks_pvalue
                         except Exception as e:
                             from src.utils.tprint import tprint_warning
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
                             tprint_warning(f"⚠️ Failed to calculate drift for {col}: {e}")
                             # Use a default moderate drift score for failed calculations
                             drift_scores.append(0.5)

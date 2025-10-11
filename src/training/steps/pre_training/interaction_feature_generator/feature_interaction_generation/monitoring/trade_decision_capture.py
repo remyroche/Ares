@@ -19,6 +19,40 @@ from src.utils.logger import system_logger
 from .enhanced_ml_monitoring import TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradingMode, ModelType
 import logging
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 @dataclass
 class MarketConditions:
     """Comprehensive market conditions at decision time."""
@@ -797,7 +831,7 @@ class TradeDecisionContextCapture:
             
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             
-            return tr.rolling(window=period).mean().iloc[-1] if len(tr) >= period else 0.0
+            return self._vectorbt_rolling_operation(tr, "mean", period).iloc[-1] if len(tr) >= period else 0.0
             
         except Exception:
             return 0.0
@@ -849,8 +883,8 @@ class TradeDecisionContextCapture:
                 return 0.5
             
             close = data['close']
-            sma_20 = close.rolling(window=20).mean()
-            std_20 = close.rolling(window=20).std()
+            sma_20 = self._vectorbt_rolling_operation(close, "mean", 20)
+            std_20 = self._vectorbt_rolling_operation(close, "std", 20)
             
             upper_band = sma_20 + (2 * std_20)
             lower_band = sma_20 - (2 * std_20)
@@ -892,9 +926,9 @@ class TradeDecisionContextCapture:
             dm_minus = dm_minus.where((dm_minus > dm_plus) & (dm_minus > 0), 0)
             
             # Calculate smoothed values
-            tr_smooth = tr.rolling(window=period).mean()
-            dm_plus_smooth = dm_plus.rolling(window=period).mean()
-            dm_minus_smooth = dm_minus.rolling(window=period).mean()
+            tr_smooth = self._vectorbt_rolling_operation(tr, "mean", period)
+            dm_plus_smooth = self._vectorbt_rolling_operation(dm_plus, "mean", period)
+            dm_minus_smooth = self._vectorbt_rolling_operation(dm_minus, "mean", period)
             
             # Calculate DI
             di_plus = 100 * (dm_plus_smooth / tr_smooth)
@@ -902,7 +936,7 @@ class TradeDecisionContextCapture:
             
             # Calculate ADX
             dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-            adx = dx.rolling(window=period).mean()
+            adx = self._vectorbt_rolling_operation(dx, "mean", period)
             
             return adx.iloc[-1] if not pd.isna(adx.iloc[-1]) else 25.0
             

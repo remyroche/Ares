@@ -19,6 +19,40 @@ from src.utils.data.processing.data_processing import DataProcessor
 # Import unified matrix operations for optimized calculations
 try:
     from src.utils.matrix_operations import get_unified_matrix_operations
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
@@ -430,8 +464,8 @@ class FeatureEngineer:
         Returns:
             Tuple of (upper_band, middle_band, lower_band)
         """
-        middle_band = prices.rolling(window=window).mean()
-        std = prices.rolling(window=window).std()
+        middle_band = rolling_mean(prices, window=window) if VECTORBT_AVAILABLE and len(prices) > 1000 else prices.rolling(window=window).mean()
+        std = rolling_std(prices, window=window) if VECTORBT_AVAILABLE and len(prices) > 1000 else prices.rolling(window=window).std()
         upper_band = middle_band + (std * std_dev)
         lower_band = middle_band - (std * std_dev)
         return upper_band, middle_band, lower_band
@@ -591,11 +625,11 @@ class FeatureEngineer:
             tp = (df['high'] + df['low'] + df['close']) / 3.0
 
             # Vectorized SMA of Typical Price
-            sma_tp = tp.rolling(window=period).mean()
+            sma_tp = rolling_mean(tp, window=period) if VECTORBT_AVAILABLE and len(tp) > 1000 else tp.rolling(window=period).mean()
 
             # Vectorized Mean Deviation (more efficient than apply)
-            rolling_mean = tp.rolling(window=period).mean()
-            rolling_std = tp.rolling(window=period).std()
+            rolling_mean = rolling_mean(tp, window=period) if VECTORBT_AVAILABLE and len(tp) > 1000 else tp.rolling(window=period).mean()
+            rolling_std = rolling_std(tp, window=period) if VECTORBT_AVAILABLE and len(tp) > 1000 else tp.rolling(window=period).std()
             # Approximation: mean deviation ≈ 0.8 * std for normal distribution
             mean_deviation = 0.8 * rolling_std
 
@@ -718,7 +752,7 @@ class FeatureEngineer:
             mfv = mfm * df['volume']
 
             # Chaikin Money Flow
-            cmf = mfv.rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
+            cmf = rolling_sum(mfv, window=period) if VECTORBT_AVAILABLE and len(mfv) > 1000 else mfv.rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
 
             return cmf
         except Exception as e:
@@ -959,3 +993,65 @@ if __name__ == "__main__":
     engineer = FeatureEngineer()
     results = engineer.process_symbol_data("ETHUSDT", "1m", ["5m", "15m", "30m", "1h"])
     print(f"Processing results: {results}")
+
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)

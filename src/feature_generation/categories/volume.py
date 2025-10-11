@@ -59,9 +59,21 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        volume = data['volume'].values
-        # Placeholder - actual implementation would generate multiple volume features
-        return pd.Series(volume, index=data.index, name='volume_placeholder')
+        volume = data['volume']
+        
+        # Use VectorBT for volume moving average calculation
+        if self._should_use_vectorbt(data):
+            try:
+                # Calculate volume SMA using VectorBT
+                volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
+                self.performance_stats['vectorbt_operations'] += 1
+                return volume_sma
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._vectorbt_rolling_operation(volume, "mean", 20)
+        else:
+            return self._vectorbt_rolling_operation(volume, "mean", 20)
 
 # Volume Simple Moving Average
     
@@ -958,6 +970,40 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
                 return 0.0
             try:
                 from scipy.stats import linregress
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
                 slope, _, _, _, _ = linregress(range(len(x)), x.values)
                 return slope
             except:

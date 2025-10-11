@@ -1,0 +1,972 @@
+====================================================================================================
+FEATURE USAGE VECTORBT AUDIT REPORT
+====================================================================================================
+
+📊 FEATURE USAGE STATISTICS:
+  Total features found: 673
+  Features using VectorBT: 41
+  Features using pandas only: 32
+  Features using both: 13
+  Total VectorBT operations: 167
+  Total pandas operations: 95
+
+📈 FEATURE USAGE PERCENTAGES:
+  VectorBT features: 6.1%
+  Pandas-only features: 4.8%
+  Mixed features: 1.9%
+
+⚡ OPERATION RATIO:
+  VectorBT to pandas ratio: 175.8%
+
+📁 FILE-BY-FILE BREAKDOWN:
+
+  📄 /workspace/src/feature_generation/categories/negative_learning_selection.py
+    Total features: 2
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+      - def create_feature_selector(config: Optional[Dict[str, Any]] = None) -> NegativeLearningFeature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/order_flow.py
+    Total features: 13
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_default_order_flow_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/acceleration.py
+    Total features: 17
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_acceleration_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_acceleration_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/negative_learning_validation.py
+    Total features: 3
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/advanced_statistical.py
+    Total features: 13
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_default_advanced_statistical_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/volume.py
+    Total features: 51
+    VectorBT features: 4
+    Pandas features: 2
+    Mixed features: 0
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'VolumeFeature: ⚪ None (VB:0, PD:0)
+      - def create_default_volume_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/cross_timeframe.py
+    Total features: 39
+    VectorBT features: 3
+    Pandas features: 1
+    Mixed features: 4
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_enhanced_cross_timeframe_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_fractional_change_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_alignment_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_learned_projection_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_pca_projection_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_autoencoder_projection_feature: 🟢 VectorBT (VB:2, PD:1)
+      - def _generate_patchtst_projection_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_regime_aware_cross_timeframe_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_multi_scale_correlation_feature: 🔴 Pandas (VB:1, PD:1)
+      - def _calculate_feature_with_lag(self, data: pd.DataFrame, timeframe: int, feature: 🔴 Pandas (VB:1, PD:2)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_cross_timeframe_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_cross_timeframe_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_feature: 🔴 Pandas (VB:1, PD:2)
+
+  📄 /workspace/src/feature_generation/categories/oscillator.py
+    Total features: 30
+    VectorBT features: 2
+    Pandas features: 6
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'OscillatorFeature: ⚪ None (VB:0, PD:0)
+      - def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_oscillator_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+
+  📄 /workspace/src/feature_generation/categories/trend.py
+    Total features: 44
+    VectorBT features: 4
+    Pandas features: 10
+    Mixed features: 2
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:3)
+      - def _generate_feature: 🔴 Pandas (VB:1, PD:1)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'TrendFeature: ⚪ None (VB:0, PD:0)
+      - def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_trend_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 14) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_trend_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:3)
+      - def _generate_feature: 🔴 Pandas (VB:1, PD:1)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/advanced_volume_features.py
+    Total features: 12
+    VectorBT features: 7
+    Pandas features: 1
+    Mixed features: 3
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_obv_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
+      - def _generate_ad_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
+      - def _generate_mfi_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_vwap_features(self, data: pd.DataFrame, feature: 🔴 Pandas (VB:3, PD:6)
+      - def _generate_volume_momentum_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
+      - def _generate_volume_roc_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_volume_profile_features(self, data: pd.DataFrame, feature: 🔴 Pandas (VB:2, PD:2)
+      - def _generate_volume_clustering_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:1)
+      - def _generate_volume_regime_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
+      - def _generate_advanced_volume_statistical_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
+      - def _generate_basic_volume_feature: 🔴 Pandas (VB:0, PD:3)
+
+  📄 /workspace/src/feature_generation/categories/negative_learning_examples.py
+    Total features: 2
+    VectorBT features: 1
+    Pandas features: 0
+    Mixed features: 0
+      - def _create_analyst_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _create_tactician_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/legacy.py
+    Total features: 19
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_default_legacy_generators() -> List[VectorizedFeature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/support_resistance.py
+    Total features: 13
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'SupportResistanceFeature: ⚪ None (VB:0, PD:0)
+      - def create_default_support_resistance_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/interaction.py
+    Total features: 29
+    VectorBT features: 3
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_interaction_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_interaction_generators() -> List[Feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:2, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/advanced_volatility_features.py
+    Total features: 9
+    VectorBT features: 6
+    Pandas features: 1
+    Mixed features: 1
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_atr_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:6, PD:0)
+      - def _generate_bollinger_bands_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_keltner_channels_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_volatility_clustering_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:1)
+      - def _generate_regime_volatility_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
+      - def _generate_garch_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_advanced_statistical_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:12, PD:0)
+      - def _generate_basic_volatility_feature: 🔴 Pandas (VB:0, PD:3)
+
+  📄 /workspace/src/feature_generation/categories/autoencoder.py
+    Total features: 34
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'AutoencoderFeature: ⚪ None (VB:0, PD:0)
+      - def create_autoencoder_generators(encoding_dimensions: List[int] = None, windows: List[int] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_autoencoder_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/microstructure.py
+    Total features: 33
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'MicrostructureFeature: ⚪ None (VB:0, PD:0)
+      - def create_default_microstructure_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/returns.py
+    Total features: 30
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'ReturnsFeature: ⚪ None (VB:0, PD:0)
+      - def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_returns_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/candlestick_pattern.py
+    Total features: 6
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'CandlestickPatternFeature: ⚪ None (VB:0, PD:0)
+      - def create_candlestick_pattern_generators(patterns: List[str] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_candlestick_pattern_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/momentum.py
+    Total features: 54
+    VectorBT features: 2
+    Pandas features: 2
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'MomentumFeature: ⚪ None (VB:0, PD:0)
+      - def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 14) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 14) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, fast: int = 12, slow: int = 26, signal: int = 9) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 14) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_momentum_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/negative_learning.py
+    Total features: 7
+    VectorBT features: 1
+    Pandas features: 1
+    Mixed features: 0
+      - def _generate_context_flags(self, feature: 🔴 Pandas (VB:0, PD:2)
+      - def generate_negative_learning_feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_chop_flag(self, feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_spread_flag(self, feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_time_flag(self, feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_ic_uplift(self, gate_series: pd.Series, base_feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/regime_structural_trend.py
+    Total features: 9
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_structural_persistence_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_trend_strength_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_market_structure_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_trend_transition_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_trend_stability_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/advanced_regime_features.py
+    Total features: 11
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_advanced_regime_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/time.py
+    Total features: 21
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_default_time_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/negative_learning_constraints.py
+    Total features: 3
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/volatility.py
+    Total features: 14
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'VolatilityFeature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20, std_dev: float = 2.0) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 14) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_volatility_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/regime_feature_integration.py
+    Total features: 15
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_regime_quality_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_economic_significance_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_trading_viability_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_regime_stability_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_regime_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/optimized_volatility.py
+    Total features: 9
+    VectorBT features: 1
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls, period: int = 20) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default_optimized_volatility_generators() -> List[Feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/regime_statistical.py
+    Total features: 10
+    VectorBT features: 0
+    Pandas features: 3
+    Mixed features: 0
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_distribution_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_statistical_persistence_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_correlation_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_statistical_transition_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_statistical_stability_feature: ⚪ None (VB:0, PD:0)
+      - def _calculate_cross_correlation_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+
+  📄 /workspace/src/feature_generation/categories/negative_learning_integration.py
+    Total features: 2
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def generate_analyst_negative_feature: ⚪ None (VB:0, PD:0)
+      - def generate_tactician_negative_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/normalization.py
+    Total features: 16
+    VectorBT features: 4
+    Pandas features: 1
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_normalization_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_rolling_zscore_feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_adaptive_zscore_feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_volatility_scaling_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_regime_normalization_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_cross_sectional_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_stationarity_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/regime_volatility.py
+    Total features: 9
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volatility_persistence_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volatility_clustering_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_vol_of_vol_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volatility_transition_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volatility_stability_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/regime_volume.py
+    Total features: 9
+    VectorBT features: 1
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_persistence_feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_volume_clustering_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_price_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_transition_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_stability_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/spectral_wavelet.py
+    Total features: 11
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def create_default_spectral_wavelet_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_generation/categories/representation_learning.py
+    Total features: 11
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 3
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _extract_feature: 🔴 Pandas (VB:8, PD:10)
+      - def _create_input_feature: 🔴 Pandas (VB:3, PD:6)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _extract_feature: 🔴 Pandas (VB:8, PD:10)
+
+  📄 /workspace/src/feature_generation/categories/entropy.py
+    Total features: 46
+    VectorBT features: 0
+    Pandas features: 4
+    Mixed features: 0
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
+      - def create_default(cls) -> 'EntropyFeature: ⚪ None (VB:0, PD:0)
+      - def create_default_entropy_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def create_entropy_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:2)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: 🔴 Pandas (VB:0, PD:1)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/data_contracts.py
+    Total features: 1
+    VectorBT features: 1
+    Pandas features: 0
+    Mixed features: 0
+      - def create_feature: 🟢 VectorBT (VB:2, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/lookback_selection.py
+    Total features: 3
+    VectorBT features: 1
+    Pandas features: 0
+    Mixed features: 0
+      - def calculate_ic(self, feature: ⚪ None (VB:0, PD:0)
+      - def calculate_auc(self, feature: 🟢 VectorBT (VB:2, PD:0)
+      - def create_feature_families(feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/disagreement_meta_features.py
+    Total features: 2
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def calculate_all_disagreement_feature: ⚪ None (VB:0, PD:0)
+      - def calculate_disagreement_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/ensemble_meta_features.py
+    Total features: 9
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def generate_meta_feature: ⚪ None (VB:0, PD:0)
+      - def generate_meta_feature: ⚪ None (VB:0, PD:0)
+      - def generate_meta_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_price_meta_features_vectorized(self, feature: ⚪ None (VB:0, PD:0)
+      - def _generate_price_meta_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_price_meta_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_meta_features_vectorized(self, feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_meta_feature: ⚪ None (VB:0, PD:0)
+      - def _generate_volume_meta_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/test_vectorbt_performance.py
+    Total features: 1
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def generate_test_data(self, n_samples: int = 10000, n_feature: ⚪ None (VB:0, PD:0)
+
+  📄 /workspace/src/feature_engineering_roadmap/dynamic_feature_selector.py
+    Total features: 1
+    VectorBT features: 0
+    Pandas features: 0
+    Mixed features: 0
+      - def generate_candidate_feature: ⚪ None (VB:0, PD:0)
+
+⚠️  FEATURES NEEDING VECTORBT CONVERSION (32):
+  - /workspace/src/feature_generation/categories/volume.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/volume.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/cross_timeframe.py::def _generate_pca_projection_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (3 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (3 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (1 pandas ops)
+  - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/advanced_volume_features.py::def _generate_basic_volume_feature (3 pandas ops)
+  ... and 12 more features
+
+🎯 OVERALL ASSESSMENT:
+  🔴 POOR: Few features are using VectorBT

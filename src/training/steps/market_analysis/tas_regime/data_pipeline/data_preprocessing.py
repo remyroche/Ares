@@ -513,8 +513,8 @@ class DataPreprocessor:
         try:
             # Moving averages
             if 'close' in data.columns:
-                indicators['sma_20'] = data['close'].rolling(window=20).mean()
-                indicators['sma_50'] = data['close'].rolling(window=50).mean()
+                indicators['sma_20'] = rolling_mean(data["close"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=20).mean()
+                indicators['sma_50'] = rolling_mean(data["close"], window=50) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=50).mean()
                 indicators['ema_20'] = data['close'].ewm(span=20).mean()
                 indicators['ema_50'] = data['close'].ewm(span=50).mean()
             
@@ -528,8 +528,8 @@ class DataPreprocessor:
             
             # Bollinger Bands
             if 'close' in data.columns:
-                sma_20 = data['close'].rolling(window=20).mean()
-                std_20 = data['close'].rolling(window=20).std()
+                sma_20 = rolling_mean(data["close"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=20).mean()
+                std_20 = rolling_std(data["close"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=20).std()
                 indicators['bb_upper'] = sma_20 + (std_20 * 2)
                 indicators['bb_lower'] = sma_20 - (std_20 * 2)
                 indicators['bb_middle'] = sma_20
@@ -585,15 +585,15 @@ class DataPreprocessor:
                 features['log_volume'] = np.log(data['volume'] + 1)
                 
                 # Volume moving averages
-                features['volume_sma_20'] = data['volume'].rolling(window=20).mean()
-                features['volume_sma_50'] = data['volume'].rolling(window=50).mean()
+                features['volume_sma_20'] = rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean()
+                features['volume_sma_50'] = rolling_mean(data["volume"], window=50) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=50).mean()
                 
                 # Volume ratios
                 features['volume_ratio_20'] = data['volume'] / features['volume_sma_20']
                 features['volume_ratio_50'] = data['volume'] / features['volume_sma_50']
                 
                 # Volume volatility
-                features['volume_volatility'] = data['volume'].rolling(window=20).std()
+                features['volume_volatility'] = rolling_std(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).std()
             
         except Exception as e:
             self.logger.warning(f"⚠️ Volume features calculation failed: {e}")
@@ -607,8 +607,8 @@ class DataPreprocessor:
         try:
             if 'close' in data.columns:
                 # Rolling volatility
-                features['volatility_20'] = data['close'].rolling(window=20).std()
-                features['volatility_50'] = data['close'].rolling(window=50).std()
+                features['volatility_20'] = rolling_std(data["close"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=20).std()
+                features['volatility_50'] = rolling_std(data["close"], window=50) if VECTORBT_AVAILABLE and len(data) > 1000 else data["close"].rolling(window=50).std()
                 
                 # Volatility ratios
                 features['volatility_ratio'] = features['volatility_20'] / features['volatility_50']
@@ -925,6 +925,40 @@ class DataPreprocessor:
             # Save metadata
             metadata_file = output_dir / f"preprocessing_metadata_{timestamp}.json"
             import json
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             metadata = {
                 'data_shape': result.data_shape,
                 'preprocessing_steps_applied': result.preprocessing_steps_applied,
@@ -952,3 +986,64 @@ class DataPreprocessor:
             self.logger.info(f"📁 Preprocessed data exported to {filepath}")
         except Exception as e:
             self.logger.error(f"❌ Failed to export data: {e}")
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling apply operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)

@@ -44,6 +44,40 @@ from .config import LookbackOptimizationConfig, FamilyType, SplineConfig, HACCon
 # Import utilities
 try:
     from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_performance
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
@@ -632,8 +666,8 @@ class MatrixOptimizedICSurfaceEstimator:
             else:
                 gain = returns.where(returns > 0, 0)
                 loss = -returns.where(returns < 0, 0)
-                avg_gain = gain.rolling(window=lookback).mean()
-                avg_loss = loss.rolling(window=lookback).mean()
+                avg_gain = self._vectorbt_rolling_operation(gain, "mean", lookback)
+                avg_loss = self._vectorbt_rolling_operation(loss, "mean", lookback)
                 rs = avg_gain / avg_loss
                 rsi = 100 - (100 / (1 + rs))
             return rsi.fillna(50).values

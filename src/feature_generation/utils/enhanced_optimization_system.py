@@ -318,7 +318,7 @@ class EnhancedOptimizationSystem:
                 lowest_low = data['low'].rolling(window=period).min()
                 highest_high = data['high'].rolling(window=period).max()
                 k_percent = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
-                return k_percent.rolling(window=3).mean()
+                return self._vectorbt_rolling_operation(k_percent, "mean", 3)
         except Exception as e:
             self.logger.error(f"Error generating Stochastic feature: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -336,7 +336,7 @@ class EnhancedOptimizationSystem:
                 tr2 = abs(data['high'] - data['close'].shift(1))
                 tr3 = abs(data['low'] - data['close'].shift(1))
                 true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                return true_range.rolling(window=period).mean()
+                return self._vectorbt_rolling_operation(true_range, "mean", period)
         except Exception as e:
             self.logger.error(f"Error generating ATR feature: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -368,7 +368,7 @@ class EnhancedOptimizationSystem:
                 obv = data['volume'].copy()
                 obv[price_change < 0] = -data['volume'][price_change < 0]
                 obv[price_change == 0] = 0
-                return obv.rolling(window=period).sum()
+                return self._vectorbt_rolling_operation(obv, "sum", period)
         except Exception as e:
             self.logger.error(f"Error generating OBV feature: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -410,7 +410,7 @@ class EnhancedOptimizationSystem:
             else:
                 # Fallback calculation
                 returns = data['close'].pct_change()
-                return returns.rolling(window=period).std()
+                return self._vectorbt_rolling_operation(returns, "std", period)
         except Exception as e:
             self.logger.error(f"Error generating cross-timeframe volatility: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -450,7 +450,7 @@ class EnhancedOptimizationSystem:
             else:
                 # Fallback calculation
                 volume_returns = data['volume'].pct_change()
-                return volume_returns.rolling(window=period).std()
+                return self._vectorbt_rolling_operation(volume_returns, "std", period)
         except Exception as e:
             self.logger.error(f"Error generating volume volatility: {e}")
             return pd.Series(index=data.index, dtype=float)
@@ -500,8 +500,8 @@ class EnhancedOptimizationSystem:
             delta = prices.diff()
             gains = delta.where(delta > 0, 0)
             losses = -delta.where(delta < 0, 0)
-            avg_gains = gains.rolling(window=period).mean()
-            avg_losses = losses.rolling(window=period).mean()
+            avg_gains = self._vectorbt_rolling_operation(gains, "mean", period)
+            avg_losses = self._vectorbt_rolling_operation(losses, "mean", period)
             rs = avg_gains / avg_losses.replace(0, np.nan)
             rsi = 100 - (100 / (1 + rs))
             return rsi.fillna(50)
@@ -617,6 +617,40 @@ class EnhancedOptimizationSystem:
         
         try:
             import torch
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             
             # Convert data to tensor if possible
             if target_column and target_column in data.columns:
@@ -1005,3 +1039,51 @@ async def optimize_features_enhanced(
     return await system.optimize_multiple_features_enhanced(
         data, feature_configs, target_column, regime_column
     )
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

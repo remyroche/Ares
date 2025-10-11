@@ -647,7 +647,7 @@ class FeatureGenerators:
             else:
                 # Fallback to pandas rolling (still vectorized but less memory efficient)
                 series = pd.Series(prices)
-                features[f'sma_{period}'] = series.rolling(window=period).mean().values
+                features[f'sma_{period}'] = self._vectorbt_rolling_operation(series, "mean", period).values
 
         return features
 
@@ -842,7 +842,7 @@ class FeatureGenerators:
 
             # %D is 3-period SMA of %K
             k_series = pd.Series(k_values)
-            d_values = k_series.rolling(window=3).mean().values
+            d_values = self._vectorbt_rolling_operation(k_series, "mean", 3).values
 
             features.update({
                 f'stoch_k_{period}': k_values,
@@ -1054,8 +1054,8 @@ class FeatureGenerators:
             losses = -delta.where(delta < 0, 0)
             
             # Calculate average gains and losses
-            avg_gains = gains.rolling(window=lookback).mean()
-            avg_losses = losses.rolling(window=lookback).mean()
+            avg_gains = self._vectorbt_rolling_operation(gains, "mean", lookback)
+            avg_losses = self._vectorbt_rolling_operation(losses, "mean", lookback)
             
             # Calculate RS and RSI
             rs = avg_gains / avg_losses
@@ -1085,7 +1085,7 @@ class FeatureGenerators:
                 raise ValueError(f"Price column '{price_column}' not found in data")
             
             prices = data[price_column]
-            sma = prices.rolling(window=lookback).mean()
+            sma = self._vectorbt_rolling_operation(prices, "mean", lookback)
             
             return sma
             
@@ -1139,8 +1139,8 @@ class FeatureGenerators:
                 raise ValueError(f"Price column '{price_column}' not found in data")
             
             prices = data[price_column]
-            sma = prices.rolling(window=lookback).mean()
-            std = prices.rolling(window=lookback).std()
+            sma = self._vectorbt_rolling_operation(prices, "mean", lookback)
+            std = self._vectorbt_rolling_operation(prices, "std", lookback)
             
             upper_band = sma + (std * std_dev)
             lower_band = sma - (std * std_dev)
@@ -1217,12 +1217,12 @@ class FeatureGenerators:
             close = data['close']
             
             # Calculate %K
-            lowest_low = low.rolling(window=k_period).min()
-            highest_high = high.rolling(window=k_period).max()
+            lowest_low = self._vectorbt_rolling_operation(low, "min", k_period)
+            highest_high = self._vectorbt_rolling_operation(high, "max", k_period)
             k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
             
             # Calculate %D (smoothed %K)
-            d_percent = k_percent.rolling(window=d_period).mean()
+            d_percent = self._vectorbt_rolling_operation(k_percent, "mean", d_period)
             
             return d_percent
             
@@ -1259,7 +1259,7 @@ class FeatureGenerators:
             true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             
             # Calculate ATR
-            atr = true_range.rolling(window=lookback).mean()
+            atr = self._vectorbt_rolling_operation(true_range, "mean", lookback)
             
             return atr
             
@@ -1285,7 +1285,7 @@ class FeatureGenerators:
                 raise ValueError(f"Volume column '{volume_column}' not found in data")
             
             volume = data[volume_column]
-            volume_sma = volume.rolling(window=lookback).mean()
+            volume_sma = self._vectorbt_rolling_operation(volume, "mean", lookback)
             
             return volume_sma
             
@@ -1338,7 +1338,7 @@ class FeatureGenerators:
             
             prices = data[price_column]
             returns = prices.pct_change()
-            volatility = returns.rolling(window=lookback).std()
+            volatility = self._vectorbt_rolling_operation(returns, "std", lookback)
             
             return volatility
             
@@ -2457,9 +2457,91 @@ def create_cdl_harami_config(**kwargs) -> Dict[str, Any]:
 # This allows existing code to continue working while we migrate to the new system
 try:
     from .feature_generators_compatibility import FeatureGenerators as CompatibleFeatureGenerators
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     # Export the compatible version
     FeatureGenerators = CompatibleFeatureGenerators
     logger.info("✅ FeatureGenerators redirected to new unified system")
 except ImportError:
     # Standalone compatibility module is not available, using original FeatureGenerators class
     logger.info("ℹ️ Using original FeatureGenerators class (standalone compatibility not available)")
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

@@ -93,6 +93,40 @@ from src.utils.nas_tas.core.nas_engine import NASEngine
 from src.utils.nas_tas.optimization.architecture_search import ArchitectureSearchOptimizer, ArchitectureSearchConfig
 
 from src.training.steps.market_analysis.nas_regime.core.enhanced_perfect_nas_regime_detector import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     EnhancedPerfectNASRegimeDetector, PerfectNASConfig, NeuralArchitectureType
 )
 
@@ -198,7 +232,7 @@ class UtilityIntegrationExample:
 
         # Add technical indicators using safe math operations
         def calculate_sma(series: pd.Series, window: int) -> pd.Series:
-            return safe_dataframe_operation(series, lambda x: x.rolling(window=window).mean())
+            return safe_dataframe_operation(series, lambda x: self._vectorbt_rolling_operation(x, "mean", window))
 
         def calculate_rsi(series: pd.Series, window: int = 14) -> pd.Series:
             delta = series.diff()

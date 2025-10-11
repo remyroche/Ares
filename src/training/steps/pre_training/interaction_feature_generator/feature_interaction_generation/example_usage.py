@@ -67,8 +67,8 @@ def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
     
-    avg_gain = gain.rolling(window=window).mean()
-    avg_loss = loss.rolling(window=window).mean()
+    avg_gain = self._vectorbt_rolling_operation(gain, "mean", window)
+    avg_loss = self._vectorbt_rolling_operation(loss, "mean", window)
     
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
@@ -277,6 +277,40 @@ def demonstrate_individual_stages():
     # Stage 3: Hierarchical Shrinkage (if PyMC available)
     try:
         from .hierarchical import HierarchicalBayesianShrinkage, SymbolFamilyData
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
         
         hierarchical_shrinkage = HierarchicalBayesianShrinkage(config)
         

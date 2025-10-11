@@ -39,6 +39,40 @@ from ..base_calculations import (
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for statistical regime features optimized for 15m timeframe."""
     
@@ -349,8 +383,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Vectorized skewness using rolling statistics
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         
         # Simplified skewness approximation using third moment
         centered = returns_series - rolling_mean
@@ -367,8 +401,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Vectorized kurtosis using rolling statistics
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         
         # Simplified kurtosis approximation using fourth moment
         centered = returns_series - rolling_mean
@@ -385,8 +419,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling skewness for the entire series at once
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         centered = returns_series - rolling_mean
         skewness = (centered ** 3).rolling(window=window).mean() / (rolling_std ** 3 + 1e-8)
         
@@ -403,8 +437,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized skewness calculation
         returns_series = pd.Series(returns_window)
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         
         # Vectorized skewness using third moment
         centered = returns_series - rolling_mean
@@ -425,8 +459,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling kurtosis for the entire series at once
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         centered = returns_series - rolling_mean
         kurtosis = (centered ** 4).rolling(window=window).mean() / (rolling_std ** 4 + 1e-8) - 3
         
@@ -443,8 +477,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized kurtosis calculation
         returns_series = pd.Series(returns_window)
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         
         # Vectorized kurtosis using fourth moment
         centered = returns_series - rolling_mean
@@ -465,8 +499,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Vectorized normality test using skewness and kurtosis approximation
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         
         # Calculate skewness and kurtosis for normality test
         centered = returns_series - rolling_mean
@@ -526,16 +560,16 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         sub_window = max(2, window // 4)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
         kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
         
         # Calculate coefficient of variation for stability
-        skew_cv = skewness.rolling(window=window).std() / (skewness.rolling(window=window).mean().abs() + 1e-8)
-        kurt_cv = kurtosis.rolling(window=window).std() / (kurtosis.rolling(window=window).mean().abs() + 1e-8)
+        skew_cv = self._vectorbt_rolling_operation(skewness, "std", window) / (self._vectorbt_rolling_operation(skewness, "mean", window).abs() + 1e-8)
+        kurt_cv = self._vectorbt_rolling_operation(kurtosis, "std", window) / (self._vectorbt_rolling_operation(kurtosis, "mean", window).abs() + 1e-8)
         
         # Stability based on low coefficient of variation
         stability = np.maximum(0, 1 - (skew_cv + kurt_cv) / 2)
@@ -549,8 +583,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized moment calculations
         returns_series = pd.Series(returns_window)
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         
         # Vectorized skewness and kurtosis
         centered = returns_series - rolling_mean
@@ -575,8 +609,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=window).mean() / (rolling_std ** 3 + 1e-8)
@@ -707,8 +741,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # OPTIMIZED: Use vectorized moment calculations
-        rolling_mean = returns_series.rolling(window=window).mean()
-        rolling_std = returns_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", window)
         centered = returns_series - rolling_mean
         
         # Vectorized skewness and kurtosis
@@ -738,8 +772,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         sub_window = max(2, window // 2)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
@@ -784,8 +818,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         sub_window = max(2, window // 4)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
@@ -835,16 +869,16 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         sub_window = max(2, window // 4)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
         kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
         
         # Calculate coefficient of variation for stability
-        skew_cv = skewness.rolling(window=window).std() / (skewness.rolling(window=window).mean().abs() + 1e-8)
-        kurt_cv = kurtosis.rolling(window=window).std() / (kurtosis.rolling(window=window).mean().abs() + 1e-8)
+        skew_cv = self._vectorbt_rolling_operation(skewness, "std", window) / (self._vectorbt_rolling_operation(skewness, "mean", window).abs() + 1e-8)
+        kurt_cv = self._vectorbt_rolling_operation(kurtosis, "std", window) / (self._vectorbt_rolling_operation(kurtosis, "mean", window).abs() + 1e-8)
         
         # Stability based on low coefficient of variation
         stability = np.maximum(0, 1 - (skew_cv + kurt_cv) / 2)
@@ -880,8 +914,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling min and max for bin boundaries
-        rolling_min = returns_series.rolling(window=window).min()
-        rolling_max = returns_series.rolling(window=window).max()
+        rolling_min = self._vectorbt_rolling_operation(returns_series, "min", window)
+        rolling_max = self._vectorbt_rolling_operation(returns_series, "max", window)
         
         # Create 10 bins for each window
         n_bins = 10
@@ -889,7 +923,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         
         # Calculate entropy using variance approximation (much faster than histogram)
         # Entropy is approximated as log of variance for normal-like distributions
-        rolling_var = returns_series.rolling(window=window).var()
+        rolling_var = self._vectorbt_rolling_operation(returns_series, "var", window)
         entropy_approx = np.log(rolling_var + 1e-8)
         
         # Normalize entropy to 0-1 range
@@ -926,8 +960,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         sub_window = max(2, window // 4)
         
         # Calculate rolling skewness and kurtosis
-        rolling_mean = returns_series.rolling(window=sub_window).mean()
-        rolling_std = returns_series.rolling(window=sub_window).std()
+        rolling_mean = self._vectorbt_rolling_operation(returns_series, "mean", sub_window)
+        rolling_std = self._vectorbt_rolling_operation(returns_series, "std", sub_window)
         centered = returns_series - rolling_mean
         
         skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
@@ -966,3 +1000,51 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                 return 0.0
         except:
             return 0.0
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

@@ -204,23 +204,52 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
         features = []
 
         # Price features
+        # Calculate price features using VectorBT
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                close_mean_20 = rolling_mean(data["close"], window=20)
+                close_std_20 = rolling_std(data["close"], window=20)
+                close_mean_10 = rolling_mean(data["close"], window=10)
+                close_mean_30 = rolling_mean(data["close"], window=30)
+            except Exception as e:
+                logger.warning(f"VectorBT price features failed: {e}, using pandas fallback")
+                close_mean_20 = data["close"].rolling(window=20).mean()
+                close_std_20 = data["close"].rolling(window=20).std()
+                close_mean_10 = data["close"].rolling(window=10).mean()
+                close_mean_30 = data["close"].rolling(window=30).mean()
+        else:
+            close_mean_20 = data["close"].rolling(window=20).mean()
+            close_std_20 = data["close"].rolling(window=20).std()
+            close_mean_10 = data["close"].rolling(window=10).mean()
+            close_mean_30 = data["close"].rolling(window=30).mean()
+        
         price_features = [
             data["close"].pct_change(),
-            (data["close"] - data["close"].rolling(window=20).mean()) / data["close"].rolling(window=20).std(),
-            data["close"].rolling(window=10).mean() / data["close"].rolling(window=30).mean() - 1,
+            (data["close"] - close_mean_20) / close_std_20,
+            close_mean_10 / close_mean_30 - 1,
         ]
 
         # Volatility features
         returns = data["close"].pct_change()
         volatility_features = [
-            returns.rolling(window=20).std(),
-            returns.rolling(window=5).std() / returns.rolling(window=20).std(),
+            self._vectorbt_rolling_operation(returns, "std", 20),
+            self._vectorbt_rolling_operation(returns, "std", 5) / self._vectorbt_rolling_operation(returns, "std", 20),
         ]
 
         # Volume features (if available)
         if "volume" in data.columns:
+            # Calculate volume features using VectorBT
+            if VECTORBT_AVAILABLE and len(data) > 1000:
+                try:
+                    volume_mean_20 = rolling_mean(data["volume"], window=20)
+                except Exception as e:
+                    logger.warning(f"VectorBT volume features failed: {e}, using pandas fallback")
+                    volume_mean_20 = data["volume"].rolling(window=20).mean()
+            else:
+                volume_mean_20 = data["volume"].rolling(window=20).mean()
+            
             volume_features = [
-                data["volume"] / data["volume"].rolling(window=20).mean(),
+                data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
             ]
         else:
@@ -266,12 +295,25 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
 
         for window in window_sizes:
             if len(attention_output) >= window:
-                # Rolling mean
-                rolling_mean = pd.Series(attention_output.mean(axis=1)).rolling(window=window).mean().fillna(0)
+                # Rolling mean using VectorBT
+                attention_series = pd.Series(attention_output.mean(axis=1))
+                if VECTORBT_AVAILABLE and len(attention_series) > 1000:
+                    try:
+                        rolling_mean = rolling_mean(attention_series, window=window).fillna(0)
+                    except Exception:
+                        rolling_mean = attention_series.rolling(window=window).mean().fillna(0)
+                else:
+                    rolling_mean = attention_series.rolling(window=window).mean().fillna(0)
                 temporal_features.append(rolling_mean.values)
-
-                # Rolling std
-                rolling_std = pd.Series(attention_output.mean(axis=1)).rolling(window=window).std().fillna(0)
+                
+                # Rolling std using VectorBT
+                if VECTORBT_AVAILABLE and len(attention_series) > 1000:
+                    try:
+                        rolling_std = rolling_std(attention_series, window=window).fillna(0)
+                    except Exception:
+                        rolling_std = attention_series.rolling(window=window).std().fillna(0)
+                else:
+                    rolling_std = attention_series.rolling(window=window).std().fillna(0)
                 temporal_features.append(rolling_std.values)
 
         if temporal_features:
@@ -343,16 +385,39 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         features = []
 
         # Technical indicators as features
+        # Calculate indicators using VectorBT
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                close_mean_10 = rolling_mean(data["close"], window=10)
+                close_std_20 = rolling_std(data["close"], window=20)
+            except Exception as e:
+                logger.warning(f"VectorBT indicators failed: {e}, using pandas fallback")
+                close_mean_10 = data["close"].rolling(window=10).mean()
+                close_std_20 = data["close"].rolling(window=20).std()
+        else:
+            close_mean_10 = data["close"].rolling(window=10).mean()
+            close_std_20 = data["close"].rolling(window=20).std()
+        
         indicators = [
             data["close"].pct_change(),
-            data["close"].rolling(window=10).mean(),
-            data["close"].rolling(window=20).std(),
-            data["close"] / data["close"].rolling(window=10).mean() - 1,
+            close_mean_10,
+            close_std_20,
+            data["close"] / close_mean_10 - 1,
         ]
 
         if "volume" in data.columns:
+            # Calculate volume features using VectorBT
+            if VECTORBT_AVAILABLE and len(data) > 1000:
+                try:
+                    volume_mean_20 = rolling_mean(data["volume"], window=20)
+                except Exception as e:
+                    logger.warning(f"VectorBT volume indicators failed: {e}, using pandas fallback")
+                    volume_mean_20 = data["volume"].rolling(window=20).mean()
+            else:
+                volume_mean_20 = data["volume"].rolling(window=20).mean()
+            
             indicators.extend([
-                data["volume"] / data["volume"].rolling(window=20).mean(),
+                data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
             ])
 
@@ -370,6 +435,40 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         # Simple dimensionality reduction using PCA as autoencoder proxy
         try:
             from sklearn.decomposition import PCA
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
             # Reshape for time series encoding
             seq_len, feature_dim = features.shape
@@ -499,3 +598,51 @@ class ContrastiveLearningGenerator(FeatureGenerator):
             representations.append(contrastive_repr)
 
         return np.array(representations)
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

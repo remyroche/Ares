@@ -40,6 +40,40 @@ except ImportError:
 # Cross timeframe analysis imports
 try:
     from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
         analyze_cross_timeframes_optimized, create_optimized_config
     )
     CROSS_TIMEFRAME_AVAILABLE = True
@@ -484,8 +518,8 @@ class TemporalFeatureIntegration:
     
     def _calculate_bollinger_bands(self, prices: pd.Series, period: int, std_dev: float = 2.0) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """Calculate Bollinger Bands."""
-        sma = prices.rolling(window=period).mean()
-        std = prices.rolling(window=period).std()
+        sma = self._vectorbt_rolling_operation(prices, "mean", period)
+        std = self._vectorbt_rolling_operation(prices, "std", period)
         upper = sma + (std * std_dev)
         lower = sma - (std * std_dev)
         return upper, sma, lower
@@ -495,7 +529,7 @@ class TemporalFeatureIntegration:
         low_min = data['low'].rolling(window=period).min()
         high_max = data['high'].rolling(window=period).max()
         k_percent = 100 * ((data['close'] - low_min) / (high_max - low_min))
-        d_percent = k_percent.rolling(window=3).mean()
+        d_percent = self._vectorbt_rolling_operation(k_percent, "mean", 3)
         return k_percent, d_percent
     
     def _calculate_atr(self, data: pd.DataFrame, period: int) -> pd.Series:
@@ -504,7 +538,7 @@ class TemporalFeatureIntegration:
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
         true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-        atr = true_range.rolling(window=period).mean()
+        atr = self._vectorbt_rolling_operation(true_range, "mean", period)
         return atr
 
 # Convenience functions
@@ -555,3 +589,51 @@ def create_temporal_config(
         correlation_threshold=correlation_threshold,
         parallel_processing=parallel_processing
     )
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

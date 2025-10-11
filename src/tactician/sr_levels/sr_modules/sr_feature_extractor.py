@@ -8,6 +8,40 @@ import numpy as np
 import pandas as pd
 import logging
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 class SRFeatureExtractor:
     """Extracts ML features from S/R analysis."""
     
@@ -440,8 +474,8 @@ class SRFeatureExtractor:
         num_std: float = 2
     ) -> tuple:
         """Calculate Bollinger Bands."""
-        middle = prices.rolling(window=period).mean()
-        std = prices.rolling(window=period).std()
+        middle = self._vectorbt_rolling_operation(prices, "mean", period)
+        std = self._vectorbt_rolling_operation(prices, "std", period)
         upper = middle + (std * num_std)
         lower = middle - (std * num_std)
         return upper, middle, lower

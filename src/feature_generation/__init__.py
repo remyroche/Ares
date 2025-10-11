@@ -230,6 +230,33 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Advanced utils not available: {e}")
 
+# VectorBT optimizations
+try:
+    from .categories.advanced_volatility_features import (
+        AdvancedVolatilityFeatures,
+        VolatilityConfig,
+        create_advanced_volatility_generator
+    )
+    from .categories.advanced_volume_features import (
+        AdvancedVolumeFeatures,
+        VolumeConfig,
+        create_advanced_volume_generator
+    )
+    from .core.vectorbt_batch_processor import (
+        VectorBTBatchProcessor,
+        BatchProcessingConfig,
+        VectorBTFeatureBatchProcessor,
+        VectorBTSignalBatchProcessor,
+        create_vectorbt_batch_processor,
+        create_feature_batch_processor,
+        create_signal_batch_processor
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning(f"VectorBT optimizations not available: {e}")
+
 # Version and metadata
 __version__ = "2.0.0"
 __author__ = "Unified Feature Generation Team"
@@ -343,6 +370,29 @@ if UTILS_AVAILABLE:
         "validate_features_dataframe"
     ])
 
+# VectorBT optimizations
+if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+    __all__.extend([
+        # Advanced volatility features
+        "AdvancedVolatilityFeatures",
+        "VolatilityConfig",
+        "create_advanced_volatility_generator",
+        
+        # Advanced volume features
+        "AdvancedVolumeFeatures",
+        "VolumeConfig",
+        "create_advanced_volume_generator",
+        
+        # Batch processing
+        "VectorBTBatchProcessor",
+        "BatchProcessingConfig",
+        "VectorBTFeatureBatchProcessor",
+        "VectorBTSignalBatchProcessor",
+        "create_vectorbt_batch_processor",
+        "create_feature_batch_processor",
+        "create_signal_batch_processor"
+    ])
+
 # Initialize default feature bank if core is available
 if CORE_AVAILABLE:
     try:
@@ -363,3 +413,8 @@ if UTILS_AVAILABLE:
     logger.info("🚀 Advanced utilities available (optimization, analysis, etc.)")
 else:
     logger.warning("⚠️ Advanced utilities not available - limited functionality")
+
+if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+    logger.info("⚡ VectorBT optimizations available (advanced volatility, volume, batch processing)")
+else:
+    logger.warning("⚠️ VectorBT optimizations not available - install vectorbt for enhanced performance")

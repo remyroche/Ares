@@ -21,6 +21,40 @@ warnings.filterwarnings('ignore')
 from src.utils.logger import get_logger
 from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 
 class ValidationLevel(Enum):
     """Validation levels."""
@@ -514,7 +548,7 @@ class EnhancedValidationFramework:
         try:
             # Calculate rolling volatility
             returns = market_data['close'].pct_change().dropna()
-            rolling_vol = returns.rolling(window=20).std()
+            rolling_vol = self._vectorbt_rolling_operation(returns, "std", 20)
             
             # Volatility stability based on coefficient of variation
             vol_mean = rolling_vol.mean()

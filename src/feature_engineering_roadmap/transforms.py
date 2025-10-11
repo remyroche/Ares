@@ -123,7 +123,52 @@ class OnlineEWZ(BaseScaler):
     
     def _fit_transform_cpu_vectorized(self, data: pd.Series) -> pd.Series:
         """CPU-optimized vectorized implementation using VectorBT."""
-        # Convert to numpy for vectorized operations
+        # Use VectorBT rolling operations for better performance
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                # Use VectorBT's optimized rolling operations
+                from vectorbt.generic import rolling_apply
+                
+                def online_ewz_func(window_data):
+                    if len(window_data) < 2:
+                        return 0.0
+                    
+                    # Calculate online mean and variance
+                    mean = window_data.iloc[0]
+                    var = 1.0
+                    
+                    for i in range(1, len(window_data)):
+                        if not np.isnan(window_data.iloc[i]):
+                            prev_mean = mean
+                            mean = (1 - self.alpha) * mean + self.alpha * window_data.iloc[i]
+                            
+                            if i > 1:
+                                delta = window_data.iloc[i] - prev_mean
+                                var = (1 - self.alpha) * var + self.alpha * delta * delta
+                            
+                            # Calculate z-score
+                            if var > 0:
+                                z_score = (window_data.iloc[i] - mean) / np.sqrt(var)
+                            else:
+                                z_score = 0.0
+                    
+                    return z_score if not np.isnan(z_score) else 0.0
+                
+                # Use VectorBT rolling apply
+                z_scores = rolling_apply(data, online_ewz_func, window=min(50, len(data)//4))
+                
+                # Update state
+                self.mean_state = data.mean()
+                self.var_state = data.var()
+                self.count = len(data)
+                self.fitted = True
+                
+                return z_scores
+                
+            except Exception as e:
+                logger.warning(f"VectorBT EWZ calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy implementation
         values = data.values
         n = len(values)
         

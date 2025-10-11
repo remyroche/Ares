@@ -436,8 +436,8 @@ class HMMTrainingPipeline:
     def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: float = 2) -> Tuple[pd.Series, pd.Series]:
         """Calculate Bollinger Bands."""
         try:
-            sma = prices.rolling(window=period).mean()
-            std = prices.rolling(window=period).std()
+            sma = self._vectorbt_rolling_operation(prices, "mean", period)
+            std = self._vectorbt_rolling_operation(prices, "std", period)
             upper_band = sma + (std * std_dev)
             lower_band = sma - (std * std_dev)
             return upper_band, lower_band
@@ -620,6 +620,40 @@ class HMMTrainingPipeline:
         try:
             if self.meta_learner == "xgboost":
                 from xgboost import XGBClassifier
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
                 meta_model = XGBClassifier(
                     n_estimators=100,
                     learning_rate=0.1,
@@ -954,7 +988,7 @@ class HMMTrainingPipeline:
             if 'returns' in features.columns:
                 returns = features['returns'].fillna(0)
                 # Classify regimes based on rolling returns
-                rolling_returns = returns.rolling(window=50).mean()
+                rolling_returns = self._vectorbt_rolling_operation(returns, "mean", 50)
 
                 regimes = np.zeros(n_samples, dtype=int)
                 regimes[rolling_returns > 0.001] = 0  # Bull

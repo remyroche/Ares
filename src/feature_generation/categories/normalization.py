@@ -32,6 +32,40 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 from ..base_calculations import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     BaseCalculator,
     BaseCalculationType,
     BaseCalculationConfig,
@@ -136,8 +170,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     for method in normalization_methods:
                         if method == "zscore":
                             # Standard z-score
-                            rolling_mean = values.rolling(window=window).mean()
-                            rolling_std = values.rolling(window=window).std()
+                            rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
+                            rolling_std = self._vectorbt_rolling_operation(values, "std", window)
                             zscore = (values - rolling_mean) / rolling_std
                             features[f"zscore_{column}_{window}"] = zscore.fillna(0).values
 
@@ -150,8 +184,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
 
                         elif method == "minmax":
                             # Min-max normalization
-                            rolling_min = values.rolling(window=window).min()
-                            rolling_max = values.rolling(window=window).max()
+                            rolling_min = self._vectorbt_rolling_operation(values, "min", window)
+                            rolling_max = self._vectorbt_rolling_operation(values, "max", window)
                             minmax_norm = (values - rolling_min) / (rolling_max - rolling_min + 1e-8)
                             features[f"minmax_{column}_{window}"] = minmax_norm.fillna(0).values
 
@@ -184,8 +218,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         if low_vol_mask.sum() > 0:
             low_vol_values = values[low_vol_mask]
             if len(low_vol_values) > window:
-                low_vol_mean = low_vol_values.rolling(window=window).mean()
-                low_vol_std = low_vol_values.rolling(window=window).std()
+                low_vol_mean = self._vectorbt_rolling_operation(low_vol_values, "mean", window)
+                low_vol_std = self._vectorbt_rolling_operation(low_vol_values, "std", window)
                 adaptive_zscore = np.zeros(len(values))
                 adaptive_zscore[low_vol_mask] = (low_vol_values - low_vol_mean) / low_vol_std
                 features[f"adaptive_zscore_{column}_{window}_low_vol"] = adaptive_zscore
@@ -195,8 +229,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         if high_vol_mask.sum() > 0:
             high_vol_values = values[high_vol_mask]
             if len(high_vol_values) > window:
-                high_vol_mean = high_vol_values.rolling(window=window).mean()
-                high_vol_std = high_vol_values.rolling(window=window).std()
+                high_vol_mean = self._vectorbt_rolling_operation(high_vol_values, "mean", window)
+                high_vol_std = self._vectorbt_rolling_operation(high_vol_values, "std", window)
                 adaptive_zscore = np.zeros(len(values))
                 adaptive_zscore[high_vol_mask] = (high_vol_values - high_vol_mean) / high_vol_std
                 features[f"adaptive_zscore_{column}_{window}_high_vol"] = adaptive_zscore
@@ -211,7 +245,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         for window in volatility_windows:
             # Calculate returns and volatility
             returns = data["close"].pct_change()
-            rolling_vol = returns.rolling(window=window).std()
+            rolling_vol = self._vectorbt_rolling_operation(returns, "std", window)
             
             # GARCH-like volatility estimation
             garch_vol = self._estimate_garch_volatility(returns, window)
@@ -250,7 +284,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         omega = 0.05  # Long-term variance
         
         garch_vol = pd.Series(index=returns.index, dtype=float)
-        garch_vol.iloc[0] = returns.rolling(window=window).std().iloc[0] ** 2
+        garch_vol.iloc[0] = self._vectorbt_rolling_operation(returns, "std", window).iloc[0] ** 2
         
         for i in range(1, len(returns)):
             if not pd.isna(returns.iloc[i-1]):
@@ -297,7 +331,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         for window in regime_windows:
             # Detect regime using volatility regime detection
             returns = data["close"].pct_change()
-            vol_regime = returns.rolling(window=window).std()
+            vol_regime = self._vectorbt_rolling_operation(returns, "std", window)
 
             # Define regimes based on volatility percentiles
             low_vol_threshold = vol_regime.quantile(0.3)
@@ -763,3 +797,52 @@ class MinMaxScaler(BaseScaler):
         self.min_val = state.get('min_val')
         self.max_val = state.get('max_val')
         self.fitted = state.get('fitted', False)
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

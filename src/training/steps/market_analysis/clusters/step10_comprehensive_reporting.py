@@ -184,7 +184,7 @@ class ComprehensiveReporter:
             # Calculate returns and volatility
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=20).std()
+                volatility = self._vectorbt_rolling_operation(returns, "std", 20)
             else:
                 # Fallback if no close price available
                 returns = pd.Series(np.random.normal(0, 0.01, len(market_data)))
@@ -266,7 +266,7 @@ class ComprehensiveReporter:
             # Prepare data
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=20).std()
+                volatility = self._vectorbt_rolling_operation(returns, "std", 20)
             else:
                 returns = pd.Series(np.random.normal(0, 0.01, len(market_data)))
                 volatility = pd.Series(np.random.uniform(0.01, 0.05, len(market_data)))
@@ -542,6 +542,40 @@ class ComprehensiveReporter:
         """Apply FDR correction to p-values."""
         try:
             from statsmodels.stats.multitest import multipletests
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
             
             # Collect all p-values
             all_pvalues = []

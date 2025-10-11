@@ -12,6 +12,40 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 
 class FeatureFamily(Enum):
     """Feature families for organization."""
@@ -108,9 +142,18 @@ class PriceReturnsFeatures:
     
     @staticmethod
     def bollz20(data: pd.DataFrame) -> pd.Series:
-        """Bollinger z-score: (Ct - MA20) / SD20(C)"""
-        ma20 = data['close'].rolling(20).mean()
-        sd20 = data['close'].rolling(20).std()
+        """Bollinger z-score: (Ct - MA20) / SD20(C) using VectorBT"""
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                ma20 = rolling_mean(data['close'], window=20)
+                sd20 = rolling_std(data['close'], window=20)
+            except Exception as e:
+                logger.warning(f"VectorBT Bollinger calculation failed: {e}, using pandas fallback")
+                ma20 = data['close'].rolling(20).mean()
+                sd20 = data['close'].rolling(20).std()
+        else:
+            ma20 = data['close'].rolling(20).mean()
+            sd20 = data['close'].rolling(20).std()
         return (data['close'] - ma20) / sd20
 
 
@@ -176,9 +219,18 @@ class MeanReversionFeatures:
     
     @staticmethod
     def stochk14(data: pd.DataFrame) -> pd.Series:
-        """14-period Stochastic %K."""
-        low14 = data['low'].rolling(14).min()
-        high14 = data['high'].rolling(14).max()
+        """14-period Stochastic %K using VectorBT."""
+        if VECTORBT_AVAILABLE and len(data) > 1000:
+            try:
+                low14 = rolling_min(data['low'], window=14)
+                high14 = rolling_max(data['high'], window=14)
+            except Exception as e:
+                logger.warning(f"VectorBT Stochastic calculation failed: {e}, using pandas fallback")
+                low14 = data['low'].rolling(14).min()
+                high14 = data['high'].rolling(14).max()
+        else:
+            low14 = data['low'].rolling(14).min()
+            high14 = data['high'].rolling(14).max()
         return 100 * (data['close'] - low14) / (high14 - low14)
     
     @staticmethod
@@ -512,3 +564,52 @@ class FeatureRegistry:
             return False
 
         return True
+
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

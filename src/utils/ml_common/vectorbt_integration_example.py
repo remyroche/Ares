@@ -88,8 +88,8 @@ def demonstrate_vectorbt_backtesting():
         use_gpu=True
     )
     
-    # Test different backtesting modes
-    modes = [BacktestMode.VECTORBT_CPU, BacktestMode.VECTORBT_PARALLEL]
+    # Test different backtesting modes (VectorBT is now the default)
+    modes = [BacktestMode.VECTORBT_CPU, BacktestMode.VECTORBT_PARALLEL, BacktestMode.VECTORBT_GPU]
     
     results = {}
     

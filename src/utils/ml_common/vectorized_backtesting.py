@@ -1,8 +1,8 @@
 """
-Vectorized Backtesting Engine
+Vectorized Backtesting Engine with VectorBT Integration
 
 This module provides highly optimized backtesting using vectorized operations,
-matrix computations, and GPU acceleration for maximum performance.
+matrix computations, GPU acceleration, and VectorBT portfolio management.
 """
 
 import numpy as np
@@ -29,6 +29,16 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Import VectorBT components
+try:
+    import vectorbt as vbt
+    from vectorbt.portfolio.base import Portfolio
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    Portfolio = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,6 +48,9 @@ class BacktestMode(Enum):
     PARALLEL = "parallel"
     GPU_ACCELERATED = "gpu_accelerated"
     HYBRID = "hybrid"
+    VECTORBT_CPU = "vectorbt_cpu"
+    VECTORBT_GPU = "vectorbt_gpu"
+    VECTORBT_PARALLEL = "vectorbt_parallel"
 
 
 @dataclass
@@ -65,6 +78,14 @@ class VectorizedBacktestConfig:
     enable_memory_optimization: bool = True
     enable_progress_tracking: bool = True
     cache_intermediate_results: bool = True
+
+    # VectorBT settings
+    use_vectorbt: bool = True
+    vectorbt_freq: str = '1min'
+    vectorbt_fees: float = 0.001
+    vectorbt_slippage: float = 0.0005
+    vectorbt_enable_parallel: bool = True
+    vectorbt_memory_limit_gb: float = 8.0
 
 
 @dataclass
@@ -104,6 +125,12 @@ class VectorizedBacktestingEngine:
         else:
             self.matrix_ops = None
 
+        # Initialize VectorBT if available
+        if self.config.use_vectorbt and VECTORBT_AVAILABLE:
+            self._configure_vectorbt()
+        else:
+            self.vectorbt_available = False
+
         # GPU availability check
         if TORCH_AVAILABLE:
             if torch.cuda.is_available():
@@ -125,17 +152,36 @@ class VectorizedBacktestingEngine:
             'computation_time': 0.0,
             'memory_peak': 0.0,
             'gpu_operations': 0,
-            'cpu_operations': 0
+            'cpu_operations': 0,
+            'vectorbt_operations': 0
         }
 
         logger.info("✅ Vectorized backtesting engine initialized")
         logger.info(f"📊 GPU available: {self.gpu_available}")
         logger.info(f"📊 Matrix ops available: {self.matrix_ops is not None}")
+        logger.info(f"📊 VectorBT available: {getattr(self, 'vectorbt_available', False)}")
+
+    def _configure_vectorbt(self):
+        """Configure VectorBT global settings for optimal performance."""
+        if not VECTORBT_AVAILABLE:
+            self.vectorbt_available = False
+            return
+        
+        self.vectorbt_available = True
+        
+        # Configure VectorBT for optimal performance
+        vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
+        
+        # Enable parallel processing if available
+        if hasattr(vbt.settings, 'parallel') and self.config.vectorbt_enable_parallel:
+            vbt.settings.parallel['threading'] = True
+        
+        logger.info("🚀 VectorBT configured for backtesting optimization")
 
     def run_vectorized_backtest(self, signals: Union[np.ndarray, pd.DataFrame],
                                prices: Union[np.ndarray, pd.DataFrame],
                                timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
-                               mode: BacktestMode = BacktestMode.VECTORIZED) -> VectorizedBacktestResults:
+                               mode: BacktestMode = BacktestMode.VECTORBT_CPU) -> VectorizedBacktestResults:
         """
         Run vectorized backtest simulation.
 
@@ -169,7 +215,13 @@ class VectorizedBacktestingEngine:
         logger.info(f"📊 Data shapes - Signals: {signals_array.shape}, Prices: {prices_array.shape}")
 
         # Execute backtest based on mode
-        if mode == BacktestMode.GPU_ACCELERATED and self.gpu_available:
+        if mode in [BacktestMode.VECTORBT_CPU, BacktestMode.VECTORBT_GPU, BacktestMode.VECTORBT_PARALLEL]:
+            if not self.vectorbt_available:
+                logger.warning("⚠️ VectorBT not available, falling back to vectorized backtest")
+                results = self._vectorized_backtest(signals_array, prices_array, timestamps_array)
+            else:
+                results = self._vectorbt_backtest(signals_array, prices_array, timestamps_array, mode)
+        elif mode == BacktestMode.GPU_ACCELERATED and self.gpu_available:
             results = self._gpu_accelerated_backtest(signals_array, prices_array, timestamps_array)
         elif mode == BacktestMode.PARALLEL:
             results = self._parallel_backtest(signals_array, prices_array, timestamps_array)
@@ -243,6 +295,125 @@ class VectorizedBacktestingEngine:
         )
 
         return results
+
+    def _vectorbt_backtest(self, signals: np.ndarray, prices: np.ndarray,
+                          timestamps: Optional[np.ndarray] = None,
+                          mode: BacktestMode = BacktestMode.VECTORBT_CPU) -> VectorizedBacktestResults:
+        """
+        VectorBT-optimized backtest implementation.
+        """
+        if not self.vectorbt_available:
+            logger.warning("⚠️ VectorBT not available, falling back to vectorized backtest")
+            return self._vectorized_backtest(signals, prices, timestamps)
+
+        logger.debug(f"🔄 Running VectorBT backtest with mode: {mode.value}...")
+
+        try:
+            # Convert to pandas DataFrames for VectorBT
+            if timestamps is not None:
+                if isinstance(timestamps, pd.DatetimeIndex):
+                    timestamps_index = timestamps
+                else:
+                    timestamps_index = pd.DatetimeIndex(timestamps)
+            else:
+                timestamps_index = pd.date_range(start='2020-01-01', periods=len(prices), freq=self.config.vectorbt_freq)
+
+            # Prepare data for VectorBT
+            if prices.ndim == 1:
+                prices_df = pd.DataFrame(prices, columns=['price'], index=timestamps_index)
+                signals_df = pd.DataFrame(signals, columns=['signal'], index=timestamps_index)
+            else:
+                prices_df = pd.DataFrame(prices, columns=[f'asset_{i}' for i in range(prices.shape[1])], index=timestamps_index)
+                signals_df = pd.DataFrame(signals, columns=[f'asset_{i}' for i in range(signals.shape[1])], index=timestamps_index)
+
+            # Create VectorBT portfolio
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                init_cash=self.config.initial_capital,
+                fees=self.config.vectorbt_fees,
+                slippage=self.config.vectorbt_slippage,
+                freq=self.config.vectorbt_freq
+            )
+
+            # Extract results
+            portfolio_values = portfolio.value().values
+            returns = portfolio.returns().values
+            positions = portfolio.positions.records_readable if hasattr(portfolio.positions, 'records_readable') else np.zeros_like(signals)
+            trades_df = portfolio.trades.records_readable if hasattr(portfolio.trades, 'records_readable') else pd.DataFrame()
+
+            # Calculate comprehensive metrics using VectorBT
+            stats = portfolio.stats()
+            
+            # Extract key metrics
+            performance_metrics = {
+                'total_return': stats.get('Total Return [%]', 0) / 100,
+                'annualized_return': stats.get('Annualized Return [%]', 0) / 100,
+                'volatility': stats.get('Annualized Volatility [%]', 0) / 100,
+                'sharpe_ratio': stats.get('Sharpe Ratio', 0),
+                'sortino_ratio': stats.get('Sortino Ratio', 0),
+                'calmar_ratio': stats.get('Calmar Ratio', 0),
+                'max_drawdown': stats.get('Max. Drawdown [%]', 0) / 100,
+                'avg_drawdown': stats.get('Avg. Drawdown [%]', 0) / 100,
+                'max_drawdown_duration': stats.get('Max. Drawdown Duration', 0),
+                'avg_drawdown_duration': stats.get('Avg. Drawdown Duration', 0),
+                'win_rate': stats.get('Win Rate [%]', 0) / 100,
+                'best_trade': stats.get('Best Trade [%]', 0) / 100,
+                'worst_trade': stats.get('Worst Trade [%]', 0) / 100,
+                'avg_trade': stats.get('Avg. Trade [%]', 0) / 100,
+                'profit_factor': stats.get('Profit Factor', 0),
+                'expectancy': stats.get('Expectancy [%]', 0) / 100,
+                'sqn': stats.get('SQN', 0),
+                'final_portfolio_value': portfolio_values[-1],
+                'total_trades': stats.get('# Trades', 0)
+            }
+
+            # Risk metrics
+            risk_metrics = {
+                'volatility': performance_metrics['volatility'],
+                'max_drawdown': performance_metrics['max_drawdown'],
+                'sharpe_ratio': performance_metrics['sharpe_ratio'],
+                'sortino_ratio': performance_metrics['sortino_ratio'],
+                'calmar_ratio': performance_metrics['calmar_ratio'],
+                'var_95': portfolio.value().quantile(0.05),
+                'cvar_95': portfolio.value()[portfolio.value() <= portfolio.value().quantile(0.05)].mean(),
+                'skewness': returns.skew() if hasattr(returns, 'skew') else 0,
+                'kurtosis': returns.kurtosis() if hasattr(returns, 'kurtosis') else 0
+            }
+
+            # Drawdown analysis
+            peak = portfolio.value().expanding().max()
+            drawdown = (portfolio.value() - peak) / peak
+            drawdown_analysis = {
+                'max_drawdown': performance_metrics['max_drawdown'],
+                'avg_drawdown': performance_metrics['avg_drawdown'],
+                'max_drawdown_duration': performance_metrics['max_drawdown_duration'],
+                'avg_drawdown_duration': performance_metrics['avg_drawdown_duration'],
+                'drawdown_series': drawdown,
+                'underwater_curve': drawdown
+            }
+
+            # Update performance stats
+            self.performance_stats['vectorbt_operations'] += 1
+
+            results = VectorizedBacktestResults(
+                portfolio_values=portfolio_values,
+                returns=returns,
+                positions=positions,
+                trades=trades_df,
+                performance_metrics=performance_metrics,
+                risk_metrics=risk_metrics,
+                drawdown_analysis=drawdown_analysis,
+                computation_time=0.0,  # Will be set by caller
+                memory_usage=0.0
+            )
+
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ VectorBT backtest failed: {e}")
+            logger.warning("⚠️ Falling back to vectorized backtest")
+            return self._vectorized_backtest(signals, prices, timestamps)
 
     def _gpu_accelerated_backtest(self, signals: np.ndarray, prices: np.ndarray,
                                 timestamps: Optional[np.ndarray] = None) -> VectorizedBacktestResults:
@@ -763,27 +934,29 @@ class VectorizedBacktestingEngine:
 
 def run_vectorized_backtest(signals: Union[np.ndarray, pd.DataFrame],
                            prices: Union[np.ndarray, pd.DataFrame],
+                           timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
                            config: Optional[VectorizedBacktestConfig] = None,
-                           mode: BacktestMode = BacktestMode.VECTORIZED) -> VectorizedBacktestResults:
+                           mode: BacktestMode = BacktestMode.VECTORBT_CPU) -> VectorizedBacktestResults:
     """
-    Convenience function to run vectorized backtest.
+    Convenience function to run vectorized backtest with VectorBT support.
 
     Args:
         signals: Trading signals
         prices: Asset prices
+        timestamps: Time index for the data
         config: Backtesting configuration
-        mode: Execution mode
+        mode: Execution mode (supports VectorBT modes)
 
     Returns:
         Backtest results
     """
     engine = VectorizedBacktestingEngine(config)
-    return engine.run_vectorized_backtest(signals, prices, mode=mode)
+    return engine.run_vectorized_backtest(signals, prices, timestamps, mode=mode)
 
 
 # Example usage and benchmarking
 def benchmark_backtesting():
-    """Benchmark traditional vs vectorized backtesting."""
+    """Benchmark traditional vs vectorized vs VectorBT backtesting."""
 
     # Generate sample data
     np.random.seed(42)
@@ -793,6 +966,7 @@ def benchmark_backtesting():
     # Generate random signals and prices
     signals = np.random.choice([-1, 0, 1], size=(n_periods, n_assets))
     prices = np.random.randn(n_periods, n_assets).cumsum(axis=0) + 100
+    timestamps = pd.date_range(start='2020-01-01', periods=n_periods, freq='1min')
 
     logger.info("🔬 Benchmarking backtesting methods...")
     logger.info(f"📊 Dataset: {n_periods} periods, {n_assets} assets")
@@ -818,26 +992,48 @@ def benchmark_backtesting():
     logger.info("⏱️ Running vectorized backtesting...")
     start_time = time.time()
 
-    config = VectorizedBacktestConfig()
-    vectorized_results = run_vectorized_backtest(signals, prices, config)
+    config = VectorizedBacktestConfig(use_vectorbt=False)
+    vectorized_results = run_vectorized_backtest(signals, prices, timestamps, config, BacktestMode.VECTORIZED)
 
     vectorized_time = time.time() - start_time
 
+    # VectorBT backtesting
+    logger.info("⏱️ Running VectorBT backtesting...")
+    start_time = time.time()
+
+    config_vectorbt = VectorizedBacktestConfig(use_vectorbt=True)
+    vectorbt_results = run_vectorized_backtest(signals, prices, timestamps, config_vectorbt, BacktestMode.VECTORBT_CPU)
+
+    vectorbt_time = time.time() - start_time
+
     # Compare results
-    speedup = traditional_time / vectorized_time if vectorized_time > 0 else float('inf')
+    vectorized_speedup = traditional_time / vectorized_time if vectorized_time > 0 else float('inf')
+    vectorbt_speedup = traditional_time / vectorbt_time if vectorbt_time > 0 else float('inf')
 
     logger.info("\n📊 BENCHMARK RESULTS:")
     logger.info(f"Traditional backtesting time: {traditional_time:.3f}s")
-    logger.info(f"Vectorized backtesting time: {vectorized_time:.3f}s")
-    logger.info(f"Speedup factor: {speedup:.2f}x")
-    logger.info(f"Traditional final value: ${portfolio_values_traditional[-1]:.4f}")
-    logger.info(f"Vectorized final value: ${vectorized_results.portfolio_values[-1]:.4f}")
+    logger.info(f"Vectorized backtesting time: {vectorized_time:.3f}s (Speedup: {vectorized_speedup:.2f}x)")
+    logger.info(f"VectorBT backtesting time: {vectorbt_time:.3f}s (Speedup: {vectorbt_speedup:.2f}x)")
+    logger.info(f"Traditional final value: ${portfolio_values_traditional[-1]:.2f}")
+    logger.info(f"Vectorized final value: ${vectorized_results.portfolio_values[-1]:.2f}")
+    logger.info(f"VectorBT final value: ${vectorbt_results.portfolio_values[-1]:.2f}")
+    
+    # Show VectorBT-specific metrics
+    logger.info(f"VectorBT Sharpe ratio: {vectorbt_results.performance_metrics.get('sharpe_ratio', 0):.3f}")
+    logger.info(f"VectorBT Max drawdown: {vectorbt_results.performance_metrics.get('max_drawdown', 0):.2%}")
+    logger.info(f"VectorBT Win rate: {vectorbt_results.performance_metrics.get('win_rate', 0):.2%}")
+    logger.info(f"VectorBT Profit factor: {vectorbt_results.performance_metrics.get('profit_factor', 0):.2f}")
+
     return {
         'traditional_time': traditional_time,
         'vectorized_time': vectorized_time,
-        'speedup': speedup,
+        'vectorbt_time': vectorbt_time,
+        'vectorized_speedup': vectorized_speedup,
+        'vectorbt_speedup': vectorbt_speedup,
         'traditional_final_value': portfolio_values_traditional[-1],
-        'vectorized_final_value': vectorized_results.portfolio_values[-1]
+        'vectorized_final_value': vectorized_results.portfolio_values[-1],
+        'vectorbt_final_value': vectorbt_results.portfolio_values[-1],
+        'vectorbt_metrics': vectorbt_results.performance_metrics
     }
 
 

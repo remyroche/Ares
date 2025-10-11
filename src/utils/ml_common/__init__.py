@@ -117,6 +117,21 @@ try:
     except Exception:
         M1EnhancedMatrixOperations = None  # type: ignore
         get_enhanced_matrix_operations = None  # type: ignore
+    
+    # VectorBT-optimized utilities (now the default)
+    from .matrix_cross_validation import (
+        MatrixCrossValidator, matrix_cross_validate
+    )
+    from .vectorized_backtesting import (
+        VectorizedBacktestingEngine, VectorizedBacktestConfig, VectorizedBacktestResults,
+        BacktestMode, run_vectorized_backtest
+    )
+    from .unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy, OperationConfig, OptimizationResult,
+        optimize_cross_validation, optimize_backtesting, optimize_financial_operation,
+        optimize_vectorbt_backtesting, optimize_vectorbt_metrics, optimize_vectorbt_portfolio,
+        get_unified_vectorization_manager
+    )
     from .pipeline_orchestrator import MLPipelineOrchestrator as PipelineOrchestrator
     from .feature_selection_backwards_compat import FeatureSelector as LegacyFeatureSelector
     from ..feature_selection.feature_importance_analyzer import (
@@ -190,6 +205,15 @@ try:
         # Data Drift Detection
         'DataDriftDetector', 'DriftDetectionConfig', 'DriftReport', 'DriftResult',
         'DriftType', 'DriftMethod', 'DriftSeverity', 'detect_data_drift', 'get_drifted_features',
+        
+        # VectorBT-Optimized Utilities (Default)
+        'MatrixCrossValidator', 'matrix_cross_validate',
+        'VectorizedBacktestingEngine', 'VectorizedBacktestConfig', 'VectorizedBacktestResults',
+        'BacktestMode', 'run_vectorized_backtest',
+        'UnifiedVectorizationManager', 'OperationType', 'OptimizationStrategy', 'OperationConfig', 'OptimizationResult',
+        'optimize_cross_validation', 'optimize_backtesting', 'optimize_financial_operation',
+        'optimize_vectorbt_backtesting', 'optimize_vectorbt_metrics', 'optimize_vectorbt_portfolio',
+        'get_unified_vectorization_manager',
         
         # Backward compatibility
         'tprint'

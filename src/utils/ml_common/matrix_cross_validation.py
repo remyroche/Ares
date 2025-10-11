@@ -1,8 +1,8 @@
 """
-Matrix-Based Cross-Validation Optimization
+Matrix-Based Cross-Validation Optimization with VectorBT Integration
 
 This module provides highly optimized cross-validation using matrix operations,
-vectorized computations, and GPU acceleration where available.
+vectorized computations, GPU acceleration, and VectorBT portfolio management.
 """
 
 import numpy as np
@@ -26,6 +26,16 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Import VectorBT components
+try:
+    import vectorbt as vbt
+    from vectorbt.portfolio.base import Portfolio
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    Portfolio = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +51,8 @@ class MatrixCrossValidator:
     """
 
     def __init__(self, n_splits: int = 5, shuffle: bool = False,
-                 random_state: int = 42, use_gpu: bool = True):
+                 random_state: int = 42, use_gpu: bool = True,
+                 use_vectorbt: bool = True):
         """
         Initialize matrix-based cross-validator.
 
@@ -50,11 +61,13 @@ class MatrixCrossValidator:
             shuffle: Whether to shuffle data before splitting
             random_state: Random state for reproducibility
             use_gpu: Whether to use GPU acceleration when available
+            use_vectorbt: Whether to use VectorBT for portfolio-based evaluation
         """
         self.n_splits = n_splits
         self.shuffle = shuffle
         self.random_state = random_state
         self.use_gpu = use_gpu and TORCH_AVAILABLE
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
 
         # Initialize matrix operations if available
         if MATRIX_OPS_AVAILABLE:
@@ -62,17 +75,37 @@ class MatrixCrossValidator:
         else:
             self.matrix_ops = None
 
+        # Initialize VectorBT if available
+        if self.use_vectorbt:
+            self._configure_vectorbt()
+
         # Performance tracking
         self.performance_stats = {
             'total_folds_processed': 0,
             'total_models_trained': 0,
             'total_predictions': 0,
             'computation_time': 0.0,
-            'memory_peak': 0.0
+            'memory_peak': 0.0,
+            'vectorbt_operations': 0,
+            'portfolio_evaluations': 0
         }
 
         logger.info("✅ Matrix-based cross-validator initialized")
-        logger.info(f"📊 Configuration - Splits: {n_splits}, GPU: {self.use_gpu}")
+        logger.info(f"📊 Configuration - Splits: {n_splits}, GPU: {self.use_gpu}, VectorBT: {self.use_vectorbt}")
+
+    def _configure_vectorbt(self):
+        """Configure VectorBT global settings for optimal performance."""
+        if not VECTORBT_AVAILABLE:
+            return
+        
+        # Configure VectorBT for optimal performance
+        vbt.settings.array_wrapper['freq'] = '1min'
+        
+        # Enable parallel processing if available
+        if hasattr(vbt.settings, 'parallel'):
+            vbt.settings.parallel['threading'] = True
+        
+        logger.info("🚀 VectorBT configured for cross-validation optimization")
 
     def cross_validate(self, X: Union[np.ndarray, pd.DataFrame],
                       y: Union[np.ndarray, pd.Series],
@@ -146,6 +179,92 @@ class MatrixCrossValidator:
         self.performance_stats['total_folds_processed'] = len(cv_indices)
 
         logger.info(f"✅ Matrix-based cross-validation completed in {total_time:.3f}s")
+        logger.info(f"📊 Mean CV score: {cv_results['mean_score']:.4f} (+/- {cv_results['std_score']:.4f})")
+
+        return cv_results
+
+    def vectorbt_cross_validate(self, X: Union[np.ndarray, pd.DataFrame],
+                               y: Union[np.ndarray, pd.Series],
+                               model_class: Any,
+                               model_params: Dict[str, Any] = None,
+                               cv_indices: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None,
+                               batch_size: int = 1000,
+                               portfolio_evaluation: bool = True) -> Dict[str, Any]:
+        """
+        Perform VectorBT-optimized cross-validation with portfolio-based evaluation.
+
+        Args:
+            X: Feature matrix
+            y: Target vector
+            model_class: Model class to instantiate
+            model_params: Parameters for model initialization
+            cv_indices: Pre-computed CV indices (optional)
+            batch_size: Batch size for memory-efficient processing
+            portfolio_evaluation: Whether to use portfolio-based evaluation
+
+        Returns:
+            Dictionary containing CV results and performance metrics
+        """
+        if not self.use_vectorbt:
+            logger.warning("⚠️ VectorBT not available, falling back to standard cross-validation")
+            return self.cross_validate(X, y, model_class, model_params, cv_indices, batch_size)
+
+        start_time = time.time()
+        logger.info("🚀 Starting VectorBT-optimized cross-validation...")
+        logger.info(f"📊 Data shape: {X.shape if hasattr(X, 'shape') else 'unknown'}")
+
+        # Convert to numpy arrays if needed
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        if isinstance(y, pd.Series):
+            y = y.values
+
+        # Generate CV indices if not provided
+        if cv_indices is None:
+            cv_indices = self._generate_cv_indices(X, y)
+
+        # Initialize results storage
+        cv_results = self._initialize_cv_results()
+
+        # Process each fold with VectorBT optimization
+        for fold_idx, (train_idx, val_idx) in enumerate(cv_indices):
+            logger.info(f"🔄 Processing fold {fold_idx + 1}/{len(cv_indices)} with VectorBT...")
+
+            fold_start_time = time.time()
+
+            # Extract fold data
+            X_train, X_val = X[train_idx], X[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+
+            # Train model
+            model = self._train_model(model_class, model_params, X_train, y_train)
+
+            # Make predictions
+            predictions = self._predict_model(model, X_val, batch_size)
+
+            # Calculate metrics using VectorBT if portfolio evaluation is enabled
+            if portfolio_evaluation and len(predictions) > 1:
+                fold_metrics = self._calculate_vectorbt_metrics(y_val, predictions, X_val)
+                self.performance_stats['vectorbt_operations'] += 1
+                self.performance_stats['portfolio_evaluations'] += 1
+            else:
+                fold_metrics = self._calculate_fold_metrics(y_val, predictions)
+
+            # Store results
+            cv_results = self._store_fold_results(cv_results, fold_idx, fold_metrics, predictions)
+
+            fold_time = time.time() - fold_start_time
+            logger.info(f"✅ Fold {fold_idx + 1} completed in {fold_time:.3f}s")
+
+        # Calculate aggregate statistics
+        cv_results = self._calculate_aggregate_statistics(cv_results)
+
+        # Update performance stats
+        total_time = time.time() - start_time
+        self.performance_stats['computation_time'] = total_time
+        self.performance_stats['total_folds_processed'] = len(cv_indices)
+
+        logger.info(f"✅ VectorBT cross-validation completed in {total_time:.3f}s")
         logger.info(f"📊 Mean CV score: {cv_results['mean_score']:.4f} (+/- {cv_results['std_score']:.4f})")
 
         return cv_results
@@ -319,6 +438,93 @@ class MatrixCrossValidator:
             'r2': r2
         }
 
+    def _calculate_vectorbt_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                                   X_val: np.ndarray) -> Dict[str, float]:
+        """Calculate metrics using VectorBT for portfolio-based evaluation."""
+        if not VECTORBT_AVAILABLE:
+            return self._calculate_fold_metrics(y_true, y_pred)
+
+        try:
+            # Convert predictions to trading signals
+            signals = self._predictions_to_signals(y_pred)
+            
+            # Create synthetic price data from features (simplified approach)
+            prices = self._create_synthetic_prices(X_val, y_true)
+            
+            # Use VectorBT for portfolio evaluation
+            portfolio = vbt.Portfolio.from_signals(
+                prices, signals,
+                init_cash=100000.0,
+                fees=0.001,
+                slippage=0.0005,
+                freq='1min'
+            )
+            
+            # Calculate comprehensive metrics
+            stats = portfolio.stats()
+            
+            # Extract key metrics
+            metrics = {
+                'r2': self._calculate_r2_score(y_true, y_pred),
+                'mse': np.mean((y_true - y_pred) ** 2),
+                'mae': np.mean(np.abs(y_true - y_pred)),
+                'rmse': np.sqrt(np.mean((y_true - y_pred) ** 2)),
+                # VectorBT portfolio metrics
+                'total_return': stats.get('Total Return [%]', 0) / 100,
+                'sharpe_ratio': stats.get('Sharpe Ratio', 0),
+                'max_drawdown': stats.get('Max. Drawdown [%]', 0) / 100,
+                'win_rate': stats.get('Win Rate [%]', 0) / 100,
+                'profit_factor': stats.get('Profit Factor', 0),
+                'expectancy': stats.get('Expectancy [%]', 0) / 100,
+                'volatility': stats.get('Annualized Volatility [%]', 0) / 100,
+                'sortino_ratio': stats.get('Sortino Ratio', 0),
+                'calmar_ratio': stats.get('Calmar Ratio', 0)
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT metrics calculation failed: {e}, falling back to standard metrics")
+            return self._calculate_fold_metrics(y_true, y_pred)
+
+    def _predictions_to_signals(self, predictions: np.ndarray) -> np.ndarray:
+        """Convert model predictions to trading signals."""
+        # Simple threshold-based signal generation
+        # This can be customized based on the specific use case
+        signals = np.zeros_like(predictions)
+        
+        # Use quantiles for signal generation
+        upper_threshold = np.percentile(predictions, 75)
+        lower_threshold = np.percentile(predictions, 25)
+        
+        signals[predictions > upper_threshold] = 1  # Buy signal
+        signals[predictions < lower_threshold] = -1  # Sell signal
+        
+        return signals
+
+    def _create_synthetic_prices(self, X_val: np.ndarray, y_true: np.ndarray) -> np.ndarray:
+        """Create synthetic price data for VectorBT portfolio evaluation."""
+        # Use the first feature as a proxy for price movement
+        if X_val.shape[1] > 0:
+            base_prices = X_val[:, 0] * 100  # Scale to reasonable price levels
+        else:
+            base_prices = np.ones(len(y_true)) * 100
+        
+        # Add some noise to make it more realistic
+        noise = np.random.normal(0, 0.01, len(base_prices))
+        prices = base_prices * (1 + noise)
+        
+        # Ensure prices are positive
+        prices = np.maximum(prices, 1.0)
+        
+        return prices.reshape(-1, 1)  # Reshape for VectorBT
+
+    def _calculate_r2_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+        """Calculate R² score."""
+        ss_res = np.sum((y_true - y_pred) ** 2)
+        ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+        return 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
     def _store_fold_results(self, cv_results: Dict[str, Any], fold_idx: int,
                           metrics: Dict[str, float], predictions: np.ndarray) -> Dict[str, Any]:
         """Store results for a fold."""
@@ -386,10 +592,12 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
                          model_params: Dict[str, Any] = None,
                          n_splits: int = 5,
                          use_gpu: bool = True,
-                         parallel: bool = True,
-                         max_workers: int = 4) -> Dict[str, Any]:
+                         parallel: bool = False,  # Changed default to False to prefer VectorBT
+                         max_workers: int = 4,
+                         use_vectorbt: bool = True,  # VectorBT is now the default
+                         portfolio_evaluation: bool = True) -> Dict[str, Any]:
     """
-    Convenience function for matrix-based cross-validation.
+    Convenience function for matrix-based cross-validation with VectorBT optimization.
 
     Args:
         X: Feature matrix
@@ -400,16 +608,25 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
         use_gpu: Whether to use GPU acceleration
         parallel: Whether to use parallel processing
         max_workers: Maximum number of parallel workers
+        use_vectorbt: Whether to use VectorBT for optimization
+        portfolio_evaluation: Whether to use portfolio-based evaluation
 
     Returns:
         Dictionary containing CV results
     """
     validator = MatrixCrossValidator(
         n_splits=n_splits,
-        use_gpu=use_gpu
+        use_gpu=use_gpu,
+        use_vectorbt=use_vectorbt
     )
 
-    if parallel:
+    # Prioritize VectorBT over parallel processing
+    if use_vectorbt:
+        return validator.vectorbt_cross_validate(
+            X, y, model_class, model_params,
+            portfolio_evaluation=portfolio_evaluation
+        )
+    elif parallel:
         return validator.parallel_cross_validate(
             X, y, model_class, model_params,
             max_workers=max_workers
@@ -422,7 +639,7 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
 
 # Example usage and benchmarking functions
 def benchmark_cross_validation():
-    """Benchmark traditional vs matrix-based cross-validation."""
+    """Benchmark traditional vs matrix-based vs VectorBT cross-validation."""
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.model_selection import cross_val_score
 
@@ -444,6 +661,7 @@ def benchmark_cross_validation():
 
     traditional_time = time.time() - start_time
     logger.info(f"Traditional cross-validation time: {traditional_time:.3f}s")
+
     # Matrix-based cross-validation
     logger.info("⏱️ Running matrix-based cross-validation...")
     start_time = time.time()
@@ -451,26 +669,55 @@ def benchmark_cross_validation():
     matrix_results = matrix_cross_validate(
         X, y, RandomForestRegressor,
         model_params={'n_estimators': 50, 'random_state': 42},
-        n_splits=5, parallel=False
+        n_splits=5, parallel=False, use_vectorbt=False
     )
 
     matrix_time = time.time() - start_time
     logger.info(f"Matrix cross-validation time: {matrix_time:.3f}s")
+
+    # VectorBT cross-validation
+    logger.info("⏱️ Running VectorBT cross-validation...")
+    start_time = time.time()
+
+    vectorbt_results = matrix_cross_validate(
+        X, y, RandomForestRegressor,
+        model_params={'n_estimators': 50, 'random_state': 42},
+        n_splits=5, parallel=False, use_vectorbt=True,
+        portfolio_evaluation=True
+    )
+
+    vectorbt_time = time.time() - start_time
+    logger.info(f"VectorBT cross-validation time: {vectorbt_time:.3f}s")
+
     # Compare results
-    speedup = traditional_time / matrix_time if matrix_time > 0 else float('inf')
+    matrix_speedup = traditional_time / matrix_time if matrix_time > 0 else float('inf')
+    vectorbt_speedup = traditional_time / vectorbt_time if vectorbt_time > 0 else float('inf')
 
     logger.info("\n📊 BENCHMARK RESULTS:")
-    logger.info(f"Traditional backtesting time: {traditional_time:.3f}s")
-    logger.info(f"Vectorized backtesting time: {matrix_time:.3f}s")
-    logger.info(f"Speedup factor: {speedup:.2f}x")
-    logger.info(f"Traditional final value: ${traditional_scores.mean():.4f}")
-    logger.info(f"Vectorized final value: ${matrix_results['fold_scores'].mean():.4f}")
+    logger.info(f"Traditional CV time: {traditional_time:.3f}s")
+    logger.info(f"Matrix CV time: {matrix_time:.3f}s (Speedup: {matrix_speedup:.2f}x)")
+    logger.info(f"VectorBT CV time: {vectorbt_time:.3f}s (Speedup: {vectorbt_speedup:.2f}x)")
+    logger.info(f"Traditional R²: {traditional_scores.mean():.4f}")
+    logger.info(f"Matrix R²: {matrix_results['mean_score']:.4f}")
+    logger.info(f"VectorBT R²: {vectorbt_results['mean_score']:.4f}")
+
+    # Show VectorBT-specific metrics if available
+    if 'sharpe_ratio' in vectorbt_results.get('fold_metrics', [{}])[0]:
+        avg_sharpe = np.mean([fold.get('sharpe_ratio', 0) for fold in vectorbt_results.get('fold_metrics', [])])
+        avg_max_dd = np.mean([fold.get('max_drawdown', 0) for fold in vectorbt_results.get('fold_metrics', [])])
+        logger.info(f"VectorBT Avg Sharpe: {avg_sharpe:.3f}")
+        logger.info(f"VectorBT Avg Max DD: {avg_max_dd:.2%}")
+
     return {
         'traditional_time': traditional_time,
         'matrix_time': matrix_time,
-        'speedup': speedup,
+        'vectorbt_time': vectorbt_time,
+        'matrix_speedup': matrix_speedup,
+        'vectorbt_speedup': vectorbt_speedup,
         'traditional_scores': traditional_scores,
-        'matrix_scores': matrix_results['fold_scores']
+        'matrix_scores': matrix_results['fold_scores'],
+        'vectorbt_scores': vectorbt_results['fold_scores'],
+        'vectorbt_metrics': vectorbt_results.get('fold_metrics', [])
     }
 
 

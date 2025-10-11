@@ -34,6 +34,10 @@ from ...utils.validation_utils import (
     validate_feature_generation_inputs, ValidationResult
 )
 
+# Note: VectorBT optimizations are available in vectorbt_optimized_features.py
+# but are not integrated into the core feature generation logic to maintain
+# separation of concerns and avoid modifying existing feature generation.
+
 logger = logging.getLogger(__name__)
 
 

@@ -70,7 +70,7 @@ class VectorBTFeatureSelector:
         tprint_success("🚀 VectorBTFeatureSelector initialized")
     
     def _setup_vectorbt(self):
-        """Setup VectorBT configuration."""
+        """Setup VectorBT configuration for optimal feature selection."""
         try:
             # Configure VectorBT for optimal performance
             vbt.settings.set_theme("dark")
@@ -80,14 +80,24 @@ class VectorBTFeatureSelector:
             # Set chunk size for memory optimization
             if self.config.enable_memory_optimization:
                 vbt.settings['array_wrapper']['chunk_size'] = self.config.chunk_size
+                vbt.settings['array_wrapper']['memory_limit'] = 2 * 1024**3  # 2GB limit
             
             # Enable parallel processing if available
             if self.config.enable_parallel:
                 vbt.settings['array_wrapper']['enable_parallel'] = True
+                vbt.settings['parallel']['threading'] = True
+                vbt.settings['parallel']['multiprocessing'] = True
                 if self.config.max_workers:
                     vbt.settings['array_wrapper']['max_workers'] = self.config.max_workers
+                    vbt.settings['parallel']['n_jobs'] = self.config.max_workers
+                else:
+                    vbt.settings['parallel']['n_jobs'] = -1  # Use all cores
             
-            tprint_debug("✅ VectorBT configured for optimal performance")
+            # Enable caching for repeated operations
+            vbt.settings['caching']['enabled'] = True
+            vbt.settings['caching']['dir'] = 'data_cache/vectorbt_feature_selection_cache'
+            
+            tprint_debug("✅ VectorBT configured for optimal feature selection performance")
             
         except Exception as e:
             tprint_warning(f"⚠️ VectorBT setup warning: {e}")

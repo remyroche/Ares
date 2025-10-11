@@ -209,11 +209,23 @@ class VectorBTPortfolioOptimizer:
         logger.info(f"📊 Risk aversion: {self.config.risk_aversion}")
     
     def _configure_vectorbt(self):
-        """Configure VectorBT global settings."""
+        """Configure VectorBT global settings for optimal portfolio optimization."""
         if self.config.enable_parallel:
             vbt.settings.parallel['threading'] = True
+            vbt.settings.parallel['multiprocessing'] = True
+            vbt.settings.parallel['n_jobs'] = -1
         
         vbt.settings.array_wrapper['freq'] = '1min'
+        vbt.settings.array_wrapper['freq_precision'] = 0
+        vbt.settings.array_wrapper['freq_rep'] = 'auto'
+        
+        # Enable caching for repeated optimizations
+        vbt.settings.caching['enabled'] = True
+        vbt.settings.caching['dir'] = 'data_cache/vectorbt_optimization_cache'
+        
+        # Optimize for financial data processing
+        vbt.settings.array_wrapper['chunk_size'] = 10000
+        vbt.settings.array_wrapper['memory_limit'] = 4 * 1024**3  # 4GB limit
     
     def optimize_portfolio(self, 
                           returns: Union[np.ndarray, pd.DataFrame],
@@ -329,14 +341,27 @@ class VectorBTPortfolioOptimizer:
             return returns_df.mean().values * self.config.annualization_factor
     
     def _calculate_covariance_matrix(self, returns_df: pd.DataFrame) -> np.ndarray:
-        """Calculate covariance matrix."""
-        # Use shrinkage estimator for better stability
-        from sklearn.covariance import LedoitWolf
-        
-        lw = LedoitWolf()
-        covariance_matrix = lw.fit(returns_df).covariance_
-        
-        return covariance_matrix
+        """Calculate covariance matrix using VectorBT optimizations."""
+        try:
+            # Use VectorBT's optimized covariance calculation for large datasets
+            if len(returns_df) > 1000 and VECTORBT_AVAILABLE:
+                # Use VectorBT's chunked covariance calculation
+                covariance_matrix = vbt.math.cov_matrix(returns_df, chunked=True)
+                self.performance_stats['vectorbt_operations'] += 1
+                logger.debug("✅ Used VectorBT optimized covariance calculation")
+            else:
+                # Use shrinkage estimator for better stability
+                from sklearn.covariance import LedoitWolf
+                lw = LedoitWolf()
+                covariance_matrix = lw.fit(returns_df).covariance_
+                logger.debug("✅ Used Ledoit-Wolf shrinkage estimator")
+            
+            return covariance_matrix
+            
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT covariance failed: {e}, using fallback")
+            # Fallback to standard covariance
+            return returns_df.cov().values
     
     def _optimize_mean_variance(self, expected_returns: np.ndarray, covariance_matrix: np.ndarray) -> np.ndarray:
         """Optimize using mean-variance approach."""

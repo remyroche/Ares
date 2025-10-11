@@ -62,15 +62,46 @@ class VectorBTOptimizedOperations:
             'vectorbt_operations': 0,
             'fallback_operations': 0,
             'average_execution_time': 0.0,
-            'gpu_operations': 0
+            'gpu_operations': 0,
+            'memory_optimizations': 0,
+            'chunked_operations': 0
         }
         
         self.logger = logger.getChild('VectorBTOptimizedOperations')
         
+        # Configure VectorBT for optimal performance
         if VECTORBT_AVAILABLE:
+            self._configure_vectorbt()
             self.logger.info("✅ VectorBT optimized operations initialized")
         else:
             self.logger.warning("⚠️ VectorBT not available, using fallback implementations")
+    
+    def _configure_vectorbt(self):
+        """Configure VectorBT for optimal matrix operations."""
+        try:
+            # Configure for matrix operations
+            vbt.settings['array_wrapper']['freq_precision'] = 0
+            vbt.settings['array_wrapper']['freq_rep'] = 'auto'
+            vbt.settings['array_wrapper']['chunk_size'] = 25000
+            vbt.settings['array_wrapper']['memory_limit'] = 3 * 1024**3  # 3GB limit
+            
+            # Enable parallel processing
+            if self.enable_parallel:
+                vbt.settings['parallel']['threading'] = True
+                vbt.settings['parallel']['multiprocessing'] = True
+                vbt.settings['parallel']['n_jobs'] = -1
+            
+            # Enable GPU if available
+            if self.enable_gpu:
+                vbt.settings['array_wrapper']['use_gpu'] = True
+                vbt.settings['array_wrapper']['gpu_memory_fraction'] = 0.6
+            
+            # Enable caching
+            vbt.settings['caching']['enabled'] = True
+            vbt.settings['caching']['dir'] = 'data_cache/vectorbt_matrix_cache'
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT configuration warning: {e}")
     
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
@@ -113,7 +144,7 @@ class VectorBTOptimizedOperations:
     def correlation_matrix(self, data: Union['np.ndarray', 'pd.DataFrame'], 
                           method: str = 'pearson') -> 'np.ndarray':
         """
-        VectorBT-optimized correlation matrix calculation.
+        VectorBT-optimized correlation matrix calculation with memory management.
         
         Args:
             data: Input data matrix
@@ -129,16 +160,28 @@ class VectorBTOptimizedOperations:
                 data = data.values
             
             if VECTORBT_AVAILABLE:
-                # Use VectorBT's optimized correlation calculation
-                if method == 'pearson':
-                    result = vbt.math.corr_matrix(data)
-                elif method == 'spearman':
-                    result = vbt.math.corr_matrix(data, method='spearman')
+                # Use VectorBT's optimized correlation calculation with chunking for large datasets
+                if len(data) > 10000:  # Use chunked processing for large datasets
+                    if method == 'pearson':
+                        result = vbt.math.corr_matrix(data, chunked=True)
+                    elif method == 'spearman':
+                        result = vbt.math.corr_matrix(data, method='spearman', chunked=True)
+                    else:
+                        raise ValueError(f"Unknown correlation method: {method}")
+                    
+                    self.performance_stats['chunked_operations'] += 1
+                    self.logger.debug(f"✅ VectorBT chunked correlation matrix ({method}) completed")
                 else:
-                    raise ValueError(f"Unknown correlation method: {method}")
+                    if method == 'pearson':
+                        result = vbt.math.corr_matrix(data)
+                    elif method == 'spearman':
+                        result = vbt.math.corr_matrix(data, method='spearman')
+                    else:
+                        raise ValueError(f"Unknown correlation method: {method}")
+                    
+                    self.logger.debug(f"✅ VectorBT correlation matrix ({method}) completed")
                 
                 self.performance_stats['vectorbt_operations'] += 1
-                self.logger.debug(f"✅ VectorBT correlation matrix ({method}) completed")
             else:
                 # Fallback to numpy
                 if method == 'pearson':

@@ -119,14 +119,21 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         if not VECTORBT_AVAILABLE:
             return
         
-        # Configure VectorBT settings
+        # Configure VectorBT settings for optimal feature generation
         vbt.settings.setting('array_wrapper', 'pandas')
         vbt.settings.setting('caching', True)
         vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
         
+        # Optimize for feature generation workloads
+        vbt.settings.setting('array_wrapper', 'freq_precision', 0)
+        vbt.settings.setting('array_wrapper', 'freq_rep', 'auto')
+        vbt.settings.setting('array_wrapper', 'chunk_size', 50000)
+        vbt.settings.setting('array_wrapper', 'memory_limit', 2 * 1024**3)  # 2GB limit
+        
         if self.enable_gpu:
             try:
                 vbt.settings.setting('use_gpu', True)
+                vbt.settings.setting('gpu_memory_fraction', 0.7)  # Use 70% of GPU memory
                 logger.info("✅ VectorBT GPU acceleration enabled")
             except Exception as e:
                 logger.warning(f"⚠️ GPU acceleration not available: {e}")
@@ -135,6 +142,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         if self.enable_parallel:
             try:
                 vbt.settings.setting('use_parallel', True)
+                vbt.settings.setting('parallel', 'n_jobs', -1)  # Use all cores
+                vbt.settings.setting('parallel', 'threading', True)
+                vbt.settings.setting('parallel', 'multiprocessing', True)
                 logger.info("✅ VectorBT parallel processing enabled")
             except Exception as e:
                 logger.warning(f"⚠️ Parallel processing not available: {e}")
@@ -399,7 +409,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     
     def _vectorbt_batch_operations(self, data: pd.DataFrame, operations: List[Dict[str, Any]]) -> pd.DataFrame:
         """
-        Perform batch VectorBT operations for efficiency.
+        Perform batch VectorBT operations for efficiency with parallel processing.
         
         Args:
             data: Input data
@@ -417,30 +427,43 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         results = {}
         
         try:
-            # Use VectorBT's batch processing if available
-            for op in operations:
-                op_type = op.get('type')
-                op_params = op.get('params', {})
-                op_name = op.get('name', f"{op_type}_{len(results)}")
-                
-                if op_type == 'rolling':
+            # Group operations by type for better parallel processing
+            rolling_ops = [op for op in operations if op.get('type') == 'rolling']
+            indicator_ops = [op for op in operations if op.get('type') == 'indicator']
+            scale_ops = [op for op in operations if op.get('type') == 'scale']
+            
+            # Process rolling operations in parallel if enabled
+            if self.enable_parallel and len(rolling_ops) > 1:
+                results.update(self._process_rolling_operations_parallel(data, rolling_ops))
+            else:
+                for op in rolling_ops:
+                    op_params = op.get('params', {})
+                    op_name = op.get('name', f"rolling_{len(results)}")
                     operation = op_params.get('operation')
                     window = op_params.get('window')
                     column = op_params.get('column', 'close')
                     results[op_name] = self._vectorbt_rolling_operation(
                         data[column], operation, window, **op_params
                     )
-                elif op_type == 'indicator':
-                    indicator = op_params.get('indicator')
-                    results[op_name] = self._vectorbt_technical_indicator(
-                        data, indicator, **op_params
-                    )
-                elif op_type == 'scale':
-                    method = op_params.get('method', 'zscore')
-                    column = op_params.get('column', 'close')
-                    results[op_name] = self._vectorbt_scale(
-                        data[column], method, **op_params
-                    )
+            
+            # Process indicator operations
+            for op in indicator_ops:
+                op_params = op.get('params', {})
+                op_name = op.get('name', f"indicator_{len(results)}")
+                indicator = op_params.get('indicator')
+                results[op_name] = self._vectorbt_technical_indicator(
+                    data, indicator, **op_params
+                )
+            
+            # Process scaling operations
+            for op in scale_ops:
+                op_params = op.get('params', {})
+                op_name = op.get('name', f"scale_{len(results)}")
+                method = op_params.get('method', 'zscore')
+                column = op_params.get('column', 'close')
+                results[op_name] = self._vectorbt_scale(
+                    data[column], method, **op_params
+                )
         
         except Exception as e:
             logger.warning(f"VectorBT batch operations failed: {e}")
@@ -448,6 +471,42 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             return pd.DataFrame(index=data.index)
         
         return pd.DataFrame(results, index=data.index)
+    
+    def _process_rolling_operations_parallel(self, data: pd.DataFrame, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process rolling operations in parallel for better performance."""
+        from concurrent.futures import ThreadPoolExecutor
+        import threading
+        
+        results = {}
+        results_lock = threading.Lock()
+        
+        def process_single_rolling_op(op):
+            try:
+                op_params = op.get('params', {})
+                op_name = op.get('name', f"rolling_{len(results)}")
+                operation = op_params.get('operation')
+                window = op_params.get('window')
+                column = op_params.get('column', 'close')
+                
+                result = self._vectorbt_rolling_operation(
+                    data[column], operation, window, **op_params
+                )
+                
+                with results_lock:
+                    results[op_name] = result
+                    
+            except Exception as e:
+                logger.warning(f"Parallel rolling operation failed: {e}")
+        
+        # Use ThreadPoolExecutor for I/O bound operations
+        with ThreadPoolExecutor(max_workers=min(len(operations), 4)) as executor:
+            futures = [executor.submit(process_single_rolling_op, op) for op in operations]
+            
+            # Wait for all operations to complete
+            for future in futures:
+                future.result()
+        
+        return results
     
     def get_vectorbt_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""

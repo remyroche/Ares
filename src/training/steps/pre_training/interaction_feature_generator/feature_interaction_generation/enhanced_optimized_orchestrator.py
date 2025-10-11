@@ -484,10 +484,10 @@ class EnhancedOptimizedInteractionOrchestrator:
         tprint_debug(f"🔍 Input data columns: {list(data.columns)}")
         tprint_debug(f"🔍 Data types: {data.dtypes.to_dict()}")
         
-        # Use improved feature generation with VectorBT optimizations
+        # Use improved feature generation with fast-fail validation
         from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
         
-        # Create feature generation config with VectorBT optimizations
+        # Create feature generation config
         feature_config = FeatureGenerationConfig(
             enable_technical_indicators=True,
             enable_rolling_stats=True,
@@ -496,13 +496,7 @@ class EnhancedOptimizedInteractionOrchestrator:
             rolling_windows=[5, 10, 20, 50, 100],
             max_interactions=50,
             min_valid_ratio=0.8,  # Require 80% valid values
-            max_constant_ratio=0.1,  # Allow max 10% constant features
-            # VectorBT optimizations
-            enable_vectorbt=self.config.enable_vectorbt,
-            vectorbt_use_gpu=self.config.vectorbt_use_gpu,
-            vectorbt_chunk_size=self.config.vectorbt_chunk_size,
-            vectorbt_memory_limit_gb=self.config.vectorbt_memory_limit_gb,
-            vectorbt_enable_parallel=self.config.vectorbt_enable_parallel
+            max_constant_ratio=0.1  # Allow max 10% constant features
         )
         
         # Generate base features using improved generator with VectorBT - fast-fail on error

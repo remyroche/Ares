@@ -34,19 +34,9 @@ from ...utils.validation_utils import (
     validate_feature_generation_inputs, ValidationResult
 )
 
-# Import VectorBT optimizations
-try:
-    from .vectorbt_optimized_features import (
-        VectorBTFeatureGenerator, VectorBTFeatureConfig,
-        generate_vectorbt_features, create_vectorbt_config
-    )
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    VectorBTFeatureGenerator = None
-    VectorBTFeatureConfig = None
-    generate_vectorbt_features = None
-    create_vectorbt_config = None
+# Note: VectorBT optimizations are available in vectorbt_optimized_features.py
+# but are not integrated into the core feature generation logic to maintain
+# separation of concerns and avoid modifying existing feature generation.
 
 logger = logging.getLogger(__name__)
 
@@ -77,13 +67,6 @@ class FeatureGenerationConfig:
     
     # Cross-timeframe
     cross_timeframe_periods: List[int] = None
-    
-    # VectorBT optimizations
-    enable_vectorbt: bool = True
-    vectorbt_use_gpu: bool = True
-    vectorbt_chunk_size: int = 50000
-    vectorbt_memory_limit_gb: float = 8.0
-    vectorbt_enable_parallel: bool = True
     
     # Validation
     min_valid_ratio: float = 0.8  # Minimum ratio of valid values
@@ -197,47 +180,6 @@ class ImprovedFeatureGenerator:
         if not self._validate_input_data(data):
             raise ValueError("Invalid input data - missing required columns or insufficient data")
         
-        # Use VectorBT optimizations if available and enabled
-        if self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            tprint_info("🚀 Using VectorBT-optimized feature generation...")
-            try:
-                # Create VectorBT configuration
-                vectorbt_config = create_vectorbt_config(
-                    use_gpu=self.config.vectorbt_use_gpu,
-                    chunk_size=self.config.vectorbt_chunk_size,
-                    memory_limit_gb=self.config.vectorbt_memory_limit_gb,
-                    enable_parallel=self.config.vectorbt_enable_parallel,
-                    rolling_windows=self.config.rolling_windows,
-                    cross_timeframe_periods=self.config.cross_timeframe_periods
-                )
-                
-                # Generate features using VectorBT
-                features_df = generate_vectorbt_features(data, vectorbt_config)
-                
-                # Validate generated features
-                validation_result = self.validator.validate_features(features_df)
-                
-                if not validation_result['passed']:
-                    tprint_warning(f"⚠️ VectorBT feature validation failed: {validation_result['issues']}")
-                    # Fall back to manual generation
-                    tprint_info("🔄 Falling back to manual feature generation...")
-                    return self._generate_manual_features(data)
-                
-                tprint_success(f"✅ Generated {len(features_df.columns)} VectorBT-optimized features")
-                tprint_info(f"📊 Quality score: {validation_result['quality_score']:.3f}")
-                
-                return features_df
-                
-            except Exception as e:
-                tprint_warning(f"⚠️ VectorBT feature generation failed: {e}")
-                tprint_info("🔄 Falling back to manual feature generation...")
-                return self._generate_manual_features(data)
-        else:
-            # Use manual feature generation
-            return self._generate_manual_features(data)
-    
-    def _generate_manual_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate features using manual calculations (fallback)."""
         features = {}
         
         # Generate technical indicators
@@ -302,45 +244,6 @@ class ImprovedFeatureGenerator:
         if len(numeric_cols) < 2:
             raise ValueError(f"Not enough numeric columns for interactions: {len(numeric_cols)} < 2")
         
-        # Use VectorBT optimizations if available and enabled
-        if self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            tprint_info("🚀 Using VectorBT-optimized interaction generation...")
-            try:
-                # Create VectorBT configuration
-                vectorbt_config = create_vectorbt_config(
-                    use_gpu=self.config.vectorbt_use_gpu,
-                    chunk_size=self.config.vectorbt_chunk_size,
-                    memory_limit_gb=self.config.vectorbt_memory_limit_gb,
-                    enable_parallel=self.config.vectorbt_enable_parallel
-                )
-                
-                # Generate interaction features using VectorBT
-                generator = VectorBTFeatureGenerator(vectorbt_config)
-                interaction_df = generator.generate_interaction_features(data)
-                
-                # Validate interactions
-                validation_result = self.validator.validate_features(interaction_df)
-                
-                if not validation_result['passed']:
-                    tprint_warning(f"⚠️ VectorBT interaction validation failed: {validation_result['issues']}")
-                    # Fall back to manual generation
-                    tprint_info("🔄 Falling back to manual interaction generation...")
-                    return self._generate_manual_interactions(data, numeric_cols)
-                
-                tprint_success(f"✅ Generated {len(interaction_df.columns)} VectorBT-optimized interactions")
-                
-                return interaction_df
-                
-            except Exception as e:
-                tprint_warning(f"⚠️ VectorBT interaction generation failed: {e}")
-                tprint_info("🔄 Falling back to manual interaction generation...")
-                return self._generate_manual_interactions(data, numeric_cols)
-        else:
-            # Use manual interaction generation
-            return self._generate_manual_interactions(data, numeric_cols)
-    
-    def _generate_manual_interactions(self, data: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
-        """Generate interaction features using manual calculations (fallback)."""
         interaction_features = {}
         
         # OPTIMIZATION: Generate interactions more efficiently using vectorized operations
@@ -423,46 +326,6 @@ class ImprovedFeatureGenerator:
         if not numeric_cols:
             raise ValueError("No numeric columns found for cross-timeframe generation")
         
-        # Use VectorBT optimizations if available and enabled
-        if self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            tprint_info("🚀 Using VectorBT-optimized cross-timeframe generation...")
-            try:
-                # Create VectorBT configuration
-                vectorbt_config = create_vectorbt_config(
-                    use_gpu=self.config.vectorbt_use_gpu,
-                    chunk_size=self.config.vectorbt_chunk_size,
-                    memory_limit_gb=self.config.vectorbt_memory_limit_gb,
-                    enable_parallel=self.config.vectorbt_enable_parallel,
-                    cross_timeframe_periods=self.config.cross_timeframe_periods
-                )
-                
-                # Generate cross-timeframe features using VectorBT
-                generator = VectorBTFeatureGenerator(vectorbt_config)
-                cross_tf_df = generator.generate_cross_timeframe_features(data)
-                
-                # Validate cross-timeframe features
-                validation_result = self.validator.validate_features(cross_tf_df)
-                
-                if not validation_result['passed']:
-                    tprint_warning(f"⚠️ VectorBT cross-timeframe validation failed: {validation_result['issues']}")
-                    # Fall back to manual generation
-                    tprint_info("🔄 Falling back to manual cross-timeframe generation...")
-                    return self._generate_manual_cross_timeframe(data, numeric_cols)
-                
-                tprint_success(f"✅ Generated {len(cross_tf_df.columns)} VectorBT-optimized cross-timeframe features")
-                
-                return cross_tf_df
-                
-            except Exception as e:
-                tprint_warning(f"⚠️ VectorBT cross-timeframe generation failed: {e}")
-                tprint_info("🔄 Falling back to manual cross-timeframe generation...")
-                return self._generate_manual_cross_timeframe(data, numeric_cols)
-        else:
-            # Use manual cross-timeframe generation
-            return self._generate_manual_cross_timeframe(data, numeric_cols)
-    
-    def _generate_manual_cross_timeframe(self, data: pd.DataFrame, numeric_cols: List[str]) -> pd.DataFrame:
-        """Generate cross-timeframe features using manual calculations (fallback)."""
         cross_tf_features = {}
         
         # Generate cross-timeframe features

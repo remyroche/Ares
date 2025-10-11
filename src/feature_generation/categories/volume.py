@@ -1328,7 +1328,7 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
         price_change = data['close'].pct_change()
 
         # Use VectorBT for volume pressure calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Use price movement direction as proxy for buy/sell pressure
                 volume_up = volume.where(price_change > 0, 0)
@@ -1394,7 +1394,7 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
         volume = data['volume']
 
         # Use VectorBT for volume trend calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 def volume_trend(x):
                     if len(x) < 10:

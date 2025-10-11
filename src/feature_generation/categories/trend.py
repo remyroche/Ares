@@ -192,7 +192,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         dm_minus_series = pd.Series(dm_minus)
 
         # Calculate Directional Indicators using VectorBT optimization
-        if VECTORBT_AVAILABLE and len(dm_plus_series) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
             try:
                 dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
                 dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
@@ -213,7 +213,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
         
-        if VECTORBT_AVAILABLE and len(dx) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
             try:
                 adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
             except Exception as e:
@@ -947,7 +947,7 @@ class WMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for WMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # VectorBT doesn't have direct WMA, so we use rolling apply
                 weights = np.arange(1, self.period + 1)

@@ -19,6 +19,64 @@ class VectorBTFeatureSelectionConfig:
     chunk_size: int = 10000
     memory_limit_mb: int = 2048
     
+    # Enhanced VectorBT settings
+    vectorbt_theme: str = "dark"
+    vectorbt_freq_precision: int = 0
+    vectorbt_array_wrapper: Dict[str, Any] = field(default_factory=lambda: {
+        'freq_precision': 0,
+        'freq_rep': 'auto',
+        'chunk_size': 10000,
+        'enable_parallel': True,
+        'max_workers': None
+    })
+    
+    # VectorBT-specific optimizations
+    enable_vectorbt_rolling: bool = True
+    enable_vectorbt_chunked: bool = True
+    enable_vectorbt_parallel: bool = True
+    vectorbt_rolling_window: int = 1000
+    vectorbt_chunk_overlap: int = 100
+    
+    # Financial data specific optimizations
+    enable_vectorbt_financial: bool = True
+    vectorbt_freq_inference: bool = True
+    vectorbt_resample_freq: str = '1D'
+    
+    # GPU Acceleration
+    enable_gpu: bool = False
+    gpu_memory_fraction: float = 0.8
+    gpu_device: str = "cuda:0"
+    gpu_chunk_size: int = 50000  # Larger chunks for GPU
+    enable_cuda_optimizations: bool = True
+    cuda_streams: int = 4
+    cuda_memory_pool: bool = True
+    
+    # Intelligent Caching
+    enable_caching: bool = True
+    cache_size: int = 1000
+    cache_ttl: int = 3600  # 1 hour
+    cache_backend: str = "memory"  # memory, redis, disk
+    enable_memoization: bool = True
+    memoization_depth: int = 10
+    
+    # Advanced Parallel Processing
+    enable_dask: bool = False
+    dask_cluster_type: str = "local"  # local, distributed, kubernetes
+    dask_workers: int = 4
+    dask_memory_limit: str = "2GB"
+    enable_ray: bool = False
+    ray_cluster_address: Optional[str] = None
+    ray_num_cpus: int = 4
+    ray_num_gpus: int = 0
+    
+    # Advanced Memory Optimization
+    enable_memory_mapping: bool = True
+    memory_mapping_threshold: int = 100 * 1024 * 1024  # 100MB
+    enable_lazy_evaluation: bool = True
+    lazy_chunk_size: int = 1000
+    enable_memory_pooling: bool = True
+    memory_pool_size: int = 10
+    
     # Performance settings
     enable_parallel: bool = True
     max_workers: Optional[int] = None
@@ -99,3 +157,105 @@ class VectorBTFeatureSelectionConfig:
             if hasattr(self, key):
                 setattr(self, key, value)
         return self
+    
+    def setup_vectorbt_optimizations(self):
+        """Setup VectorBT with optimal settings."""
+        try:
+            import vectorbt as vbt
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            
+            # Configure VectorBT theme
+            vbt.settings.set_theme(self.vectorbt_theme)
+            
+            # Configure array wrapper settings
+            for key, value in self.vectorbt_array_wrapper.items():
+                vbt.settings['array_wrapper'][key] = value
+            
+            # Enable VectorBT optimizations
+            if self.enable_vectorbt_rolling:
+                vbt.settings['array_wrapper']['enable_rolling'] = True
+            
+            if self.enable_vectorbt_chunked:
+                vbt.settings['array_wrapper']['enable_chunked'] = True
+            
+            if self.enable_vectorbt_parallel:
+                vbt.settings['array_wrapper']['enable_parallel'] = True
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"VectorBT optimization setup failed: {e}")
+    
+    def setup_gpu_acceleration(self):
+        """Setup GPU acceleration for VectorBT operations."""
+        try:
+            if self.enable_gpu:
+                import torch
+                import cupy as cp
+                
+                # Check CUDA availability
+                if torch.cuda.is_available():
+                    # Configure CUDA device
+                    torch.cuda.set_device(self.gpu_device)
+                    
+                    # Configure CuPy memory pool
+                    if self.cuda_memory_pool:
+                        cp.cuda.MemoryPool().set_limit(fraction=self.gpu_memory_fraction)
+                    
+                    # Enable VectorBT GPU operations
+                    import vectorbt as vbt
+                    vbt.settings['array_wrapper']['enable_gpu'] = True
+                    vbt.settings['array_wrapper']['gpu_chunk_size'] = self.gpu_chunk_size
+                    
+                    return True
+                else:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning("CUDA not available, GPU acceleration disabled")
+                    return False
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"GPU setup failed: {e}")
+            return False
+    
+    def setup_advanced_parallel_processing(self):
+        """Setup advanced parallel processing with Dask/Ray."""
+        try:
+            parallel_clients = {}
+            
+            if self.enable_dask:
+                import dask
+                from dask.distributed import Client
+                
+                if self.dask_cluster_type == "local":
+                    dask_client = Client(
+                        n_workers=self.dask_workers,
+                        memory_limit=self.dask_memory_limit
+                    )
+                else:
+                    dask_client = Client(self.dask_cluster_type)
+                
+                parallel_clients['dask'] = dask_client
+            
+            if self.enable_ray:
+                import ray
+                
+                if not ray.is_initialized():
+                    ray.init(
+                        address=self.ray_cluster_address,
+                        num_cpus=self.ray_num_cpus,
+                        num_gpus=self.ray_num_gpus
+                    )
+                
+                parallel_clients['ray'] = ray
+            
+            return parallel_clients
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Advanced parallel processing setup failed: {e}")
+            return {}

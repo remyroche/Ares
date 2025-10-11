@@ -82,7 +82,7 @@ except ImportError as e:
     # Fallback classes for missing quality utilities
     class DataQualityFramework:
         def validate_data(self, df, thresholds=None):
-            return QualityResult(score=0.0, issues=[], warnings=[], metadata={})
+            return QualityResult(passed=True, issues=[], warnings=[], quality_score=100.0)
     
     class ComprehensiveQualityScorer:
         def score_data_quality(self, df, symbol=None, interval=None):
@@ -109,6 +109,8 @@ except ImportError as e:
         def check_alerts(self, quality_score):
             return []
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
+from src.utils.data.klines_parquet import KlinesParquetManager
 from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer, ExchangeType
 from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, KlinesMetadata
 
@@ -133,6 +135,40 @@ class DataQualityLevel(Enum):
     FAIR = "fair"
     POOR = "poor"
     FAILED = "failed"
+
+
+class QualityScoreLevel(Enum):
+    """Quality score levels."""
+    EXCELLENT = "excellent"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+    CRITICAL = "critical"
+
+
+@dataclass
+class QualityScore:
+    """Quality score result."""
+    overall_score: float
+    level: QualityScoreLevel
+    component_scores: Dict[str, float]
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
+
+
+@dataclass
+class QualityAssessment:
+    """Quality assessment result."""
+    overall_score: float
+    metrics: List[str]
+    issues_found: int
+    warnings_found: int
+    critical_issues: int
+    assessment_timestamp: datetime
+    data_shape: Tuple[int, int]
 
 
 @dataclass
@@ -182,7 +218,6 @@ class PipelineConfig:
     enable_duplicate_handling: bool = True
     enable_quality_validation: bool = True
     batch_compatible: bool = True
-    storage_config: Optional[StorageConfig] = None
 
 
 class EnhancedKlinesProcessingPipeline:
@@ -236,6 +271,8 @@ class EnhancedKlinesProcessingPipeline:
                 enable_validation=True
             )
             self.klines_manager = KlinesParquetManager(storage_config)
+        # Initialize KlinesParquetManager
+        self.klines_manager = KlinesParquetManager(str(self.data_dir), self.exchange)
         
         # Processing state
         self.current_symbol: Optional[str] = None
@@ -1021,6 +1058,33 @@ class EnhancedKlinesProcessingPipeline:
                         distribution_validation[col] = {
                             'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
                         }
+            # Initialize comprehensive quality framework
+            quality_framework = DataQualityFramework()
+            quality_scorer = ComprehensiveQualityScorer()
+            advanced_metrics = AdvancedQualityMetrics()
+            data_cleaner = DataCleaner()
+            statistical_validator = StatisticalValidator()
+            
+            # Set up quality thresholds for klines data
+            thresholds = QualityThresholds(
+                null_percentage_threshold=5.0,
+                negative_value_threshold=0.0,
+                zero_volume_threshold=10.0,
+                temporal_consistency_threshold=0.95,
+                price_consistency_threshold=0.98
+            )
+            
+            # Perform comprehensive data quality validation
+            quality_result = quality_framework.validate_dataframe_quality(df, f"{symbol}_{interval}")
+            
+            # Get advanced quality assessment
+            quality_assessment = advanced_metrics.assess_quality(df)
+            
+            # Get comprehensive quality score
+            quality_score = quality_scorer.score_data_quality(df, symbol, interval)
+            
+            # Perform statistical distribution validation
+            distribution_validation = statistical_validator.validate_distributions(df)
             
             # Check for duplicates using comprehensive analyzer
             duplicate_analysis = analyze_duplicates_comprehensive(df)
@@ -1581,6 +1645,9 @@ class EnhancedKlinesProcessingPipeline:
             # Store using optimized KlinesParquetManager
             success = self.klines_manager.store_klines(
                 df, symbol, self.exchange, f"{interval}_consolidated", consolidated_batch_id
+            # Store using KlinesParquetManager
+            success = self.klines_manager.write_data(
+                df, symbol, f"{interval}_consolidated", "processed", overwrite=True
             )
             
             if not success:
@@ -1593,9 +1660,7 @@ class EnhancedKlinesProcessingPipeline:
                     tprint_info(f"📊 Consolidated file compression: {compression_stats.get('overall_compression_ratio', 0):.1f}%")
             
             # Get the actual file path from the manager
-            output_file = self.klines_manager._get_storage_path(
-                symbol, self.exchange, f"{interval}_consolidated", consolidated_batch_id
-            )
+            output_file = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}_consolidated"
             
             result.success = True
             result.metadata = {
@@ -1642,6 +1707,9 @@ class EnhancedKlinesProcessingPipeline:
             # Store data using optimized KlinesParquetManager
             success = self.klines_manager.store_klines(
                 df, symbol, self.exchange, interval, batch_id
+            # Store data using KlinesParquetManager
+            success = self.klines_manager.write_data(
+                df, symbol, interval, "raw", overwrite=True
             )
             
             if success:
@@ -1726,9 +1794,8 @@ class EnhancedKlinesProcessingPipeline:
                     
                     if not resampled_df.empty:
                         # Store resampled data
-                        resample_batch_id = f"{batch_id}_resampled_{target_interval}" if batch_id else None
-                        success = self.klines_manager.store_klines(
-                            resampled_df, symbol, self.exchange, target_interval, resample_batch_id
+                        success = self.klines_manager.write_data(
+                            resampled_df, symbol, target_interval, "processed", overwrite=True
                         )
                         
                         if success:

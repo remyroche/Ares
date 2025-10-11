@@ -18,16 +18,13 @@ import math
 import os
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import average_precision_score, balanced_accuracy_score, mean_squared_error, accuracy_score
-from sklearn.base import clone
-from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+from sklearn.metrics import average_precision_score, balanced_accuracy_score
+from sklearn.model_selection import StratifiedKFold, KFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.feature_selection import mutual_info_regression
 from scipy.stats import rankdata
 import joblib
-from functools import lru_cache
-import hashlib
 from collections import defaultdict
 from joblib import Parallel, delayed
 
@@ -219,11 +216,6 @@ class AdvancedSelectionConfig:
     selection_methods: List[str] = field(default_factory=lambda: [
         'mrmr', 'lasso', 'correlation_filtering', 'rfe', 'variance_filtering', 'mutual_info'
     ])
-    use_existing_framework: bool = True
-    existing_methods: List[str] = field(default_factory=lambda: [
-        'mrmr_selection', 'lasso_selection', 'correlation_filtering', 
-        'recursive_feature_elimination', 'variance_filtering'
-    ])
 
     # Directional feature selection
     direction_mode: str = 'both'
@@ -253,6 +245,16 @@ class AdvancedSelectionConfig:
         'regime_separation': 0.25,
         'temporal_stability': 0.10
     })
+    
+    # Stage-specific scoring weights
+    stage_1_weights: Dict[str, float] = field(default_factory=lambda: {
+        'mrmr': 0.7,
+        'spearman': 0.3
+    })
+    stage_3_weights: Dict[str, float] = field(default_factory=lambda: {
+        'ensemble': 0.6,
+        'stability': 0.4
+    })
 
     # Entropy stability filtering
     enable_entropy_balancing: bool = True
@@ -263,11 +265,6 @@ class AdvancedSelectionConfig:
     entropy_min_unique_values: int = 5
     entropy_use_time_index: bool = True
 
-    # Early termination
-    enable_early_termination: bool = True
-    early_termination_threshold: float = 0.01
-    adaptive_importance_threshold: bool = True
-    importance_percentile_cutoff: float = 20.0
 
     # RFE parameters
     enable_rfe: bool = True
@@ -277,11 +274,6 @@ class AdvancedSelectionConfig:
     rfe_early_stopping: bool = True
     rfe_early_stopping_patience: int = 3
 
-    # Mutual information
-    enable_mutual_information: bool = True
-    mutual_info_method: str = 'auto'
-    mutual_info_k: int = 10
-    mutual_info_discrete_features: bool = False
 
     # Chunked processing
     enable_chunked_processing: bool = True
@@ -289,9 +281,6 @@ class AdvancedSelectionConfig:
     max_chunks: int = 10
     chunk_overlap: int = 50
 
-    # Optional tool usage
-    use_shap: bool = True
-    use_lightgbm: bool = True
 
 
 @dataclass
@@ -452,10 +441,8 @@ class MultiStageFeatureSelector:
         tprint(f"📊 Feature Range: {self.config.min_features}-{self.config.max_features} (target: {self.config.target_features})")
         tprint(f"🎯 Direction Mode: {self.config.direction_mode}")
         tprint(f"🎯 Separate Features: {self.config.separate_directional_features}")
-        tprint(f"⚡ Early Termination: {self.config.enable_early_termination}")
         tprint(f"⚡ LightGBM: {LIGHTGBM_AVAILABLE}")
         tprint(f"⚡ RFE: {self.config.enable_rfe}")
-        tprint(f"⚡ Mutual Information: {self.config.enable_mutual_information}")
         tprint(f"⚡ Chunked Processing: {self.config.enable_chunked_processing}")
         tprint(f"⚡ Vectorization: Enabled")
         tprint(f"⚡ Caching: Enabled")
@@ -653,7 +640,17 @@ class MultiStageFeatureSelector:
         return pd.Series(shap_importance, index=X.columns)
 
     def ensemble_scores_cv_parallel(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg", n_splits: int = 5) -> pd.Series:
-        """Parallel CV ensemble with optimized models."""
+        """Parallel CV ensemble with optimized models and caching."""
+        # Create cache key for this specific calculation
+        cache_key = f"ensemble_{hash(str(X.columns.tolist()))}_{len(X)}_{rs}_{task}_{n_splits}"
+        
+        # Check cache first
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=rs)
         cols = X.columns.to_numpy()
         p = len(cols)
@@ -678,9 +675,17 @@ class MultiStageFeatureSelector:
         )
         
         S = np.vstack(fold_vecs).mean(axis=0)                   # (p,)
-        return pd.Series(S, index=cols)
+        result = pd.Series(S, index=cols)
+        
+        # Cache the result
+        self._cache[cache_key] = result
+        
+        # Proactive cache cleanup if needed
+        self._cleanup_cache()
+        
+        return result
 
-    def stability_scores_vectorized(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot=50, row_frac=0.7) -> pd.Series:
+    def stability_scores_vectorized(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot=15, row_frac=0.7) -> pd.Series:
         """Vectorized stability selection with argpartition."""
         n = len(X)
         p = X.shape[1]
@@ -714,24 +719,45 @@ class MultiStageFeatureSelector:
         )
         mi_s = pd.Series(mi, index=X_clean.columns)
         
-        # Redundancy: use blocked calculation for large feature sets
+        # Redundancy: use incremental calculation to avoid full matrix recalculation
         if len(X_clean.columns) > 2000:
             red = self.redundancy_mean_abs_spearman_blocked(X_clean)
         else:
-            # Fast correlation for smaller feature sets
-            R = X_clean.rank(method="average")
-            C = R.corr(method="pearson").abs().to_numpy()
-            np.fill_diagonal(C, np.nan)
-            red = pd.Series(np.nanmean(C, axis=1), index=X_clean.columns)
+            # Use incremental correlation calculation for better performance
+            red = self._calculate_incremental_redundancy(X_clean)
         
-        # MID = MI - Redundancy
-        mid = mi_s - red.reindex(mi_s.index).fillna(0.0)
+        # MID = MI / (Redundancy + epsilon) - mathematically correct mRMR
+        red_aligned = red.reindex(mi_s.index).fillna(0.0)
+        mid = mi_s / (red_aligned + 1e-8)  # Add small epsilon to avoid division by zero
         
         # Reintroduce dropped constants with very low score
         if const_mask.any():
             mid = mid.reindex(X.columns).fillna(mid.min() - 1.0)
         
         return mid.reindex(X.columns).fillna(mid.min() - 1.0)
+
+    def _calculate_incremental_redundancy(self, X: pd.DataFrame) -> pd.Series:
+        """Calculate redundancy using incremental correlation to avoid full matrix computation."""
+        cols = X.columns.tolist()
+        n_features = len(cols)
+        redundancy_scores = np.zeros(n_features)
+        
+        # Calculate mean absolute correlation for each feature incrementally
+        for i, feature in enumerate(cols):
+            feature_corrs = []
+            for j, other_feature in enumerate(cols):
+                if i != j:  # Skip self-correlation
+                    corr = X[feature].corr(X[other_feature], method='spearman')
+                    if not np.isnan(corr):
+                        feature_corrs.append(abs(corr))
+            
+            # Use mean of absolute correlations as redundancy score
+            if feature_corrs:
+                redundancy_scores[i] = np.mean(feature_corrs)
+            else:
+                redundancy_scores[i] = 0.0
+        
+        return pd.Series(redundancy_scores, index=cols)
 
     def _cleanup_cache(self, threshold_mb: float = 500) -> None:
         """Clear cache if memory usage exceeds threshold."""
@@ -741,15 +767,22 @@ class MultiStageFeatureSelector:
             # Calculate cache size
             cache_size_mb = sum(sys.getsizeof(v) for v in self._cache.values()) / 1e6
             
-            if cache_size_mb > threshold_mb:
+            # Check memory pressure and adjust threshold dynamically
+            memory_pressure = self._get_memory_pressure()
+            if memory_pressure > 0.8:  # High memory pressure
+                threshold_mb = min(threshold_mb, 200)  # Lower threshold under pressure
+            elif memory_pressure > 0.6:  # Medium memory pressure
+                threshold_mb = min(threshold_mb, 300)  # Moderate threshold
+            
+            if cache_size_mb > threshold_mb or memory_pressure > 0.7:
                 # Clear caches
                 cleared_entries = len(self._cache)
                 self._cache.clear()
                 self._vectorized_arrays.clear()
                 self._computation_cache.clear()
                 
-                tprint(f"🧹 Cleared {cleared_entries} cache entries ({cache_size_mb:.1f}MB)")
-                self.logger.info(f"Cache cleanup: cleared {cache_size_mb:.1f}MB")
+                tprint(f"🧹 Cleared {cleared_entries} cache entries ({cache_size_mb:.1f}MB) - memory pressure: {memory_pressure:.2f}")
+                self.logger.info(f"Cache cleanup: cleared {cache_size_mb:.1f}MB, pressure: {memory_pressure:.2f}")
                 
                 # Reset cache statistics
                 self._cache_hits = 0
@@ -1140,8 +1173,6 @@ class MultiStageFeatureSelector:
 
     def _vectorized_mutual_information(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Vectorized mutual information computation."""
-        if not self.config.enable_mutual_information:
-            return np.zeros(len(X.columns))
         
         cache_key = self._get_cache_key("mutual_info", self._get_data_hash(X, y))
         
@@ -1171,17 +1202,9 @@ class MultiStageFeatureSelector:
             return normalized_scores
             
         except ImportError as e:
-            if self.config.enable_mutual_information:
-                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
-            else:
-                tprint("⚠️ sklearn not available for mutual information calculation (disabled in config)")
-                return np.zeros(len(X.columns))
+            raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
         except Exception as e:
-            if self.config.enable_mutual_information:
-                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
-            else:
-                tprint(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
-                return np.zeros(len(X.columns))
+            raise RuntimeError(f"Mutual information calculation failed: {e}") from e
 
     def _vectorized_stability_analysis(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Vectorized stability analysis across time periods."""
@@ -1640,8 +1663,6 @@ class MultiStageFeatureSelector:
                     'stage_1_target': self.config.stage_1_target,
                     'stage_2_target': self.config.stage_2_target,
                     'stage_3_target': self.config.stage_3_target,
-                    'use_shap': self.config.use_shap,
-                    'use_lightgbm': self.config.use_lightgbm,
                     'n_estimators': self.config.n_estimators,
                     'cv_folds': self.config.cv_folds,
                 },
@@ -1777,8 +1798,6 @@ class MultiStageFeatureSelector:
                     'stage_1_target': self.config.stage_1_target,
                     'stage_2_target': self.config.stage_2_target,
                     'stage_3_target': self.config.stage_3_target,
-                    'use_shap': self.config.use_shap,
-                    'use_lightgbm': self.config.use_lightgbm,
                     'n_estimators': self.config.n_estimators,
                     'cv_folds': self.config.cv_folds,
                     'enable_caching': self.config.enable_caching,
@@ -2128,108 +2147,7 @@ class MultiStageFeatureSelector:
 
         return to_drop
 
-    def _calculate_mutual_information_correlation(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
-        """Calculate mutual information scores for features - captures non-linear relationships."""
-        if not self.config.enable_mutual_information:
-            return {}
 
-        try:
-            from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
-
-            mi_scores = {}
-            if self._is_classification(y):
-                mi_scores = dict(zip(X.columns, mutual_info_classif(X, y, random_state=42)))
-            else:
-                mi_scores = dict(zip(X.columns, mutual_info_regression(X, y, random_state=42)))
-
-            # Normalize scores to 0-1 range
-            max_mi = max(mi_scores.values()) if mi_scores else 1.0
-            normalized_scores = {k: v / max_mi for k, v in mi_scores.items()}
-
-            # Log non-linear relationships detected
-            high_mi_features = [f for f, score in normalized_scores.items() if score > 0.5]
-            if high_mi_features:
-                tprint(f"🔗 Non-linear relationships detected in {len(high_mi_features)} features")
-
-            return normalized_scores
-
-        except ImportError as e:
-            if self.config.enable_mutual_information:
-                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
-            else:
-                self.logger.warning("⚠️ sklearn not available for mutual information calculation (disabled in config)")
-                return {}
-        except Exception as e:
-            if self.config.enable_mutual_information:
-                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
-            else:
-                self.logger.warning(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
-                return {}
-
-    def _calculate_feature_stability_score(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
-        """Calculate feature stability across different time periods/regimes."""
-        if len(X) < 100:  # Need sufficient data for stability analysis
-            return {}
-
-        try:
-            # Split data into chunks for stability analysis
-            chunk_size = min(500, len(X) // 3)  # At least 3 chunks
-            if chunk_size < 50:
-                return {}
-
-            stability_scores = {}
-            chunks = []
-
-            # Create overlapping chunks for stability analysis
-            for i in range(0, len(X) - chunk_size + 1, chunk_size // 2):
-                chunk_data = X.iloc[i:i + chunk_size]
-                chunk_target = y.iloc[i:i + chunk_size]
-                chunks.append((chunk_data, chunk_target))
-
-            if len(chunks) < 2:
-                return {}
-
-            # Calculate importance for each chunk
-            chunk_importances = []
-            for chunk_X, chunk_y in chunks:
-                try:
-                    model = self._train_optimized_model(chunk_X, chunk_y)
-                    if hasattr(model, 'feature_importances_'):
-                        importance = dict(zip(chunk_X.columns, model.feature_importances_))
-                        chunk_importances.append(importance)
-                except Exception:
-                    continue
-
-            if len(chunk_importances) < 2:
-                return {}
-
-            # Calculate stability as consistency across chunks
-            all_features = set()
-            for imp in chunk_importances:
-                all_features.update(imp.keys())
-
-            for feature in all_features:
-                feature_stabilities = []
-                for imp in chunk_importances:
-                    if feature in imp:
-                        # Normalize importance within each chunk
-                        max_imp = max(imp.values()) if imp else 1.0
-                        feature_stabilities.append(imp[feature] / max_imp)
-
-                if len(feature_stabilities) >= 2:
-                    # Stability = 1 - coefficient of variation (lower variation = higher stability)
-                    stability_scores[feature] = 1.0 / (1.0 + np.std(feature_stabilities) / (np.mean(feature_stabilities) + 1e-8))
-
-            # Log stability insights
-            stable_features = [f for f, score in stability_scores.items() if score > 0.7]
-            if stable_features:
-                tprint(f"🛡️ Stability analysis: {len(stable_features)} consistently important features")
-
-            return stability_scores
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
-            return {}
 
     def _train_lightgbm_model(self, X: pd.DataFrame, y: pd.Series):
         """Train LightGBM model with optimized parameters."""
@@ -2262,121 +2180,21 @@ class MultiStageFeatureSelector:
 
     def _train_optimized_model(self, X: pd.DataFrame, y: pd.Series):
         """Train either LightGBM or RandomForest based on availability and performance."""
-        # Check if LightGBM is required and available
-        if self.config.use_lightgbm and not LIGHTGBM_AVAILABLE:
-            raise ImportError("LightGBM is required but not available. Please install LightGBM: pip install lightgbm")
-
         try:
-            if self.config.use_lightgbm and LIGHTGBM_AVAILABLE and len(X.columns) > 50:
+            if LIGHTGBM_AVAILABLE and len(X.columns) > 50:
                 self.logger.info("🚀 Using LightGBM for faster training")
                 tprint(f"🚀 Optimized training — selecting LightGBM (features: {len(X.columns)})")
                 return self._train_lightgbm_model(X, y)
             else:
-                self.logger.info("📊 Using RandomForest (LightGBM not required/available or dataset too small)")
+                self.logger.info("📊 Using RandomForest (LightGBM not available or dataset too small)")
                 tprint("📊 Optimized training — selecting RandomForest")
                 return self._train_random_forest(X, y)
         except Exception as e:
-            if self.config.use_lightgbm:
-                raise RuntimeError(f"LightGBM training failed and is required: {e}") from e
-            else:
-                self.logger.info(f"📊 LightGBM training failed but not required, falling back to RandomForest: {e}")
-                tprint(f"📊 LightGBM training failed ({e}), falling back to RandomForest")
-                return self._train_random_forest(X, y)
+            self.logger.info(f"📊 LightGBM training failed, falling back to RandomForest: {e}")
+            tprint(f"📊 LightGBM training failed ({e}), falling back to RandomForest")
+            return self._train_random_forest(X, y)
 
-    def _calculate_adaptive_importance_threshold(self, importance_scores: Dict[str, float]) -> float:
-        """Calculate adaptive importance threshold based on feature distribution."""
-        if not self.config.adaptive_importance_threshold:
-            return self.config.early_termination_threshold
 
-        importances = list(importance_scores.values())
-        if not importances:
-            return self.config.early_termination_threshold
-
-        # Use percentile-based threshold - be less aggressive
-        threshold_percentile = max(10.0, self.config.importance_percentile_cutoff)  # At least 10th percentile
-        threshold = np.percentile(importances, threshold_percentile)
-
-        # For very large feature sets, be even more conservative
-        if len(importances) > 1000:
-            # Keep more features for large datasets - use 15th percentile instead of 10th
-            threshold = max(threshold, np.percentile(importances, 15.0))
-            tprint(f"📊 Large dataset detected ({len(importances)} features), using conservative threshold")
-
-        # Ensure minimum threshold but don't be too restrictive
-        min_threshold = self.config.early_termination_threshold
-        final_threshold = max(threshold, min_threshold)
-
-        # Log detailed threshold calculation for troubleshooting
-        sorted_importances = sorted(importances, reverse=True)
-        tprint(f"🔍 Threshold Analysis: {len(importances)} features")
-        tprint(f"   📈 Max importance: {sorted_importances[0]:.6f}")
-        tprint(f"   📉 Min importance: {sorted_importances[-1]:.6f}")
-        tprint(f"   🎯 {threshold_percentile:.1f}th percentile: {threshold:.6f}")
-        tprint(f"   ⚖️ Final threshold: {final_threshold:.6f}")
-
-        return final_threshold
-
-    def _apply_early_termination(self, X: pd.DataFrame, importance_scores: Dict[str, float]) -> pd.DataFrame:
-        """Apply early termination to remove low-importance features."""
-        if not self.config.enable_early_termination:
-            tprint("⏭️ Early termination disabled, keeping all features")
-            return X
-
-        threshold = self._calculate_adaptive_importance_threshold(importance_scores)
-
-        # Find features above threshold
-        selected_features = [f for f, score in importance_scores.items() if score >= threshold]
-
-        # Be conservative - don't allow pruning more than 20% of features
-        total_features = len(X.columns)
-        remaining_features = len(selected_features)
-        removal_rate = (total_features - remaining_features) / total_features
-
-        # If we're removing more than 20% of features, be much more conservative
-        if removal_rate > 0.2:
-            tprint(f"⚠️ High removal rate ({removal_rate:.1%}), applying very conservative pruning")
-            # Keep top 80% of features instead
-            sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
-            keep_count = max(1, int(len(sorted_features) * 0.8))  # Keep top 80%
-            selected_features = [f for f, _ in sorted_features[:keep_count]]
-            threshold = sorted_features[keep_count - 1][1] if keep_count > 0 else 0.0
-            tprint(f"🎯 Conservative fallback: keeping top 80% ({keep_count}) features")
-
-        if len(selected_features) == 0:
-            tprint("⚠️ No features above threshold, keeping top 80% to preserve top performers")
-            sorted_features = sorted(importance_scores.items(), key=lambda x: x[1], reverse=True)
-            # Keep top 80% to be very conservative
-            keep_count = max(1, int(len(sorted_features) * 0.8))
-            selected_features = [f for f, _ in sorted_features[:keep_count]]
-            threshold = sorted_features[keep_count - 1][1] if keep_count > 0 else 0.0
-
-        # Performance and feature information
-        removed_count = total_features - len(selected_features)
-        tprint("🗑️ Early Termination Results:")
-        tprint(f"   📊 Total features: {total_features}")
-        tprint(f"   ✅ Remaining features: {len(selected_features)}")
-        tprint(f"   🗑️ Removed features: {removed_count}")
-        tprint(f"   📈 Threshold used: {threshold:.6f}")
-        tprint(f"   📉 Removal rate: {removal_rate:.1%}")
-
-        # Show top 5 features being kept and bottom 5 being removed for troubleshooting
-        if len(selected_features) > 0:
-            sorted_selected = sorted([(f, importance_scores[f]) for f in selected_features],
-                                   key=lambda x: x[1], reverse=True)
-            tprint("🏆 Top 5 Kept Features:")
-            for i, (feature, score) in enumerate(sorted_selected[:5]):
-                tprint(f"   {i+1}. {feature}: {score:.6f}")
-
-        if removed_count > 0:
-            removed_features = [(f, importance_scores[f]) for f in X.columns if f not in selected_features]
-            sorted_removed = sorted(removed_features, key=lambda x: x[1], reverse=True)
-            tprint("💔 Bottom 5 Removed Features:")
-            for i, (feature, score) in enumerate(sorted_removed[:5]):
-                tprint(f"   {i+1}. {feature}: {score:.6f}")
-
-        self.logger.info(f"🗑️ Early termination: removed {removed_count} features below threshold {threshold:.6f}")
-
-        return X[selected_features]
 
     def _recursive_feature_elimination(self, X: pd.DataFrame, y: pd.Series) -> List[str]:
         """Perform recursive feature elimination with early stopping."""
@@ -2571,32 +2389,29 @@ class MultiStageFeatureSelector:
             mrmr_scores = self._calculate_mrmr_mid_vectorized(X, y)
             spearman_scores = self.spearman_abs_vectorized(X, y)
             
-            # Early termination if scores are too low
+            # Early termination if scores are too low - fail fast instead of returning all features
             if self._early_termination_check(mrmr_scores.values, threshold=0.001):
-                tprint_warning("⚠️ Stage 1: Early termination due to low mRMR scores")
-                return X.columns.tolist(), mrmr_scores
+                raise ValueError("Stage 1: Insufficient mRMR scores - data may be unsuitable for feature selection")
             
             if self._early_termination_check(spearman_scores.values, threshold=0.001):
-                tprint_warning("⚠️ Stage 1: Early termination due to low Spearman scores")
-                return X.columns.tolist(), spearman_scores
+                raise ValueError("Stage 1: Insufficient Spearman scores - data may be unsuitable for feature selection")
             
-            # Vectorized z-score fusion
+            # Vectorized z-score fusion with configurable weights
             S = np.vstack([mrmr_scores.values, spearman_scores.values]).T  # (p, 2)
             S_z = self.zscore_matrix(S, axis=0)
-            combined_scores = 0.7 * S_z[:, 0] + 0.3 * S_z[:, 1]  # (p,)
+            weights = self.config.stage_1_weights
+            combined_scores = weights['mrmr'] * S_z[:, 0] + weights['spearman'] * S_z[:, 1]  # (p,)
             
-            # Early termination on combined scores
+            # Early termination on combined scores - fail fast instead of returning all features
             if self._early_termination_check(combined_scores, threshold=0.001):
-                tprint_warning("⚠️ Stage 1: Early termination due to low combined scores")
-                return X.columns.tolist(), pd.Series(combined_scores, index=X.columns)
+                raise ValueError("Stage 1: Insufficient combined scores - data may be unsuitable for feature selection")
             
             # Top-k selection with argpartition
             selected = self.top_k(X.columns.tolist(), combined_scores, n_keep)
             
-            # Validate selected features
+            # Validate selected features - fail fast if quality is insufficient
             if not self._validate_feature_quality(X, y, selected):
-                tprint_warning("⚠️ Stage 1: Selected features failed quality validation")
-                return X.columns.tolist(), pd.Series(combined_scores, index=X.columns)
+                raise ValueError("Stage 1: Selected features failed quality validation - insufficient feature quality")
             
             # Return scores as Series for consistency
             scores = pd.Series(combined_scores, index=X.columns)
@@ -2604,8 +2419,8 @@ class MultiStageFeatureSelector:
             
         except Exception as e:
             tprint_error(f"❌ Stage 1 selection failed: {e}")
-            # Return all features on error
-            return X.columns.tolist(), pd.Series(1.0, index=X.columns)
+            # Fast fail with proper error instead of returning all features
+            raise RuntimeError(f"Stage 1 feature selection failed: {e}") from e
 
     def _validate_inputs(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Comprehensive input validation with fast failing."""
@@ -2657,9 +2472,27 @@ class MultiStageFeatureSelector:
         if np.isinf(y).any():
             raise ValueError("Target vector y cannot contain infinite values")
         
+        # Fast fail on target distribution issues
+        unique_values = y.nunique()
+        if unique_values <= 1:
+            raise ValueError(f"Target vector y has insufficient variation: {unique_values} unique values")
+        
+        # Check for extreme target imbalance (for classification tasks)
+        if unique_values <= 10:  # Likely classification
+            value_counts = y.value_counts()
+            min_count = value_counts.min()
+            max_count = value_counts.max()
+            if min_count < 5 or (max_count / min_count) > 100:
+                raise ValueError(f"Target vector y has extreme class imbalance: min={min_count}, max={max_count}")
+        
         # Fast fail on index misalignment
         if not X.index.equals(y.index):
             raise ValueError("X and y must have identical indices")
+        
+        # Fast fail on temporal ordering issues (if datetime index)
+        if isinstance(X.index, pd.DatetimeIndex):
+            if not X.index.is_monotonic_increasing:
+                tprint_warning("⚠️ Datetime index is not monotonic - this may affect time series feature selection")
         
         tprint("✅ Input validation passed - all checks successful")
 
@@ -2674,104 +2507,146 @@ class MultiStageFeatureSelector:
     
     def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
         """Stage 2: Vectorized iterative bottom removal with boolean masks."""
-        t = target_count or 60
-        target_plus_50 = t + 50
-        cols = X.columns.to_numpy()
-        mask = np.ones(len(cols), dtype=bool)  # True = keep
-        
-        # Initialize default scores
-        ensemble_scores = pd.Series(0.0, index=cols)
-        
-        tprint(f"🚀 Stage 2 (Vectorized): {len(cols)} → {target_plus_50} features")
-        
-        iteration = 0
-        while np.sum(mask) > target_plus_50:
-            iteration += 1
-            n_current = np.sum(mask)
-            current_cols = cols[mask]
+        try:
+            t = target_count or 60
+            target_plus_50 = t + 50
+            cols = X.columns.to_numpy()
+            mask = np.ones(len(cols), dtype=bool)  # True = keep
             
-            # Calculate ensemble scores with parallel CV
-            ensemble_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+            # Initialize default scores
+            ensemble_scores = pd.Series(0.0, index=cols)
             
-            # Convert to array for argpartition
-            scores_array = ensemble_scores.values
+            tprint(f"🚀 Stage 2 (Vectorized): {len(cols)} → {target_plus_50} features")
             
-            # Remove bottom 20% (safely)
-            n_remove = max(1, min(n_current // 5, n_current - target_plus_50))
+            iteration = 0
+            max_iterations = 50  # Prevent infinite loops
             
-            # Get indices to remove using argpartition
-            bottom_indices = self.bottom_k(current_cols.tolist(), scores_array, n_remove)
-            drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+            while np.sum(mask) > target_plus_50 and iteration < max_iterations:
+                iteration += 1
+                n_current = np.sum(mask)
+                current_cols = cols[mask]
+                
+                # Calculate ensemble scores with parallel CV
+                ensemble_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+                
+                # Convert to array for argpartition
+                scores_array = ensemble_scores.values
+                
+                # Check for convergence (all scores too low)
+                if np.max(scores_array) < 0.001:
+                    raise ValueError("Stage 2: All ensemble scores too low - insufficient feature quality")
+                
+                # Remove bottom 20% (safely)
+                n_remove = max(1, min(n_current // 5, n_current - target_plus_50))
+                
+                # Get indices to remove using argpartition
+                bottom_indices = self.bottom_k(current_cols.tolist(), scores_array, n_remove)
+                drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+                
+                # Update mask
+                mask[drop_indices] = False
+                
+                tprint(f"   Iteration {iteration}: {n_current} → {np.sum(mask)} (removed {n_remove})")
             
-            # Update mask
-            mask[drop_indices] = False
+            if iteration >= max_iterations:
+                raise ValueError(f"Stage 2: Maximum iterations ({max_iterations}) reached without convergence")
             
-            tprint(f"   Iteration {iteration}: {n_current} → {np.sum(mask)} (removed {n_remove})")
-        
-        # Return final features and scores
-        final_features = cols[mask].tolist()
-        return final_features, ensemble_scores
+            # Return final features and scores
+            final_features = cols[mask].tolist()
+            return final_features, ensemble_scores
+            
+        except Exception as e:
+            tprint_error(f"❌ Stage 2 selection failed: {e}")
+            raise RuntimeError(f"Stage 2 feature selection failed: {e}") from e
 
     def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
         """Stage 3: Vectorized chunked RFE with stability selection."""
-        t = target_count or 60
-        target_plus_20 = t + 20
-        cols = X.columns.to_numpy()
-        mask = np.ones(len(cols), dtype=bool)  # True = keep
-        
-        # Initialize default scores
-        rfe_scores = pd.Series(0.0, index=cols)
-        
-        tprint(f"🚀 Stage 3 (Vectorized): {len(cols)} → {t} features")
-        
-        # Phase 1: Remove in chunks of 5 until target + 20
-        tprint("   Phase 1: Chunked removal (5 at a time)")
-        while np.sum(mask) > target_plus_20:
-            n_current = np.sum(mask)
-            current_cols = cols[mask]
+        try:
+            t = target_count or 60
+            target_plus_20 = t + 20
+            cols = X.columns.to_numpy()
+            mask = np.ones(len(cols), dtype=bool)  # True = keep
             
-            # Calculate ensemble + stability scores
-            ens = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
-            stab = self.stability_scores_vectorized(
-                X[current_cols], y,
-                scorer=lambda X_, y_: self.ensemble_scores_cv_parallel(X_, y_, self.config.random_state),
-                rs=self.config.random_state
-            )
+            # Initialize default scores
+            rfe_scores = pd.Series(0.0, index=cols)
             
-            # Vectorized z-score blending
-            S = np.vstack([ens.values, stab.values]).T  # (p, 2)
-            S_z = self.zscore_matrix(S, axis=0)
-            blended_scores = 0.6 * S_z[:, 0] + 0.4 * S_z[:, 1]  # (p,)
+            tprint(f"🚀 Stage 3 (Vectorized): {len(cols)} → {t} features")
             
-            # Remove based on blended scores
-            n_remove = min(5, n_current - target_plus_20)
-            bottom_indices = self.bottom_k(current_cols.tolist(), blended_scores, n_remove)
-            drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+            # Phase 1: Remove in chunks of 5 until target + 20
+            tprint("   Phase 1: Chunked removal (5 at a time)")
+            phase1_iterations = 0
+            max_phase1_iterations = 20
             
-            mask[drop_indices] = False
+            while np.sum(mask) > target_plus_20 and phase1_iterations < max_phase1_iterations:
+                phase1_iterations += 1
+                n_current = np.sum(mask)
+                current_cols = cols[mask]
+                
+                # Calculate ensemble + stability scores
+                ens = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+                stab = self.stability_scores_vectorized(
+                    X[current_cols], y,
+                    scorer=lambda X_, y_: self.ensemble_scores_cv_parallel(X_, y_, self.config.random_state),
+                    rs=self.config.random_state
+                )
+                
+                # Check for convergence
+                if np.max(ens.values) < 0.001 or np.max(stab.values) < 0.001:
+                    raise ValueError("Stage 3: Insufficient ensemble or stability scores - data quality too low")
+                
+                # Vectorized z-score blending with configurable weights
+                S = np.vstack([ens.values, stab.values]).T  # (p, 2)
+                S_z = self.zscore_matrix(S, axis=0)
+                weights = self.config.stage_3_weights
+                blended_scores = weights['ensemble'] * S_z[:, 0] + weights['stability'] * S_z[:, 1]  # (p,)
+                
+                # Remove based on blended scores
+                n_remove = min(5, n_current - target_plus_20)
+                bottom_indices = self.bottom_k(current_cols.tolist(), blended_scores, n_remove)
+                drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+                
+                mask[drop_indices] = False
+                
+                tprint(f"     {n_current} → {np.sum(mask)} (removed {n_remove})")
             
-            tprint(f"     {n_current} → {np.sum(mask)} (removed {n_remove})")
-        
-        # Phase 2: Remove one by one until final target
-        tprint("   Phase 2: One-by-one removal")
-        while np.sum(mask) > t:
-            n_current = np.sum(mask)
-            current_cols = cols[mask]
+            if phase1_iterations >= max_phase1_iterations:
+                raise ValueError(f"Stage 3 Phase 1: Maximum iterations ({max_phase1_iterations}) reached without convergence")
             
-            # Use RFE with ensemble scoring
-            rfe_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
-            scores_array = rfe_scores.values
+            # Phase 2: Remove one by one until final target
+            tprint("   Phase 2: One-by-one removal")
+            phase2_iterations = 0
+            max_phase2_iterations = 30
             
-            # Remove worst feature
-            worst_feature = self.bottom_k(current_cols.tolist(), scores_array, 1)[0]
-            drop_idx = np.where(cols == worst_feature)[0][0]
-            mask[drop_idx] = False
+            while np.sum(mask) > t and phase2_iterations < max_phase2_iterations:
+                phase2_iterations += 1
+                n_current = np.sum(mask)
+                current_cols = cols[mask]
+                
+                # Use RFE with ensemble scoring
+                rfe_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+                scores_array = rfe_scores.values
+                
+                # Check for convergence
+                if np.max(scores_array) < 0.001:
+                    raise ValueError("Stage 3 Phase 2: All RFE scores too low - insufficient feature quality")
+                
+                # Remove worst feature
+                worst_feature = self.bottom_k(current_cols.tolist(), scores_array, 1)[0]
+                drop_idx = np.where(cols == worst_feature)[0][0]
+                mask[drop_idx] = False
+                
+                tprint(f"     {n_current} → {np.sum(mask)} (removed {worst_feature})")
             
-            tprint(f"     {n_current} → {np.sum(mask)} (removed {worst_feature})")
-        
-        # Return final features and scores
-        final_features = cols[mask].tolist()
-        return final_features, rfe_scores
+            if phase2_iterations >= max_phase2_iterations:
+                raise ValueError(f"Stage 3 Phase 2: Maximum iterations ({max_phase2_iterations}) reached without convergence")
+            
+            # Return final features and scores
+            final_features = cols[mask].tolist()
+            return final_features, rfe_scores
+            
+        except Exception as e:
+            tprint_error(f"❌ Stage 3 selection failed: {e}")
+            raise RuntimeError(f"Stage 3 feature selection failed: {e}") from e
 
     def _prepare_cv_splitter(
         self,

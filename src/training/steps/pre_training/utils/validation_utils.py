@@ -38,17 +38,29 @@ except ImportError:
 
 
 class ValidationContext(Enum):
-    """Pre-defined validation contexts for different pre-training steps."""
+    """Pre-defined validation contexts for different pre-training and model training steps."""
+    # Pre-training contexts
     FEATURE_GENERATION = "feature_generation"
     FEATURE_SELECTION = "feature_selection"
     DATA_PREPROCESSING = "data_preprocessing"
-    MODEL_TRAINING = "model_training"
     CROSS_VALIDATION = "cross_validation"
     HYPERPARAMETER_TUNING = "hyperparameter_tuning"
     FEATURE_OPTIMIZATION = "feature_optimization"
     LABEL_GENERATION = "label_generation"
     INTERACTION_FEATURES = "interaction_features"
     FINAL_SELECTION = "final_selection"
+    
+    # Model training contexts
+    MODEL_TRAINING = "model_training"
+    ENSEMBLE_TRAINING = "ensemble_training"
+    TACTICIAN_TRAINING = "tactician_training"
+    ANALYST_TRAINING = "analyst_training"
+    NAS_TAS_TRAINING = "nas_tas_training"
+    REGIME_AWARE_TRAINING = "regime_aware_training"
+    MODEL_VALIDATION = "model_validation"
+    MODEL_DEPLOYMENT = "model_deployment"
+    MODEL_MONITORING = "model_monitoring"
+    NEGATIVE_LEARNING = "negative_learning"
 
 
 @dataclass
@@ -511,6 +523,432 @@ def validate_label_generation_inputs(
 
 
 # ============================================================================
+# MODEL TRAINING VALIDATION FUNCTIONS
+# ============================================================================
+
+def validate_training_data(
+    X: Union[pd.DataFrame, np.ndarray],
+    y: Union[pd.Series, np.ndarray],
+    context: ValidationContext = ValidationContext.MODEL_TRAINING
+) -> ValidationResult:
+    """
+    Validate training data for model training.
+    
+    Args:
+        X: Feature matrix
+        y: Target vector
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = PreTrainingValidator(ValidationConfig(context=context))
+    
+    # Use the existing model inputs validation
+    result = validator.validate_model_inputs(X, y)
+    
+    # Additional model training specific checks
+    if result.is_valid:
+        # Check for sufficient training samples
+        n_samples = len(X) if hasattr(X, '__len__') else X.shape[0]
+        if n_samples < 50:  # Minimum samples for training
+            return ValidationResult(
+                is_valid=False,
+                severity=ValidationSeverity.CRITICAL,
+                error_message=f"Insufficient training samples: {n_samples} < 50",
+                details={"n_samples": n_samples, "min_required": 50},
+                should_fail_fast=True
+            )
+        
+        # Check for class balance in classification tasks
+        if hasattr(y, 'value_counts'):  # pandas Series
+            class_counts = y.value_counts()
+            if len(class_counts) > 1:  # Multi-class
+                min_class_count = class_counts.min()
+                if min_class_count < 5:  # Minimum samples per class
+                    return ValidationResult(
+                        is_valid=False,
+                        severity=ValidationSeverity.HIGH,
+                        error_message=f"Imbalanced classes: minimum class has {min_class_count} samples",
+                        details={"class_counts": class_counts.to_dict()},
+                        should_fail_fast=False
+                    )
+    
+    return result
+
+
+def validate_ensemble_training_inputs(
+    training_data: pd.DataFrame,
+    feature_columns: List[str],
+    target_columns: List[str],
+    base_models: List[Any],
+    context: ValidationContext = ValidationContext.ENSEMBLE_TRAINING
+) -> ValidationResult:
+    """
+    Validate inputs for ensemble training.
+    
+    Args:
+        training_data: Training DataFrame
+        feature_columns: List of feature column names
+        target_columns: List of target column names
+        base_models: List of base models for ensemble
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = PreTrainingValidator(ValidationConfig(context=context))
+    
+    # Validate basic training data
+    basic_result = validator.validate_dataframe(training_data)
+    if not basic_result.is_valid:
+        return basic_result
+    
+    # Validate features
+    feature_result = validator.validate_features(training_data, feature_columns)
+    if not feature_result.is_valid:
+        return feature_result
+    
+    # Validate targets
+    target_result = validator.validate_targets(training_data, target_columns)
+    if not target_result.is_valid:
+        return target_result
+    
+    # Validate base models
+    if not base_models or len(base_models) == 0:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message="No base models provided for ensemble training",
+            details={"base_models_count": 0},
+            should_fail_fast=True
+        )
+    
+    # Check for sufficient data for ensemble training
+    min_samples = len(base_models) * 20  # At least 20 samples per model
+    if len(training_data) < min_samples:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Insufficient data for ensemble training: {len(training_data)} < {min_samples}",
+            details={"n_samples": len(training_data), "min_required": min_samples, "n_models": len(base_models)},
+            should_fail_fast=True
+        )
+    
+    return ValidationResult(
+        is_valid=True,
+        severity=ValidationSeverity.LOW,
+        error_message="Ensemble training inputs validation passed",
+        details={
+            "data_shape": training_data.shape,
+            "feature_columns": feature_columns,
+            "target_columns": target_columns,
+            "base_models_count": len(base_models)
+        },
+        should_fail_fast=False
+    )
+
+
+def validate_model_config(
+    model_config: Dict[str, Any],
+    context: ValidationContext = ValidationContext.MODEL_TRAINING
+) -> ValidationResult:
+    """
+    Validate model configuration parameters.
+    
+    Args:
+        model_config: Model configuration dictionary
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    if not isinstance(model_config, dict):
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message="Model config must be a dictionary",
+            details={"config_type": type(model_config).__name__},
+            should_fail_fast=True
+        )
+    
+    required_keys = ['model_type', 'hyperparameters']
+    missing_keys = [key for key in required_keys if key not in model_config]
+    
+    if missing_keys:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Missing required config keys: {missing_keys}",
+            details={"missing_keys": missing_keys, "required_keys": required_keys},
+            should_fail_fast=True
+        )
+    
+    # Validate hyperparameters
+    hyperparams = model_config.get('hyperparameters', {})
+    if not isinstance(hyperparams, dict):
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message="Hyperparameters must be a dictionary",
+            details={"hyperparams_type": type(hyperparams).__name__},
+            should_fail_fast=True
+        )
+    
+    return ValidationResult(
+        is_valid=True,
+        severity=ValidationSeverity.LOW,
+        error_message="Model configuration validation passed",
+        details={
+            "model_type": model_config.get('model_type'),
+            "hyperparams_count": len(hyperparams),
+            "config_keys": list(model_config.keys())
+        },
+        should_fail_fast=False
+    )
+
+
+def validate_regime_data(
+    data: pd.DataFrame,
+    regime_column: str,
+    context: ValidationContext = ValidationContext.REGIME_AWARE_TRAINING
+) -> ValidationResult:
+    """
+    Validate regime-aware training data.
+    
+    Args:
+        data: Training DataFrame
+        regime_column: Name of the regime column
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = PreTrainingValidator(ValidationConfig(context=context))
+    
+    # Basic DataFrame validation
+    basic_result = validator.validate_dataframe(data)
+    if not basic_result.is_valid:
+        return basic_result
+    
+    # Check regime column exists
+    if regime_column not in data.columns:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Regime column '{regime_column}' not found in data",
+            details={"available_columns": list(data.columns), "regime_column": regime_column},
+            should_fail_fast=True
+        )
+    
+    # Check regime column has valid values
+    regime_values = data[regime_column].dropna()
+    if len(regime_values) == 0:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Regime column '{regime_column}' contains only NaN values",
+            details={"regime_column": regime_column},
+            should_fail_fast=True
+        )
+    
+    # Check for sufficient samples per regime
+    regime_counts = regime_values.value_counts()
+    min_samples_per_regime = 10
+    insufficient_regimes = regime_counts[regime_counts < min_samples_per_regime]
+    
+    if len(insufficient_regimes) > 0:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.HIGH,
+            error_message=f"Some regimes have insufficient samples: {insufficient_regimes.to_dict()}",
+            details={
+                "regime_counts": regime_counts.to_dict(),
+                "min_samples_per_regime": min_samples_per_regime,
+                "insufficient_regimes": insufficient_regimes.to_dict()
+            },
+            should_fail_fast=False
+        )
+    
+    return ValidationResult(
+        is_valid=True,
+        severity=ValidationSeverity.LOW,
+        error_message="Regime data validation passed",
+        details={
+            "data_shape": data.shape,
+            "regime_column": regime_column,
+            "regime_counts": regime_counts.to_dict(),
+            "n_regimes": len(regime_counts)
+        },
+        should_fail_fast=False
+    )
+
+
+def validate_nas_tas_inputs(
+    data: pd.DataFrame,
+    feature_columns: List[str],
+    target_columns: List[str],
+    architecture_config: Dict[str, Any],
+    context: ValidationContext = ValidationContext.NAS_TAS_TRAINING
+) -> ValidationResult:
+    """
+    Validate inputs for NAS-TAS (Neural Architecture Search - Tree-based Architecture Search) training.
+    
+    Args:
+        data: Training DataFrame
+        feature_columns: List of feature column names
+        target_columns: List of target column names
+        architecture_config: Architecture search configuration
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = PreTrainingValidator(ValidationConfig(context=context))
+    
+    # Validate basic training data
+    basic_result = validator.validate_dataframe(data)
+    if not basic_result.is_valid:
+        return basic_result
+    
+    # Validate features and targets
+    feature_result = validator.validate_features(data, feature_columns)
+    if not feature_result.is_valid:
+        return feature_result
+    
+    target_result = validator.validate_targets(data, target_columns)
+    if not target_result.is_valid:
+        return target_result
+    
+    # Validate architecture config
+    if not isinstance(architecture_config, dict):
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message="Architecture config must be a dictionary",
+            details={"config_type": type(architecture_config).__name__},
+            should_fail_fast=True
+        )
+    
+    # Check for required architecture parameters
+    required_params = ['search_space', 'max_trials', 'objective']
+    missing_params = [param for param in required_params if param not in architecture_config]
+    
+    if missing_params:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Missing required architecture parameters: {missing_params}",
+            details={"missing_params": missing_params, "required_params": required_params},
+            should_fail_fast=True
+        )
+    
+    # Check for sufficient data for architecture search
+    min_samples = architecture_config.get('max_trials', 100) * 5  # At least 5 samples per trial
+    if len(data) < min_samples:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Insufficient data for NAS-TAS: {len(data)} < {min_samples}",
+            details={"n_samples": len(data), "min_required": min_samples, "max_trials": architecture_config.get('max_trials')},
+            should_fail_fast=True
+        )
+    
+    return ValidationResult(
+        is_valid=True,
+        severity=ValidationSeverity.LOW,
+        error_message="NAS-TAS inputs validation passed",
+        details={
+            "data_shape": data.shape,
+            "feature_columns": feature_columns,
+            "target_columns": target_columns,
+            "architecture_config": architecture_config
+        },
+        should_fail_fast=False
+    )
+
+
+def validate_negative_learning_inputs(
+    data: pd.DataFrame,
+    feature_columns: List[str],
+    target_columns: List[str],
+    negative_samples: pd.DataFrame,
+    context: ValidationContext = ValidationContext.NEGATIVE_LEARNING
+) -> ValidationResult:
+    """
+    Validate inputs for negative learning training.
+    
+    Args:
+        data: Positive training DataFrame
+        feature_columns: List of feature column names
+        target_columns: List of target column names
+        negative_samples: Negative samples DataFrame
+        context: Validation context
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = PreTrainingValidator(ValidationConfig(context=context))
+    
+    # Validate positive data
+    positive_result = validator.validate_dataframe(data)
+    if not positive_result.is_valid:
+        return positive_result
+    
+    # Validate negative samples
+    negative_result = validator.validate_dataframe(negative_samples)
+    if not negative_result.is_valid:
+        return negative_result
+    
+    # Validate features in both datasets
+    feature_result = validator.validate_features(data, feature_columns)
+    if not feature_result.is_valid:
+        return feature_result
+    
+    # Check feature consistency between positive and negative data
+    missing_features = set(feature_columns) - set(negative_samples.columns)
+    if missing_features:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=f"Missing features in negative samples: {missing_features}",
+            details={"missing_features": list(missing_features), "feature_columns": feature_columns},
+            should_fail_fast=True
+        )
+    
+    # Check for sufficient negative samples
+    min_negative_ratio = 0.1  # At least 10% negative samples
+    min_negative_samples = int(len(data) * min_negative_ratio)
+    if len(negative_samples) < min_negative_samples:
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.HIGH,
+            error_message=f"Insufficient negative samples: {len(negative_samples)} < {min_negative_samples}",
+            details={
+                "negative_samples": len(negative_samples),
+                "min_required": min_negative_samples,
+                "positive_samples": len(data),
+                "min_ratio": min_negative_ratio
+            },
+            should_fail_fast=False
+        )
+    
+    return ValidationResult(
+        is_valid=True,
+        severity=ValidationSeverity.LOW,
+        error_message="Negative learning inputs validation passed",
+        details={
+            "positive_data_shape": data.shape,
+            "negative_data_shape": negative_samples.shape,
+            "feature_columns": feature_columns,
+            "target_columns": target_columns,
+            "negative_ratio": len(negative_samples) / len(data)
+        },
+        should_fail_fast=False
+    )
+
+
+# ============================================================================
 # VALIDATION DECORATORS
 # ============================================================================
 
@@ -542,6 +980,13 @@ def validate_inputs(validation_type: str, context: ValidationContext = Validatio
                 elif validation_type == "targets":
                     target_columns = kwargs.get('target_columns', [])
                     result = validator.validate_targets(data, target_columns)
+                elif validation_type == "training_data":
+                    X = kwargs.get('X', data)
+                    y = kwargs.get('y', None)
+                    if y is not None:
+                        result = validate_training_data(X, y, context)
+                    else:
+                        result = validator.validate_dataframe(data)
                 else:
                     # Skip validation for unknown types
                     result = ValidationResult(True, ValidationSeverity.LOW, "Skipped", {})

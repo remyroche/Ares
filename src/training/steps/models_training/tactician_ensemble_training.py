@@ -84,6 +84,18 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     COMMON_OPS_AVAILABLE = False
 
+# Import enhanced validation utilities
+try:
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_ensemble_training_inputs, validate_training_data,
+        validate_model_config, ValidationResult
+    )
+    VALIDATION_UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
 
 @dataclass
 class TacticianEnsembleTrainingConfig:
@@ -196,9 +208,28 @@ class TacticianEnsembleTrainingStep:
         tprint_info("🚀 Starting Tactician ensemble training with full feature integration...")
 
         try:
-            # Validate inputs
-            if training_data.empty or not feature_columns or not target_columns or not base_models:
-                raise ValueError("Insufficient data for ensemble training")
+            # Enhanced input validation using validation utilities
+            if VALIDATION_UTILS_AVAILABLE:
+                tprint_debug("🔍 Validating ensemble training inputs...")
+                
+                # Validate ensemble training inputs
+                validation_result = validate_ensemble_training_inputs(
+                    training_data, feature_columns, target_columns, list(base_models.keys()),
+                    context=ValidationContext.ENSEMBLE_TRAINING
+                )
+                
+                if not validation_result.is_valid:
+                    tprint_error(f"❌ Input validation failed: {validation_result.error_message}")
+                    if validation_result.should_fail_fast:
+                        raise ValueError(f"Input validation failed: {validation_result.error_message}")
+                    else:
+                        tprint_warning(f"⚠️ Validation warnings: {validation_result.warnings}")
+                
+                tprint_success("✅ Input validation passed")
+            else:
+                # Fallback validation
+                if training_data.empty or not feature_columns or not target_columns or not base_models:
+                    raise ValueError("Insufficient data for ensemble training")
 
             # Prepare training data
             X = training_data[feature_columns].values

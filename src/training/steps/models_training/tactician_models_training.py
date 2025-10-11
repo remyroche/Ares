@@ -105,6 +105,18 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
     MATH_VALIDATION_AVAILABLE = False
 
+# Import enhanced validation utilities
+try:
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_training_data, validate_model_config, validate_regime_data,
+        ValidationResult
+    )
+    VALIDATION_UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize

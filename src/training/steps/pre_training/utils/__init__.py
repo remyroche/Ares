@@ -9,7 +9,9 @@ from .validation_utils import (
     PreTrainingValidator, ValidationConfig, ValidationContext,
     validate_feature_generation_inputs, validate_feature_selection_inputs,
     validate_cross_validation_inputs, validate_label_generation_inputs,
-    validate_inputs
+    validate_training_data, validate_ensemble_training_inputs,
+    validate_model_config, validate_regime_data, validate_nas_tas_inputs,
+    validate_negative_learning_inputs, validate_inputs
 )
 
 # Re-export validation utilities from the enhanced fast_failing_validation
@@ -24,9 +26,16 @@ __all__ = [
     # Main validator classes
     'PreTrainingValidator', 'ValidationConfig', 'ValidationContext',
     
-    # Convenience validation functions
+    # Pre-training validation functions
     'validate_feature_generation_inputs', 'validate_feature_selection_inputs',
     'validate_cross_validation_inputs', 'validate_label_generation_inputs',
+    
+    # Model training validation functions
+    'validate_training_data', 'validate_ensemble_training_inputs',
+    'validate_model_config', 'validate_regime_data', 'validate_nas_tas_inputs',
+    'validate_negative_learning_inputs',
+    
+    # Validation decorators
     'validate_inputs',
     
     # Core validation utilities

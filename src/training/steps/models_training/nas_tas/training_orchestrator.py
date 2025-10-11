@@ -78,6 +78,18 @@ try:
 except ImportError:
     HYBRID_REGIME_AVAILABLE = False
 
+# Import enhanced validation utilities
+try:
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_nas_tas_inputs, validate_regime_data, validate_training_data,
+        ValidationResult
+    )
+    VALIDATION_UTILS_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -658,15 +670,39 @@ class TrainingOrchestrator:
                                     target_variable: str,
                                     feature_columns: Optional[List[str]],
                                     timestamps: Optional[pd.Series]) -> pd.DataFrame:
-        """Validate and preprocess market data using unified data processor."""
+        """Validate and preprocess market data using enhanced validation utilities."""
         try:
-            # Check if target variable exists
-            if target_variable not in market_data.columns:
-                raise ValueError(f"Target variable '{target_variable}' not found in data")
-            
-            # Determine feature columns
-            if feature_columns is None:
-                feature_columns = [col for col in market_data.columns if col != target_variable]
+            # Enhanced validation using validation utilities
+            if VALIDATION_UTILS_AVAILABLE:
+                tprint_debug("🔍 Validating NAS-TAS training data...")
+                
+                # Determine feature columns
+                if feature_columns is None:
+                    feature_columns = [col for col in market_data.columns if col != target_variable]
+                
+                # Validate NAS-TAS inputs
+                validation_result = validate_nas_tas_inputs(
+                    market_data, feature_columns, [target_variable], 
+                    self.unified_config.__dict__ if self.unified_config else {},
+                    context=ValidationContext.NAS_TAS_TRAINING
+                )
+                
+                if not validation_result.is_valid:
+                    tprint_error(f"❌ NAS-TAS input validation failed: {validation_result.error_message}")
+                    if validation_result.should_fail_fast:
+                        raise ValueError(f"Input validation failed: {validation_result.error_message}")
+                    else:
+                        tprint_warning(f"⚠️ Validation warnings: {validation_result.warnings}")
+                
+                tprint_success("✅ NAS-TAS input validation passed")
+            else:
+                # Fallback validation
+                if target_variable not in market_data.columns:
+                    raise ValueError(f"Target variable '{target_variable}' not found in data")
+                
+                # Determine feature columns
+                if feature_columns is None:
+                    feature_columns = [col for col in market_data.columns if col != target_variable]
             
             # Use unified data processor if available
             if UNIFIED_TOOLS_AVAILABLE:

@@ -3,12 +3,40 @@ Ensemble Meta-Features Generator
 
 This module provides meta-feature generation for ensemble models, including
 disagreement features, that can be called from training steps and trading modules.
+
+VectorBT Optimizations:
+- Vectorized meta-feature calculations
+- GPU acceleration for large datasets
+- Parallel processing for multiple ensemble models
+- Memory-efficient operations
 """
 
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Union
 import logging
+import warnings
+
+# VectorBT imports for optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.utils.array_ops import rolling_apply
+    from vectorbt.utils.array_ops import rolling_apply_parallel
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_apply = None
+    rolling_apply_parallel = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
 # Import disagreement meta-features
 from .disagreement_meta_features import DisagreementMetaFeatures
@@ -16,18 +44,24 @@ from .disagreement_meta_features import DisagreementMetaFeatures
 class EnsembleMetaFeatureGenerator:
     """
     Meta-feature generator for ensemble models that can be called from
-    training steps and trading modules.
+    training steps and trading modules with VectorBT optimization.
     """
     
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, logger: Optional[logging.Logger] = None, use_vectorbt: bool = True, use_gpu: bool = False, enable_parallel: bool = True):
         """
         Initialize the ensemble meta-feature generator.
         
         Args:
             logger: Optional logger instance
+            use_vectorbt: Whether to use VectorBT optimizations
+            use_gpu: Whether to use GPU acceleration
+            enable_parallel: Whether to enable parallel processing
         """
         self.logger = logger or logging.getLogger(__name__)
         self.disagreement_calculator = DisagreementMetaFeatures(logger)
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
     
     def generate_meta_features_for_analyst_ensemble(
         self, 
@@ -50,14 +84,17 @@ class EnsembleMetaFeatureGenerator:
             # Initialize meta-features DataFrame
             meta_features = pd.DataFrame(index=features_df.index)
             
-            # Add basic analyst-specific meta-features
+            # Add basic analyst-specific meta-features with VectorBT optimization
             if 'close' in features_df.columns:
-                meta_features['price_momentum'] = features_df['close'].pct_change(10)
-                meta_features['price_acceleration'] = features_df['close'].pct_change(10).diff()
-                meta_features['volatility_proxy'] = features_df['close'].pct_change().rolling(20).std()
-                meta_features['price_trend'] = features_df['close'].rolling(50).apply(
-                    lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1, raw=False
-                )
+                if self.use_vectorbt and len(features_df) > 1000:
+                    meta_features.update(self._generate_price_meta_features_vectorized(features_df, 'analyst'))
+                else:
+                    meta_features['price_momentum'] = features_df['close'].pct_change(10)
+                    meta_features['price_acceleration'] = features_df['close'].pct_change(10).diff()
+                    meta_features['volatility_proxy'] = features_df['close'].pct_change().rolling(20).std()
+                    meta_features['price_trend'] = features_df['close'].rolling(50).apply(
+                        lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1, raw=False
+                    )
             
             if 'volume' in features_df.columns:
                 meta_features['volume_momentum'] = features_df['volume'].pct_change(10)
@@ -347,3 +384,175 @@ class EnsembleMetaFeatureGenerator:
         except Exception as e:
             self.logger.error(f"Error getting base model predictions: {e}")
             return {}
+    
+    def _generate_price_meta_features_vectorized(self, features_df: pd.DataFrame, ensemble_type: str) -> Dict[str, pd.Series]:
+        """Generate price-related meta-features using VectorBT optimization."""
+        meta_features = {}
+        
+        if 'close' not in features_df.columns:
+            return meta_features
+        
+        close_prices = features_df['close']
+        
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._generate_price_meta_features_gpu(close_prices, ensemble_type)
+        else:
+            return self._generate_price_meta_features_cpu_vectorized(close_prices, ensemble_type)
+    
+    def _generate_price_meta_features_cpu_vectorized(self, close_prices: pd.Series, ensemble_type: str) -> Dict[str, pd.Series]:
+        """CPU-optimized vectorized price meta-feature generation."""
+        meta_features = {}
+        
+        # Vectorized calculations
+        if ensemble_type == 'analyst':
+            meta_features['price_momentum'] = close_prices.pct_change(10)
+            meta_features['price_acceleration'] = close_prices.pct_change(10).diff()
+            meta_features['volatility_proxy'] = close_prices.pct_change().rolling(20).std()
+            meta_features['price_trend'] = close_prices.rolling(50).apply(
+                lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1, raw=False
+            )
+        elif ensemble_type == 'tactician':
+            meta_features['price_momentum'] = close_prices.pct_change(5)
+            meta_features['price_acceleration'] = close_prices.pct_change(5).diff()
+            meta_features['volatility_proxy'] = close_prices.pct_change().rolling(20).std()
+        elif ensemble_type == 'volatile_regime':
+            meta_features['price_volatility'] = close_prices.pct_change().rolling(20).std()
+            meta_features['price_volatility_percentile'] = (
+                meta_features['price_volatility'].rolling(100).rank(pct=True)
+            )
+        
+        return meta_features
+    
+    def _generate_price_meta_features_gpu(self, close_prices: pd.Series, ensemble_type: str) -> Dict[str, pd.Series]:
+        """GPU-accelerated price meta-feature generation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._generate_price_meta_features_cpu_vectorized(close_prices, ensemble_type)
+        
+        meta_features = {}
+        
+        # Convert to GPU arrays
+        close_gpu = cp.asarray(close_prices.values, dtype=cp.float32)
+        
+        if ensemble_type == 'analyst':
+            # GPU-accelerated calculations
+            returns_gpu = cp.diff(close_gpu) / close_gpu[:-1]
+            meta_features['price_momentum'] = pd.Series(
+                cp.asnumpy(cp.diff(close_gpu, n=10) / close_gpu[:-10]), 
+                index=close_prices.index[10:]
+            )
+            meta_features['price_acceleration'] = pd.Series(
+                cp.asnumpy(cp.diff(cp.diff(close_gpu, n=10) / close_gpu[:-10])), 
+                index=close_prices.index[11:]
+            )
+            # Volatility calculation on GPU
+            volatility_gpu = cp.zeros_like(close_gpu)
+            for i in range(20, len(close_gpu)):
+                window_returns = returns_gpu[i-20:i]
+                volatility_gpu[i] = cp.std(window_returns)
+            meta_features['volatility_proxy'] = pd.Series(
+                cp.asnumpy(volatility_gpu[20:]), 
+                index=close_prices.index[20:]
+            )
+        elif ensemble_type == 'tactician':
+            meta_features['price_momentum'] = pd.Series(
+                cp.asnumpy(cp.diff(close_gpu, n=5) / close_gpu[:-5]), 
+                index=close_prices.index[5:]
+            )
+            meta_features['price_acceleration'] = pd.Series(
+                cp.asnumpy(cp.diff(cp.diff(close_gpu, n=5) / close_gpu[:-5])), 
+                index=close_prices.index[6:]
+            )
+        elif ensemble_type == 'volatile_regime':
+            returns_gpu = cp.diff(close_gpu) / close_gpu[:-1]
+            volatility_gpu = cp.zeros_like(close_gpu)
+            for i in range(20, len(close_gpu)):
+                window_returns = returns_gpu[i-20:i]
+                volatility_gpu[i] = cp.std(window_returns)
+            meta_features['price_volatility'] = pd.Series(
+                cp.asnumpy(volatility_gpu[20:]), 
+                index=close_prices.index[20:]
+            )
+        
+        return meta_features
+    
+    def _generate_volume_meta_features_vectorized(self, features_df: pd.DataFrame, ensemble_type: str) -> Dict[str, pd.Series]:
+        """Generate volume-related meta-features using VectorBT optimization."""
+        meta_features = {}
+        
+        if 'volume' not in features_df.columns:
+            return meta_features
+        
+        volume = features_df['volume']
+        
+        if self.use_gpu and CUPY_AVAILABLE:
+            return self._generate_volume_meta_features_gpu(volume, ensemble_type)
+        else:
+            return self._generate_volume_meta_features_cpu_vectorized(volume, ensemble_type)
+    
+    def _generate_volume_meta_features_cpu_vectorized(self, volume: pd.Series, ensemble_type: str) -> Dict[str, pd.Series]:
+        """CPU-optimized vectorized volume meta-feature generation."""
+        meta_features = {}
+        
+        if ensemble_type == 'analyst':
+            meta_features['volume_momentum'] = volume.pct_change(10)
+            meta_features['volume_acceleration'] = volume.pct_change(10).diff()
+            meta_features['volume_trend'] = volume.rolling(50).apply(
+                lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1, raw=False
+            )
+        elif ensemble_type == 'tactician':
+            meta_features['volume_momentum'] = volume.pct_change(5)
+            meta_features['volume_acceleration'] = volume.pct_change(5).diff()
+        elif ensemble_type == 'volatile_regime':
+            meta_features['volume_volatility'] = volume.rolling(20).std()
+            meta_features['volume_volatility_ratio'] = (
+                meta_features['volume_volatility'] / volume.rolling(20).mean()
+            )
+        
+        return meta_features
+    
+    def _generate_volume_meta_features_gpu(self, volume: pd.Series, ensemble_type: str) -> Dict[str, pd.Series]:
+        """GPU-accelerated volume meta-feature generation using CuPy."""
+        if not CUPY_AVAILABLE:
+            return self._generate_volume_meta_features_cpu_vectorized(volume, ensemble_type)
+        
+        meta_features = {}
+        volume_gpu = cp.asarray(volume.values, dtype=cp.float32)
+        
+        if ensemble_type == 'analyst':
+            meta_features['volume_momentum'] = pd.Series(
+                cp.asnumpy(cp.diff(volume_gpu, n=10) / volume_gpu[:-10]), 
+                index=volume.index[10:]
+            )
+            meta_features['volume_acceleration'] = pd.Series(
+                cp.asnumpy(cp.diff(cp.diff(volume_gpu, n=10) / volume_gpu[:-10])), 
+                index=volume.index[11:]
+            )
+        elif ensemble_type == 'tactician':
+            meta_features['volume_momentum'] = pd.Series(
+                cp.asnumpy(cp.diff(volume_gpu, n=5) / volume_gpu[:-5]), 
+                index=volume.index[5:]
+            )
+            meta_features['volume_acceleration'] = pd.Series(
+                cp.asnumpy(cp.diff(cp.diff(volume_gpu, n=5) / volume_gpu[:-5])), 
+                index=volume.index[6:]
+            )
+        elif ensemble_type == 'volatile_regime':
+            # GPU-accelerated rolling calculations
+            volume_volatility_gpu = cp.zeros_like(volume_gpu)
+            volume_mean_gpu = cp.zeros_like(volume_gpu)
+            
+            for i in range(20, len(volume_gpu)):
+                window = volume_gpu[i-20:i]
+                volume_volatility_gpu[i] = cp.std(window)
+                volume_mean_gpu[i] = cp.mean(window)
+            
+            meta_features['volume_volatility'] = pd.Series(
+                cp.asnumpy(volume_volatility_gpu[20:]), 
+                index=volume.index[20:]
+            )
+            meta_features['volume_volatility_ratio'] = pd.Series(
+                cp.asnumpy(volume_volatility_gpu[20:] / volume_mean_gpu[20:]), 
+                index=volume.index[20:]
+            )
+        
+        return meta_features

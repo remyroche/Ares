@@ -129,6 +129,19 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period + 1:
             return np.full(len(prices), np.nan)
 
+        # Use VectorBT for optimized returns calculation
+        if VECTORBT_AVAILABLE and len(prices) > 100:  # Use VectorBT for larger datasets
+            try:
+                prices_series = pd.Series(prices)
+                # VectorBT optimized pct_change
+                returns = prices_series.pct_change(periods=period).values
+                self.performance_stats['vectorbt_operations'] += 1
+                return returns
+            except Exception as e:
+                self.logger.warning(f"VectorBT returns calculation failed: {e}, using numpy fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Fallback to numpy
         returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
         returns[:period] = np.nan
         return returns

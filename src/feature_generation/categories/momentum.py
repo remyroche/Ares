@@ -63,6 +63,18 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import optimized rolling operations
+try:
+    from ..utils.vectorbt_rolling_optimizer import (
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_apply
+    )
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -127,8 +139,20 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         
         prices_series = pd.Series(prices)
         
-        # Use VectorBT for momentum calculation if available
-        if self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
+        # Use optimized rolling operations for momentum calculation
+        if ROLLING_OPTIMIZER_AVAILABLE and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
+            try:
+                # Calculate momentum using optimized rolling operations
+                shifted_prices = prices_series.shift(period)
+                momentum = prices_series - shifted_prices
+                self.performance_stats['vectorbt_operations'] += 1
+                return momentum.values
+            except Exception as e:
+                self.logger.warning(f"Optimized momentum calculation failed: {e}, using numpy fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                momentum = prices - np.roll(prices, period)
+                return momentum
+        elif VECTORBT_AVAILABLE and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
             try:
                 # Calculate momentum using VectorBT rolling operations
                 shifted_prices = prices_series.shift(period)

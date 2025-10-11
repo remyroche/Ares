@@ -64,10 +64,14 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         # Use VectorBT for volume moving average calculation
         if self._should_use_vectorbt(data):
             try:
-                # Calculate volume SMA using VectorBT
-                volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
-                self.performance_stats['vectorbt_operations'] += 1
-                return volume_sma
+                # Calculate volume SMA using VectorBT rolling operations
+                if VECTORBT_AVAILABLE:
+                    volume_sma = rolling_mean(volume, window=20)
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return volume_sma
+                else:
+                    volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
+                    return volume_sma
             except Exception as e:
                 self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1

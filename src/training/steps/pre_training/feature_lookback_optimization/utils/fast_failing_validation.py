@@ -3,13 +3,35 @@ Fast failing data validation for feature lookback optimization.
 
 This module provides strict validation that fails immediately on invalid data
 rather than attempting recovery or fallback mechanisms.
+
+Enhanced with comprehensive tprint logging and generalized validation patterns
+for use across all pre-training steps.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any, Union, Callable
 from dataclasses import dataclass
 from enum import Enum
+import time
+import traceback
+
+# Import tprint utilities for enhanced logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, 
+        tprint_error, tprint_success, tprint_performance
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
 
 from .error_handling import DataValidationError, OptimizationError
 from .nan_handling import SafeNaNHandler
@@ -31,15 +53,100 @@ class ValidationResult:
     error_message: str
     details: Dict[str, Any]
     should_fail_fast: bool = True
+    validation_time: float = 0.0
+    validated_columns: List[str] = None
+    warnings: List[str] = None
+    
+    def __post_init__(self):
+        if self.validated_columns is None:
+            self.validated_columns = []
+        if self.warnings is None:
+            self.warnings = []
+    
+    def add_warning(self, warning: str):
+        """Add a warning to the validation result."""
+        if self.warnings is None:
+            self.warnings = []
+        self.warnings.append(warning)
+    
+    def to_summary(self) -> str:
+        """Generate a human-readable summary of the validation result."""
+        status = "✅ VALID" if self.is_valid else "❌ INVALID"
+        severity_icon = {
+            ValidationSeverity.CRITICAL: "🚨",
+            ValidationSeverity.HIGH: "⚠️",
+            ValidationSeverity.MEDIUM: "⚡",
+            ValidationSeverity.LOW: "ℹ️"
+        }.get(self.severity, "❓")
+        
+        summary = f"{status} {severity_icon} {self.error_message}"
+        if self.warnings:
+            summary += f" | {len(self.warnings)} warnings"
+        if self.validated_columns:
+            summary += f" | {len(self.validated_columns)} columns validated"
+        summary += f" | {self.validation_time:.3f}s"
+        
+        return summary
 
 
 class FastFailingValidator:
-    """Validator that fails fast on critical data issues."""
+    """Validator that fails fast on critical data issues with comprehensive logging."""
     
-    def __init__(self, min_samples: int = 100, min_variance: float = 1e-8):
+    def __init__(self, 
+                 min_samples: int = 100, 
+                 min_variance: float = 1e-8,
+                 enable_logging: bool = True,
+                 validation_context: str = "general"):
         self.min_samples = min_samples
         self.min_variance = min_variance
         self.nan_handler = SafeNaNHandler()
+        self.enable_logging = enable_logging
+        self.validation_context = validation_context
+        self.validation_stats = {
+            "total_validations": 0,
+            "successful_validations": 0,
+            "failed_validations": 0,
+            "total_time": 0.0
+        }
+    
+    def _log_validation_start(self, operation: str, **kwargs):
+        """Log the start of a validation operation."""
+        if not self.enable_logging:
+            return
+        tprint_debug(f"🔍 [{self.validation_context}] Starting {operation}")
+        for key, value in kwargs.items():
+            tprint_debug(f"   → {key}: {value}")
+    
+    def _log_validation_success(self, operation: str, duration: float, **details):
+        """Log successful validation completion."""
+        if not self.enable_logging:
+            return
+        tprint_success(f"✅ [{self.validation_context}] {operation} completed in {duration:.3f}s")
+        for key, value in details.items():
+            tprint_debug(f"   → {key}: {value}")
+    
+    def _log_validation_failure(self, operation: str, error: str, duration: float):
+        """Log validation failure."""
+        if not self.enable_logging:
+            return
+        tprint_error(f"❌ [{self.validation_context}] {operation} failed in {duration:.3f}s: {error}")
+    
+    def _log_validation_warning(self, operation: str, warning: str):
+        """Log validation warning."""
+        if not self.enable_logging:
+            return
+        tprint_warning(f"⚠️ [{self.validation_context}] {operation}: {warning}")
+    
+    def get_validation_stats(self) -> Dict[str, Any]:
+        """Get validation statistics."""
+        stats = self.validation_stats.copy()
+        if stats["total_validations"] > 0:
+            stats["success_rate"] = stats["successful_validations"] / stats["total_validations"]
+            stats["avg_time"] = stats["total_time"] / stats["total_validations"]
+        else:
+            stats["success_rate"] = 0.0
+            stats["avg_time"] = 0.0
+        return stats
     
     def validate_optimization_data(
         self, 
@@ -49,7 +156,7 @@ class FastFailingValidator:
         lookback_range: Tuple[int, int]
     ) -> ValidationResult:
         """
-        Validate data for optimization with fast failing.
+        Validate data for optimization with fast failing and comprehensive logging.
         
         Args:
             data: Input DataFrame
@@ -63,41 +170,104 @@ class FastFailingValidator:
         Raises:
             DataValidationError: If validation fails critically
         """
+        start_time = time.time()
+        self.validation_stats["total_validations"] += 1
+        
+        self._log_validation_start(
+            "optimization data validation",
+            data_shape=data.shape,
+            feature_count=len(feature_columns),
+            target_count=len(target_columns),
+            lookback_range=lookback_range
+        )
+        
         try:
+            warnings = []
+            validated_columns = []
+            
             # Critical validations that must pass
             self._validate_dataframe_structure(data)
             self._validate_required_columns(data, feature_columns, target_columns)
             self._validate_data_length(data, lookback_range)
-            self._validate_feature_columns(data, feature_columns)
-            self._validate_target_columns(data, target_columns)
+            
+            # Feature validation with detailed logging
+            for col in feature_columns:
+                if col in data.columns:
+                    validated_columns.append(col)
+                    self._validate_single_feature_column(data, col, warnings)
+            
+            # Target validation with detailed logging
+            for col in target_columns:
+                if col in data.columns:
+                    validated_columns.append(col)
+                    self._validate_single_target_column(data, col, warnings)
             
             # High priority validations
-            self._validate_data_quality(data, feature_columns, target_columns)
+            self._validate_data_quality(data, feature_columns, target_columns, warnings)
             
-            return ValidationResult(
+            duration = time.time() - start_time
+            self.validation_stats["successful_validations"] += 1
+            self.validation_stats["total_time"] += duration
+            
+            result = ValidationResult(
                 is_valid=True,
                 severity=ValidationSeverity.LOW,
                 error_message="Validation passed",
-                details={"validated_columns": len(feature_columns + target_columns)},
-                should_fail_fast=False
+                details={
+                    "validated_columns": len(validated_columns),
+                    "data_shape": data.shape,
+                    "feature_columns": feature_columns,
+                    "target_columns": target_columns,
+                    "lookback_range": lookback_range
+                },
+                should_fail_fast=False,
+                validation_time=duration,
+                validated_columns=validated_columns,
+                warnings=warnings
             )
             
+            self._log_validation_success(
+                "optimization data validation",
+                duration,
+                validated_columns=len(validated_columns),
+                warnings=len(warnings)
+            )
+            
+            return result
+            
         except DataValidationError as e:
-            return ValidationResult(
+            duration = time.time() - start_time
+            self.validation_stats["failed_validations"] += 1
+            self.validation_stats["total_time"] += duration
+            
+            result = ValidationResult(
                 is_valid=False,
                 severity=ValidationSeverity.CRITICAL,
                 error_message=str(e),
-                details={"error_type": "DataValidationError"},
-                should_fail_fast=True
+                details={"error_type": "DataValidationError", "traceback": traceback.format_exc()},
+                should_fail_fast=True,
+                validation_time=duration
             )
+            
+            self._log_validation_failure("optimization data validation", str(e), duration)
+            return result
+            
         except Exception as e:
-            return ValidationResult(
+            duration = time.time() - start_time
+            self.validation_stats["failed_validations"] += 1
+            self.validation_stats["total_time"] += duration
+            
+            result = ValidationResult(
                 is_valid=False,
                 severity=ValidationSeverity.CRITICAL,
                 error_message=f"Unexpected validation error: {str(e)}",
-                details={"error_type": type(e).__name__},
-                should_fail_fast=True
+                details={"error_type": type(e).__name__, "traceback": traceback.format_exc()},
+                should_fail_fast=True,
+                validation_time=duration
             )
+            
+            self._log_validation_failure("optimization data validation", f"Unexpected error: {str(e)}", duration)
+            return result
     
     def _validate_dataframe_structure(self, data: pd.DataFrame) -> None:
         """Validate basic DataFrame structure."""
@@ -140,57 +310,87 @@ class FastFailingValidator:
                 f"Insufficient data for lookback range: {len(data)} rows < {max_lookback + 50} required"
             )
     
+    def _validate_single_feature_column(self, data: pd.DataFrame, col: str, warnings: List[str]) -> None:
+        """Validate a single feature column with detailed logging."""
+        if col not in data.columns:
+            return
+            
+        series = data[col]
+        
+        # Check for all NaN values
+        if series.isna().all():
+            raise DataValidationError(f"Feature column '{col}' contains only NaN values")
+        
+        # Check for constant values
+        valid_values = series.dropna()
+        if len(valid_values) > 0:
+            if valid_values.nunique() == 1:
+                raise DataValidationError(f"Feature column '{col}' is constant (no variance)")
+            
+            # Check variance
+            variance = valid_values.var()
+            if variance < self.min_variance:
+                raise DataValidationError(
+                    f"Feature column '{col}' has insufficient variance: {variance:.2e} < {self.min_variance:.2e}"
+                )
+            
+            # Check for high NaN rate (warning only)
+            nan_rate = series.isna().sum() / len(series)
+            if nan_rate > 0.3:  # More than 30% NaN
+                warning = f"Feature column '{col}' has high NaN rate: {nan_rate:.1%}"
+                warnings.append(warning)
+                self._log_validation_warning("feature validation", warning)
+    
     def _validate_feature_columns(self, data: pd.DataFrame, feature_columns: List[str]) -> None:
         """Validate feature columns for optimization suitability."""
         for col in feature_columns:
             if col not in data.columns:
                 continue
-                
-            series = data[col]
+            self._validate_single_feature_column(data, col, [])
+    
+    def _validate_single_target_column(self, data: pd.DataFrame, col: str, warnings: List[str]) -> None:
+        """Validate a single target column with detailed logging."""
+        if col not in data.columns:
+            return
             
-            # Check for all NaN values
-            if series.isna().all():
-                raise DataValidationError(f"Feature column '{col}' contains only NaN values")
-            
-            # Check for constant values
-            valid_values = series.dropna()
-            if len(valid_values) > 0:
-                if valid_values.nunique() == 1:
-                    raise DataValidationError(f"Feature column '{col}' is constant (no variance)")
-                
-                # Check variance
-                variance = valid_values.var()
-                if variance < self.min_variance:
-                    raise DataValidationError(
-                        f"Feature column '{col}' has insufficient variance: {variance:.2e} < {self.min_variance:.2e}"
-                    )
+        series = data[col]
+        
+        # Check for all NaN values
+        if series.isna().all():
+            raise DataValidationError(f"Target column '{col}' contains only NaN values")
+        
+        # Check for sufficient valid values
+        valid_values = series.dropna()
+        if len(valid_values) < self.min_samples // 2:  # At least half the minimum samples
+            raise DataValidationError(
+                f"Target column '{col}' has insufficient valid values: {len(valid_values)} < {self.min_samples // 2}"
+            )
+        
+        # Check for high NaN rate (warning only)
+        nan_rate = series.isna().sum() / len(series)
+        if nan_rate > 0.2:  # More than 20% NaN for targets
+            warning = f"Target column '{col}' has high NaN rate: {nan_rate:.1%}"
+            warnings.append(warning)
+            self._log_validation_warning("target validation", warning)
     
     def _validate_target_columns(self, data: pd.DataFrame, target_columns: List[str]) -> None:
         """Validate target columns for optimization suitability."""
         for col in target_columns:
             if col not in data.columns:
                 continue
-                
-            series = data[col]
-            
-            # Check for all NaN values
-            if series.isna().all():
-                raise DataValidationError(f"Target column '{col}' contains only NaN values")
-            
-            # Check for sufficient valid values
-            valid_values = series.dropna()
-            if len(valid_values) < self.min_samples // 2:  # At least half the minimum samples
-                raise DataValidationError(
-                    f"Target column '{col}' has insufficient valid values: {len(valid_values)} < {self.min_samples // 2}"
-                )
+            self._validate_single_target_column(data, col, [])
     
     def _validate_data_quality(
         self, 
         data: pd.DataFrame, 
         feature_columns: List[str], 
-        target_columns: List[str]
+        target_columns: List[str],
+        warnings: List[str] = None
     ) -> None:
-        """Validate overall data quality."""
+        """Validate overall data quality with comprehensive checks."""
+        if warnings is None:
+            warnings = []
+            
         all_columns = feature_columns + target_columns
         
         # Check for excessive NaN rates
@@ -203,6 +403,10 @@ class FastFailingValidator:
                 raise DataValidationError(
                     f"Column '{col}' has excessive NaN rate: {nan_rate:.1%} > 50%"
                 )
+            elif nan_rate > 0.3:  # Warning for high NaN rate
+                warning = f"Column '{col}' has high NaN rate: {nan_rate:.1%}"
+                warnings.append(warning)
+                self._log_validation_warning("data quality", warning)
         
         # Check for infinite values
         for col in all_columns:
@@ -211,6 +415,20 @@ class FastFailingValidator:
                 
             if np.isinf(data[col]).any():
                 raise DataValidationError(f"Column '{col}' contains infinite values")
+        
+        # Check for duplicate columns
+        duplicate_columns = data.columns[data.columns.duplicated()].tolist()
+        if duplicate_columns:
+            warning = f"Found duplicate columns: {duplicate_columns}"
+            warnings.append(warning)
+            self._log_validation_warning("data quality", warning)
+        
+        # Check for memory usage (warning only)
+        memory_usage = data.memory_usage(deep=True).sum()
+        if memory_usage > 1e9:  # More than 1GB
+            warning = f"Large memory usage: {memory_usage / 1e9:.2f}GB"
+            warnings.append(warning)
+            self._log_validation_warning("data quality", warning)
     
     def validate_lookback_range(self, lookback_range: Tuple[int, int]) -> None:
         """Validate lookback range parameters."""
@@ -261,10 +479,11 @@ def validate_optimization_inputs_fast_fail(
     feature_columns: List[str],
     target_columns: List[str],
     lookback_range: Tuple[int, int],
-    min_samples: int = 100
+    min_samples: int = 100,
+    validation_context: str = "optimization"
 ) -> ValidationResult:
     """
-    Fast-failing validation of optimization inputs.
+    Fast-failing validation of optimization inputs with enhanced logging.
     
     This function will raise DataValidationError immediately on any critical issue
     rather than attempting recovery or returning warnings.
@@ -275,6 +494,7 @@ def validate_optimization_inputs_fast_fail(
         target_columns: List of target column names
         lookback_range: (min_lookback, max_lookback) tuple
         min_samples: Minimum number of samples required
+        validation_context: Context for logging (e.g., "optimization", "preprocessing")
         
     Returns:
         ValidationResult if validation passes
@@ -282,7 +502,10 @@ def validate_optimization_inputs_fast_fail(
     Raises:
         DataValidationError: If any critical validation fails
     """
-    validator = FastFailingValidator(min_samples=min_samples)
+    validator = FastFailingValidator(
+        min_samples=min_samples, 
+        validation_context=validation_context
+    )
     
     # Validate lookback range first (fastest check)
     validator.validate_lookback_range(lookback_range)
@@ -301,19 +524,29 @@ def validate_optimization_inputs_fast_fail(
 def validate_feature_calculation_inputs(
     data: pd.DataFrame,
     feature_name: str,
-    lookback: int
+    lookback: int,
+    validation_context: str = "feature_calculation"
 ) -> None:
     """
-    Fast-failing validation for feature calculation inputs.
+    Fast-failing validation for feature calculation inputs with enhanced logging.
     
     Args:
         data: Input DataFrame
         feature_name: Name of feature to calculate
         lookback: Lookback period
+        validation_context: Context for logging
         
     Raises:
         DataValidationError: If inputs are invalid
     """
+    start_time = time.time()
+    
+    if TPRINT_AVAILABLE:
+        tprint_debug(f"🔍 [{validation_context}] Validating feature calculation inputs")
+        tprint_debug(f"   → feature_name: {feature_name}")
+        tprint_debug(f"   → lookback: {lookback}")
+        tprint_debug(f"   → data_shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
+    
     if not isinstance(data, pd.DataFrame):
         raise DataValidationError(f"Data must be DataFrame, got {type(data)}")
     
@@ -330,3 +563,254 @@ def validate_feature_calculation_inputs(
     
     if not isinstance(feature_name, str) or not feature_name.strip():
         raise DataValidationError(f"Feature name must be non-empty string, got '{feature_name}'")
+    
+    duration = time.time() - start_time
+    if TPRINT_AVAILABLE:
+        tprint_success(f"✅ [{validation_context}] Feature calculation inputs validated in {duration:.3f}s")
+
+
+# ============================================================================
+# GENERALIZED VALIDATION FUNCTIONS FOR PRE-TRAINING STEPS
+# ============================================================================
+
+def validate_dataframe_basic(
+    data: pd.DataFrame,
+    min_rows: int = 1,
+    min_cols: int = 1,
+    validation_context: str = "dataframe_basic"
+) -> ValidationResult:
+    """
+    Basic DataFrame validation for general use across pre-training steps.
+    
+    Args:
+        data: Input DataFrame
+        min_rows: Minimum number of rows required
+        min_cols: Minimum number of columns required
+        validation_context: Context for logging
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    start_time = time.time()
+    validator = FastFailingValidator(validation_context=validation_context)
+    
+    try:
+        if not isinstance(data, pd.DataFrame):
+            raise DataValidationError(f"Data must be a pandas DataFrame, got {type(data)}")
+        
+        if data.empty:
+            raise DataValidationError("DataFrame is empty")
+        
+        if len(data) < min_rows:
+            raise DataValidationError(f"Insufficient rows: {len(data)} < {min_rows}")
+        
+        if len(data.columns) < min_cols:
+            raise DataValidationError(f"Insufficient columns: {len(data.columns)} < {min_cols}")
+        
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=True,
+            severity=ValidationSeverity.LOW,
+            error_message="Basic DataFrame validation passed",
+            details={
+                "data_shape": data.shape,
+                "min_rows": min_rows,
+                "min_cols": min_cols
+            },
+            should_fail_fast=False,
+            validation_time=duration
+        )
+        
+    except DataValidationError as e:
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=str(e),
+            details={"error_type": "DataValidationError"},
+            should_fail_fast=True,
+            validation_time=duration
+        )
+
+
+def validate_feature_data(
+    data: pd.DataFrame,
+    feature_columns: List[str],
+    validation_context: str = "feature_data"
+) -> ValidationResult:
+    """
+    Validate feature data for pre-training steps.
+    
+    Args:
+        data: Input DataFrame
+        feature_columns: List of feature column names to validate
+        validation_context: Context for logging
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = FastFailingValidator(validation_context=validation_context)
+    
+    # Use the existing validation logic
+    return validator.validate_optimization_data(
+        data, feature_columns, [], (1, 1)  # Dummy lookback range for feature-only validation
+    )
+
+
+def validate_target_data(
+    data: pd.DataFrame,
+    target_columns: List[str],
+    validation_context: str = "target_data"
+) -> ValidationResult:
+    """
+    Validate target data for pre-training steps.
+    
+    Args:
+        data: Input DataFrame
+        target_columns: List of target column names to validate
+        validation_context: Context for logging
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    validator = FastFailingValidator(validation_context=validation_context)
+    
+    # Use the existing validation logic
+    return validator.validate_optimization_data(
+        data, [], target_columns, (1, 1)  # Dummy lookback range for target-only validation
+    )
+
+
+def validate_preprocessing_inputs(
+    data: pd.DataFrame,
+    required_columns: List[str],
+    validation_context: str = "preprocessing"
+) -> ValidationResult:
+    """
+    Validate inputs for preprocessing steps.
+    
+    Args:
+        data: Input DataFrame
+        required_columns: List of required column names
+        validation_context: Context for logging
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    start_time = time.time()
+    validator = FastFailingValidator(validation_context=validation_context)
+    
+    try:
+        # Basic DataFrame validation
+        basic_result = validate_dataframe_basic(data, validation_context=validation_context)
+        if not basic_result.is_valid:
+            return basic_result
+        
+        # Check required columns
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise DataValidationError(f"Missing required columns: {missing_columns}")
+        
+        # Check for empty columns
+        empty_columns = [col for col in required_columns if col in data.columns and data[col].isna().all()]
+        if empty_columns:
+            raise DataValidationError(f"Empty required columns: {empty_columns}")
+        
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=True,
+            severity=ValidationSeverity.LOW,
+            error_message="Preprocessing inputs validation passed",
+            details={
+                "data_shape": data.shape,
+                "required_columns": required_columns,
+                "validated_columns": len(required_columns)
+            },
+            should_fail_fast=False,
+            validation_time=duration
+        )
+        
+    except DataValidationError as e:
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=str(e),
+            details={"error_type": "DataValidationError"},
+            should_fail_fast=True,
+            validation_time=duration
+        )
+
+
+def validate_model_inputs(
+    X: Union[pd.DataFrame, np.ndarray],
+    y: Union[pd.Series, np.ndarray],
+    validation_context: str = "model_inputs"
+) -> ValidationResult:
+    """
+    Validate model inputs (X, y) for training steps.
+    
+    Args:
+        X: Feature matrix
+        y: Target vector
+        validation_context: Context for logging
+        
+    Returns:
+        ValidationResult with validation status
+    """
+    start_time = time.time()
+    
+    try:
+        # Convert to numpy arrays for validation
+        if isinstance(X, pd.DataFrame):
+            X_array = X.values
+        else:
+            X_array = np.array(X)
+            
+        if isinstance(y, pd.Series):
+            y_array = y.values
+        else:
+            y_array = np.array(y)
+        
+        # Check shapes
+        if len(X_array) != len(y_array):
+            raise DataValidationError(f"Feature-target length mismatch: {len(X_array)} vs {len(y_array)}")
+        
+        # Check for NaN values
+        if np.isnan(X_array).any():
+            raise DataValidationError("Feature matrix contains NaN values")
+        
+        if np.isnan(y_array).any():
+            raise DataValidationError("Target vector contains NaN values")
+        
+        # Check for infinite values
+        if np.isinf(X_array).any():
+            raise DataValidationError("Feature matrix contains infinite values")
+        
+        if np.isinf(y_array).any():
+            raise DataValidationError("Target vector contains infinite values")
+        
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=True,
+            severity=ValidationSeverity.LOW,
+            error_message="Model inputs validation passed",
+            details={
+                "X_shape": X_array.shape,
+                "y_shape": y_array.shape,
+                "n_samples": len(X_array)
+            },
+            should_fail_fast=False,
+            validation_time=duration
+        )
+        
+    except DataValidationError as e:
+        duration = time.time() - start_time
+        return ValidationResult(
+            is_valid=False,
+            severity=ValidationSeverity.CRITICAL,
+            error_message=str(e),
+            details={"error_type": "DataValidationError"},
+            should_fail_fast=True,
+            validation_time=duration
+        )

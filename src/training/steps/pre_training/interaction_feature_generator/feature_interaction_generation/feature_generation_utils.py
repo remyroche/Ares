@@ -11,6 +11,7 @@ Key Features:
 - Interaction features with validation
 - Cross-timeframe features with proper alignment
 - Memory-efficient implementations
+- Enhanced validation using generalized validation utilities
 """
 
 import numpy as np
@@ -25,6 +26,12 @@ import warnings
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance
+)
+
+# Import enhanced validation utilities
+from ...utils.validation_utils import (
+    PreTrainingValidator, ValidationConfig, ValidationContext,
+    validate_feature_generation_inputs, ValidationResult
 )
 
 logger = logging.getLogger(__name__)
@@ -71,14 +78,21 @@ class FeatureGenerationConfig:
 
 
 class FeatureValidator:
-    """Validates generated features for quality and usefulness."""
+    """Validates generated features for quality and usefulness using enhanced validation utilities."""
     
     def __init__(self, config: FeatureGenerationConfig):
         self.config = config
+        # Initialize the enhanced validator
+        self.validator = PreTrainingValidator(
+            ValidationConfig(
+                context=ValidationContext.FEATURE_GENERATION,
+                enable_logging=True
+            )
+        )
     
     def validate_features(self, features: pd.DataFrame) -> Dict[str, Any]:
         """
-        Validate features for quality and usefulness.
+        Validate features for quality and usefulness using enhanced validation utilities.
         
         Args:
             features: DataFrame containing features to validate
@@ -94,131 +108,35 @@ class FeatureValidator:
                 'recommendations': ['Generate more features']
             }
         
+        # Use enhanced validation
+        validation_result = self.validator.validate_features(features, features.columns.tolist())
+        
+        # Convert ValidationResult to the expected format
         issues = []
         recommendations = []
         
-        # Check for finite values
-        finite_ratio = self._check_finite_values(features)
-        if finite_ratio < self.config.min_valid_ratio:
-            issues.append(f"Low finite value ratio: {finite_ratio:.2%}")
-            recommendations.append("Check for NaN or infinite values in input data")
+        if not validation_result.is_valid:
+            issues.append(validation_result.error_message)
+            if validation_result.warnings:
+                issues.extend(validation_result.warnings)
         
-        # Check for constant features
-        constant_ratio = self._check_constant_features(features)
-        if constant_ratio > self.config.max_constant_ratio:
-            issues.append(f"High constant feature ratio: {constant_ratio:.2%}")
-            recommendations.append("Remove or transform constant features")
-        
-        # Check for correlation with target (if available)
-        correlation_score = self._check_correlation(features)
-        
-        # Check for variance
-        variance_score = self._check_variance(features)
-        
-        # Calculate overall quality score
-        quality_score = self._calculate_quality_score(
-            finite_ratio, constant_ratio, correlation_score, variance_score
-        )
+        # Calculate quality score based on validation result
+        quality_score = 1.0 if validation_result.is_valid else 0.0
+        if validation_result.warnings:
+            quality_score -= len(validation_result.warnings) * 0.1
         
         return {
-            'passed': quality_score > 0.7,
-            'quality_score': quality_score,
-            'finite_ratio': finite_ratio,
-            'constant_ratio': constant_ratio,
-            'correlation_score': correlation_score,
-            'variance_score': variance_score,
+            'passed': validation_result.is_valid,
+            'quality_score': max(0.0, quality_score),
             'issues': issues,
-            'recommendations': recommendations
+            'recommendations': recommendations,
+            'validation_details': validation_result.details
         }
     
-    def _check_finite_values(self, features: pd.DataFrame) -> float:
-        """Check ratio of finite values."""
-        numeric_features = features.select_dtypes(include=[np.number])
-        if numeric_features.empty:
-            return 0.0
-        
-        finite_ratios = numeric_features.apply(
-            lambda x: np.isfinite(x).sum() / len(x)
-        )
-        return finite_ratios.mean()
     
-    def _check_constant_features(self, features: pd.DataFrame) -> float:
-        """Check ratio of constant features."""
-        numeric_features = features.select_dtypes(include=[np.number])
-        if numeric_features.empty:
-            return 1.0
-        
-        constant_features = (numeric_features.nunique() <= 1).sum()
-        return constant_features / len(numeric_features.columns)
     
-    def _check_correlation(self, features: pd.DataFrame) -> float:
-        """Check correlation between features (avoid multicollinearity)."""
-        numeric_features = features.select_dtypes(include=[np.number])
-        if len(numeric_features.columns) < 2:
-            return 1.0
-        
-        # Calculate correlation matrix
-        corr_matrix = numeric_features.corr().abs()
-        
-        # Remove diagonal and get upper triangle
-        upper_triangle = corr_matrix.where(
-            np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
-        )
-        
-        # Check for high correlations
-        high_corr_ratio = (upper_triangle > 0.95).sum().sum() / upper_triangle.count().sum()
-        
-        # Return score (lower high correlation ratio is better)
-        return max(0.0, 1.0 - high_corr_ratio)
     
-    def _check_variance(self, features: pd.DataFrame) -> float:
-        """Check variance of features."""
-        numeric_features = features.select_dtypes(include=[np.number])
-        if numeric_features.empty:
-            return 0.0
-        
-        # Calculate coefficient of variation (std/mean)
-        cv_scores = []
-        for col in numeric_features.columns:
-            series = numeric_features[col].dropna()
-            if len(series) > 0 and series.mean() != 0:
-                cv = series.std() / abs(series.mean())
-                cv_scores.append(cv)
-        
-        if not cv_scores:
-            return 0.0
-        
-        # Higher coefficient of variation is generally better
-        avg_cv = np.mean(cv_scores)
-        return min(1.0, avg_cv / 0.1)  # Normalize to 0-1 range
     
-    def _calculate_quality_score(
-        self, 
-        finite_ratio: float, 
-        constant_ratio: float, 
-        correlation_score: float, 
-        variance_score: float
-    ) -> float:
-        """Calculate overall quality score."""
-        # Weighted combination of different quality metrics
-        weights = {
-            'finite_ratio': 0.3,
-            'constant_ratio': 0.2,
-            'correlation_score': 0.25,
-            'variance_score': 0.25
-        }
-        
-        # Convert constant_ratio to a score (lower is better)
-        constant_score = 1.0 - constant_ratio
-        
-        quality_score = (
-            weights['finite_ratio'] * finite_ratio +
-            weights['constant_ratio'] * constant_score +
-            weights['correlation_score'] * correlation_score +
-            weights['variance_score'] * variance_score
-        )
-        
-        return quality_score
 
 
 class ImprovedFeatureGenerator:
@@ -434,23 +352,24 @@ class ImprovedFeatureGenerator:
         return cross_tf_df
     
     def _validate_input_data(self, data: pd.DataFrame) -> bool:
-        """Validate input data for feature generation."""
-        if data.empty:
+        """Validate input data for feature generation using enhanced validation utilities."""
+        # Use the enhanced validation utilities
+        validation_result = validate_feature_generation_inputs(
+            data,
+            feature_columns=[],  # No specific features to validate yet
+            required_columns=['open', 'high', 'low', 'close', 'volume']
+        )
+        
+        if not validation_result.is_valid:
+            tprint_error(f"❌ Input data validation failed: {validation_result.error_message}")
             return False
         
-        # Check for required columns
-        required_cols = ['open', 'high', 'low', 'close', 'volume']
-        missing_cols = set(required_cols) - set(data.columns)
-        
-        if missing_cols:
-            tprint_warning(f"⚠️ Missing required columns: {missing_cols}")
-            return False
-        
-        # Check for sufficient data
+        # Additional checks for feature generation
         if len(data) < 10:
             tprint_warning("⚠️ Insufficient data for feature generation")
             return False
         
+        tprint_success("✅ Input data validation passed")
         return True
     
     def _generate_technical_indicators(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:

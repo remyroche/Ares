@@ -13,10 +13,25 @@ Features:
 - Data resampling capabilities (1m, 5m, 15m, 30m, 1h for data older than 3 days)
 - OHLCV data validation and formatting
 - Duplicate detection and handling
-- Quality assurance and validation
+- Comprehensive quality assurance and validation using src/utils/data/quality/
+- Advanced data quality scoring and assessment
+- Statistical distribution validation
+- Quality trend analysis over time
+- Automated data cleaning with quality utilities
+- Quality alert system integration
 - Efficient parquet storage using KlinesParquetManager
 - Batch-compatible data management
 - Automatic gap filling before resampling
+
+Quality Features:
+- Multi-layered quality validation using DataQualityFramework
+- Comprehensive quality scoring with component breakdowns
+- Advanced quality metrics and statistical analysis
+- Quality trend analysis and monitoring
+- Automated data cleaning with detailed statistics
+- Quality alert system for proactive issue detection
+- Comprehensive quality metadata collection
+- Robust error handling with quality fallbacks
 """
 
 import asyncio
@@ -273,6 +288,184 @@ class EnhancedKlinesProcessingPipeline:
                 assessment_timestamp=datetime.now(),
                 data_shape=(0, 0)
             )
+
+    async def clean_data_with_quality_utilities(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Clean data using comprehensive data cleaning utilities from src/utils/data/quality/.
+        
+        Args:
+            df: DataFrame to clean
+            symbol: Trading symbol
+            interval: Time interval
+            
+        Returns:
+            Tuple of (cleaned_dataframe, cleaning_metadata)
+        """
+        try:
+            if self.enable_logging:
+                tprint_info(f"🧹 Cleaning data for {symbol} {interval} using quality utilities")
+            
+            # Initialize data cleaner
+            data_cleaner = DataCleaner()
+            
+            # Store original data info
+            original_shape = df.shape
+            original_nulls = df.isnull().sum().sum()
+            original_duplicates = df.duplicated().sum()
+            
+            # Clean the data
+            cleaned_df = data_cleaner.clean_data(df)
+            
+            # Calculate cleaning statistics
+            cleaned_shape = cleaned_df.shape
+            cleaned_nulls = cleaned_df.isnull().sum().sum()
+            cleaned_duplicates = cleaned_df.duplicated().sum()
+            
+            # Create cleaning metadata
+            cleaning_metadata = {
+                "original_shape": original_shape,
+                "cleaned_shape": cleaned_shape,
+                "rows_removed": original_shape[0] - cleaned_shape[0],
+                "columns_removed": original_shape[1] - cleaned_shape[1],
+                "nulls_removed": original_nulls - cleaned_nulls,
+                "duplicates_removed": original_duplicates - cleaned_duplicates,
+                "cleaning_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            
+            if self.enable_logging:
+                tprint_success(f"✅ Data cleaning completed for {symbol} {interval}")
+                tprint_info(f"   Original: {original_shape}, Cleaned: {cleaned_shape}")
+                tprint_info(f"   Nulls: {original_nulls} → {cleaned_nulls}")
+                tprint_info(f"   Duplicates: {original_duplicates} → {cleaned_duplicates}")
+            
+            return cleaned_df, cleaning_metadata
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ Data cleaning failed: {str(e)}")
+            # Return original data with error metadata
+            error_metadata = {
+                "error": str(e),
+                "cleaning_failed": True,
+                "original_shape": df.shape,
+                "cleaning_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            return df, error_metadata
+
+    async def analyze_quality_trends(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        window_size: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Analyze quality trends over time using comprehensive quality utilities.
+        
+        Args:
+            df: DataFrame to analyze
+            symbol: Trading symbol
+            interval: Time interval
+            window_size: Window size for trend analysis
+            
+        Returns:
+            Dictionary containing quality trend analysis results
+        """
+        try:
+            if self.enable_logging:
+                tprint_info(f"📈 Analyzing quality trends for {symbol} {interval}")
+            
+            # Initialize quality utilities
+            quality_scorer = ComprehensiveQualityScorer()
+            advanced_metrics = AdvancedQualityMetrics()
+            
+            # Calculate quality scores for different windows
+            quality_scores = []
+            timestamps = []
+            
+            # Split data into windows for trend analysis
+            total_rows = len(df)
+            if total_rows < window_size:
+                # If data is smaller than window, analyze the whole dataset
+                windows = [df]
+            else:
+                # Create overlapping windows for trend analysis
+                windows = []
+                for i in range(0, total_rows - window_size + 1, window_size // 2):
+                    window_df = df.iloc[i:i + window_size]
+                    windows.append(window_df)
+            
+            # Analyze each window
+            for i, window_df in enumerate(windows):
+                try:
+                    # Get quality score for this window
+                    quality_score = quality_scorer.score_data_quality(window_df, symbol, interval)
+                    quality_assessment = advanced_metrics.assess_quality(window_df)
+                    
+                    quality_scores.append(quality_score.overall_score)
+                    timestamps.append(window_df.index[0] if len(window_df) > 0 else df.index[0])
+                    
+                except Exception as e:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Failed to analyze window {i}: {str(e)}")
+                    continue
+            
+            if not quality_scores:
+                raise RuntimeError("No quality scores could be calculated")
+            
+            # Calculate trend statistics
+            quality_scores_array = np.array(quality_scores)
+            trend_analysis = {
+                "quality_scores": quality_scores,
+                "timestamps": [ts.isoformat() for ts in timestamps],
+                "mean_quality": float(np.mean(quality_scores_array)),
+                "std_quality": float(np.std(quality_scores_array)),
+                "min_quality": float(np.min(quality_scores_array)),
+                "max_quality": float(np.max(quality_scores_array)),
+                "quality_trend": "improving" if len(quality_scores) > 1 and quality_scores[-1] > quality_scores[0] else "declining",
+                "quality_stability": "stable" if np.std(quality_scores_array) < 5.0 else "volatile",
+                "window_size": window_size,
+                "total_windows": len(windows),
+                "analysis_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            
+            # Calculate trend slope if we have enough data points
+            if len(quality_scores) >= 3:
+                x = np.arange(len(quality_scores))
+                slope, intercept = np.polyfit(x, quality_scores, 1)
+                trend_analysis["trend_slope"] = float(slope)
+                trend_analysis["trend_intercept"] = float(intercept)
+                trend_analysis["trend_direction"] = "improving" if slope > 0 else "declining"
+            
+            if self.enable_logging:
+                tprint_success(f"✅ Quality trend analysis completed for {symbol} {interval}")
+                tprint_info(f"   Mean quality: {trend_analysis['mean_quality']:.2f}")
+                tprint_info(f"   Quality trend: {trend_analysis['quality_trend']}")
+                tprint_info(f"   Quality stability: {trend_analysis['quality_stability']}")
+            
+            return trend_analysis
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ Quality trend analysis failed: {str(e)}")
+            return {
+                "error": str(e),
+                "analysis_failed": True,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
 
     async def process_klines_data(
         self,

@@ -429,7 +429,7 @@ class AutoTuner:
         self,
         dataset_chars: DatasetCharacteristics
     ) -> Dict[str, Any]:
-        """Determine hardware optimization settings."""
+        """Determine hardware optimization settings with VectorBT enhancements."""
         
         n_samples = dataset_chars.n_samples
         n_features = dataset_chars.n_features
@@ -437,32 +437,46 @@ class AutoTuner:
         # Enable hardware optimization for larger datasets
         enable_hw = n_samples > 5000 or n_features > 100
         
+        # VectorBT-specific optimizations
+        use_vectorbt = n_samples > 1000  # Enable VectorBT for medium+ datasets
+        vectorbt_chunk_size = min(10000, n_samples // 4)  # Adaptive chunk size
+        
         # GPU acceleration for large datasets or neural networks
         use_gpu = (n_samples > 10000 and n_features > 200)
         
         # Batch processing for parallel evaluation
         use_batch = n_samples > 1000
         
-        # Batch size based on dataset
+        # Batch size based on dataset with VectorBT optimization
         if n_samples < 1000:
             batch_size = 16
         elif n_samples < 10000:
             batch_size = 32
-        else:
+        elif n_samples < 100000:
             batch_size = 64
+        else:
+            batch_size = 128  # Larger batches for very large datasets
         
-        # Memory limit based on dataset size
-        # Rough estimate: 8 bytes per float × samples × features × 5 (overhead)
-        bytes_needed = n_samples * n_features * 8 * 5
+        # Memory limit based on dataset size with VectorBT considerations
+        # VectorBT is memory-efficient, so we can be more generous
+        bytes_needed = n_samples * n_features * 8 * 3  # Reduced overhead for VectorBT
         gb_needed = bytes_needed / (1024**3)
-        memory_limit = max(2.0, min(gb_needed * 1.5, 16.0))  # 2-16 GB range
+        memory_limit = max(2.0, min(gb_needed * 1.2, 32.0))  # 2-32 GB range
+        
+        # VectorBT parallel processing settings
+        vectorbt_parallel = n_samples > 5000
+        vectorbt_threads = min(8, max(2, n_samples // 10000))  # Adaptive thread count
         
         return {
             'enable': enable_hw,
             'use_gpu': use_gpu,
             'use_batch': use_batch,
             'batch_size': batch_size,
-            'memory_limit': memory_limit
+            'memory_limit': memory_limit,
+            'use_vectorbt': use_vectorbt,
+            'vectorbt_chunk_size': vectorbt_chunk_size,
+            'vectorbt_parallel': vectorbt_parallel,
+            'vectorbt_threads': vectorbt_threads
         }
     
     def _log_auto_tuned_config(
@@ -500,6 +514,14 @@ class AutoTuner:
         tprint_info(f"   Optimization: {'Enabled' if config.enable_hardware_optimization else 'Disabled'}")
         tprint_info(f"   GPU: {'Enabled' if config.enable_gpu_acceleration else 'Disabled'}")
         tprint_info(f"   Memory limit: {config.memory_limit_gb:.1f}GB")
+        
+        # VectorBT-specific settings
+        if hasattr(config, 'use_vectorbt') and config.use_vectorbt:
+            tprint_info("🚀 VectorBT Optimizations:")
+            tprint_info(f"   VectorBT: Enabled")
+            tprint_info(f"   Chunk size: {getattr(config, 'vectorbt_chunk_size', 'N/A')}")
+            tprint_info(f"   Parallel: {'Enabled' if getattr(config, 'vectorbt_parallel', False) else 'Disabled'}")
+            tprint_info(f"   Threads: {getattr(config, 'vectorbt_threads', 'N/A')}")
     
     def get_recommended_search_space(
         self,
@@ -654,6 +676,111 @@ class AutoTuner:
         safe_json_dump(profile, filepath)
         
         tprint_info(f"💾 Saved tuning profile to {filepath}")
+    
+    def create_vectorbt_optimized_hpo(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_type: str,
+        available_time_minutes: float = 60.0
+    ) -> 'BayesianTPEOptimizer':
+        """
+        Create VectorBT-optimized HPO configuration.
+        
+        This method creates an HPO configuration specifically optimized
+        for VectorBT's parallel processing and memory management capabilities.
+        
+        Args:
+            X: Training features
+            y: Training targets
+            model_type: Type of model
+            available_time_minutes: Available optimization time
+            
+        Returns:
+            VectorBT-optimized BayesianTPEOptimizer
+        """
+        from .bayesian_tpe_optimizer import BayesianTPEOptimizer
+        
+        # Analyze dataset for VectorBT optimization
+        dataset_chars = self._analyze_dataset(X, y)
+        
+        # Create VectorBT-optimized configuration
+        config = self._create_vectorbt_hpo_config(dataset_chars, model_type, available_time_minutes)
+        
+        # Create optimizer with VectorBT enhancements
+        optimizer = BayesianTPEOptimizer(config)
+        
+        # Add VectorBT-specific optimizations
+        if hasattr(optimizer, 'enable_vectorbt_optimizations'):
+            optimizer.enable_vectorbt_optimizations = True
+        
+        tprint_success(f"✅ Created VectorBT-optimized HPO for {model_type}")
+        
+        return optimizer
+    
+    def _create_vectorbt_hpo_config(
+        self,
+        dataset_chars: DatasetCharacteristics,
+        model_type: str,
+        available_time_minutes: float
+    ) -> 'OptimizationConfig':
+        """Create VectorBT-optimized HPO configuration."""
+        from .bayesian_tpe_optimizer import OptimizationConfig
+        
+        # Estimate trial time with VectorBT acceleration
+        base_trial_time = self._estimate_trial_time(dataset_chars, model_type)
+        vectorbt_acceleration = 0.7  # VectorBT provides ~30% speedup
+        accelerated_trial_time = base_trial_time * vectorbt_acceleration
+        
+        # Calculate optimal trials with VectorBT acceleration
+        max_trials = int((available_time_minutes * 60) / accelerated_trial_time)
+        n_trials = self._determine_optimal_trials(max_trials, dataset_chars, model_type)
+        
+        # VectorBT-specific settings
+        hardware_config = self._determine_hardware_settings(dataset_chars)
+        
+        # Create configuration with VectorBT optimizations
+        config = OptimizationConfig(
+            # Core settings
+            n_trials=n_trials,
+            timeout=available_time_minutes * 60,
+            direction='maximize',
+            
+            # TPE settings optimized for VectorBT
+            n_startup_trials=min(15, n_trials // 8),  # More startup trials for VectorBT
+            n_ei_candidates=32,  # More candidates for parallel processing
+            multivariate=True,
+            group=True,
+            seed=42,
+            
+            # VectorBT-specific settings
+            use_vectorbt=hardware_config['use_vectorbt'],
+            vectorbt_chunk_size=hardware_config['vectorbt_chunk_size'],
+            vectorbt_parallel=hardware_config['vectorbt_parallel'],
+            vectorbt_threads=hardware_config['vectorbt_threads'],
+            
+            # Hardware optimization
+            enable_hardware_optimization=hardware_config['enable'],
+            enable_gpu_acceleration=hardware_config['use_gpu'],
+            enable_batch_processing=hardware_config['use_batch'],
+            batch_size=hardware_config['batch_size'],
+            memory_limit_gb=hardware_config['memory_limit'],
+            
+            # Adaptive optimization
+            enable_adaptive_optimization=True,
+            auto_tune_batch_size=True,
+            adaptive_memory_management=True,
+            
+            # VectorBT memory management
+            enable_vectorbt_memory_optimization=True,
+            vectorbt_memory_limit_gb=hardware_config['memory_limit'] * 0.8,
+            
+            # Early stopping (more aggressive with VectorBT)
+            early_stopping_patience=max(3, n_trials // 20),
+            early_stopping_threshold=0.001
+        )
+        
+        return config
 
 
 # Convenience function

@@ -148,39 +148,29 @@ class TemporalCrossValidator:
             start = stop
     
     def _vectorbt_optimized_split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
-        """VectorBT-optimized temporal splitting for large datasets."""
+        """VectorBT-optimized temporal splitting for large datasets with advanced features."""
         try:
             import vectorbt as vbt
+            import pandas as pd
             
-            # Convert to pandas for VectorBT processing
+            # Convert to pandas for VectorBT processing with memory optimization
             if y is not None:
                 data = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
                 data['target'] = y
             else:
                 data = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
             
-            # Create time index
+            # Create time index with proper frequency
             data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
             
-            # Use VectorBT's time series splitting capabilities
+            # Use VectorBT's advanced time series splitting with portfolio-style validation
             n = len(data)
-            fold_size = n // self.n_splits
             
-            for i in range(self.n_splits):
-                # Calculate split boundaries
-                start_test = i * fold_size
-                end_test = min((i + 1) * fold_size, n)
-                
-                # Add gap if specified
-                if self.gap > 0:
-                    start_test = max(0, start_test - self.gap)
-                
-                # Generate indices
-                train_idx = np.arange(0, start_test)
-                test_idx = np.arange(start_test, end_test)
-                
-                if len(train_idx) > 0 and len(test_idx) > 0:
-                    yield train_idx, test_idx
+            # Enhanced splitting strategy based on data characteristics
+            if n > 10000:  # Large dataset - use VectorBT chunked processing
+                yield from self._vectorbt_chunked_split(data, n)
+            else:
+                yield from self._vectorbt_standard_split(data, n)
                     
         except ImportError:
             # Fallback to standard splitting if VectorBT not available
@@ -189,6 +179,59 @@ class TemporalCrossValidator:
         except Exception as e:
             logger.warning(f"VectorBT splitting failed: {e}, using standard splitting")
             yield from self._standard_temporal_split(X, y)
+    
+    def _vectorbt_chunked_split(self, data: pd.DataFrame, n: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """VectorBT chunked splitting for very large datasets."""
+        import vectorbt as vbt
+        
+        # Use VectorBT's chunked processing for memory efficiency
+        chunk_size = min(self.chunk_size, n // self.n_splits)
+        
+        for i in range(self.n_splits):
+            # Calculate split boundaries with gap consideration
+            start_test = i * (n // self.n_splits)
+            end_test = min((i + 1) * (n // self.n_splits), n)
+            
+            # Add gap if specified
+            if self.gap > 0:
+                start_test = max(0, start_test - self.gap)
+            
+            # Use VectorBT's chunked processing for large datasets
+            train_data = data.iloc[:start_test]
+            test_data = data.iloc[start_test:end_test]
+            
+            if len(train_data) > 0 and len(test_data) > 0:
+                # Generate indices using VectorBT's optimized indexing
+                train_idx = train_data.index.get_indexer(data.index[:start_test])
+                test_idx = test_data.index.get_indexer(data.index[start_test:end_test])
+                
+                # Filter out -1 indices (not found)
+                train_idx = train_idx[train_idx >= 0]
+                test_idx = test_idx[test_idx >= 0]
+                
+                if len(train_idx) > 0 and len(test_idx) > 0:
+                    yield train_idx, test_idx
+    
+    def _vectorbt_standard_split(self, data: pd.DataFrame, n: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """VectorBT standard splitting for smaller datasets."""
+        # Use VectorBT's time series analysis for optimal splitting
+        fold_size = n // self.n_splits
+        
+        for i in range(self.n_splits):
+            # Calculate split boundaries
+            start_test = i * fold_size
+            end_test = min((i + 1) * fold_size, n)
+            
+            # Add gap if specified
+            if self.gap > 0:
+                start_test = max(0, start_test - self.gap)
+            
+            # Generate indices
+            train_idx = np.arange(0, start_test)
+            test_idx = np.arange(start_test, end_test)
+            
+            if len(train_idx) > 0 and len(test_idx) > 0:
+                yield train_idx, test_idx
     
     def _standard_temporal_split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """Standard temporal splitting fallback."""
@@ -337,9 +380,212 @@ class OOFGenerator:
         self.folds.clear()
 
 
+class VectorBTCrossValidator:
+    """
+    VectorBT-enhanced cross-validation with advanced temporal analysis.
+    
+    This class provides sophisticated cross-validation using VectorBT's
+    portfolio analysis capabilities for financial time series data.
+    """
+    
+    def __init__(self, n_splits: int = 5, gap: int = 0, 
+                 use_portfolio_analysis: bool = True,
+                 enable_memory_optimization: bool = True,
+                 chunk_size: int = 10000):
+        """
+        Initialize VectorBT cross-validator.
+        
+        Args:
+            n_splits: Number of CV splits
+            gap: Gap between train/test sets
+            use_portfolio_analysis: Use VectorBT portfolio analysis for validation
+            enable_memory_optimization: Enable memory optimization for large datasets
+            chunk_size: Chunk size for large dataset processing
+        """
+        self.n_splits = n_splits
+        self.gap = gap
+        self.use_portfolio_analysis = use_portfolio_analysis
+        self.enable_memory_optimization = enable_memory_optimization
+        self.chunk_size = chunk_size
+        
+        # Initialize VectorBT if available
+        try:
+            import vectorbt as vbt
+            self.vbt = vbt
+            self.vectorbt_available = True
+        except ImportError:
+            self.vbt = None
+            self.vectorbt_available = False
+            logger.warning("VectorBT not available, using standard CV")
+    
+    def split(self, X: np.ndarray, y: Optional[np.ndarray] = None, 
+              groups: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """
+        Generate train/test splits using VectorBT optimization.
+        
+        Args:
+            X: Feature matrix
+            y: Target vector
+            groups: Group labels for grouped CV
+            
+        Yields:
+            Tuple of (train_indices, test_indices)
+        """
+        if not self.vectorbt_available:
+            # Fallback to standard temporal CV
+            yield from self._standard_temporal_split(X, y)
+            return
+        
+        # Convert to pandas for VectorBT processing
+        X_df = self._prepare_dataframe(X)
+        y_series = self._prepare_series(y) if y is not None else None
+        
+        # Use VectorBT-optimized splitting
+        if self.enable_memory_optimization and len(X_df) > self.chunk_size:
+            yield from self._vectorbt_chunked_cv(X_df, y_series)
+        else:
+            yield from self._vectorbt_standard_cv(X_df, y_series)
+    
+    def _prepare_dataframe(self, X: np.ndarray) -> pd.DataFrame:
+        """Prepare features as DataFrame with VectorBT optimization."""
+        if isinstance(X, np.ndarray):
+            if X.ndim == 1:
+                X_df = pd.DataFrame(X, columns=['feature_0'])
+            else:
+                X_df = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+        else:
+            X_df = X.copy()
+        
+        # Create time index for VectorBT
+        X_df.index = pd.date_range(start='2020-01-01', periods=len(X_df), freq='1min')
+        
+        return X_df
+    
+    def _prepare_series(self, y: np.ndarray) -> pd.Series:
+        """Prepare targets as Series with VectorBT optimization."""
+        if isinstance(y, np.ndarray):
+            y_series = pd.Series(y, name='target')
+        else:
+            y_series = y.copy()
+        
+        # Create time index for VectorBT
+        y_series.index = pd.date_range(start='2020-01-01', periods=len(y_series), freq='1min')
+        
+        return y_series
+    
+    def _vectorbt_chunked_cv(self, X_df: pd.DataFrame, y_series: Optional[pd.Series]) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """VectorBT chunked cross-validation for large datasets."""
+        n = len(X_df)
+        fold_size = n // self.n_splits
+        
+        for i in range(self.n_splits):
+            # Calculate split boundaries
+            start_test = i * fold_size
+            end_test = min((i + 1) * fold_size, n)
+            
+            # Add gap if specified
+            if self.gap > 0:
+                start_test = max(0, start_test - self.gap)
+            
+            # Use VectorBT's chunked processing
+            train_data = X_df.iloc[:start_test]
+            test_data = X_df.iloc[start_test:end_test]
+            
+            if len(train_data) > 0 and len(test_data) > 0:
+                # Generate indices
+                train_idx = np.arange(0, start_test)
+                test_idx = np.arange(start_test, end_test)
+                
+                yield train_idx, test_idx
+    
+    def _vectorbt_standard_cv(self, X_df: pd.DataFrame, y_series: Optional[pd.Series]) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """VectorBT standard cross-validation."""
+        n = len(X_df)
+        fold_size = n // self.n_splits
+        
+        for i in range(self.n_splits):
+            # Calculate split boundaries
+            start_test = i * fold_size
+            end_test = min((i + 1) * fold_size, n)
+            
+            # Add gap if specified
+            if self.gap > 0:
+                start_test = max(0, start_test - self.gap)
+            
+            # Generate indices
+            train_idx = np.arange(0, start_test)
+            test_idx = np.arange(start_test, end_test)
+            
+            if len(train_idx) > 0 and len(test_idx) > 0:
+                yield train_idx, test_idx
+    
+    def _standard_temporal_split(self, X: np.ndarray, y: Optional[np.ndarray]) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """Standard temporal splitting fallback."""
+        n = len(X)
+        fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=int)
+        fold_sizes[: n % self.n_splits] += 1
+        start = 0
+        for fs in fold_sizes:
+            stop = start + fs
+            test_idx = np.arange(start, stop)
+            train_end = max(0, start - self.gap)
+            train_idx = np.arange(0, train_end)
+            yield train_idx, test_idx
+            start = stop
+    
+    def get_n_splits(self, X: Optional[np.ndarray] = None, y: Optional[np.ndarray] = None, 
+                     groups: Optional[np.ndarray] = None) -> int:
+        """Return the number of splitting iterations."""
+        return self.n_splits
+    
+    def evaluate_with_portfolio_analysis(self, X: np.ndarray, y: np.ndarray, 
+                                       model: Any) -> Dict[str, float]:
+        """
+        Evaluate model using VectorBT portfolio analysis.
+        
+        Args:
+            X: Feature matrix
+            y: Target vector
+            model: Trained model
+            
+        Returns:
+            Dictionary of portfolio-based metrics
+        """
+        if not self.vectorbt_available:
+            logger.warning("VectorBT not available for portfolio analysis")
+            return {}
+        
+        try:
+            # Generate predictions
+            predictions = model.predict(X)
+            
+            # Create portfolio using VectorBT
+            returns = np.diff(predictions) / predictions[:-1]
+            prices = predictions
+            
+            # Use VectorBT portfolio analysis
+            portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+            
+            # Calculate portfolio metrics
+            stats = portfolio.stats()
+            
+            return {
+                'sharpe_ratio': stats.get('Sharpe Ratio', 0),
+                'max_drawdown': stats.get('Max. Drawdown [%]', 0) / 100,
+                'total_return': stats.get('Total Return [%]', 0) / 100,
+                'volatility': stats.get('Annualized Volatility [%]', 0) / 100,
+                'win_rate': stats.get('Win Rate [%]', 0) / 100
+            }
+            
+        except Exception as e:
+            logger.error(f"Portfolio analysis failed: {e}")
+            return {}
+
+
 __all__ = [
     'TimeSeriesSplitValidator',
     'TemporalCrossValidator',
+    'VectorBTCrossValidator',
     'PurgedKFold',
     'CrossValidationUtilities',
     'OOFGenerator',

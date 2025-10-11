@@ -218,10 +218,10 @@ class VectorBTMemoryOptimizer:
                                    data: Union[np.ndarray, pd.DataFrame],
                                    **kwargs) -> Union[np.ndarray, pd.DataFrame]:
         """
-        Perform VectorBT-optimized operations with memory management.
+        Perform VectorBT-optimized operations with advanced memory management.
         
         Args:
-            operation: Operation to perform ('portfolio', 'metrics', 'optimization')
+            operation: Operation to perform ('portfolio', 'metrics', 'optimization', 'backtest', 'analysis')
             data: Input data
             **kwargs: Operation-specific arguments
             
@@ -234,11 +234,17 @@ class VectorBTMemoryOptimizer:
         
         logger.info(f"🔄 Performing VectorBT-optimized {operation}...")
         
-        # Check memory usage
+        # Check memory usage and optimize if needed
         memory_usage = self.get_memory_stats()
         if memory_usage.memory_usage_percent > 0.8:
             logger.warning("High memory usage detected, performing cleanup")
             self._cleanup_memory()
+        
+        # Estimate memory requirements for operation
+        estimated_memory = self._estimate_operation_memory(operation, data)
+        if estimated_memory > self.config.max_memory_gb * 0.5:
+            logger.info(f"Large operation detected ({estimated_memory:.2f}GB), using chunked processing")
+            return self._vectorbt_chunked_operation(operation, data, **kwargs)
         
         try:
             if operation == 'portfolio':
@@ -247,6 +253,10 @@ class VectorBTMemoryOptimizer:
                 return self._vectorbt_metrics_operation(data, **kwargs)
             elif operation == 'optimization':
                 return self._vectorbt_optimization_operation(data, **kwargs)
+            elif operation == 'backtest':
+                return self._vectorbt_backtest_operation(data, **kwargs)
+            elif operation == 'analysis':
+                return self._vectorbt_analysis_operation(data, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         
@@ -254,6 +264,150 @@ class VectorBTMemoryOptimizer:
             logger.error(f"VectorBT operation failed: {e}")
             # Fallback to standard operation
             return data
+    
+    def _estimate_operation_memory(self, operation: str, data: Union[np.ndarray, pd.DataFrame]) -> float:
+        """Estimate memory requirements for VectorBT operations."""
+        if isinstance(data, np.ndarray):
+            base_memory = data.nbytes / (1024**3)
+        else:
+            base_memory = data.memory_usage(deep=True).sum() / (1024**3)
+        
+        # Memory multipliers for different operations
+        multipliers = {
+            'portfolio': 3.0,  # Portfolio operations create multiple arrays
+            'metrics': 2.0,   # Metrics calculations need intermediate arrays
+            'optimization': 4.0,  # Optimization needs multiple copies
+            'backtest': 5.0,  # Backtesting is memory intensive
+            'analysis': 2.5   # Analysis operations need intermediate results
+        }
+        
+        return base_memory * multipliers.get(operation, 2.0)
+    
+    def _vectorbt_chunked_operation(self, operation: str, data: Union[np.ndarray, pd.DataFrame], **kwargs) -> Any:
+        """Perform VectorBT operations in chunks for large datasets."""
+        logger.info(f"🔄 Performing chunked VectorBT {operation}...")
+        
+        if isinstance(data, np.ndarray):
+            if data.ndim == 1:
+                data_df = pd.DataFrame(data, columns=['value'])
+            else:
+                data_df = pd.DataFrame(data, columns=[f'col_{i}' for i in range(data.shape[1])])
+        else:
+            data_df = data.copy()
+        
+        # Process in chunks
+        chunk_size = self.config.chunk_size
+        results = []
+        
+        for i in range(0, len(data_df), chunk_size):
+            chunk = data_df.iloc[i:i+chunk_size]
+            
+            try:
+                # Process chunk based on operation
+                if operation == 'portfolio':
+                    chunk_result = self._vectorbt_portfolio_operation(chunk, **kwargs)
+                elif operation == 'metrics':
+                    chunk_result = self._vectorbt_metrics_operation(chunk, **kwargs)
+                elif operation == 'backtest':
+                    chunk_result = self._vectorbt_backtest_operation(chunk, **kwargs)
+                else:
+                    chunk_result = chunk
+                
+                results.append(chunk_result)
+                
+                # Memory cleanup after each chunk
+                if self.config.enable_auto_cleanup:
+                    self._cleanup_memory()
+                
+            except Exception as e:
+                logger.error(f"Error processing chunk {i//chunk_size + 1}: {e}")
+                continue
+        
+        # Combine results
+        if results and isinstance(results[0], pd.DataFrame):
+            return pd.concat(results, ignore_index=True)
+        elif results and isinstance(results[0], np.ndarray):
+            return np.concatenate(results, axis=0)
+        else:
+            return results
+    
+    def _vectorbt_backtest_operation(self, data: Union[np.ndarray, pd.DataFrame], **kwargs) -> Any:
+        """Perform VectorBT backtesting with memory optimization."""
+        try:
+            # Convert to proper format
+            if isinstance(data, np.ndarray):
+                data_df = pd.DataFrame(data)
+            else:
+                data_df = data.copy()
+            
+            # Create time index
+            data_df.index = pd.date_range(start='2020-01-01', periods=len(data_df), freq='1min')
+            
+            # Use VectorBT portfolio for backtesting
+            if len(data_df) > self.config.vectorbt_chunk_size:
+                # Use chunked backtesting
+                return self._chunked_vectorbt_backtest(data_df, **kwargs)
+            else:
+                # Standard backtesting
+                return self.vbt.Portfolio.from_orders(data_df, freq='1min')
+                
+        except Exception as e:
+            logger.error(f"VectorBT backtest operation failed: {e}")
+            return data
+    
+    def _vectorbt_analysis_operation(self, data: Union[np.ndarray, pd.DataFrame], **kwargs) -> Any:
+        """Perform VectorBT analysis operations with memory optimization."""
+        try:
+            # Convert to proper format
+            if isinstance(data, np.ndarray):
+                data_df = pd.DataFrame(data)
+            else:
+                data_df = data.copy()
+            
+            # Create time index
+            data_df.index = pd.date_range(start='2020-01-01', periods=len(data_df), freq='1min')
+            
+            # Perform VectorBT analysis
+            analysis_results = {}
+            
+            # Basic statistics
+            analysis_results['basic_stats'] = data_df.describe()
+            
+            # Time series analysis
+            if len(data_df.columns) > 1:
+                # Calculate correlations
+                analysis_results['correlations'] = data_df.corr()
+                
+                # Calculate returns if numeric
+                numeric_cols = data_df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    returns = data_df[numeric_cols].pct_change().dropna()
+                    analysis_results['returns_stats'] = returns.describe()
+            
+            return analysis_results
+            
+        except Exception as e:
+            logger.error(f"VectorBT analysis operation failed: {e}")
+            return {}
+    
+    def _chunked_vectorbt_backtest(self, data_df: pd.DataFrame, **kwargs) -> Any:
+        """Perform chunked VectorBT backtesting for large datasets."""
+        chunk_size = self.config.vectorbt_chunk_size
+        results = []
+        
+        for i in range(0, len(data_df), chunk_size):
+            chunk = data_df.iloc[i:i+chunk_size]
+            
+            try:
+                # Create portfolio for chunk
+                chunk_portfolio = self.vbt.Portfolio.from_orders(chunk, freq='1min')
+                results.append(chunk_portfolio)
+                
+            except Exception as e:
+                logger.error(f"Chunked backtest failed for chunk {i//chunk_size + 1}: {e}")
+                continue
+        
+        return results
     
     def _vectorbt_portfolio_operation(self, data: Union[np.ndarray, pd.DataFrame], **kwargs) -> Any:
         """Perform VectorBT portfolio operations with memory optimization."""

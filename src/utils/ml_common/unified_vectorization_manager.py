@@ -36,6 +36,11 @@ class OperationType(Enum):
     PORTFOLIO_OPTIMIZATION = "portfolio_optimization"
     MATRIX_MULTIPLICATION = "matrix_multiplication"
     STATISTICAL_COMPUTATION = "statistical_computation"
+    # VectorBT-specific operations
+    VECTORBT_BACKTESTING = "vectorbt_backtesting"
+    VECTORBT_METRICS = "vectorbt_metrics"
+    VECTORBT_PORTFOLIO_OPTIMIZATION = "vectorbt_portfolio_optimization"
+    VECTORBT_TECHNICAL_ANALYSIS = "vectorbt_technical_analysis"
 
 
 class OptimizationStrategy(Enum):
@@ -46,6 +51,10 @@ class OptimizationStrategy(Enum):
     HYBRID_OPTIMIZATION = "hybrid_optimization"
     MEMORY_OPTIMIZED = "memory_optimized"
     FALLBACK = "fallback"
+    # VectorBT-specific strategies
+    VECTORBT_CPU = "vectorbt_cpu"
+    VECTORBT_GPU = "vectorbt_gpu"
+    VECTORBT_PARALLEL = "vectorbt_parallel"
 
 
 @dataclass
@@ -117,6 +126,34 @@ class UnifiedVectorizationManager:
         except Exception:
             self.backtesting_engine = None
             self.backtesting_available = False
+
+        # VectorBT components
+        try:
+            # VectorBT backtesting engine
+            from .vectorbt_backtesting_engine import VectorBTBacktestingEngine, BacktestMode as VectorBTBacktestMode
+            self.vectorbt_backtesting_engine = VectorBTBacktestingEngine()
+            self.vectorbt_backtesting_available = True
+        except Exception:
+            self.vectorbt_backtesting_engine = None
+            self.vectorbt_backtesting_available = False
+
+        try:
+            # VectorBT financial metrics
+            from .vectorbt_financial_metrics import VectorBTFinancialMetrics
+            self.vectorbt_metrics = VectorBTFinancialMetrics()
+            self.vectorbt_metrics_available = True
+        except Exception:
+            self.vectorbt_metrics = None
+            self.vectorbt_metrics_available = False
+
+        try:
+            # VectorBT portfolio optimization
+            from .vectorbt_portfolio_optimization import VectorBTPortfolioOptimizer
+            self.vectorbt_portfolio_optimizer = VectorBTPortfolioOptimizer()
+            self.vectorbt_portfolio_optimization_available = True
+        except Exception:
+            self.vectorbt_portfolio_optimizer = None
+            self.vectorbt_portfolio_optimization_available = False
 
         try:
             # Matrix cross-validation
@@ -241,6 +278,18 @@ class UnifiedVectorizationManager:
         """
         Select the optimal optimization strategy based on operation type and constraints.
         """
+        # VectorBT operations - prioritize VectorBT for financial operations
+        if operation_type in [OperationType.VECTORBT_BACKTESTING,
+                            OperationType.VECTORBT_METRICS,
+                            OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION,
+                            OperationType.VECTORBT_TECHNICAL_ANALYSIS]:
+            if self.hardware_caps['gpu_available'] and config.data_size > 10000:
+                return OptimizationStrategy.VECTORBT_GPU
+            elif self.hardware_caps['cpu_cores'] >= 4 and config.data_size > 5000:
+                return OptimizationStrategy.VECTORBT_PARALLEL
+            else:
+                return OptimizationStrategy.VECTORBT_CPU
+
         # GPU-first approach for supported operations
         if self.hardware_caps['gpu_available']:
             if operation_type in [OperationType.MATRIX_MULTIPLICATION,
@@ -284,7 +333,9 @@ class UnifiedVectorizationManager:
         """
         Execute operation using the selected strategy.
         """
-        if strategy == OptimizationStrategy.GPU_ACCELERATED:
+        if strategy in [OptimizationStrategy.VECTORBT_CPU, OptimizationStrategy.VECTORBT_GPU, OptimizationStrategy.VECTORBT_PARALLEL]:
+            return self._execute_vectorbt(operation_type, data, config, strategy, **kwargs)
+        elif strategy == OptimizationStrategy.GPU_ACCELERATED:
             return self._execute_gpu_accelerated(operation_type, data, config, **kwargs)
         elif strategy == OptimizationStrategy.PARALLEL_PROCESSING:
             return self._execute_parallel(operation_type, data, config, **kwargs)
@@ -324,6 +375,70 @@ class UnifiedVectorizationManager:
             self.logger.warning(f"⚠️ GPU acceleration not available for {operation_type.value}, falling back to CPU")
             return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
 
+        return result, metadata
+
+    def _execute_vectorbt(self, operation_type: OperationType,
+                         data: Any, config: OperationConfig, strategy: OptimizationStrategy, **kwargs) -> Tuple[Any, Dict[str, Any]]:
+        """Execute operation with VectorBT."""
+        metadata = {'vectorbt_optimized': True, 'strategy': strategy.value}
+        
+        if operation_type == OperationType.VECTORBT_BACKTESTING and self.vectorbt_backtesting_available:
+            # Use VectorBT backtesting engine
+            signals = data.get('signals')
+            prices = data.get('prices')
+            timestamps = data.get('timestamps')
+            
+            # Determine VectorBT mode based on strategy
+            if strategy == OptimizationStrategy.VECTORBT_GPU:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_GPU
+            elif strategy == OptimizationStrategy.VECTORBT_PARALLEL:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_PARALLEL
+            else:
+                from .vectorbt_backtesting_engine import BacktestMode
+                mode = BacktestMode.VECTORBT_CPU
+            
+            result = self.vectorbt_backtesting_engine.run_backtest(
+                signals, prices, timestamps, mode=mode, **kwargs
+            )
+            metadata['vectorbt_backtesting_used'] = True
+            
+        elif operation_type == OperationType.VECTORBT_METRICS and self.vectorbt_metrics_available:
+            # Use VectorBT financial metrics
+            portfolio_values = data.get('portfolio_values')
+            returns = data.get('returns')
+            benchmark_values = data.get('benchmark_values')
+            timestamps = data.get('timestamps')
+            
+            result = self.vectorbt_metrics.calculate_comprehensive_metrics(
+                portfolio_values, returns, benchmark_values, timestamps
+            )
+            metadata['vectorbt_metrics_used'] = True
+            
+        elif operation_type == OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION and self.vectorbt_portfolio_optimization_available:
+            # Use VectorBT portfolio optimization
+            returns = data.get('returns')
+            expected_returns = data.get('expected_returns')
+            asset_names = data.get('asset_names')
+            
+            result = self.vectorbt_portfolio_optimizer.optimize_portfolio(
+                returns, expected_returns, asset_names, **kwargs
+            )
+            metadata['vectorbt_portfolio_optimization_used'] = True
+            
+        elif operation_type == OperationType.VECTORBT_TECHNICAL_ANALYSIS and self.vectorbt_metrics_available:
+            # Use VectorBT for technical analysis (placeholder for future implementation)
+            result = self.vectorbt_metrics.calculate_comprehensive_metrics(
+                data.get('portfolio_values'), data.get('returns')
+            )
+            metadata['vectorbt_technical_analysis_used'] = True
+            
+        else:
+            # Fallback to CPU execution
+            self.logger.warning(f"⚠️ VectorBT operation not available for {operation_type.value}, falling back to CPU")
+            return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+        
         return result, metadata
 
     def _execute_parallel(self, operation_type: OperationType,
@@ -575,7 +690,11 @@ class UnifiedVectorizationManager:
             'cross_validation': self.cv_available,
             'feature_selection': self.feature_selection_available,
             'technical_indicators': self.technical_indicators_available,
-            'hmm_operations': self.hmm_available
+            'hmm_operations': self.hmm_available,
+            # VectorBT components
+            'vectorbt_backtesting': self.vectorbt_backtesting_available,
+            'vectorbt_metrics': self.vectorbt_metrics_available,
+            'vectorbt_portfolio_optimization': self.vectorbt_portfolio_optimization_available
         }
 
         return stats
@@ -688,6 +807,68 @@ def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
     )
     data = {'signals': signals, 'prices': prices}
     return manager.optimize_operation(OperationType.BACKTESTING, data, config, **kwargs)
+
+
+# VectorBT convenience functions
+def optimize_vectorbt_backtesting(signals: Union[np.ndarray, pd.DataFrame],
+                                prices: Union[np.ndarray, pd.DataFrame],
+                                timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
+                                **kwargs) -> OptimizationResult:
+    """Convenience function for VectorBT backtesting."""
+    manager = UnifiedVectorizationManager()
+    data_size = len(signals) if hasattr(signals, '__len__') else 1
+    data_dimensions = signals.shape if hasattr(signals, 'shape') else (data_size,)
+    config = OperationConfig(
+        operation_type=OperationType.VECTORBT_BACKTESTING,
+        data_size=data_size,
+        data_dimensions=data_dimensions
+    )
+    data = {'signals': signals, 'prices': prices, 'timestamps': timestamps}
+    return manager.optimize_operation(OperationType.VECTORBT_BACKTESTING, data, config, **kwargs)
+
+
+def optimize_vectorbt_metrics(portfolio_values: Union[np.ndarray, pd.Series],
+                            returns: Optional[Union[np.ndarray, pd.Series]] = None,
+                            benchmark_values: Optional[Union[np.ndarray, pd.Series]] = None,
+                            timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
+                            **kwargs) -> OptimizationResult:
+    """Convenience function for VectorBT financial metrics."""
+    manager = UnifiedVectorizationManager()
+    data_size = len(portfolio_values) if hasattr(portfolio_values, '__len__') else 1
+    data_dimensions = portfolio_values.shape if hasattr(portfolio_values, 'shape') else (data_size,)
+    config = OperationConfig(
+        operation_type=OperationType.VECTORBT_METRICS,
+        data_size=data_size,
+        data_dimensions=data_dimensions
+    )
+    data = {
+        'portfolio_values': portfolio_values,
+        'returns': returns,
+        'benchmark_values': benchmark_values,
+        'timestamps': timestamps
+    }
+    return manager.optimize_operation(OperationType.VECTORBT_METRICS, data, config, **kwargs)
+
+
+def optimize_vectorbt_portfolio(returns: Union[np.ndarray, pd.DataFrame],
+                              expected_returns: Optional[Union[np.ndarray, pd.Series]] = None,
+                              asset_names: Optional[List[str]] = None,
+                              **kwargs) -> OptimizationResult:
+    """Convenience function for VectorBT portfolio optimization."""
+    manager = UnifiedVectorizationManager()
+    data_size = len(returns) if hasattr(returns, '__len__') else 1
+    data_dimensions = returns.shape if hasattr(returns, 'shape') else (data_size,)
+    config = OperationConfig(
+        operation_type=OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION,
+        data_size=data_size,
+        data_dimensions=data_dimensions
+    )
+    data = {
+        'returns': returns,
+        'expected_returns': expected_returns,
+        'asset_names': asset_names
+    }
+    return manager.optimize_operation(OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION, data, config, **kwargs)
 
 
 # Global instance for easy access

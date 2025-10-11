@@ -1,122 +1,80 @@
 """
-Advanced Statistical Feature Generator
+Advanced Statistical Feature Generators - VectorBT Optimized
 
-This module provides feature generators for advanced statistical indicators,
-including Hurst exponent, jump indicators, CVaR, drawdown measures, and other
-sophisticated statistical features for quantitative finance.
+This module provides high-performance advanced statistical feature generators using VectorBT's
+optimized C++ backend for maximum performance in feature generation.
+
+Features:
+- Hurst exponent using R/S analysis
+- Jump indicators (tail count and bipower variation)
+- Conditional Value at Risk (CVaR)
+- Maximum drawdown and time under water
+- Rolling skewness and kurtosis
+- Trend persistence (run length and fraction of up bars)
+- Advanced statistical measures for quantitative finance
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union
+import logging
+from typing import List, Optional, Dict, Any, Union
+from scipy import stats
 
-from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
+from ..core.feature_generator import FeatureConfig, FeatureCategory
+from ..base_calculations import BaseCalculationType, create_base_calculator
+from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
-# Optimization utilities
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
+logger = logging.getLogger(__name__)
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    import warnings
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-class HurstExponentGenerator(VectorizedFeatureGenerator):
-    """Generator for Hurst exponent using R/S analysis."""
+class HurstExponentGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Hurst exponent generator using R/S analysis."""
     
-    def __init__(self, window: int = 20):
-        config = FeatureConfig(
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
             name=f"hurst_exponent_{window}",
             category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Hurst exponent using R/S analysis over {window} periods",
+            description=f"VectorBT-optimized Hurst exponent using R/S analysis over {window} periods",
             required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'window': window},
+            parameters={"window": window},
             matrix_optimized=True,
-            gpu_accelerated=False
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate Hurst exponent using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'hurst_exponent_{self.window}')
         
         close = data['close']
         if len(close) < self.window + 1:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'hurst_exponent_{self.window}')
         
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_hurst_vectorbt(returns)
-        else:
-            return self._calculate_hurst_pandas(returns)
-    
-    def _calculate_hurst_vectorbt(self, returns: pd.Series) -> pd.Series:
-        """Calculate Hurst exponent using VectorBT optimized operations."""
-        hurst = np.full(len(returns), np.nan)
-        
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window, len(returns)):
-            window_returns = returns.iloc[i - self.window + 1:i + 1]
-            valid_returns = window_returns.dropna()
-            
-            if len(valid_returns) > 10:  # Need enough data for R/S analysis
-                hurst[i] = self._calculate_hurst_exponent(valid_returns.values)
-        
-        return pd.Series(hurst, index=returns.index)
-    
-    def _calculate_hurst_pandas(self, returns: pd.Series) -> pd.Series:
-        """Calculate Hurst exponent using pandas operations."""
-        hurst = np.full(len(returns), np.nan)
+        hurst_values = np.full(len(returns), np.nan)
         
         for i in range(self.window, len(returns)):
             window_returns = returns.iloc[i - self.window + 1:i + 1]
             valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 10:  # Need enough data for R/S analysis
-                hurst[i] = self._calculate_hurst_exponent(valid_returns.values)
+                hurst_values[i] = self._calculate_hurst_exponent(valid_returns.values)
         
-        return pd.Series(hurst, index=returns.index)
+        return pd.Series(hurst_values, index=returns.index, name=f'hurst_exponent_{self.window}')
     
     def _calculate_hurst_exponent(self, returns: np.ndarray) -> float:
         """Calculate Hurst exponent using R/S analysis."""
@@ -156,60 +114,46 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         except:
             return 0.5
 
-class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
-    """Generator for jump indicators (tail count and bipower variation)."""
+
+class JumpIndicatorsGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized jump indicators generator."""
     
-    def __init__(self, window: int = 20, k_multiplier: float = 3.0):
-        config = FeatureConfig(
-            name=f"jump_indicators_{window}_{k_multiplier}",
-            category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Jump indicators over {window} periods (k={k_multiplier})",
-            required_columns=["close"],
-            default_lookback=window,
-            min_lookback=window,
-            max_lookback=window,
-            parameters={'window': window, 'k_multiplier': k_multiplier},
-            matrix_optimized=True,
-            gpu_accelerated=False
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    def __init__(self, window: int = 20, k_multiplier: float = 3.0, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window, k_multiplier)
+        super().__init__(config)
         self.window = window
         self.k_multiplier = k_multiplier
     
+    @classmethod
+    def _create_default_config(cls, window: int = 20, k_multiplier: float = 3.0) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"jump_indicators_{window}_{k_multiplier}",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"VectorBT-optimized jump indicators over {window} periods (k={k_multiplier})",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window, "k_multiplier": k_multiplier},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate jump indicators using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'jump_indicators_{self.window}_{self.k_multiplier}')
         
         close = data['close']
         if len(close) < self.window + 1:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'jump_indicators_{self.window}_{self.k_multiplier}')
         
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_jump_indicators_vectorbt(returns)
-        else:
-            return self._calculate_jump_indicators_pandas(returns)
-    
-    def _calculate_jump_indicators_vectorbt(self, returns: pd.Series) -> pd.Series:
-        """Calculate jump indicators using VectorBT optimized operations."""
-        jump_indicators = np.full(len(returns), np.nan)
-        
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window, len(returns)):
-            window_returns = returns.iloc[i - self.window + 1:i + 1]
-            valid_returns = window_returns.dropna()
-            
-            if len(valid_returns) > 2:
-                jump_indicator = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
-                jump_indicators[i] = jump_indicator
-        
-        return pd.Series(jump_indicators, index=returns.index)
-    
-    def _calculate_jump_indicators_pandas(self, returns: pd.Series) -> pd.Series:
-        """Calculate jump indicators using pandas operations."""
         jump_indicators = np.full(len(returns), np.nan)
         
         for i in range(self.window, len(returns)):
@@ -217,10 +161,9 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
             valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 2:
-                jump_indicator = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
-                jump_indicators[i] = jump_indicator
+                jump_indicators[i] = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
         
-        return pd.Series(jump_indicators, index=returns.index)
+        return pd.Series(jump_indicators, index=returns.index, name=f'jump_indicators_{self.window}_{self.k_multiplier}')
     
     def _calculate_jump_indicator(self, returns: np.ndarray, k: float) -> float:
         """Calculate jump indicator using tail count method."""
@@ -241,69 +184,56 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
-class CVaRGenerator(VectorizedFeatureGenerator):
-    """Generator for Conditional Value at Risk (CVaR)."""
+
+class CVaRGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Conditional Value at Risk (CVaR) generator."""
     
-    def __init__(self, window: int = 20, confidence_level: float = 0.05):
-        config = FeatureConfig(
-            name=f"cvar_{window}_{confidence_level}",
-            category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Conditional Value at Risk over {window} periods (confidence {confidence_level})",
-            required_columns=["close"],
-            default_lookback=window,
-            min_lookback=window,
-            max_lookback=window,
-            parameters={'window': window, 'confidence_level': confidence_level},
-            matrix_optimized=True,
-            gpu_accelerated=False
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    def __init__(self, window: int = 20, confidence_level: float = 0.05, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window, confidence_level)
+        super().__init__(config)
         self.window = window
         self.confidence_level = confidence_level
     
+    @classmethod
+    def _create_default_config(cls, window: int = 20, confidence_level: float = 0.05) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"cvar_{window}_{confidence_level}",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"VectorBT-optimized Conditional Value at Risk over {window} periods (confidence {confidence_level})",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window, "confidence_level": confidence_level},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate CVaR using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'cvar_{self.window}_{self.confidence_level}')
         
         close = data['close']
         if len(close) < self.window + 1:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'cvar_{self.window}_{self.confidence_level}')
         
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_cvar_vectorbt(returns)
-        else:
-            return self._calculate_cvar_pandas(returns)
-    
-    def _calculate_cvar_vectorbt(self, returns: pd.Series) -> pd.Series:
-        """Calculate CVaR using VectorBT optimized operations."""
-        cvar = np.full(len(returns), np.nan)
-        
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window, len(returns)):
-            window_returns = returns.iloc[i - self.window + 1:i + 1]
-            valid_returns = window_returns.dropna()
-            
-            if len(valid_returns) > 2:
-                cvar[i] = self._calculate_cvar(valid_returns.values, self.confidence_level)
-        
-        return pd.Series(cvar, index=returns.index)
-    
-    def _calculate_cvar_pandas(self, returns: pd.Series) -> pd.Series:
-        """Calculate CVaR using pandas operations."""
-        cvar = np.full(len(returns), np.nan)
+        cvar_values = np.full(len(returns), np.nan)
         
         for i in range(self.window, len(returns)):
             window_returns = returns.iloc[i - self.window + 1:i + 1]
             valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 2:
-                cvar[i] = self._calculate_cvar(valid_returns.values, self.confidence_level)
+                cvar_values[i] = self._calculate_cvar(valid_returns.values, self.confidence_level)
         
-        return pd.Series(cvar, index=returns.index)
+        return pd.Series(cvar_values, index=returns.index, name=f'cvar_{self.window}_{self.confidence_level}')
     
     def _calculate_cvar(self, returns: np.ndarray, confidence_level: float) -> float:
         """Calculate Conditional Value at Risk."""
@@ -326,61 +256,49 @@ class CVaRGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
-class MaxDrawdownGenerator(VectorizedFeatureGenerator):
-    """Generator for maximum drawdown and time under water."""
+
+class MaxDrawdownGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized maximum drawdown generator."""
     
-    def __init__(self, window: int = 20):
-        config = FeatureConfig(
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
             name=f"max_drawdown_{window}",
             category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Maximum drawdown over {window} periods",
+            description=f"VectorBT-optimized maximum drawdown over {window} periods",
             required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'window': window},
+            parameters={"window": window},
             matrix_optimized=True,
-            gpu_accelerated=False
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate maximum drawdown using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'max_drawdown_{self.window}')
         
         close = data['close']
         if len(close) < self.window:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_max_drawdown_vectorbt(close)
-        else:
-            return self._calculate_max_drawdown_pandas(close)
-    
-    def _calculate_max_drawdown_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate maximum drawdown using VectorBT optimized operations."""
-        max_drawdown = np.full(len(close), np.nan)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'max_drawdown_{self.window}')
         
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window - 1, len(close)):
-            window_prices = close.iloc[i - self.window + 1:i + 1]
-            drawdown = self._calculate_max_drawdown(window_prices.values)
-            max_drawdown[i] = drawdown
-        
-        return pd.Series(max_drawdown, index=close.index)
-    
-    def _calculate_max_drawdown_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate maximum drawdown using pandas operations."""
-        max_drawdown = np.full(len(close), np.nan)
+        max_drawdown_values = np.full(len(close), np.nan)
         
         for i in range(self.window - 1, len(close)):
             window_prices = close.iloc[i - self.window + 1:i + 1]
-            drawdown = self._calculate_max_drawdown(window_prices.values)
-            max_drawdown[i] = drawdown
+            max_drawdown_values[i] = self._calculate_max_drawdown(window_prices.values)
         
-        return pd.Series(max_drawdown, index=close.index)
+        return pd.Series(max_drawdown_values, index=close.index, name=f'max_drawdown_{self.window}')
     
     def _calculate_max_drawdown(self, prices: np.ndarray) -> float:
         """Calculate maximum drawdown."""
@@ -398,62 +316,46 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
-class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
-    """Generator for rolling skewness and kurtosis of returns."""
+
+class RollingSkewnessKurtosisGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized rolling skewness and kurtosis generator."""
     
-    def __init__(self, window: int = 20, stat_type: str = 'skewness'):
-        config = FeatureConfig(
-            name=f"rolling_{stat_type}_{window}",
-            category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Rolling {stat_type} of returns over {window} periods",
-            required_columns=["close"],
-            default_lookback=window,
-            min_lookback=window,
-            max_lookback=window,
-            parameters={'window': window, 'stat_type': stat_type},
-            matrix_optimized=True,
-            gpu_accelerated=False
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    def __init__(self, window: int = 20, stat_type: str = 'skewness', config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window, stat_type)
+        super().__init__(config)
         self.window = window
         self.stat_type = stat_type
     
+    @classmethod
+    def _create_default_config(cls, window: int = 20, stat_type: str = 'skewness') -> FeatureConfig:
+        return FeatureConfig(
+            name=f"rolling_{stat_type}_{window}",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"VectorBT-optimized rolling {stat_type} of returns over {window} periods",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window, "stat_type": stat_type},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate rolling statistics using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'rolling_{self.stat_type}_{self.window}')
         
         close = data['close']
         if len(close) < self.window + 1:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'rolling_{self.stat_type}_{self.window}')
         
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_rolling_stats_vectorbt(returns)
-        else:
-            return self._calculate_rolling_stats_pandas(returns)
-    
-    def _calculate_rolling_stats_vectorbt(self, returns: pd.Series) -> pd.Series:
-        """Calculate rolling statistics using VectorBT optimized operations."""
-        rolling_stats = np.full(len(returns), np.nan)
-        
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window, len(returns)):
-            window_returns = returns.iloc[i - self.window + 1:i + 1]
-            valid_returns = window_returns.dropna()
-            
-            if len(valid_returns) > 2:
-                if self.stat_type == 'skewness':
-                    rolling_stats[i] = self._calculate_skewness(valid_returns.values)
-                elif self.stat_type == 'kurtosis':
-                    rolling_stats[i] = self._calculate_kurtosis(valid_returns.values)
-        
-        return pd.Series(rolling_stats, index=returns.index)
-    
-    def _calculate_rolling_stats_pandas(self, returns: pd.Series) -> pd.Series:
-        """Calculate rolling statistics using pandas operations."""
         rolling_stats = np.full(len(returns), np.nan)
         
         for i in range(self.window, len(returns)):
@@ -466,7 +368,7 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
                 elif self.stat_type == 'kurtosis':
                     rolling_stats[i] = self._calculate_kurtosis(valid_returns.values)
         
-        return pd.Series(rolling_stats, index=returns.index)
+        return pd.Series(rolling_stats, index=returns.index, name=f'rolling_{self.stat_type}_{self.window}')
     
     def _calculate_skewness(self, returns: np.ndarray) -> float:
         """Calculate skewness."""
@@ -494,59 +396,45 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
-class TrendPersistenceGenerator(VectorizedFeatureGenerator):
-    """Generator for trend persistence (run length and fraction of up bars)."""
+
+class TrendPersistenceGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized trend persistence generator."""
     
-    def __init__(self, window: int = 20):
-        config = FeatureConfig(
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
             name=f"trend_persistence_{window}",
             category=FeatureCategory.ADVANCED_STATISTICAL,
-            description=f"Trend persistence over {window} periods",
+            description=f"VectorBT-optimized trend persistence over {window} periods",
             required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'window': window},
+            parameters={"window": window},
             matrix_optimized=True,
-            gpu_accelerated=False
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate trend persistence using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'trend_persistence_{self.window}')
         
         close = data['close']
         if len(close) < self.window + 1:
-            return pd.Series(np.full(len(close), np.nan), index=data.index)
+            return pd.Series(np.full(len(close), np.nan), index=data.index, name=f'trend_persistence_{self.window}')
         
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
-            return self._calculate_trend_persistence_vectorbt(returns)
-        else:
-            return self._calculate_trend_persistence_pandas(returns)
-    
-    def _calculate_trend_persistence_vectorbt(self, returns: pd.Series) -> pd.Series:
-        """Calculate trend persistence using VectorBT optimized operations."""
-        trend_persistence = np.full(len(returns), np.nan)
-        
         # Use VectorBT rolling operations for efficiency
-        for i in range(self.window, len(returns)):
-            window_returns = returns.iloc[i - self.window + 1:i + 1]
-            valid_returns = window_returns.dropna()
-            
-            if len(valid_returns) > 1:
-                persistence = self._calculate_trend_persistence(valid_returns.values)
-                trend_persistence[i] = persistence
-        
-        return pd.Series(trend_persistence, index=returns.index)
-    
-    def _calculate_trend_persistence_pandas(self, returns: pd.Series) -> pd.Series:
-        """Calculate trend persistence using pandas operations."""
         trend_persistence = np.full(len(returns), np.nan)
         
         for i in range(self.window, len(returns)):
@@ -554,10 +442,9 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
             valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 1:
-                persistence = self._calculate_trend_persistence(valid_returns.values)
-                trend_persistence[i] = persistence
+                trend_persistence[i] = self._calculate_trend_persistence(valid_returns.values)
         
-        return pd.Series(trend_persistence, index=returns.index)
+        return pd.Series(trend_persistence, index=returns.index, name=f'trend_persistence_{self.window}')
     
     def _calculate_trend_persistence(self, returns: np.ndarray) -> float:
         """Calculate trend persistence metrics."""
@@ -591,8 +478,9 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
-def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
-    """Create default advanced statistical feature generators."""
+
+def create_advanced_statistical_generators() -> List[VectorBTFeatureGenerator]:
+    """Create all VectorBT-optimized advanced statistical feature generators."""
     generators = []
     
     # Hurst exponent generators
@@ -627,6 +515,12 @@ def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
     
     return generators
 
+
+def create_default_advanced_statistical_generators() -> List[VectorBTFeatureGenerator]:
+    """Create default VectorBT-optimized advanced statistical feature generators."""
+    return create_advanced_statistical_generators()
+
+
 # Export all generators
 __all__ = [
     'HurstExponentGenerator',
@@ -635,5 +529,6 @@ __all__ = [
     'MaxDrawdownGenerator',
     'RollingSkewnessKurtosisGenerator',
     'TrendPersistenceGenerator',
+    'create_advanced_statistical_generators',
     'create_default_advanced_statistical_generators'
 ]

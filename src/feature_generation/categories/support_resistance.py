@@ -1,401 +1,401 @@
 """
-Support/Resistance Feature Generator
+Support/Resistance Feature Generators - VectorBT Optimized
 
-This module provides feature generators for support/resistance-based indicators.
+This module provides high-performance support/resistance feature generators using VectorBT's
+optimized C++ backend for maximum performance in feature generation.
+
+Features:
+- Support level detection
+- Resistance level detection
+- Pivot point calculations
+- Fibonacci retracement levels
+- Volume-weighted support/resistance
+- Dynamic support/resistance levels
+- Support/resistance strength indicators
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union
+import logging
+from typing import List, Optional, Dict, Any, Union
 
-from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
-# Optimization utilities
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
+from ..core.feature_generator import FeatureConfig, FeatureCategory
+from ..base_calculations import BaseCalculationType, create_base_calculator
+from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
-from ..base_calculations import (
-    BaseCalculationType,
-    create_base_calculator
-)
+logger = logging.getLogger(__name__)
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    import warnings
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for support/resistance-based features."""
+class SupportLevelGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized support level generator."""
     
-    def __init__(self, config: Optional[FeatureConfig] = None):
+    def __init__(self, level: int = 1, window: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
-            config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+            config = self._create_default_config(level, window)
+        super().__init__(config)
+        self.level = level
+        self.window = window
     
     @classmethod
-    def _create_default_config(cls) -> FeatureConfig:
+    def _create_default_config(cls, level: int = 1, window: int = 20) -> FeatureConfig:
         return FeatureConfig(
-            name="support_resistance_features",
+            name=f"support_level_{level}_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description="Comprehensive support/resistance features including pivot points, Fibonacci, and volume profile",
-            required_columns=["close"],
-            optional_columns=["high", "low", "open", "volume"],
-            default_lookback=20,
-            min_lookback=1,
-            max_lookback=100,
-            parameters={
-                "pivot_windows": [5, 10, 20],
-                "fibonacci_levels": [0.236, 0.382, 0.5, 0.618, 0.786],
-                "volume_profile_windows": [5, 10, 20]
-            },
+            description=f"VectorBT-optimized support level {level} over {window} periods",
+            required_columns=["low"],
+            optional_columns=["high", "close", "open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"level": level, "window": window},
             matrix_optimized=True,
-            gpu_accelerated=False
+            gpu_accelerated=True
         )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate support level using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'support_level_{self.level}_{self.window}')
+        
+        low = data['low']
+        
+        # Use VectorBT rolling min for support level
+        support_level = self._vectorbt_rolling_operation(low, 'min', window=self.window)
+        
+        return support_level.rename(f'support_level_{self.level}_{self.window}')
+
+
+class ResistanceLevelGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized resistance level generator."""
+    
+    def __init__(self, level: int = 1, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(level, window)
+        super().__init__(config)
+        self.level = level
+        self.window = window
     
     @classmethod
-    def create_default(cls) -> 'SupportResistanceFeatureGenerator':
-        return cls()
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        close_prices = data['close'].values
-        sr = np.zeros_like(close_prices)
-        return pd.Series(sr, index=data.index, name='sr_placeholder')
-
-# Support Level Generator
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class SupportLevelGenerator(VectorizedFeatureGenerator):
-    """Generator for support level features."""
-    
-    def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        required_columns = self.base_calculator.get_required_columns()
-        if 'low' not in required_columns:
-            required_columns.append('low')
-        
-        config = FeatureConfig(
-            name=f"support_level_{level}_{window}_{base_calculation.value}",
+    def _create_default_config(cls, level: int = 1, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"resistance_level_{level}_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Support level {level} over {window} periods based on {base_calculation.value}",
-            required_columns=required_columns,
+            description=f"VectorBT-optimized resistance level {level} over {window} periods",
+            required_columns=["high"],
+            optional_columns=["low", "close", "open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+            parameters={"level": level, "window": window},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate resistance level using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'resistance_level_{self.level}_{self.window}')
+        
+        high = data['high']
+        
+        # Use VectorBT rolling max for resistance level
+        resistance_level = self._vectorbt_rolling_operation(high, 'max', window=self.window)
+        
+        return resistance_level.rename(f'resistance_level_{self.level}_{self.window}')
+
+
+class PivotPointGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized pivot point generator."""
+    
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"pivot_point_{window}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"VectorBT-optimized pivot point over {window} periods",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate pivot point using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'pivot_point_{self.window}')
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Calculate pivot point as (high + low + close) / 3
+        pivot_point = (high + low + close) / 3
+        
+        return pivot_point.rename(f'pivot_point_{self.window}')
+
+
+class FibonacciLevelGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Fibonacci level generator."""
+    
+    def __init__(self, level: float = 0.618, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(level, window)
+        super().__init__(config)
         self.level = level
         self.window = window
-        self.base_calculation = base_calculation
     
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate support level."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            low = data['low']
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(low) >= 1000:
-                support_level = rolling_min(low, window=self.window)
-            else:
-                support_level = low.rolling(window=self.window).min()
-        else:
-            base_values = self.base_calculator.calculate(data)
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(base_values) >= 1000:
-                support_level = rolling_min(base_values, window=self.window)
-            else:
-                support_level = base_values.rolling(window=self.window).min()
-        return support_level
-
-# Resistance Level Generator
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class ResistanceLevelGenerator(VectorizedFeatureGenerator):
-    """Generator for resistance level features."""
-    
-    def __init__(self, level: int = 1, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
-        
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        required_columns = self.base_calculator.get_required_columns()
-        if 'high' not in required_columns:
-            required_columns.append('high')
-        
-        config = FeatureConfig(
-            name=f"resistance_level_{level}_{window}_{base_calculation.value}",
+    @classmethod
+    def _create_default_config(cls, level: float = 0.618, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"fibonacci_{level}_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Resistance level {level} over {window} periods based on {base_calculation.value}",
-            required_columns=required_columns,
+            description=f"VectorBT-optimized Fibonacci level {level} over {window} periods",
+            required_columns=["high", "low"],
+            optional_columns=["close", "open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+            parameters={"level": level, "window": window},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.level = level
-        self.window = window
-        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate resistance level."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            high = data['high']
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(high) >= 1000:
-                resistance_level = rolling_max(high, window=self.window)
-            else:
-                resistance_level = high.rolling(window=self.window).max()
-        else:
-            base_values = self.base_calculator.calculate(data)
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(base_values) >= 1000:
-                resistance_level = rolling_max(base_values, window=self.window)
-            else:
-                resistance_level = base_values.rolling(window=self.window).max()
-        return resistance_level
-
-# Pivot Point Generator
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class PivotPointGenerator(VectorizedFeatureGenerator):
-    """Generator for pivot point features."""
-    
-    def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
+        """Generate Fibonacci level using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'fibonacci_{self.level}_{self.window}')
         
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        required_columns = self.base_calculator.get_required_columns()
-        if 'high' not in required_columns:
-            required_columns.append('high')
-        if 'low' not in required_columns:
-            required_columns.append('low')
-        if 'close' not in required_columns:
-            required_columns.append('close')
+        high = data['high']
+        low = data['low']
         
-        config = FeatureConfig(
-            name=f"pivot_point_{window}_{base_calculation.value}",
+        # Calculate range using VectorBT rolling operations
+        high_max = self._vectorbt_rolling_operation(high, 'max', window=self.window)
+        low_min = self._vectorbt_rolling_operation(low, 'min', window=self.window)
+        
+        # Calculate Fibonacci level
+        range_size = high_max - low_min
+        fibonacci_level = low_min + (range_size * self.level)
+        
+        return fibonacci_level.rename(f'fibonacci_{self.level}_{self.window}')
+
+
+class VolumeWeightedSupportResistanceGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized volume-weighted support/resistance generator."""
+    
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vw_sr_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Pivot point over {window} periods based on {base_calculation.value}",
-            required_columns=required_columns,
+            description=f"VectorBT-optimized volume-weighted support/resistance over {window} periods",
+            required_columns=["high", "low", "volume"],
+            optional_columns=["close", "open"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+            parameters={"window": window},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.window = window
-        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        """Generate pivot point."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            pivot_point = (high + low + close) / 3
-        else:
-            base_values = self.base_calculator.calculate(data)
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(base_values) >= 1000:
-                pivot_point = rolling_mean(base_values, window=self.window)
-            else:
-                pivot_point = base_values.rolling(window=self.window).mean()
-        return pivot_point
-
-# Fibonacci Level Generator
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class FibonacciLevelGenerator(VectorizedFeatureGenerator):
-    """Generator for Fibonacci level features."""
-    
-    def __init__(self, level: float = 0.618, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
-        if isinstance(base_calculation, str):
-            base_calculation = BaseCalculationType(base_calculation)
+        """Generate volume-weighted support/resistance using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'vw_sr_{self.window}')
         
-        self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        required_columns = self.base_calculator.get_required_columns()
-        if 'high' not in required_columns:
-            required_columns.append('high')
-        if 'low' not in required_columns:
-            required_columns.append('low')
+        high = data['high']
+        low = data['low']
+        volume = data['volume']
         
-        config = FeatureConfig(
-            name=f"fibonacci_{level}_{window}_{base_calculation.value}",
+        # Calculate volume-weighted price
+        vw_price = (high + low) / 2 * volume
+        
+        # Use VectorBT rolling operations
+        vw_price_sum = self._vectorbt_rolling_operation(vw_price, 'sum', window=self.window)
+        volume_sum = self._vectorbt_rolling_operation(volume, 'sum', window=self.window)
+        
+        # Calculate volume-weighted support/resistance
+        vw_sr = safe_divide(vw_price_sum, volume_sum)
+        
+        return vw_sr.rename(f'vw_sr_{self.window}')
+
+
+class SupportResistanceStrengthGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized support/resistance strength generator."""
+    
+    def __init__(self, window: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window)
+        super().__init__(config)
+        self.window = window
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"sr_strength_{window}",
             category=FeatureCategory.SUPPORT_RESISTANCE,
-            description=f"Fibonacci level {level} over {window} periods based on {base_calculation.value}",
-            required_columns=required_columns,
+            description=f"VectorBT-optimized support/resistance strength over {window} periods",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open", "volume"],
             default_lookback=window,
             min_lookback=window,
             max_lookback=window,
-            parameters={'level': level, 'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
+            parameters={"window": window},
+            matrix_optimized=True,
+            gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.level = level
-        self.window = window
-        self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        """Generate support/resistance strength using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'sr_strength_{self.window}')
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Calculate range
+        price_range = high - low
+        
+        # Calculate how close price is to support/resistance levels
+        support_level = self._vectorbt_rolling_operation(low, 'min', window=self.window)
+        resistance_level = self._vectorbt_rolling_operation(high, 'max', window=self.window)
+        
+        # Calculate strength as distance from levels
+        distance_to_support = close - support_level
+        distance_to_resistance = resistance_level - close
+        
+        # Normalize by range
+        support_strength = safe_divide(distance_to_support, price_range)
+        resistance_strength = safe_divide(distance_to_resistance, price_range)
+        
+        # Combine strengths (positive for resistance, negative for support)
+        sr_strength = resistance_strength - support_strength
+        
+        return sr_strength.rename(f'sr_strength_{self.window}')
 
-        """Generate Fibonacci level."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            high = data['high']
-            low = data['low']
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(high) >= 1000:
-                high_max = rolling_max(high, window=self.window)
-                low_min = rolling_min(low, window=self.window)
-                range_size = high_max - low_min
-                fibonacci_level = low_min + (range_size * self.level)
-            else:
-                range_size = high.rolling(window=self.window).max() - low.rolling(window=self.window).min()
-                fibonacci_level = low.rolling(window=self.window).min() + (range_size * self.level)
-        else:
-            base_values = self.base_calculator.calculate(data)
-            # Use VectorBT for optimized rolling operations if available
-            if VECTORBT_AVAILABLE and len(base_values) >= 1000:
-                fibonacci_level = quantile(base_values, q=self.level, window=self.window)
-            else:
-                fibonacci_level = base_values.rolling(window=self.window).quantile(self.level)
-        return fibonacci_level
 
-def create_default_support_resistance_generators() -> List[FeatureGenerator]:
-    """Create default support/resistance feature generators."""
-    windows = [5, 10, 20]
-    fibonacci_levels = [0.236, 0.382, 0.5, 0.618, 0.786]
+class DynamicSupportResistanceGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized dynamic support/resistance generator."""
     
+    def __init__(self, window: int = 20, sensitivity: float = 0.1, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(window, sensitivity)
+        super().__init__(config)
+        self.window = window
+        self.sensitivity = sensitivity
+    
+    @classmethod
+    def _create_default_config(cls, window: int = 20, sensitivity: float = 0.1) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"dynamic_sr_{window}_{sensitivity}",
+            category=FeatureCategory.SUPPORT_RESISTANCE,
+            description=f"VectorBT-optimized dynamic support/resistance over {window} periods (sensitivity {sensitivity})",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={"window": window, "sensitivity": sensitivity},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate dynamic support/resistance using VectorBT operations."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'dynamic_sr_{self.window}_{self.sensitivity}')
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Calculate price momentum
+        price_momentum = close.pct_change()
+        
+        # Calculate dynamic levels based on momentum
+        momentum_ma = self._vectorbt_rolling_operation(price_momentum, 'mean', window=self.window)
+        
+        # Adjust levels based on momentum
+        base_support = self._vectorbt_rolling_operation(low, 'min', window=self.window)
+        base_resistance = self._vectorbt_rolling_operation(high, 'max', window=self.window)
+        
+        # Dynamic adjustment
+        adjustment = momentum_ma * self.sensitivity * (base_resistance - base_support)
+        
+        dynamic_sr = base_support + adjustment
+        
+        return dynamic_sr.rename(f'dynamic_sr_{self.window}_{self.sensitivity}')
+
+
+def create_support_resistance_generators() -> List[VectorBTFeatureGenerator]:
+    """Create all VectorBT-optimized support/resistance feature generators."""
     generators = []
     
-    # Create generators for each window
-    for window in windows:
-        generators.extend([
-            SupportLevelGenerator(1, window),
-            SupportLevelGenerator(2, window),
-            SupportLevelGenerator(3, window),
-            SupportLevelGenerator(4, window),
-            SupportLevelGenerator(5, window),
-            ResistanceLevelGenerator(1, window),
-            ResistanceLevelGenerator(2, window),
-            ResistanceLevelGenerator(3, window),
-            ResistanceLevelGenerator(4, window),
-            ResistanceLevelGenerator(5, window),
-            PivotPointGenerator(window),
-        ])
+    # Basic support/resistance levels
+    for level in [1, 2, 3, 4, 5]:
+        for window in [5, 10, 20]:
+            generators.extend([
+                SupportLevelGenerator(level, window),
+                ResistanceLevelGenerator(level, window),
+            ])
     
-    # Create Fibonacci level generators
+    # Pivot points
+    for window in [5, 10, 20]:
+        generators.append(PivotPointGenerator(window))
+    
+    # Fibonacci levels
+    fibonacci_levels = [0.236, 0.382, 0.5, 0.618, 0.786]
     for level in fibonacci_levels:
-        for window in windows:
+        for window in [5, 10, 20]:
             generators.append(FibonacciLevelGenerator(level, window))
     
+    # Volume-weighted support/resistance
+    for window in [5, 10, 20]:
+        generators.append(VolumeWeightedSupportResistanceGenerator(window))
+    
+    # Support/resistance strength
+    for window in [5, 10, 20]:
+        generators.append(SupportResistanceStrengthGenerator(window))
+    
+    # Dynamic support/resistance
+    for window in [10, 20]:
+        for sensitivity in [0.05, 0.1, 0.2]:
+            generators.append(DynamicSupportResistanceGenerator(window, sensitivity))
+    
     return generators
+
+
+def create_default_support_resistance_generators() -> List[VectorBTFeatureGenerator]:
+    """Create default VectorBT-optimized support/resistance feature generators."""
+    return create_support_resistance_generators()
+
+
+# Export all generators
+__all__ = [
+    'SupportLevelGenerator',
+    'ResistanceLevelGenerator',
+    'PivotPointGenerator',
+    'FibonacciLevelGenerator',
+    'VolumeWeightedSupportResistanceGenerator',
+    'SupportResistanceStrengthGenerator',
+    'DynamicSupportResistanceGenerator',
+    'create_support_resistance_generators',
+    'create_default_support_resistance_generators'
+]

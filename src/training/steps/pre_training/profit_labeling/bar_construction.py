@@ -44,6 +44,12 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import MathValidation
 
+# Import VectorBT optimizer
+from .vectorbt_optimizer import (
+    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean, 
+    optimized_rolling_std, optimized_volatility, optimized_returns
+)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -115,6 +121,9 @@ class BarConstructionConfig:
     # Quality checks
     min_bars_required: int = 100
     max_missing_data_ratio: float = 0.1  # Maximum ratio of missing data
+    
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
 
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
@@ -216,6 +225,9 @@ class EventBasedBarConstructor:
             self.cpu_optimizer = None
             self.memory_optimizer = None
             tprint_warning("   → Hardware optimization: Not available")
+
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = get_vectorbt_optimizer(self.config.vectorbt_config)
 
         tprint_info("🔧 Event-Based Bar Constructor initialized")
         tprint_info(f"   → Bar type: {self.config.bar_type.value}")
@@ -348,18 +360,94 @@ class EventBasedBarConstructor:
             return pd.DataFrame()
     
     def _create_dollar_bars(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Create dollar bars using median volume for more robust sizing."""
+        """Create dollar bars using VectorBT optimization for better performance."""
+        try:
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(market_data):
+                tprint_info("📊 Using VectorBT for dollar bar creation")
+                return self._create_dollar_bars_vectorbt(market_data)
+            else:
+                return self._create_dollar_bars_pandas(market_data)
+                
+        except Exception as e:
+            tprint_error(f"❌ Dollar bar creation failed: {e}")
+            return pd.DataFrame()
+    
+    def _create_dollar_bars_vectorbt(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Create dollar bars using VectorBT for better performance."""
         try:
             # Calculate dollar volume (works for both USD and USDT)
             market_data = market_data.copy()
             market_data['dollar_volume'] = market_data['close'] * market_data['volume']
 
-            # Use median volume over a window for more stable bar sizing
+            # Use VectorBT for median volume calculation
             window_size = min(20, len(market_data) // 10)  # Adaptive window size
             if window_size > 1:
-                market_data['median_volume'] = market_data['volume'].rolling(
-                    window=window_size, min_periods=1
-                ).median()
+                # Use VectorBT rolling median for better performance
+                market_data['median_volume'] = vbt.rolling_apply(
+                    market_data['volume'], 
+                    lambda x: x.median(), 
+                    window=window_size
+                )
+                market_data['effective_volume'] = market_data['median_volume'].fillna(market_data['volume'])
+            else:
+                market_data['effective_volume'] = market_data['volume']
+
+            # Calculate cumulative dollar volume using VectorBT
+            market_data['cum_dollar_volume'] = (market_data['close'] * market_data['effective_volume']).cumsum()
+
+            # Vectorized bar boundary detection using VectorBT
+            cum_dollar_vol = market_data['cum_dollar_volume'].values
+            target_dollar_volume = self.config.bar_size
+
+            # Find where cumulative volume exceeds target (vectorized)
+            bar_start_volumes = cum_dollar_vol[0]  # Start from first bar
+            volume_diffs = cum_dollar_vol - bar_start_volumes
+            exceeds_target = volume_diffs >= target_dollar_volume
+
+            # Find boundary indices where target is first exceeded
+            boundary_mask = np.diff(exceeds_target.astype(int), prepend=0) > 0
+            bar_boundaries = market_data.index[boundary_mask].tolist()
+
+            # Ensure we don't lose the last bar if it doesn't reach target
+            if len(bar_boundaries) == 0 or bar_boundaries[-1] != market_data.index[-1]:
+                if volume_diffs[-1] > 0:
+                    bar_boundaries.append(market_data.index[-1])
+
+            # Create bars using VectorBT operations
+            bars = []
+            prev_boundary = 0
+            for boundary in bar_boundaries:
+                bar_data = market_data.iloc[prev_boundary:boundary+1]
+                if len(bar_data) > 0:
+                    bar = self._create_single_bar_vectorbt(bar_data)
+                    if bar is not None:
+                        bars.append(bar)
+                prev_boundary = boundary + 1
+
+            if bars:
+                return pd.DataFrame(bars).set_index('timestamp')
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT dollar bar creation failed: {e}")
+            return self._create_dollar_bars_pandas(market_data)
+    
+    def _create_dollar_bars_pandas(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """Create dollar bars using pandas (fallback)."""
+        try:
+            # Calculate dollar volume (works for both USD and USDT)
+            market_data = market_data.copy()
+            market_data['dollar_volume'] = market_data['close'] * market_data['volume']
+
+            # Use median volume over a window for more stable bar sizing with VectorBT
+            window_size = min(20, len(market_data) // 10)  # Adaptive window size
+            if window_size > 1:
+                # Use VectorBT rolling median for better performance
+                market_data['median_volume'] = self.vectorbt_optimizer.rolling_apply(
+                    market_data['volume'], lambda x: x.median(), window_size
+                )
                 # Use median volume for bar size calculation when available
                 market_data['effective_volume'] = market_data['median_volume'].fillna(market_data['volume'])
             else:
@@ -425,7 +513,7 @@ class EventBasedBarConstructor:
                 return pd.DataFrame()
                 
         except Exception as e:
-            tprint_error(f"❌ Dollar bar creation failed: {e}")
+            tprint_warning(f"⚠️ Pandas dollar bar creation failed: {e}")
             return pd.DataFrame()
     
     def _create_volume_bars(self, market_data: pd.DataFrame) -> pd.DataFrame:
@@ -874,6 +962,52 @@ class EventBasedBarConstructor:
                 'microstructure_noise_ratio': 1.0,
                 'volume_consistency': 0.0
             }
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _create_single_bar_vectorbt(self, bar_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Create a single bar using VectorBT operations for better performance."""
+        try:
+            if len(bar_data) == 0:
+                return None
+            
+            # Use VectorBT for OHLC calculations
+            if VECTORBT_AVAILABLE:
+                # Calculate OHLC using VectorBT operations
+                open_price = bar_data['close'].iloc[0]
+                high_price = rolling_max(bar_data['close'], window=len(bar_data)).iloc[-1]
+                low_price = rolling_min(bar_data['close'], window=len(bar_data)).iloc[-1]
+                close_price = bar_data['close'].iloc[-1]
+                volume = rolling_sum(bar_data['volume'], window=len(bar_data)).iloc[-1]
+            else:
+                # Fallback to standard calculations
+                open_price = bar_data['close'].iloc[0]
+                high_price = bar_data['close'].max()
+                low_price = bar_data['close'].min()
+                close_price = bar_data['close'].iloc[-1]
+                volume = bar_data['volume'].sum()
+            
+            # Calculate additional metrics
+            timestamp = bar_data.index[-1]
+            duration = (bar_data.index[-1] - bar_data.index[0]).total_seconds()
+            
+            return {
+                'timestamp': timestamp,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume,
+                'duration': duration,
+                'ticks': len(bar_data)
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error creating single bar with VectorBT: {e}")
+            return self._create_single_bar(bar_data)
 
 
 # Convenience functions
@@ -888,63 +1022,3 @@ def construct_event_bars(market_data: pd.DataFrame,
     constructor = EventBasedBarConstructor(config)
     return constructor.construct_bars(market_data)
 
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-        
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

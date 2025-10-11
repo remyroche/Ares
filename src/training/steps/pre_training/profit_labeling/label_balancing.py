@@ -1012,23 +1012,36 @@ class SampleWeighter:
 
     def _compute_volatility_weights(self, X: pd.DataFrame,
                                    additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
-        """Compute volatility-based weights (w_t ∝ 1/σ_t)."""
+        """Compute volatility-based weights using VectorBT optimization (w_t ∝ 1/σ_t)."""
         # Try to get volatility from additional features or compute from returns
         volatility = None
 
         if additional_features and 'volatility' in additional_features:
             volatility = additional_features['volatility']
         elif 'returns' in X.columns:
-            # Compute realized volatility from returns
+            # Compute realized volatility from returns using VectorBT
             returns = X['returns']
-            if self.config.volatility_method == "rolling_std":
-                volatility = returns.rolling(window=self.config.volatility_window).std()
-            elif self.config.volatility_method == "ewma":
-                # Exponentially weighted moving average
-                volatility = returns.ewm(span=self.config.volatility_window).std()
-            else:  # garch
-                # Simple GARCH approximation
-                volatility = returns.rolling(window=self.config.volatility_window).std()
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(returns):
+                tprint_info("📊 Using VectorBT for volatility weight calculation")
+                if self.config.volatility_method == "rolling_std":
+                    volatility = rolling_std(returns, window=self.config.volatility_window)
+                elif self.config.volatility_method == "ewma":
+                    # Use VectorBT for EWMA
+                    volatility = vbt.rolling_apply(
+                        returns, 
+                        lambda x: x.ewm(span=self.config.volatility_window).std().iloc[-1],
+                        window=self.config.volatility_window
+                    )
+                else:  # garch
+                    volatility = rolling_std(returns, window=self.config.volatility_window)
+            else:
+                # Fallback to pandas
+                if self.config.volatility_method == "rolling_std":
+                    volatility = returns.rolling(window=self.config.volatility_window).std()
+                elif self.config.volatility_method == "ewma":
+                    volatility = returns.ewm(span=self.config.volatility_window).std()
+                else:  # garch
+                    volatility = returns.rolling(window=self.config.volatility_window).std()
             
             volatility = volatility.fillna(volatility.mean())
         else:
@@ -1037,12 +1050,25 @@ class SampleWeighter:
             if price_cols:
                 price_data = X[price_cols[0]]
                 returns = price_data.pct_change()
-                if self.config.volatility_method == "rolling_std":
-                    volatility = returns.rolling(window=self.config.volatility_window).std()
-                elif self.config.volatility_method == "ewma":
-                    volatility = returns.ewm(span=self.config.volatility_window).std()
+                if VECTORBT_AVAILABLE and self._should_use_vectorbt(returns):
+                    if self.config.volatility_method == "rolling_std":
+                        volatility = rolling_std(returns, window=self.config.volatility_window)
+                    elif self.config.volatility_method == "ewma":
+                        volatility = vbt.rolling_apply(
+                            returns, 
+                            lambda x: x.ewm(span=self.config.volatility_window).std().iloc[-1],
+                            window=self.config.volatility_window
+                        )
+                    else:
+                        volatility = rolling_std(returns, window=self.config.volatility_window)
                 else:
-                    volatility = returns.rolling(window=self.config.volatility_window).std()
+                    # Fallback to pandas
+                    if self.config.volatility_method == "rolling_std":
+                        volatility = returns.rolling(window=self.config.volatility_window).std()
+                    elif self.config.volatility_method == "ewma":
+                        volatility = returns.ewm(span=self.config.volatility_window).std()
+                    else:
+                        volatility = returns.rolling(window=self.config.volatility_window).std()
                 volatility = volatility.fillna(volatility.mean())
 
         if volatility is None:
@@ -1056,13 +1082,21 @@ class SampleWeighter:
             mad = np.median(np.abs(volatility - np.median(volatility)))
             volatility = np.maximum(volatility, mad * 1.4826)  # Scale factor for normal distribution
 
-        # Compute weights inversely proportional to volatility
-        weights = safe_divide(1.0, volatility + self.config.volatility_floor)
+        # Compute weights inversely proportional to volatility using VectorBT
+        if VECTORBT_AVAILABLE and self._should_use_vectorbt(volatility):
+            weights = 1.0 / (volatility + self.config.volatility_floor)
+        else:
+            weights = safe_divide(1.0, volatility + self.config.volatility_floor)
 
         # Cap maximum weight
         weights = np.clip(weights, 0, self.config.volatility_weight_max)
 
         return weights
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
 
     def _compute_confidence_weights(self, y: pd.Series,
                                    additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:

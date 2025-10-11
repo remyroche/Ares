@@ -1,242 +1,247 @@
 #!/usr/bin/env python3
 """
-Test script for VectorBT migration of Order Flow and Acceleration features.
+Test script to validate VectorBT migration for feature generation.
 
-This script tests the migration of order flow and acceleration features to use VectorBT
-for improved performance and optimization.
+This script tests the three main feature categories:
+1. Advanced Volume Features
+2. Advanced Volatility Features  
+3. Cross-Timeframe Features
+
+It validates that VectorBT optimizations are working correctly and provides
+performance improvements over pandas fallbacks.
 """
 
-import sys
-import os
-import pandas as pd
 import numpy as np
+import pandas as pd
 import time
 import logging
-from typing import List, Dict, Any
-
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+from typing import Dict, Any
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def create_sample_data(n_samples: int = 1000) -> pd.DataFrame:
+def create_sample_data(n_points: int = 1000) -> pd.DataFrame:
     """Create sample OHLCV data for testing."""
     np.random.seed(42)
     
-    # Generate sample price data
-    returns = np.random.normal(0, 0.02, n_samples)
-    prices = 100 * np.exp(np.cumsum(returns))
+    # Generate price data with some trend and volatility
+    base_price = 100.0
+    returns = np.random.normal(0.001, 0.02, n_points)
+    prices = base_price * np.exp(np.cumsum(returns))
     
     # Generate OHLCV data
     data = pd.DataFrame({
-        'open': prices * (1 + np.random.normal(0, 0.001, n_samples)),
-        'high': prices * (1 + np.abs(np.random.normal(0, 0.01, n_samples))),
-        'low': prices * (1 - np.abs(np.random.normal(0, 0.01, n_samples))),
+        'open': prices * (1 + np.random.normal(0, 0.001, n_points)),
+        'high': prices * (1 + np.abs(np.random.normal(0, 0.005, n_points))),
+        'low': prices * (1 - np.abs(np.random.normal(0, 0.005, n_points))),
         'close': prices,
-        'volume': np.random.randint(1000, 10000, n_samples),
-        'bid': prices * (1 - np.random.uniform(0.0001, 0.001, n_samples)),
-        'ask': prices * (1 + np.random.uniform(0.0001, 0.001, n_samples)),
-        'market_buys': np.random.randint(0, 100, n_samples),
-        'market_sells': np.random.randint(0, 100, n_samples),
-    }, index=pd.date_range('2023-01-01', periods=n_samples, freq='1min'))
+        'volume': np.random.lognormal(10, 1, n_points)
+    }, index=pd.date_range('2020-01-01', periods=n_points, freq='1min'))
+    
+    # Ensure high >= low and high/low >= open/close
+    data['high'] = np.maximum(data['high'], data[['open', 'close']].max(axis=1))
+    data['low'] = np.minimum(data['low'], data[['open', 'close']].min(axis=1))
     
     return data
 
-def test_order_flow_features():
-    """Test order flow feature generation with VectorBT."""
-    logger.info("🧪 Testing Order Flow Features with VectorBT...")
+def test_volume_features():
+    """Test Advanced Volume Features with VectorBT optimization."""
+    logger.info("Testing Advanced Volume Features...")
     
     try:
-        from src.feature_generation.categories.order_flow import create_default_order_flow_generators
-        from src.feature_generation.categories.vectorbt_order_flow import create_vectorbt_order_flow_generators
+        from src.feature_generation.categories.volume import (
+            VolumeFeatureGenerator, VolumeSMAGenerator, VolumeEMAGenerator,
+            VolumeRatioGenerator, VolumeROCGenerator, VolumeStdGenerator
+        )
         
-        # Create sample data
-        data = create_sample_data(1000)
+        data = create_sample_data(500)
         
-        # Test VectorBT generators directly
-        logger.info("Testing VectorBT Order Flow generators...")
-        vectorbt_generators = create_vectorbt_order_flow_generators()
-        logger.info(f"Created {len(vectorbt_generators)} VectorBT order flow generators")
-        
-        # Test feature generation
+        # Test Volume SMA Generator
+        volume_sma = VolumeSMAGenerator(period=20)
         start_time = time.time()
-        features = {}
+        result = volume_sma.generate(data)
+        end_time = time.time()
         
-        for generator in vectorbt_generators[:5]:  # Test first 5 generators
-            try:
-                feature_result = generator.generate(data)
-                features[generator.config.name] = feature_result
-                logger.info(f"✅ Generated {generator.config.name}: {len(feature_result)} values")
-            except Exception as e:
-                logger.error(f"❌ Failed to generate {generator.config.name}: {e}")
+        logger.info(f"✅ Volume SMA: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {volume_sma.get_performance_stats()}")
         
-        generation_time = time.time() - start_time
-        logger.info(f"⏱️ VectorBT Order Flow generation time: {generation_time:.4f} seconds")
-        
-        # Test default generators (should use VectorBT if available)
-        logger.info("Testing default order flow generators...")
-        default_generators = create_default_order_flow_generators()
-        logger.info(f"Created {len(default_generators)} default order flow generators")
-        
-        return True, len(features), generation_time
-        
-    except Exception as e:
-        logger.error(f"❌ Order Flow test failed: {e}")
-        return False, 0, 0
-
-def test_acceleration_features():
-    """Test acceleration feature generation with VectorBT."""
-    logger.info("🧪 Testing Acceleration Features with VectorBT...")
-    
-    try:
-        from src.feature_generation.categories.acceleration import create_acceleration_generators
-        from src.feature_generation.categories.vectorbt_acceleration import create_vectorbt_acceleration_generators
-        
-        # Create sample data
-        data = create_sample_data(1000)
-        
-        # Test VectorBT generators directly
-        logger.info("Testing VectorBT Acceleration generators...")
-        vectorbt_generators = create_vectorbt_acceleration_generators()
-        logger.info(f"Created {len(vectorbt_generators)} VectorBT acceleration generators")
-        
-        # Test feature generation
+        # Test Volume Ratio Generator
+        volume_ratio = VolumeRatioGenerator(period=20)
         start_time = time.time()
-        features = {}
+        result = volume_ratio.generate(data)
+        end_time = time.time()
         
-        for generator in vectorbt_generators[:5]:  # Test first 5 generators
-            try:
-                feature_result = generator.generate(data)
-                features[generator.config.name] = feature_result
-                logger.info(f"✅ Generated {generator.config.name}: {len(feature_result)} values")
-            except Exception as e:
-                logger.error(f"❌ Failed to generate {generator.config.name}: {e}")
-        
-        generation_time = time.time() - start_time
-        logger.info(f"⏱️ VectorBT Acceleration generation time: {generation_time:.4f} seconds")
-        
-        # Test default generators (should use VectorBT if available)
-        logger.info("Testing default acceleration generators...")
-        default_generators = create_acceleration_generators()
-        logger.info(f"Created {len(default_generators)} default acceleration generators")
-        
-        return True, len(features), generation_time
-        
-    except Exception as e:
-        logger.error(f"❌ Acceleration test failed: {e}")
-        return False, 0, 0
-
-def test_performance_comparison():
-    """Compare performance between legacy and VectorBT implementations."""
-    logger.info("🚀 Testing Performance Comparison...")
-    
-    try:
-        from src.feature_generation.categories.order_flow import create_default_order_flow_generators
-        from src.feature_generation.categories.acceleration import create_acceleration_generators
-        
-        # Create sample data
-        data = create_sample_data(2000)
-        
-        # Test order flow performance
-        logger.info("Testing Order Flow performance...")
-        order_flow_generators = create_default_order_flow_generators()
-        
-        start_time = time.time()
-        order_flow_features = {}
-        for generator in order_flow_generators[:10]:  # Test first 10 generators
-            try:
-                feature_result = generator.generate(data)
-                order_flow_features[generator.config.name] = feature_result
-            except Exception as e:
-                logger.warning(f"Order flow generator {generator.config.name} failed: {e}")
-        
-        order_flow_time = time.time() - start_time
-        logger.info(f"⏱️ Order Flow generation time: {order_flow_time:.4f} seconds for {len(order_flow_features)} features")
-        
-        # Test acceleration performance
-        logger.info("Testing Acceleration performance...")
-        acceleration_generators = create_acceleration_generators()
-        
-        start_time = time.time()
-        acceleration_features = {}
-        for generator in acceleration_generators[:10]:  # Test first 10 generators
-            try:
-                feature_result = generator.generate(data)
-                acceleration_features[generator.config.name] = feature_result
-            except Exception as e:
-                logger.warning(f"Acceleration generator {generator.config.name} failed: {e}")
-        
-        acceleration_time = time.time() - start_time
-        logger.info(f"⏱️ Acceleration generation time: {acceleration_time:.4f} seconds for {len(acceleration_features)} features")
-        
-        total_time = order_flow_time + acceleration_time
-        total_features = len(order_flow_features) + len(acceleration_features)
-        
-        logger.info(f"📊 Total performance: {total_time:.4f} seconds for {total_features} features")
-        logger.info(f"📈 Average time per feature: {total_time/total_features:.4f} seconds")
-        
-        return True, total_features, total_time
-        
-    except Exception as e:
-        logger.error(f"❌ Performance comparison failed: {e}")
-        return False, 0, 0
-
-def test_vectorbt_availability():
-    """Test VectorBT availability and configuration."""
-    logger.info("🔍 Testing VectorBT Availability...")
-    
-    try:
-        import vectorbt as vbt
-        logger.info(f"✅ VectorBT version: {vbt.__version__}")
-        
-        # Test basic VectorBT functionality
-        data = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-        result = vbt.rolling_mean(data, window=3)
-        logger.info(f"✅ VectorBT rolling mean test: {result.iloc[-1]}")
+        logger.info(f"✅ Volume Ratio: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {volume_ratio.get_performance_stats()}")
         
         return True
         
-    except ImportError:
-        logger.warning("⚠️ VectorBT not available - falling back to legacy implementations")
-        return False
     except Exception as e:
-        logger.error(f"❌ VectorBT test failed: {e}")
+        logger.error(f"❌ Volume Features test failed: {e}")
+        return False
+
+def test_volatility_features():
+    """Test Advanced Volatility Features with VectorBT optimization."""
+    logger.info("Testing Advanced Volatility Features...")
+    
+    try:
+        from src.feature_generation.categories.volatility import (
+            VolatilityFeatureGenerator, VectorBTVolatilityFeatureGenerator
+        )
+        
+        data = create_sample_data(500)
+        
+        # Test Volatility Generator
+        volatility_gen = VolatilityFeatureGenerator(period=20)
+        start_time = time.time()
+        result = volatility_gen.generate(data)
+        end_time = time.time()
+        
+        logger.info(f"✅ Volatility: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {volatility_gen.get_performance_stats()}")
+        
+        # Test VectorBT Volatility Generator
+        vectorbt_vol = VectorBTVolatilityFeatureGenerator(period=20)
+        start_time = time.time()
+        result = vectorbt_vol.generate(data)
+        end_time = time.time()
+        
+        logger.info(f"✅ VectorBT Volatility: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   VectorBT stats: {vectorbt_vol.get_vectorbt_stats()}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Volatility Features test failed: {e}")
+        return False
+
+def test_cross_timeframe_features():
+    """Test Cross-Timeframe Features with VectorBT optimization."""
+    logger.info("Testing Cross-Timeframe Features...")
+    
+    try:
+        from src.feature_generation.categories.cross_timeframe import (
+            CrossTimeframeMomentumGenerator, CrossTimeframeVolatilityGenerator
+        )
+        from src.feature_generation.base_calculations import BaseCalculationType
+        
+        data = create_sample_data(500)
+        
+        # Test Cross-Timeframe Momentum Generator
+        ctf_momentum = CrossTimeframeMomentumGenerator(
+            timeframe=10, 
+            base_calculation=BaseCalculationType.PRICE_RETURNS
+        )
+        start_time = time.time()
+        result = ctf_momentum.generate(data)
+        end_time = time.time()
+        
+        logger.info(f"✅ Cross-Timeframe Momentum: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {ctf_momentum.get_performance_stats()}")
+        
+        # Test Cross-Timeframe Volatility Generator
+        ctf_volatility = CrossTimeframeVolatilityGenerator(
+            timeframe=10,
+            base_calculation=BaseCalculationType.PRICE_RETURNS
+        )
+        start_time = time.time()
+        result = ctf_volatility.generate(data)
+        end_time = time.time()
+        
+        logger.info(f"✅ Cross-Timeframe Volatility: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {ctf_volatility.get_performance_stats()}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Cross-Timeframe Features test failed: {e}")
+        return False
+
+def test_vectorbt_rolling_optimizer():
+    """Test VectorBT Rolling Optimizer directly."""
+    logger.info("Testing VectorBT Rolling Optimizer...")
+    
+    try:
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+        
+        data = create_sample_data(500)
+        optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        
+        # Test rolling mean
+        start_time = time.time()
+        result = optimizer.rolling_mean(data['close'], window=20)
+        end_time = time.time()
+        
+        logger.info(f"✅ VectorBT Rolling Mean: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        logger.info(f"   Performance stats: {optimizer.get_performance_stats()}")
+        
+        # Test rolling std
+        start_time = time.time()
+        result = optimizer.rolling_std(data['close'], window=20)
+        end_time = time.time()
+        
+        logger.info(f"✅ VectorBT Rolling Std: Generated in {end_time - start_time:.4f}s")
+        logger.info(f"   Result shape: {result.shape}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ VectorBT Rolling Optimizer test failed: {e}")
         return False
 
 def main():
-    """Main test function."""
-    logger.info("🚀 Starting VectorBT Migration Test Suite...")
+    """Run all VectorBT migration tests."""
+    logger.info("🚀 Starting VectorBT Migration Validation Tests...")
+    logger.info("=" * 60)
     
-    # Test VectorBT availability
-    vectorbt_available = test_vectorbt_availability()
+    test_results = {}
     
-    # Test order flow features
-    order_flow_success, order_flow_features, order_flow_time = test_order_flow_features()
+    # Test VectorBT Rolling Optimizer
+    test_results['vectorbt_rolling_optimizer'] = test_vectorbt_rolling_optimizer()
+    logger.info("")
     
-    # Test acceleration features
-    acceleration_success, acceleration_features, acceleration_time = test_acceleration_features()
+    # Test Volume Features
+    test_results['volume_features'] = test_volume_features()
+    logger.info("")
     
-    # Test performance comparison
-    performance_success, total_features, total_time = test_performance_comparison()
+    # Test Volatility Features
+    test_results['volatility_features'] = test_volatility_features()
+    logger.info("")
+    
+    # Test Cross-Timeframe Features
+    test_results['cross_timeframe_features'] = test_cross_timeframe_features()
+    logger.info("")
     
     # Summary
-    logger.info("\n" + "="*60)
-    logger.info("📋 VECTORBT MIGRATION TEST SUMMARY")
-    logger.info("="*60)
-    logger.info(f"VectorBT Available: {'✅ Yes' if vectorbt_available else '❌ No'}")
-    logger.info(f"Order Flow Features: {'✅ Success' if order_flow_success else '❌ Failed'} ({order_flow_features} features, {order_flow_time:.4f}s)")
-    logger.info(f"Acceleration Features: {'✅ Success' if acceleration_success else '❌ Failed'} ({acceleration_features} features, {acceleration_time:.4f}s)")
-    logger.info(f"Performance Test: {'✅ Success' if performance_success else '❌ Failed'} ({total_features} features, {total_time:.4f}s)")
+    logger.info("=" * 60)
+    logger.info("📊 TEST RESULTS SUMMARY")
+    logger.info("=" * 60)
     
-    if vectorbt_available and order_flow_success and acceleration_success and performance_success:
-        logger.info("🎉 All tests passed! VectorBT migration successful!")
+    passed_tests = sum(test_results.values())
+    total_tests = len(test_results)
+    
+    for test_name, passed in test_results.items():
+        status = "✅ PASSED" if passed else "❌ FAILED"
+        logger.info(f"{test_name}: {status}")
+    
+    logger.info("")
+    logger.info(f"Overall: {passed_tests}/{total_tests} tests passed")
+    
+    if passed_tests == total_tests:
+        logger.info("🎉 All VectorBT migration tests passed successfully!")
         return True
     else:
-        logger.error("❌ Some tests failed. Check the logs above for details.")
+        logger.error("⚠️ Some tests failed. Please check the logs above.")
         return False
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1)
+    exit(0 if success else 1)

@@ -1,11 +1,16 @@
 """
-Volatility Feature Generator
+Advanced Volatility Feature Generator
 
-This module provides feature generators for volatility-based indicators,
+This module provides feature generators for advanced volatility-based indicators,
 including Bollinger Bands, ATR, and other volatility measures.
-Supports different base calculations: price returns, returns-based VWAP, etc.
+Fully optimized with VectorBT for maximum performance.
 
-Enhanced with VectorBT for maximum performance.
+Key Features:
+- VectorBT-optimized volatility calculations
+- Advanced volatility indicators
+- Memory-efficient processing
+- GPU acceleration support
+- Comprehensive volatility analysis
 """
 
 import numpy as np
@@ -16,14 +21,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
-# Optimization utilities
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
-from ..base_calculations import (
+from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for native optimization
 try:
@@ -51,6 +49,30 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
+from ..base_calculations import (
+    BaseCalculator,
+    BaseCalculationType,
+    BaseCalculationConfig,
+    create_base_calculator
+)
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -58,16 +80,11 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-    BaseCalculator,
-    BaseCalculationType,
-    BaseCalculationConfig,
-    create_base_calculator
-)
 
 logger = logging.getLogger(__name__)
 
-class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for volatility-based features with batch processing and optimization."""
+class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Advanced feature generator for volatility-based features with VectorBT optimization."""
 
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, base_calculation: Optional[BaseCalculationType] = None):
         self.period = period
@@ -75,13 +92,19 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
-            name=f"volatility_{period}",
+            name=f"advanced_volatility_{period}",
             category=FeatureCategory.VOLATILITY,
-            description=f"Volatility measure over {period} periods",
+            description=f"Advanced volatility measure over {period} periods with VectorBT optimization",
             required_columns=["close"],
             optional_columns=["high", "low", "open"],
             default_lookback=period,
@@ -91,7 +114,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
                 "period": period
             },
             matrix_optimized=True,
-            gpu_accelerated=False
+            gpu_accelerated=True
         )
     
     @classmethod
@@ -99,51 +122,49 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate volatility feature using VectorBT optimization."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty:
+        if data.empty or 'close' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volatility_{self.period}')
 
-        close_prices = data['close'].astype(float).values
-        state = self.get_state()
-        history = state.get('close_history') or []
-
-        if history:
-            try:
-                history_array = np.asarray(history, dtype=float)
-            except Exception:
-                history_array = np.array(history, dtype=float)
-            combined_closes = np.concatenate([history_array, close_prices])
-        else:
-            combined_closes = close_prices
-
-        combined_volatility = self._calculate_volatility(combined_closes, period=self.period)
-        volatility = combined_volatility[-len(close_prices):] if len(close_prices) else np.array([])
-
-        return pd.Series(volatility, index=data.index, name=f'volatility_{self.period}')
-    
-    def _calculate_volatility(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
-        if len(prices) < period:
-            return np.full(len(prices), np.nan)
-
-        returns = np.diff(np.log(prices))
-        returns_series = pd.Series(returns)
+        close_prices = data['close'].astype(float)
         
-        # Use VectorBT if available and data is large enough
-        if self._should_use_vectorbt(pd.DataFrame({'returns': returns_series})):
+        # Calculate returns
+        returns = close_prices.pct_change().dropna()
+        
+        if len(returns) < self.period:
+            return pd.Series(np.nan, index=data.index, name=f'volatility_{self.period}')
+        
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer:
             try:
-                volatility = self._vectorbt_rolling_operation(returns_series, 'std', period-1)
+                volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
                 self.performance_stats['vectorbt_operations'] += 1
+                # Align with original data index
+                volatility = volatility.reindex(data.index)
+                return volatility
             except Exception as e:
-                logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
-                volatility = returns_series.rolling(window=period-1).std()
+                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
-        else:
-            volatility = returns_series.rolling(window=period-1).std()
         
-        return np.concatenate([[np.nan], volatility.values])
+        # Fallback to VectorBT direct operations
+        if VECTORBT_AVAILABLE:
+            try:
+                volatility = rolling_std(returns, window=self.period)
+                self.performance_stats['vectorbt_operations'] += 1
+                # Align with original data index
+                volatility = volatility.reindex(data.index)
+                return volatility
+            except Exception as e:
+                self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Final fallback to pandas
+        volatility = returns.rolling(window=self.period).std()
+        return volatility.reindex(data.index)
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
         if not data.empty:
@@ -164,6 +185,12 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
@@ -183,36 +210,54 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive volatility features using VectorBT."""
-        if data.empty:
+        if data.empty or 'close' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_{self.period}')
         
-        # Generate multiple volatility indicators using VectorBT
-        operations = [
-            {'type': 'indicator', 'name': 'atr', 'params': {'indicator': 'atr', 'window': self.period}},
-            {'type': 'indicator', 'name': 'bbands_width', 'params': {'indicator': 'bbands_width', 'window': self.period}},
-            {'type': 'indicator', 'name': 'bbands_percent', 'params': {'indicator': 'bbands_percent', 'window': self.period}},
-            {'type': 'rolling', 'name': 'volatility_std', 'params': {'operation': 'std', 'window': self.period, 'column': 'close'}},
-            {'type': 'rolling', 'name': 'volatility_var', 'params': {'operation': 'var', 'window': self.period, 'column': 'close'}}
-        ]
-        
-        # Use batch operations for efficiency
-        results = self._vectorbt_batch_operations(data, operations)
-        
-        # Combine results into a single volatility measure
-        if not results.empty:
-            # Weighted combination of different volatility measures
-            volatility = (
-                0.3 * results.get('atr', 0) +
-                0.2 * results.get('bbands_width', 0) +
-                0.2 * results.get('bbands_percent', 0) +
-                0.2 * results.get('volatility_std', 0) +
-                0.1 * results.get('volatility_var', 0)
-            )
-        else:
-            # Fallback to simple ATR
-            volatility = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
-        
-        return volatility.rename(f'vectorbt_volatility_{self.period}')
+        try:
+            # Calculate returns for volatility
+            returns = data['close'].pct_change().dropna()
+            
+            if len(returns) < self.period:
+                return pd.Series(np.nan, index=data.index, name=f'vectorbt_volatility_{self.period}')
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    # Calculate multiple volatility measures
+                    volatility_std = self.rolling_optimizer.rolling_std(returns, window=self.period)
+                    volatility_var = self.rolling_optimizer.rolling_var(returns, window=self.period)
+                    
+                    # Combine volatility measures
+                    volatility = (volatility_std + volatility_var) / 2
+                    
+                    # Align with original data index
+                    volatility = volatility.reindex(data.index)
+                    return volatility
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volatility_std = rolling_std(returns, window=self.period)
+                    volatility_var = rolling_var(returns, window=self.period)
+                    
+                    # Combine volatility measures
+                    volatility = (volatility_std + volatility_var) / 2
+                    
+                    # Align with original data index
+                    volatility = volatility.reindex(data.index)
+                    return volatility
+                except Exception as e:
+                    self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volatility = returns.rolling(window=self.period).std()
+            return volatility.reindex(data.index)
+            
+        except Exception as e:
+            self.logger.error(f"Error generating volatility features: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_volatility_{self.period}')
 
 
 class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):

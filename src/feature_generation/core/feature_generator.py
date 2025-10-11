@@ -220,6 +220,7 @@ class FeatureGenerator(ABC):
                                   window: int, **kwargs) -> pd.Series:
         """
         Perform VectorBT rolling operation with fallback to pandas.
+        Now uses VectorBTRollingOptimizer for enhanced performance.
         
         Args:
             data: Input data series
@@ -230,6 +231,48 @@ class FeatureGenerator(ABC):
         Returns:
             Result of rolling operation
         """
+        # Use VectorBTRollingOptimizer for enhanced performance
+        try:
+            from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            optimizer = get_vectorbt_rolling_optimizer()
+            
+            # Map operation to optimizer method
+            if operation == 'mean':
+                return optimizer.rolling_mean(data, window, **kwargs)
+            elif operation == 'std':
+                return optimizer.rolling_std(data, window, **kwargs)
+            elif operation == 'var':
+                return optimizer.rolling_var(data, window, **kwargs)
+            elif operation == 'min':
+                return optimizer.rolling_min(data, window, **kwargs)
+            elif operation == 'max':
+                return optimizer.rolling_max(data, window, **kwargs)
+            elif operation == 'sum':
+                return optimizer.rolling_sum(data, window, **kwargs)
+            elif operation == 'corr':
+                other = kwargs.get('other')
+                if other is None:
+                    raise ValueError("'other' parameter required for correlation")
+                return optimizer.rolling_corr(data, other, window, **kwargs)
+            elif operation == 'cov':
+                other = kwargs.get('other')
+                if other is None:
+                    raise ValueError("'other' parameter required for covariance")
+                return optimizer.rolling_cov(data, other, window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        
+        except ImportError:
+            # Fallback to original implementation if optimizer not available
+            self.logger.warning("VectorBTRollingOptimizer not available, using direct VectorBT calls")
+            return self._direct_vectorbt_rolling_operation(data, operation, window, **kwargs)
+        except Exception as e:
+            self.logger.warning(f"VectorBTRollingOptimizer failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _direct_vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                         window: int, **kwargs) -> pd.Series:
+        """Direct VectorBT rolling operation (fallback when optimizer unavailable)."""
         if not self._should_use_vectorbt(pd.DataFrame({'temp': data})):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
@@ -882,6 +925,54 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             return pd.Series(data).ewm(span=span).mean().values
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+    
+    # Enhanced rolling operation helper methods using VectorBTRollingOptimizer
+    def _calculate_ema_vectorized(self, data: pd.Series, window: int, alpha: Optional[float] = None) -> pd.Series:
+        """Calculate EMA using vectorized operations with VectorBT optimization."""
+        if alpha is None:
+            alpha = 2.0 / (window + 1)
+        
+        try:
+            if VECTORBT_AVAILABLE and len(data) >= 1000:  # Use VectorBT for large datasets
+                return vbt.ta.ema(data, window=window, alpha=alpha)
+            else:
+                # Fallback to pandas implementation
+                return data.ewm(span=window, alpha=alpha).mean()
+        except Exception as e:
+            self.logger.warning(f"VectorBT EMA calculation failed: {e}, using pandas fallback")
+            return data.ewm(span=window, alpha=alpha).mean()
+    
+    def _calculate_sma_vectorized(self, data: pd.Series, window: int) -> pd.Series:
+        """Calculate SMA using vectorized operations with VectorBT optimization."""
+        return self._vectorbt_rolling_operation(data, "mean", window)
+    
+    def _calculate_rolling_std_vectorized(self, data: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling standard deviation using vectorized operations."""
+        return self._vectorbt_rolling_operation(data, "std", window)
+    
+    def _calculate_rolling_min_vectorized(self, data: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling minimum using vectorized operations."""
+        return self._vectorbt_rolling_operation(data, "min", window)
+    
+    def _calculate_rolling_max_vectorized(self, data: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling maximum using vectorized operations."""
+        return self._vectorbt_rolling_operation(data, "max", window)
+    
+    def _calculate_rolling_sum_vectorized(self, data: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling sum using vectorized operations."""
+        return self._vectorbt_rolling_operation(data, "sum", window)
+    
+    def _calculate_rolling_quantile_vectorized(self, data: pd.Series, window: int, q: float = 0.5) -> pd.Series:
+        """Calculate rolling quantile using vectorized operations."""
+        try:
+            from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            optimizer = get_vectorbt_rolling_optimizer()
+            return optimizer.rolling_quantile(data, window, q=q)
+        except ImportError:
+            return data.rolling(window=window).quantile(q)
+        except Exception as e:
+            self.logger.warning(f"VectorBT quantile calculation failed: {e}, using pandas fallback")
+            return data.rolling(window=window).quantile(q)
 
 # Global registry for feature generators
 _feature_generators: Dict[str, FeatureGenerator] = {}

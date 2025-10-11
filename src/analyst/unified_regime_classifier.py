@@ -271,7 +271,13 @@ class UnifiedRegimeClassifier:
             features_df['volatility_5'] = vectorbt_ops._get_rolling_object(log_returns_series, 5).std() if vectorbt_ops._get_rolling_object(log_returns_series, 5) else log_returns_series.rolling(5).std()
             
             # Use VectorBT for EWMA volatility
-            features_df['ewma_volatility_20'] = log_returns_series.ewm(span=20, adjust=False).std()
+            try:
+                from src.utils.ml_common.native_vectorbt_integration import vectorbt_ema_std
+                features_df['ewma_volatility_20'] = vectorbt_ema_std(log_returns_series, 20, adjust=False)
+                self.logger.debug("✅ Used VectorBT-optimized EWMA volatility")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT EWMA volatility failed: {e}, using pandas fallback")
+                features_df['ewma_volatility_20'] = log_returns_series.ewm(span=20, adjust=False).std()
             
             # Use VectorBT for volume ratio calculation
             volume_series = features_df['volume']
@@ -285,7 +291,12 @@ class UnifiedRegimeClassifier:
             features_df['volatility_20'] = features_df['log_returns'].rolling(20).std()
             features_df['volatility_10'] = features_df['log_returns'].rolling(10).std()
             features_df['volatility_5'] = features_df['log_returns'].rolling(5).std()
-            features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span=20, adjust=False).std()
+            # Use VectorBT for EWMA volatility fallback
+            try:
+                from src.utils.ml_common.native_vectorbt_integration import vectorbt_ema_std
+                features_df['ewma_volatility_20'] = vectorbt_ema_std(features_df['log_returns'], 20, adjust=False)
+            except Exception as e:
+                features_df['ewma_volatility_20'] = features_df['log_returns'].ewm(span=20, adjust=False).std()
             features_df['volume_ratio'] = features_df['volume'] / features_df['volume'].rolling(20).mean()
         features_df['volume_change'] = features_df['volume'].pct_change()
         features_df = self._calculate_rsi(features_df)
@@ -508,12 +519,24 @@ class UnifiedRegimeClassifier:
             df['macd_histogram'] = histogram
         else:
             # Fallback implementation
-            close_diff = df['close'].diff()
-            exp1 = close_diff.ewm(span = fast).mean()
-            exp2 = close_diff.ewm(span = slow).mean()
-            df['macd'] = exp1 - exp2
-            df['macd_signal'] = df['macd'].ewm(span = signal).mean()
-            df['macd_histogram'] = df['macd'] - df['macd_signal']
+            # Use VectorBT-optimized MACD calculation
+            try:
+                from src.utils.ml_common.native_vectorbt_integration import vectorbt_ema
+                close_diff = df['close'].diff()
+                exp1 = vectorbt_ema(close_diff, fast, adjust=False)
+                exp2 = vectorbt_ema(close_diff, slow, adjust=False)
+                df['macd'] = exp1 - exp2
+                df['macd_signal'] = vectorbt_ema(df['macd'], signal, adjust=False)
+                df['macd_histogram'] = df['macd'] - df['macd_signal']
+                self.logger.debug("✅ Used VectorBT-optimized MACD calculation")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT MACD failed: {e}, using pandas fallback")
+                close_diff = df['close'].diff()
+                exp1 = close_diff.ewm(span=fast).mean()
+                exp2 = close_diff.ewm(span=slow).mean()
+                df['macd'] = exp1 - exp2
+                df['macd_signal'] = df['macd'].ewm(span=signal).mean()
+                df['macd_histogram'] = df['macd'] - df['macd_signal']
         return df
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_adx')

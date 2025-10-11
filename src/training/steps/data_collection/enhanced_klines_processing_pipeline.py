@@ -1393,14 +1393,23 @@ class EnhancedKlinesProcessingPipeline:
                         result.warnings.append(f"Unsupported interval: {target_interval}")
                         continue
                     
-                    # Resample OHLCV data
-                    resampled = resampled_data.resample(freq).agg({
-                        'open': 'first',
-                        'high': 'max',
-                        'low': 'min',
-                        'close': 'last',
-                        'volume': 'sum' if resampling_config.preserve_volume else 'mean'
-                    }).dropna()
+                    # Use VectorBT-optimized OHLCV resampling
+                    try:
+                        from src.utils.ml_common.native_vectorbt_integration import vectorbt_resample_ohlcv
+                        resampled = vectorbt_resample_ohlcv(resampled_data, freq, method='ohlc')
+                        if self.enable_logging:
+                            tprint_debug(f"✅ Used VectorBT-optimized OHLCV resampling for {freq}")
+                    except Exception as e:
+                        if self.enable_logging:
+                            tprint_warning(f"⚠️ VectorBT resampling failed: {e}, using pandas fallback")
+                        # Fallback to pandas resampling
+                        resampled = resampled_data.resample(freq).agg({
+                            'open': 'first',
+                            'high': 'max',
+                            'low': 'min',
+                            'close': 'last',
+                            'volume': 'sum' if resampling_config.preserve_volume else 'mean'
+                        }).dropna()
                     
                     # Add metadata
                     resampled['symbol'] = symbol
@@ -1841,14 +1850,23 @@ class EnhancedKlinesProcessingPipeline:
             if freq is None:
                 raise ValueError(f"Unsupported interval: {target_interval}")
             
-            # Resample OHLCV data
-            resampled = df.resample(freq).agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum' if resampling_config.preserve_volume else 'mean'
-            }).dropna()
+            # Use VectorBT-optimized OHLCV resampling
+            try:
+                from src.utils.ml_common.native_vectorbt_integration import vectorbt_resample_ohlcv
+                resampled = vectorbt_resample_ohlcv(df, freq, method='ohlc')
+                if self.enable_logging:
+                    tprint_debug(f"✅ Used VectorBT-optimized OHLCV resampling for {freq}")
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ VectorBT resampling failed: {e}, using pandas fallback")
+                # Fallback to pandas resampling
+                resampled = df.resample(freq).agg({
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum' if resampling_config.preserve_volume else 'mean'
+                }).dropna()
             
             # Add metadata
             resampled['symbol'] = df['symbol'].iloc[0] if 'symbol' in df.columns else ''

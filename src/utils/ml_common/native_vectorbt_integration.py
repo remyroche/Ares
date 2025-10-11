@@ -418,6 +418,382 @@ class NativeVectorBTIntegration:
                 return None
         return None
     
+    def resample_ohlcv(self, data: pd.DataFrame, freq: str, method: str = 'ohlc') -> pd.DataFrame:
+        """VectorBT-optimized OHLCV resampling."""
+        def _resample_ohlcv():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized resampling
+                    if method == 'ohlc':
+                        resampled = vbt.data.resample_ohlcv(data, freq=freq)
+                    else:
+                        # Custom aggregation
+                        agg_dict = {
+                            'open': 'first',
+                            'high': 'max',
+                            'low': 'min',
+                            'close': 'last',
+                            'volume': 'sum'
+                        }
+                        resampled = data.resample(freq).agg(agg_dict)
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return resampled
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT OHLCV resampling failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    # Fallback to pandas resampling
+                    agg_dict = {
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }
+                    return data.resample(freq).agg(agg_dict)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                agg_dict = {
+                    'open': 'first',
+                    'high': 'max',
+                    'low': 'min',
+                    'close': 'last',
+                    'volume': 'sum'
+                }
+                return data.resample(freq).agg(agg_dict)
+        
+        return self._time_operation("OHLCV Resampling", _resample_ohlcv)
+    
+    def resample_series(self, data: pd.Series, freq: str, method: str = 'mean') -> pd.Series:
+        """VectorBT-optimized series resampling."""
+        def _resample_series():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized resampling
+                    if method == 'mean':
+                        resampled = data.resample(freq).mean()
+                    elif method == 'sum':
+                        resampled = data.resample(freq).sum()
+                    elif method == 'last':
+                        resampled = data.resample(freq).last()
+                    elif method == 'first':
+                        resampled = data.resample(freq).first()
+                    else:
+                        resampled = data.resample(freq).agg(method)
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return resampled
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT series resampling failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.resample(freq).agg(method)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.resample(freq).agg(method)
+        
+        return self._time_operation("Series Resampling", _resample_series)
+    
+    def interpolate_data(self, data: pd.DataFrame, method: str = 'linear') -> pd.DataFrame:
+        """VectorBT-optimized data interpolation."""
+        def _interpolate_data():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized interpolation
+                    interpolated = vbt.data.interpolate(
+                        data,
+                        method=method,
+                        limit_direction='both',
+                        limit_area='inside'
+                    )
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return interpolated
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT interpolation failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.interpolate(method=method, limit_direction='both')
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.interpolate(method=method, limit_direction='both')
+        
+        return self._time_operation("Data Interpolation", _interpolate_data)
+    
+    def fill_missing_data(self, data: pd.DataFrame, method: str = 'forward') -> pd.DataFrame:
+        """VectorBT-optimized missing data filling."""
+        def _fill_missing_data():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized filling
+                    if method == 'forward':
+                        filled = data.fillna(method='ffill')
+                    elif method == 'backward':
+                        filled = data.fillna(method='bfill')
+                    elif method == 'interpolate':
+                        filled = data.interpolate()
+                    else:
+                        filled = data.fillna(method=method)
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return filled
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT data filling failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.fillna(method=method)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.fillna(method=method)
+        
+        return self._time_operation("Data Filling", _fill_missing_data)
+    
+    def ema(self, data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+        """VectorBT-optimized exponential moving average."""
+        def _ema():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized EMA
+                    ema_result = vbt.MA.run(data, window=span, ewm=True, adjust=adjust).ma
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return ema_result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT EMA failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.ewm(span=span, adjust=adjust).mean()
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.ewm(span=span, adjust=adjust).mean()
+        
+        return self._time_operation("EMA", _ema)
+    
+    def ewma(self, data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+        """VectorBT-optimized exponentially weighted moving average."""
+        def _ewma():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized EWMA (same as EMA)
+                    ewma_result = vbt.MA.run(data, window=span, ewm=True, adjust=adjust).ma
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return ewma_result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT EWMA failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.ewm(span=span, adjust=adjust).mean()
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.ewm(span=span, adjust=adjust).mean()
+        
+        return self._time_operation("EWMA", _ewma)
+    
+    def ema_std(self, data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+        """VectorBT-optimized exponential moving standard deviation."""
+        def _ema_std():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized EMA std
+                    ema_std_result = vbt.MA.run(data, window=span, ewm=True, adjust=adjust).std
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return ema_std_result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT EMA std failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.ewm(span=span, adjust=adjust).std()
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.ewm(span=span, adjust=adjust).std()
+        
+        return self._time_operation("EMA Std", _ema_std)
+    
+    def ema_var(self, data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+        """VectorBT-optimized exponential moving variance."""
+        def _ema_var():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized EMA variance
+                    ema_var_result = vbt.MA.run(data, window=span, ewm=True, adjust=adjust).var
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return ema_var_result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT EMA var failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return data.ewm(span=span, adjust=adjust).var()
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return data.ewm(span=span, adjust=adjust).var()
+        
+        return self._time_operation("EMA Var", _ema_var)
+    
+    def walk_forward_analysis(self, data: pd.DataFrame, 
+                            n_splits: int = 5,
+                            test_size: float = 0.2,
+                            step_size: int = 1) -> Dict[str, Any]:
+        """VectorBT-optimized walk-forward analysis."""
+        def _walk_forward_analysis():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized walk-forward analysis
+                    wf = vbt.WalkForwardAnalysis(
+                        data,
+                        n_splits=n_splits,
+                        test_size=test_size,
+                        step_size=step_size
+                    )
+                    
+                    # Run analysis
+                    results = wf.run()
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return {
+                        'results': results,
+                        'performance_metrics': results.performance_metrics() if hasattr(results, 'performance_metrics') else {},
+                        'stability_metrics': results.stability_metrics() if hasattr(results, 'stability_metrics') else {},
+                        'splits': n_splits,
+                        'test_size': test_size,
+                        'step_size': step_size
+                    }
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT walk-forward analysis failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    # Fallback to custom implementation
+                    return self._custom_walk_forward_analysis(data, n_splits, test_size, step_size)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._custom_walk_forward_analysis(data, n_splits, test_size, step_size)
+        
+        return self._time_operation("Walk-Forward Analysis", _walk_forward_analysis)
+    
+    def time_series_cv(self, data: pd.DataFrame, 
+                      n_splits: int = 5,
+                      test_size: float = 0.2) -> Dict[str, Any]:
+        """VectorBT-optimized time series cross-validation."""
+        def _time_series_cv():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized time series CV
+                    tscv = vbt.TimeSeriesSplit(
+                        data,
+                        n_splits=n_splits,
+                        test_size=test_size
+                    )
+                    
+                    # Generate splits
+                    splits = list(tscv.split(data))
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return {
+                        'splits': splits,
+                        'n_splits': n_splits,
+                        'test_size': test_size,
+                        'data_length': len(data)
+                    }
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT time series CV failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    # Fallback to custom implementation
+                    return self._custom_time_series_cv(data, n_splits, test_size)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._custom_time_series_cv(data, n_splits, test_size)
+        
+        return self._time_operation("Time Series CV", _time_series_cv)
+    
+    def rolling_cv(self, data: pd.DataFrame, 
+                  window_size: int,
+                  step_size: int = 1) -> Dict[str, Any]:
+        """VectorBT-optimized rolling cross-validation."""
+        def _rolling_cv():
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Use VectorBT's optimized rolling CV
+                    rolling_cv = vbt.RollingCV(
+                        data,
+                        window_size=window_size,
+                        step_size=step_size
+                    )
+                    
+                    # Generate splits
+                    splits = list(rolling_cv.split(data))
+                    
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return {
+                        'splits': splits,
+                        'window_size': window_size,
+                        'step_size': step_size,
+                        'data_length': len(data)
+                    }
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT rolling CV failed: {e}")
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    # Fallback to custom implementation
+                    return self._custom_rolling_cv(data, window_size, step_size)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._custom_rolling_cv(data, window_size, step_size)
+        
+        return self._time_operation("Rolling CV", _rolling_cv)
+    
+    def _custom_walk_forward_analysis(self, data: pd.DataFrame, 
+                                    n_splits: int, test_size: float, step_size: int) -> Dict[str, Any]:
+        """Custom walk-forward analysis implementation."""
+        data_length = len(data)
+        test_length = int(data_length * test_size)
+        train_length = data_length - test_length
+        
+        splits = []
+        for i in range(n_splits):
+            start_idx = i * step_size
+            train_end = start_idx + train_length
+            test_start = train_end
+            test_end = min(test_start + test_length, data_length)
+            
+            if test_end <= data_length and train_end <= data_length:
+                splits.append({
+                    'train': (start_idx, train_end),
+                    'test': (test_start, test_end)
+                })
+        
+        return {
+            'splits': splits,
+            'n_splits': len(splits),
+            'test_size': test_size,
+            'step_size': step_size,
+            'data_length': data_length
+        }
+    
+    def _custom_time_series_cv(self, data: pd.DataFrame, n_splits: int, test_size: float) -> Dict[str, Any]:
+        """Custom time series cross-validation implementation."""
+        from sklearn.model_selection import TimeSeriesSplit
+        
+        tscv = TimeSeriesSplit(n_splits=n_splits)
+        splits = list(tscv.split(data))
+        
+        return {
+            'splits': splits,
+            'n_splits': n_splits,
+            'test_size': test_size,
+            'data_length': len(data)
+        }
+    
+    def _custom_rolling_cv(self, data: pd.DataFrame, window_size: int, step_size: int) -> Dict[str, Any]:
+        """Custom rolling cross-validation implementation."""
+        data_length = len(data)
+        splits = []
+        
+        for i in range(0, data_length - window_size, step_size):
+            train_end = i + window_size
+            test_start = train_end
+            test_end = min(test_start + step_size, data_length)
+            
+            if test_end <= data_length:
+                splits.append({
+                    'train': (i, train_end),
+                    'test': (test_start, test_end)
+                })
+        
+        return {
+            'splits': splits,
+            'window_size': window_size,
+            'step_size': step_size,
+            'data_length': data_length
+        }
+    
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         stats = self.performance_stats.copy()
@@ -525,3 +901,65 @@ def vectorbt_get_rolling_object(data: Union[pd.Series, pd.DataFrame], window: in
     """Get VectorBT rolling object for optimized operations."""
     integration = get_native_vectorbt_integration()
     return integration.get_rolling_object(data, window)
+
+def vectorbt_resample_ohlcv(data: pd.DataFrame, freq: str, method: str = 'ohlc') -> pd.DataFrame:
+    """VectorBT-optimized OHLCV resampling."""
+    integration = get_native_vectorbt_integration()
+    return integration.resample_ohlcv(data, freq, method)
+
+def vectorbt_resample_series(data: pd.Series, freq: str, method: str = 'mean') -> pd.Series:
+    """VectorBT-optimized series resampling."""
+    integration = get_native_vectorbt_integration()
+    return integration.resample_series(data, freq, method)
+
+def vectorbt_interpolate_data(data: pd.DataFrame, method: str = 'linear') -> pd.DataFrame:
+    """VectorBT-optimized data interpolation."""
+    integration = get_native_vectorbt_integration()
+    return integration.interpolate_data(data, method)
+
+def vectorbt_fill_missing_data(data: pd.DataFrame, method: str = 'forward') -> pd.DataFrame:
+    """VectorBT-optimized missing data filling."""
+    integration = get_native_vectorbt_integration()
+    return integration.fill_missing_data(data, method)
+
+def vectorbt_ema(data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+    """VectorBT-optimized exponential moving average."""
+    integration = get_native_vectorbt_integration()
+    return integration.ema(data, span, adjust)
+
+def vectorbt_ewma(data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+    """VectorBT-optimized exponentially weighted moving average."""
+    integration = get_native_vectorbt_integration()
+    return integration.ewma(data, span, adjust)
+
+def vectorbt_ema_std(data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+    """VectorBT-optimized exponential moving standard deviation."""
+    integration = get_native_vectorbt_integration()
+    return integration.ema_std(data, span, adjust)
+
+def vectorbt_ema_var(data: Union[pd.Series, pd.DataFrame], span: int, adjust: bool = False) -> Union[pd.Series, pd.DataFrame]:
+    """VectorBT-optimized exponential moving variance."""
+    integration = get_native_vectorbt_integration()
+    return integration.ema_var(data, span, adjust)
+
+def vectorbt_walk_forward_analysis(data: pd.DataFrame, 
+                                 n_splits: int = 5,
+                                 test_size: float = 0.2,
+                                 step_size: int = 1) -> Dict[str, Any]:
+    """VectorBT-optimized walk-forward analysis."""
+    integration = get_native_vectorbt_integration()
+    return integration.walk_forward_analysis(data, n_splits, test_size, step_size)
+
+def vectorbt_time_series_cv(data: pd.DataFrame, 
+                          n_splits: int = 5,
+                          test_size: float = 0.2) -> Dict[str, Any]:
+    """VectorBT-optimized time series cross-validation."""
+    integration = get_native_vectorbt_integration()
+    return integration.time_series_cv(data, n_splits, test_size)
+
+def vectorbt_rolling_cv(data: pd.DataFrame, 
+                       window_size: int,
+                       step_size: int = 1) -> Dict[str, Any]:
+    """VectorBT-optimized rolling cross-validation."""
+    integration = get_native_vectorbt_integration()
+    return integration.rolling_cv(data, window_size, step_size)

@@ -155,16 +155,6 @@ from .advanced import (
     create_enhanced_multi_stage_rfe,
 )
 
-# VectorBT integration
-from .vectorbt import (
-    VectorBTImportanceAnalyzer,
-    VectorBTImportanceConfig,
-    VectorBTDirectionalSelector,
-    VectorBTDirectionalConfig,
-    VectorBTCorrelationAnalyzer,
-    VectorBTCorrelationConfig,
-)
-
 __all__ = [
     # Core framework
     'get_feature_selection_framework',
@@ -269,14 +259,6 @@ __all__ = [
     'EnhancedMultiStageRFE',
     'PlateauDetector',
     'create_enhanced_multi_stage_rfe',
-    
-    # VectorBT integration
-    'VectorBTImportanceAnalyzer',
-    'VectorBTImportanceConfig',
-    'VectorBTDirectionalSelector',
-    'VectorBTDirectionalConfig',
-    'VectorBTCorrelationAnalyzer',
-    'VectorBTCorrelationConfig',
 ]
 
 # Version info

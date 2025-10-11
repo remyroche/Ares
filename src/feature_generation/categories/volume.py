@@ -1634,7 +1634,431 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     for window in [20]:
         generators.append(VolumeVolatilityElasticityGenerator(window))
 
+    # Enhanced OBV and AD line versions using VectorBTRollingOptimizer
+    if VECTORBT_AVAILABLE:
+        # Enhanced OBV generators
+        for period in [10, 20, 50]:
+            generators.append(VectorBTEnhancedOBVGenerator(period))
+        
+        # Enhanced AD line generators
+        for period in [10, 20, 50]:
+            generators.append(VectorBTEnhancedADLineGenerator(period))
+        
+        # Volume-weighted AD line generators
+        for period in [10, 20, 50]:
+            generators.append(VectorBTVolumeWeightedADLineGenerator(period))
+        
+        # Smoothed OBV generators
+        for period in [10, 20, 50]:
+            generators.append(VectorBTSmoothedOBVGenerator(period))
+
     return generators
+
+
+class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Enhanced OBV generator with smoothing and trend analysis."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_enhanced_obv_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"VectorBT-optimized Enhanced OBV with smoothing over {period} periods",
+            required_columns=["close", "volume"],
+            optional_columns=["high", "low", "open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Enhanced OBV using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['close', 'volume']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_enhanced_obv_{self.period}')
+        
+        try:
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate price direction
+            price_direction = np.where(close > close.shift(1), 1, 
+                                     np.where(close < close.shift(1), -1, 0))
+            
+            # Calculate basic OBV
+            obv = (price_direction * volume).cumsum()
+            obv_series = pd.Series(obv, index=close.index)
+            
+            # Apply smoothing using VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                try:
+                    # Smooth OBV with EMA
+                    smoothed_obv = obv_series.ewm(span=self.period).mean()
+                    
+                    # Calculate OBV trend strength
+                    obv_trend = self.rolling_optimizer.rolling_mean(smoothed_obv.diff(), window=self.period)
+                    
+                    # Calculate OBV momentum
+                    obv_momentum = smoothed_obv - smoothed_obv.shift(self.period)
+                    
+                    # Combine features
+                    enhanced_obv = smoothed_obv + obv_trend + obv_momentum
+                    
+                    return enhanced_obv.rename(f'vectorbt_enhanced_obv_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Smooth OBV with EMA
+                    smoothed_obv = obv_series.ewm(span=self.period).mean()
+                    
+                    # Calculate OBV trend strength
+                    obv_trend = rolling_mean(smoothed_obv.diff(), window=self.period)
+                    
+                    # Calculate OBV momentum
+                    obv_momentum = smoothed_obv - smoothed_obv.shift(self.period)
+                    
+                    # Combine features
+                    enhanced_obv = smoothed_obv + obv_trend + obv_momentum
+                    
+                    return enhanced_obv.rename(f'vectorbt_enhanced_obv_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Enhanced OBV calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            smoothed_obv = obv_series.ewm(span=self.period).mean()
+            obv_trend = smoothed_obv.diff().rolling(window=self.period).mean()
+            obv_momentum = smoothed_obv - smoothed_obv.shift(self.period)
+            enhanced_obv = smoothed_obv + obv_trend + obv_momentum
+            
+            return enhanced_obv.rename(f'vectorbt_enhanced_obv_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Enhanced OBV: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_enhanced_obv_{self.period}')
+
+
+class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Enhanced AD Line generator with advanced features."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_enhanced_ad_line_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"VectorBT-optimized Enhanced AD Line with smoothing over {period} periods",
+            required_columns=["high", "low", "close", "volume"],
+            optional_columns=["open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Enhanced AD Line using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_enhanced_ad_line_{self.period}')
+        
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low)
+            mfm = mfm.fillna(0)  # Handle division by zero
+            
+            # Calculate Money Flow Volume
+            mfv = mfm * volume
+            
+            # Calculate basic AD Line
+            ad_line = mfv.cumsum()
+            
+            # Apply smoothing and enhancement using VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                try:
+                    # Smooth AD Line with EMA
+                    smoothed_ad = ad_line.ewm(span=self.period).mean()
+                    
+                    # Calculate AD Line trend strength
+                    ad_trend = self.rolling_optimizer.rolling_mean(smoothed_ad.diff(), window=self.period)
+                    
+                    # Calculate AD Line momentum
+                    ad_momentum = smoothed_ad - smoothed_ad.shift(self.period)
+                    
+                    # Calculate AD Line volatility
+                    ad_volatility = self.rolling_optimizer.rolling_std(smoothed_ad, window=self.period)
+                    
+                    # Combine features
+                    enhanced_ad = smoothed_ad + ad_trend + ad_momentum - ad_volatility
+                    
+                    return enhanced_ad.rename(f'vectorbt_enhanced_ad_line_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Smooth AD Line with EMA
+                    smoothed_ad = ad_line.ewm(span=self.period).mean()
+                    
+                    # Calculate AD Line trend strength
+                    ad_trend = rolling_mean(smoothed_ad.diff(), window=self.period)
+                    
+                    # Calculate AD Line momentum
+                    ad_momentum = smoothed_ad - smoothed_ad.shift(self.period)
+                    
+                    # Calculate AD Line volatility
+                    ad_volatility = rolling_std(smoothed_ad, window=self.period)
+                    
+                    # Combine features
+                    enhanced_ad = smoothed_ad + ad_trend + ad_momentum - ad_volatility
+                    
+                    return enhanced_ad.rename(f'vectorbt_enhanced_ad_line_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Enhanced AD Line calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            smoothed_ad = ad_line.ewm(span=self.period).mean()
+            ad_trend = smoothed_ad.diff().rolling(window=self.period).mean()
+            ad_momentum = smoothed_ad - smoothed_ad.shift(self.period)
+            ad_volatility = smoothed_ad.rolling(window=self.period).std()
+            enhanced_ad = smoothed_ad + ad_trend + ad_momentum - ad_volatility
+            
+            return enhanced_ad.rename(f'vectorbt_enhanced_ad_line_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Enhanced AD Line: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_enhanced_ad_line_{self.period}')
+
+
+class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Volume-Weighted AD Line generator."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_volume_weighted_ad_line_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"VectorBT-optimized Volume-Weighted AD Line over {period} periods",
+            required_columns=["high", "low", "close", "volume"],
+            optional_columns=["open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Volume-Weighted AD Line using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volume_weighted_ad_line_{self.period}')
+        
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low)
+            mfm = mfm.fillna(0)  # Handle division by zero
+            
+            # Calculate Volume-Weighted Money Flow Volume
+            vw_mfv = mfm * volume * volume  # Square volume for emphasis
+            
+            # Calculate Volume-Weighted AD Line
+            vw_ad_line = vw_mfv.cumsum()
+            
+            # Apply smoothing using VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                try:
+                    # Smooth with volume-weighted moving average
+                    volume_sum = self.rolling_optimizer.rolling_sum(volume, window=self.period)
+                    vw_ad_sum = self.rolling_optimizer.rolling_sum(vw_ad_line, window=self.period)
+                    smoothed_vw_ad = vw_ad_sum / volume_sum
+                    
+                    return smoothed_vw_ad.rename(f'vectorbt_volume_weighted_ad_line_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Smooth with volume-weighted moving average
+                    volume_sum = rolling_sum(volume, window=self.period)
+                    vw_ad_sum = rolling_sum(vw_ad_line, window=self.period)
+                    smoothed_vw_ad = vw_ad_sum / volume_sum
+                    
+                    return smoothed_vw_ad.rename(f'vectorbt_volume_weighted_ad_line_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Volume-Weighted AD Line calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volume_sum = volume.rolling(window=self.period).sum()
+            vw_ad_sum = vw_ad_line.rolling(window=self.period).sum()
+            smoothed_vw_ad = vw_ad_sum / volume_sum
+            
+            return smoothed_vw_ad.rename(f'vectorbt_volume_weighted_ad_line_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Volume-Weighted AD Line: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_volume_weighted_ad_line_{self.period}')
+
+
+class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Smoothed OBV generator with multiple smoothing techniques."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_smoothed_obv_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"VectorBT-optimized Smoothed OBV with multiple smoothing techniques over {period} periods",
+            required_columns=["close", "volume"],
+            optional_columns=["high", "low", "open"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Smoothed OBV using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['close', 'volume']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_smoothed_obv_{self.period}')
+        
+        try:
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate price direction
+            price_direction = np.where(close > close.shift(1), 1, 
+                                     np.where(close < close.shift(1), -1, 0))
+            
+            # Calculate basic OBV
+            obv = (price_direction * volume).cumsum()
+            obv_series = pd.Series(obv, index=close.index)
+            
+            # Apply multiple smoothing techniques using VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                try:
+                    # EMA smoothing
+                    ema_smoothed = obv_series.ewm(span=self.period).mean()
+                    
+                    # SMA smoothing
+                    sma_smoothed = self.rolling_optimizer.rolling_mean(obv_series, window=self.period)
+                    
+                    # WMA smoothing (weighted moving average)
+                    weights = np.arange(1, self.period + 1)
+                    wma_smoothed = obv_series.rolling(window=self.period).apply(
+                        lambda x: np.average(x, weights=weights)
+                    )
+                    
+                    # Combine different smoothing techniques
+                    smoothed_obv = (ema_smoothed + sma_smoothed + wma_smoothed) / 3
+                    
+                    return smoothed_obv.rename(f'vectorbt_smoothed_obv_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    # EMA smoothing
+                    ema_smoothed = obv_series.ewm(span=self.period).mean()
+                    
+                    # SMA smoothing
+                    sma_smoothed = rolling_mean(obv_series, window=self.period)
+                    
+                    # WMA smoothing (weighted moving average)
+                    weights = np.arange(1, self.period + 1)
+                    wma_smoothed = obv_series.rolling(window=self.period).apply(
+                        lambda x: np.average(x, weights=weights)
+                    )
+                    
+                    # Combine different smoothing techniques
+                    smoothed_obv = (ema_smoothed + sma_smoothed + wma_smoothed) / 3
+                    
+                    return smoothed_obv.rename(f'vectorbt_smoothed_obv_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Smoothed OBV calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            ema_smoothed = obv_series.ewm(span=self.period).mean()
+            sma_smoothed = obv_series.rolling(window=self.period).mean()
+            weights = np.arange(1, self.period + 1)
+            wma_smoothed = obv_series.rolling(window=self.period).apply(
+                lambda x: np.average(x, weights=weights)
+            )
+            smoothed_obv = (ema_smoothed + sma_smoothed + wma_smoothed) / 3
+            
+            return smoothed_obv.rename(f'vectorbt_smoothed_obv_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Smoothed OBV: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_smoothed_obv_{self.period}')
+
 
 # Analyst Features - Volume pattern generators
     

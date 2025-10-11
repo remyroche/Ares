@@ -335,6 +335,305 @@ class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
         return atr.rename(f'vectorbt_atr_{self.period}')
 
 
+class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Garman-Klass Volatility generator."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_garman_klass_volatility_{period}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"VectorBT-optimized Garman-Klass Volatility over {period} periods",
+            required_columns=["open", "high", "low", "close"],
+            optional_columns=[],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Garman-Klass Volatility using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_garman_klass_volatility_{self.period}')
+        
+        try:
+            # Calculate Garman-Klass volatility components
+            log_hl = np.log(data['high'] / data['low'])
+            log_co = np.log(data['close'] / data['open'])
+            
+            # Garman-Klass formula: 0.5 * (log(high/low))^2 - (2*log(2)-1) * (log(close/open))^2
+            gk_volatility = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    volatility = self.rolling_optimizer.rolling_mean(gk_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volatility = rolling_mean(gk_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Garman-Klass calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volatility = gk_volatility.rolling(window=self.period).mean()
+            volatility = np.sqrt(volatility)  # Convert variance to volatility
+            return volatility.rename(f'vectorbt_garman_klass_volatility_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Garman-Klass volatility: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_garman_klass_volatility_{self.period}')
+
+
+class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Parkinson Volatility generator."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_parkinson_volatility_{period}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"VectorBT-optimized Parkinson Volatility over {period} periods",
+            required_columns=["high", "low"],
+            optional_columns=["open", "close"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Parkinson Volatility using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_parkinson_volatility_{self.period}')
+        
+        try:
+            # Calculate Parkinson volatility: (1/(4*ln(2))) * ln(high/low)^2
+            log_hl = np.log(data['high'] / data['low'])
+            parkinson_volatility = (1 / (4 * np.log(2))) * log_hl**2
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    volatility = self.rolling_optimizer.rolling_mean(parkinson_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volatility = rolling_mean(parkinson_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Parkinson calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volatility = parkinson_volatility.rolling(window=self.period).mean()
+            volatility = np.sqrt(volatility)  # Convert variance to volatility
+            return volatility.rename(f'vectorbt_parkinson_volatility_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Parkinson volatility: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_parkinson_volatility_{self.period}')
+
+
+class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Rogers-Satchell Volatility generator."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_rogers_satchell_volatility_{period}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"VectorBT-optimized Rogers-Satchell Volatility over {period} periods",
+            required_columns=["open", "high", "low", "close"],
+            optional_columns=[],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Rogers-Satchell Volatility using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rogers_satchell_volatility_{self.period}')
+        
+        try:
+            # Calculate Rogers-Satchell volatility components
+            log_ho = np.log(data['high'] / data['open'])
+            log_hc = np.log(data['high'] / data['close'])
+            log_lo = np.log(data['low'] / data['open'])
+            log_lc = np.log(data['low'] / data['close'])
+            
+            # Rogers-Satchell formula
+            rs_volatility = log_ho * log_hc + log_lo * log_lc
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    volatility = self.rolling_optimizer.rolling_mean(rs_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volatility = rolling_mean(rs_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Rogers-Satchell calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volatility = rs_volatility.rolling(window=self.period).mean()
+            volatility = np.sqrt(volatility)  # Convert variance to volatility
+            return volatility.rename(f'vectorbt_rogers_satchell_volatility_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Rogers-Satchell volatility: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_rogers_satchell_volatility_{self.period}')
+
+
+class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Yang-Zhang Volatility generator."""
+    
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(period)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.period = period
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, period: int = 20) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_yang_zhang_volatility_{period}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"VectorBT-optimized Yang-Zhang Volatility over {period} periods",
+            required_columns=["open", "high", "low", "close"],
+            optional_columns=[],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={"period": period},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Yang-Zhang Volatility using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
+        
+        try:
+            # Calculate Yang-Zhang volatility components
+            # Overnight volatility
+            log_co = np.log(data['close'] / data['open'])
+            overnight_vol = log_co**2
+            
+            # Rogers-Satchell volatility (already calculated above)
+            log_ho = np.log(data['high'] / data['open'])
+            log_hc = np.log(data['high'] / data['close'])
+            log_lo = np.log(data['low'] / data['open'])
+            log_lc = np.log(data['low'] / data['close'])
+            rs_volatility = log_ho * log_hc + log_lo * log_lc
+            
+            # Garman-Klass volatility
+            log_hl = np.log(data['high'] / data['low'])
+            gk_volatility = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
+            
+            # Yang-Zhang formula: overnight + Rogers-Satchell + Garman-Klass
+            yz_volatility = overnight_vol + rs_volatility + gk_volatility
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    volatility = self.rolling_optimizer.rolling_mean(yz_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volatility = rolling_mean(yz_volatility, window=self.period)
+                    volatility = np.sqrt(volatility)  # Convert variance to volatility
+                    return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Yang-Zhang calculation failed: {e}, using pandas fallback")
+            
+            # Final fallback to pandas
+            volatility = yz_volatility.rolling(window=self.period).mean()
+            volatility = np.sqrt(volatility)  # Convert variance to volatility
+            return volatility.rename(f'vectorbt_yang_zhang_volatility_{self.period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Yang-Zhang volatility: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
+
+
 def create_default_volatility_generators() -> List[FeatureGenerator]:
     """Create default volatility feature generators with VectorBT optimization."""
     generators = []
@@ -349,6 +648,13 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
         for period in [20, 30]:
             for std_dev in [1.5, 2.0, 2.5]:
                 generators.append(VectorBTBollingerBandsGenerator(period, std_dev))
+        
+        # Advanced volatility indicators
+        for period in [10, 14, 20, 30]:
+            generators.append(VectorBTGarmanKlassVolatilityGenerator(period))
+            generators.append(VectorBTParkinsonVolatilityGenerator(period))
+            generators.append(VectorBTRogersSatchellVolatilityGenerator(period))
+            generators.append(VectorBTYangZhangVolatilityGenerator(period))
     else:
         # Fallback to original generators
         for period in [10, 14, 20, 30, 50]:

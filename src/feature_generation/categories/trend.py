@@ -45,6 +45,12 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
     from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
     VECTORBT_OPTIMIZER_AVAILABLE = True
 except ImportError:
@@ -1632,6 +1638,78 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
     generators = []
     
+    if VECTORBT_AVAILABLE:
+        # VectorBT-optimized generators
+        for period in [5, 10, 20, 50, 100]:
+            generators.append(VectorBTTrendFeatureGenerator(period))
+            generators.append(VectorBTSMAGenerator(period))
+            generators.append(VectorBTEMAGenerator(period))
+            
+        # ADX with different periods
+        for period in [9, 14, 21]:
+            generators.append(VectorBTADXGenerator(period))
+        
+        # Advanced trend indicators
+        # Ichimoku Cloud with different parameters
+        for tenkan in [9, 12]:
+            for kijun in [26, 30]:
+                generators.append(VectorBTIchimokuCloudGenerator(tenkan, kijun, 52, 26))
+        
+        # Parabolic SAR with different parameters
+        for acc in [0.02, 0.05, 0.1]:
+            for max_acc in [0.2, 0.3]:
+                generators.append(VectorBTParabolicSARGenerator(acc, max_acc))
+        
+        # ZigZag with different parameters
+        for deviation in [3.0, 5.0, 7.0, 10.0]:
+            for backstep in [2, 3, 5]:
+                generators.append(VectorBTZigZagGenerator(deviation, backstep))
+    else:
+        # Fallback to original generators
+        periods = {
+            'sma': [5, 10, 20, 50, 100],
+            'ema': [12, 26, 50],
+            'wma': [20],
+            'dema': [21],
+            'tema': [21],
+            'trima': [21],
+            'vwma': [20],
+            'keltner_channels': [20],
+            'adx': [14],
+            'trend_score': [14]
+        }
+        
+        # SMA generators
+        for period in periods.get('sma', [20]):
+            generators.append(SMAGenerator(period))
+        
+        # EMA generators
+        for period in periods.get('ema', [12, 26]):
+            generators.append(EMAGenerator(period))
+        
+        # WMA generators
+        for period in periods.get('wma', [20]):
+            generators.append(WMAGenerator(period))
+        
+        # DEMA generators
+        for period in periods.get('dema', [21]):
+            generators.append(DEMAGenerator(period))
+        
+        # TEMA generators
+        for period in periods.get('tema', [21]):
+            generators.append(TEMAGenerator(period))
+        
+        # TRIMA generators
+        for period in periods.get('trima', [21]):
+            generators.append(TRIMAGenerator(period))
+        
+        # VWMA generators
+        for period in periods.get('vwma', [20]):
+            generators.append(VWMAGenerator(period))
+        
+        # Keltner Channels generators
+        for period in periods.get('keltner_channels', [20]):
+            generators.append(KeltnerChannelsGenerator(period))
     # All generators now use VectorBT optimization through the mixin
     periods = {
         'sma': [5, 10, 20, 50, 100],
@@ -1690,6 +1768,352 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         generators.append(TrendScoreGenerator(adx_period=period))
 
     return generators
+
+
+class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Ichimoku Cloud generator."""
+    
+    def __init__(self, tenkan_period: int = 9, kijun_period: int = 26, senkou_span_b_period: int = 52, 
+                 displacement: int = 26, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(tenkan_period, kijun_period, senkou_span_b_period, displacement)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.tenkan_period = tenkan_period
+        self.kijun_period = kijun_period
+        self.senkou_span_b_period = senkou_span_b_period
+        self.displacement = displacement
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, tenkan_period: int = 9, kijun_period: int = 26, 
+                              senkou_span_b_period: int = 52, displacement: int = 26) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_ichimoku_cloud_{tenkan_period}_{kijun_period}_{senkou_span_b_period}",
+            category=FeatureCategory.TREND,
+            description=f"VectorBT-optimized Ichimoku Cloud with Tenkan={tenkan_period}, Kijun={kijun_period}, Senkou Span B={senkou_span_b_period}",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open"],
+            default_lookback=max(tenkan_period, kijun_period, senkou_span_b_period) + displacement,
+            min_lookback=max(tenkan_period, kijun_period, senkou_span_b_period) + displacement,
+            max_lookback=max(tenkan_period, kijun_period, senkou_span_b_period) + displacement,
+            parameters={
+                "tenkan_period": tenkan_period,
+                "kijun_period": kijun_period,
+                "senkou_span_b_period": senkou_span_b_period,
+                "displacement": displacement
+            },
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Ichimoku Cloud features using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
+        
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Calculate Tenkan-sen (Conversion Line)
+            if self.rolling_optimizer:
+                try:
+                    tenkan_high = self.rolling_optimizer.rolling_max(high, window=self.tenkan_period)
+                    tenkan_low = self.rolling_optimizer.rolling_min(low, window=self.tenkan_period)
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    tenkan_high = high.rolling(window=self.tenkan_period).max()
+                    tenkan_low = low.rolling(window=self.tenkan_period).min()
+            else:
+                tenkan_high = high.rolling(window=self.tenkan_period).max()
+                tenkan_low = low.rolling(window=self.tenkan_period).min()
+            
+            tenkan_sen = (tenkan_high + tenkan_low) / 2
+            
+            # Calculate Kijun-sen (Base Line)
+            if self.rolling_optimizer:
+                try:
+                    kijun_high = self.rolling_optimizer.rolling_max(high, window=self.kijun_period)
+                    kijun_low = self.rolling_optimizer.rolling_min(low, window=self.kijun_period)
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    kijun_high = high.rolling(window=self.kijun_period).max()
+                    kijun_low = low.rolling(window=self.kijun_period).min()
+            else:
+                kijun_high = high.rolling(window=self.kijun_period).max()
+                kijun_low = low.rolling(window=self.kijun_period).min()
+            
+            kijun_sen = (kijun_high + kijun_low) / 2
+            
+            # Calculate Senkou Span A (Leading Span A)
+            senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(self.displacement)
+            
+            # Calculate Senkou Span B (Leading Span B)
+            if self.rolling_optimizer:
+                try:
+                    senkou_high = self.rolling_optimizer.rolling_max(high, window=self.senkou_span_b_period)
+                    senkou_low = self.rolling_optimizer.rolling_min(low, window=self.senkou_span_b_period)
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    senkou_high = high.rolling(window=self.senkou_span_b_period).max()
+                    senkou_low = low.rolling(window=self.senkou_span_b_period).min()
+            else:
+                senkou_high = high.rolling(window=self.senkou_span_b_period).max()
+                senkou_low = low.rolling(window=self.senkou_span_b_period).min()
+            
+            senkou_span_b = ((senkou_high + senkou_low) / 2).shift(self.displacement)
+            
+            # Calculate Chikou Span (Lagging Span)
+            chikou_span = close.shift(-self.displacement)
+            
+            # Return the cloud position indicator (price relative to cloud)
+            cloud_position = close - ((senkou_span_a + senkou_span_b) / 2)
+            
+            return cloud_position.rename(f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Ichimoku Cloud: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
+
+
+class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized Parabolic SAR generator."""
+    
+    def __init__(self, acceleration: float = 0.02, maximum: float = 0.2, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(acceleration, maximum)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.acceleration = acceleration
+        self.maximum = maximum
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, acceleration: float = 0.02, maximum: float = 0.2) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_parabolic_sar_{acceleration}_{maximum}",
+            category=FeatureCategory.TREND,
+            description=f"VectorBT-optimized Parabolic SAR with acceleration={acceleration}, maximum={maximum}",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open"],
+            default_lookback=50,  # Need enough data for SAR calculation
+            min_lookback=10,
+            max_lookback=100,
+            parameters={
+                "acceleration": acceleration,
+                "maximum": maximum
+            },
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Parabolic SAR using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_parabolic_sar_{self.acceleration}')
+        
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Initialize SAR arrays
+            sar = np.zeros(len(close))
+            trend = np.zeros(len(close))
+            af = np.zeros(len(close))
+            ep = np.zeros(len(close))
+            
+            # Initialize first values
+            sar[0] = low.iloc[0]
+            trend[0] = 1  # 1 for uptrend, -1 for downtrend
+            af[0] = self.acceleration
+            ep[0] = high.iloc[0]
+            
+            # Calculate SAR using VectorBT-optimized operations where possible
+            for i in range(1, len(close)):
+                # Calculate previous SAR
+                prev_sar = sar[i-1]
+                prev_trend = trend[i-1]
+                prev_af = af[i-1]
+                prev_ep = ep[i-1]
+                
+                # Calculate new SAR
+                new_sar = prev_sar + prev_af * (prev_ep - prev_sar)
+                
+                # Check for trend reversal
+                if prev_trend == 1:  # Uptrend
+                    if low.iloc[i] <= new_sar:
+                        # Trend reversal to downtrend
+                        trend[i] = -1
+                        sar[i] = prev_ep
+                        ep[i] = low.iloc[i]
+                        af[i] = self.acceleration
+                    else:
+                        # Continue uptrend
+                        trend[i] = 1
+                        sar[i] = new_sar
+                        if high.iloc[i] > prev_ep:
+                            ep[i] = high.iloc[i]
+                            af[i] = min(prev_af + self.acceleration, self.maximum)
+                        else:
+                            ep[i] = prev_ep
+                            af[i] = prev_af
+                else:  # Downtrend
+                    if high.iloc[i] >= new_sar:
+                        # Trend reversal to uptrend
+                        trend[i] = 1
+                        sar[i] = prev_ep
+                        ep[i] = high.iloc[i]
+                        af[i] = self.acceleration
+                    else:
+                        # Continue downtrend
+                        trend[i] = -1
+                        sar[i] = new_sar
+                        if low.iloc[i] < prev_ep:
+                            ep[i] = low.iloc[i]
+                            af[i] = min(prev_af + self.acceleration, self.maximum)
+                        else:
+                            ep[i] = prev_ep
+                            af[i] = prev_af
+            
+            # Calculate SAR signal (price relative to SAR)
+            sar_signal = close - pd.Series(sar, index=close.index)
+            
+            return sar_signal.rename(f'vectorbt_parabolic_sar_{self.acceleration}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating Parabolic SAR: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_parabolic_sar_{self.acceleration}')
+
+
+class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
+    """VectorBT-optimized ZigZag indicator generator."""
+    
+    def __init__(self, deviation: float = 5.0, backstep: int = 3, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config(deviation, backstep)
+        super().__init__(config, enable_gpu=True, enable_parallel=True)
+        self.deviation = deviation
+        self.backstep = backstep
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+    
+    @classmethod
+    def _create_default_config(cls, deviation: float = 5.0, backstep: int = 3) -> FeatureConfig:
+        return FeatureConfig(
+            name=f"vectorbt_zigzag_{deviation}_{backstep}",
+            category=FeatureCategory.TREND,
+            description=f"VectorBT-optimized ZigZag indicator with deviation={deviation}%, backstep={backstep}",
+            required_columns=["high", "low", "close"],
+            optional_columns=["open"],
+            default_lookback=50,  # Need enough data for ZigZag calculation
+            min_lookback=10,
+            max_lookback=200,
+            parameters={
+                "deviation": deviation,
+                "backstep": backstep
+            },
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate ZigZag indicator using VectorBT."""
+        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
+            return pd.Series(dtype=float, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
+        
+        try:
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Initialize ZigZag arrays
+            zigzag = np.zeros(len(close))
+            last_high_idx = 0
+            last_low_idx = 0
+            last_high = high.iloc[0]
+            last_low = low.iloc[0]
+            direction = 0  # 0 = neutral, 1 = up, -1 = down
+            
+            # Calculate ZigZag points
+            for i in range(1, len(close)):
+                current_high = high.iloc[i]
+                current_low = low.iloc[i]
+                
+                if direction == 0:  # Neutral - looking for first significant move
+                    if current_high > last_high * (1 + self.deviation / 100):
+                        direction = 1
+                        last_high_idx = i
+                        last_high = current_high
+                        zigzag[i] = current_high
+                    elif current_low < last_low * (1 - self.deviation / 100):
+                        direction = -1
+                        last_low_idx = i
+                        last_low = current_low
+                        zigzag[i] = current_low
+                elif direction == 1:  # Uptrend - looking for peak
+                    if current_high > last_high:
+                        # New high found
+                        zigzag[last_high_idx] = 0  # Remove previous high
+                        last_high_idx = i
+                        last_high = current_high
+                        zigzag[i] = current_high
+                    elif current_low < last_high * (1 - self.deviation / 100):
+                        # Significant pullback - start downtrend
+                        direction = -1
+                        last_low_idx = i
+                        last_low = current_low
+                        zigzag[i] = current_low
+                else:  # Downtrend - looking for trough
+                    if current_low < last_low:
+                        # New low found
+                        zigzag[last_low_idx] = 0  # Remove previous low
+                        last_low_idx = i
+                        last_low = current_low
+                        zigzag[i] = current_low
+                    elif current_high > last_low * (1 + self.deviation / 100):
+                        # Significant bounce - start uptrend
+                        direction = 1
+                        last_high_idx = i
+                        last_high = current_high
+                        zigzag[i] = current_high
+            
+            # Calculate ZigZag trend strength
+            zigzag_series = pd.Series(zigzag, index=close.index)
+            non_zero_points = zigzag_series[zigzag_series != 0]
+            
+            if len(non_zero_points) > 1:
+                # Calculate trend strength as the slope of the last ZigZag segment
+                last_two_points = non_zero_points.tail(2)
+                if len(last_two_points) == 2:
+                    trend_strength = (last_two_points.iloc[-1] - last_two_points.iloc[0]) / len(last_two_points)
+                else:
+                    trend_strength = 0
+            else:
+                trend_strength = 0
+            
+            # Create trend strength series
+            trend_strength_series = pd.Series(trend_strength, index=close.index)
+            
+            return trend_strength_series.rename(f'vectorbt_zigzag_{self.deviation}')
+            
+        except Exception as e:
+            self.logger.error(f"Error generating ZigZag indicator: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
 
 
     def _should_use_vectorbt(self, data) -> bool:

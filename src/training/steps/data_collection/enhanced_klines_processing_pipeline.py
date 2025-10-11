@@ -61,9 +61,11 @@ try:
     from src.utils.data.quality.data_cleaning import DataCleaner
     from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
     from src.utils.data.quality.quality_alert_system import QualityAlertSystem
+    QUALITY_UTILITIES_AVAILABLE = True
 except ImportError as e:
     # Fallback for environments where the quality utilities are not available
     tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
+    QUALITY_UTILITIES_AVAILABLE = False
     
     class ComprehensiveDuplicateAnalyzer:
         def analyze_duplicates(self, df):
@@ -261,11 +263,24 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"📊 Generating comprehensive quality score for {symbol} {interval}")
             
+            if not QUALITY_UTILITIES_AVAILABLE:
+                # Return fallback quality score
+                return QualityScore(
+                    overall_score=50.0,
+                    level=QualityScoreLevel.POOR,
+                    component_scores={},
+                    issues=["Quality utilities not available"],
+                    warnings=[],
+                    recommendations=["Install quality utilities for better assessment"],
+                    assessment_timestamp=datetime.now(),
+                    data_shape=df.shape
+                )
+            
             # Initialize comprehensive quality scorer
             quality_scorer = ComprehensiveQualityScorer()
             
-            # Get comprehensive quality score
-            quality_score = quality_scorer.score_data_quality(df, symbol, interval)
+            # Get comprehensive quality score - use the correct method signature
+            quality_score = quality_scorer.assess_data_quality(df, context="klines_processing", step_name="quality_assessment", data_type="klines")
             
             if self.enable_logging:
                 tprint_success(f"✅ Quality score generated: {quality_score.overall_score:.1f} ({quality_score.level.value})")
@@ -286,7 +301,7 @@ class EnhancedKlinesProcessingPipeline:
                 warnings=[],
                 recommendations=["Check data quality utilities availability"],
                 assessment_timestamp=datetime.now(),
-                data_shape=(0, 0)
+                data_shape=df.shape
             )
 
     async def clean_data_with_quality_utilities(
@@ -310,6 +325,22 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"🧹 Cleaning data for {symbol} {interval} using quality utilities")
             
+            if not QUALITY_UTILITIES_AVAILABLE:
+                # Return original data with warning metadata
+                warning_metadata = {
+                    "original_shape": df.shape,
+                    "cleaned_shape": df.shape,
+                    "rows_removed": 0,
+                    "columns_removed": 0,
+                    "nulls_removed": 0,
+                    "duplicates_removed": 0,
+                    "cleaning_timestamp": datetime.now().isoformat(),
+                    "symbol": symbol,
+                    "interval": interval,
+                    "warning": "Quality utilities not available - no cleaning performed"
+                }
+                return df, warning_metadata
+            
             # Initialize data cleaner
             data_cleaner = DataCleaner()
             
@@ -318,8 +349,21 @@ class EnhancedKlinesProcessingPipeline:
             original_nulls = df.isnull().sum().sum()
             original_duplicates = df.duplicated().sum()
             
-            # Clean the data
-            cleaned_df = data_cleaner.clean_data(df)
+            # Clean the data using the correct method signature
+            cleaned_df = await data_cleaner.clean_dataframe(
+                df, 
+                remove_constant_features=True,
+                remove_duplicates=True,
+                handle_missing_values=True,
+                timestamp_column='timestamp',
+                symbol=symbol,
+                exchange=self.exchange,
+                timeframe=interval
+            )
+            
+            if cleaned_df is None:
+                # If cleaning failed, return original data
+                cleaned_df = df
             
             # Calculate cleaning statistics
             cleaned_shape = cleaned_df.shape
@@ -384,6 +428,25 @@ class EnhancedKlinesProcessingPipeline:
             if self.enable_logging:
                 tprint_info(f"📈 Analyzing quality trends for {symbol} {interval}")
             
+            if not QUALITY_UTILITIES_AVAILABLE:
+                # Return basic trend analysis without quality utilities
+                return {
+                    "quality_scores": [50.0],
+                    "timestamps": [datetime.now().isoformat()],
+                    "mean_quality": 50.0,
+                    "std_quality": 0.0,
+                    "min_quality": 50.0,
+                    "max_quality": 50.0,
+                    "quality_trend": "stable",
+                    "quality_stability": "stable",
+                    "window_size": window_size,
+                    "total_windows": 1,
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "symbol": symbol,
+                    "interval": interval,
+                    "warning": "Quality utilities not available - basic analysis only"
+                }
+            
             # Initialize quality utilities
             quality_scorer = ComprehensiveQualityScorer()
             advanced_metrics = AdvancedQualityMetrics()
@@ -407,9 +470,18 @@ class EnhancedKlinesProcessingPipeline:
             # Analyze each window
             for i, window_df in enumerate(windows):
                 try:
-                    # Get quality score for this window
-                    quality_score = quality_scorer.score_data_quality(window_df, symbol, interval)
-                    quality_assessment = advanced_metrics.assess_quality(window_df)
+                    # Get quality score for this window using correct method signature
+                    quality_score = quality_scorer.assess_data_quality(
+                        window_df, 
+                        context="trend_analysis", 
+                        step_name="quality_trends", 
+                        data_type="klines"
+                    )
+                    quality_assessment = advanced_metrics.comprehensive_quality_assessment(
+                        window_df, 
+                        context="trend_analysis", 
+                        step_name="quality_trends"
+                    )
                     
                     quality_scores.append(quality_score.overall_score)
                     timestamps.append(window_df.index[0] if len(window_df) > 0 else df.index[0])
@@ -873,33 +945,67 @@ class EnhancedKlinesProcessingPipeline:
             if missing_columns:
                 raise RuntimeError(f"Missing required columns: {missing_columns}")
             
-            # Initialize comprehensive quality framework
-            quality_framework = DataQualityFramework()
-            quality_scorer = ComprehensiveQualityScorer()
-            advanced_metrics = AdvancedQualityMetrics()
-            data_cleaner = DataCleaner()
-            statistical_validator = StatisticalValidator()
-            
-            # Set up quality thresholds for klines data
-            thresholds = QualityThresholds(
-                null_percentage_threshold=5.0,
-                negative_value_threshold=0.0,
-                zero_volume_threshold=10.0,
-                temporal_consistency_threshold=0.95,
-                price_consistency_threshold=0.98
-            )
-            
-            # Perform comprehensive data quality validation
-            quality_result = quality_framework.validate_data(df, thresholds)
-            
-            # Get advanced quality assessment
-            quality_assessment = advanced_metrics.assess_quality(df)
-            
-            # Get comprehensive quality score
-            quality_score = quality_scorer.score_data_quality(df, symbol, interval)
-            
-            # Perform statistical distribution validation
-            distribution_validation = statistical_validator.validate_distributions(df)
+            if not QUALITY_UTILITIES_AVAILABLE:
+                # Use basic validation without quality utilities
+                quality_result = QualityResult(
+                    score=50.0,
+                    issues=["Quality utilities not available"],
+                    warnings=["Basic validation only"],
+                    metadata={"validation_type": "basic"}
+                )
+                quality_assessment = QualityAssessment(
+                    overall_score=50.0,
+                    metrics=[],
+                    issues_found=1,
+                    warnings_found=1,
+                    critical_issues=0,
+                    assessment_timestamp=datetime.now(),
+                    data_shape=df.shape
+                )
+                quality_score = QualityScore(
+                    overall_score=50.0,
+                    level=QualityScoreLevel.POOR,
+                    component_scores={},
+                    issues=["Quality utilities not available"],
+                    warnings=["Basic validation only"],
+                    recommendations=["Install quality utilities for better assessment"],
+                    assessment_timestamp=datetime.now(),
+                    data_shape=df.shape
+                )
+                distribution_validation = {}
+            else:
+                # Initialize comprehensive quality framework
+                quality_framework = DataQualityFramework()
+                quality_scorer = ComprehensiveQualityScorer()
+                advanced_metrics = AdvancedQualityMetrics()
+                data_cleaner = DataCleaner()
+                statistical_validator = StatisticalValidator()
+                
+                # Set up quality thresholds for klines data
+                thresholds = QualityThresholds(
+                    max_nan_ratio=0.05,
+                    max_infinite_count=0,
+                    min_unique_values=2,
+                    max_constant_ratio=0.95
+                )
+                
+                # Perform comprehensive data quality validation
+                quality_result = quality_framework.validate_dataframe_quality(df, context="klines_validation")
+                
+                # Get advanced quality assessment
+                quality_assessment = advanced_metrics.comprehensive_quality_assessment(df, context="klines_validation", step_name="data_validation")
+                
+                # Get comprehensive quality score
+                quality_score = quality_scorer.assess_data_quality(df, context="klines_validation", step_name="data_validation", data_type="klines")
+                
+                # Perform statistical distribution validation
+                distribution_validation = {}
+                for col in df.select_dtypes(include=[np.number]).columns:
+                    if col in ['open', 'high', 'low', 'close', 'volume']:
+                        validation_results = statistical_validator.run_comprehensive_validation(df[col].values)
+                        distribution_validation[col] = {
+                            'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
+                        }
             
             # Check for duplicates using comprehensive analyzer
             duplicate_analysis = analyze_duplicates_comprehensive(df)
@@ -1285,18 +1391,51 @@ class EnhancedKlinesProcessingPipeline:
             if missing_columns:
                 raise RuntimeError(f"Missing required columns in final data: {missing_columns}")
             
-            # Initialize comprehensive quality utilities
-            quality_scorer = ComprehensiveQualityScorer()
-            advanced_metrics = AdvancedQualityMetrics()
-            statistical_validator = StatisticalValidator()
-            quality_alert_system = QualityAlertSystem()
-            
-            # Perform comprehensive final quality assessment
-            final_quality_score = quality_scorer.score_data_quality(df, symbol, interval)
-            final_quality_assessment = advanced_metrics.assess_quality(df)
-            
-            # Perform statistical validation on final data
-            final_distribution_validation = statistical_validator.validate_distributions(df)
+            if not QUALITY_UTILITIES_AVAILABLE:
+                # Use basic final quality check without quality utilities
+                final_quality_score = QualityScore(
+                    overall_score=50.0,
+                    level=QualityScoreLevel.POOR,
+                    component_scores={},
+                    issues=["Quality utilities not available"],
+                    warnings=["Basic validation only"],
+                    recommendations=["Install quality utilities for better assessment"],
+                    assessment_timestamp=datetime.now(),
+                    data_shape=df.shape
+                )
+                final_quality_assessment = QualityAssessment(
+                    overall_score=50.0,
+                    metrics=[],
+                    issues_found=1,
+                    warnings_found=1,
+                    critical_issues=0,
+                    assessment_timestamp=datetime.now(),
+                    data_shape=df.shape
+                )
+                final_distribution_validation = {}
+                quality_alerts = []
+            else:
+                # Initialize comprehensive quality utilities
+                quality_scorer = ComprehensiveQualityScorer()
+                advanced_metrics = AdvancedQualityMetrics()
+                statistical_validator = StatisticalValidator()
+                quality_alert_system = QualityAlertSystem()
+                
+                # Perform comprehensive final quality assessment
+                final_quality_score = quality_scorer.assess_data_quality(df, context="final_quality_check", step_name="final_validation", data_type="klines")
+                final_quality_assessment = advanced_metrics.comprehensive_quality_assessment(df, context="final_quality_check", step_name="final_validation")
+                
+                # Perform statistical validation on final data
+                final_distribution_validation = {}
+                for col in df.select_dtypes(include=[np.number]).columns:
+                    if col in ['open', 'high', 'low', 'close', 'volume']:
+                        validation_results = statistical_validator.run_comprehensive_validation(df[col].values)
+                        final_distribution_validation[col] = {
+                            'results': [{'status': r.status.value, 'message': r.message} for r in validation_results]
+                        }
+                
+                # Check quality alerts
+                quality_alerts = quality_alert_system.check_alerts(final_quality_score)
             
             # Check for data continuity and temporal consistency
             temporal_issues = []
@@ -1318,7 +1457,12 @@ class EnhancedKlinesProcessingPipeline:
             final_duplicate_analysis = analyze_duplicates_comprehensive(df)
             
             # Check quality alerts
-            quality_alerts = quality_alert_system.check_alerts(final_quality_score)
+            try:
+                quality_alerts = quality_alert_system.check_alerts(final_quality_score)
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ Quality alert system failed: {e}")
+                quality_alerts = []
             
             # Determine final quality level based on comprehensive assessment
             if final_quality_score.overall_score >= 95 and not temporal_issues and not null_issues:

@@ -53,14 +53,19 @@ class KlinesMetadata:
 
 @dataclass
 class StorageConfig:
-    """Configuration for klines storage."""
+    """Enhanced configuration for klines storage with optimization options."""
     base_dir: str = "historical_data"
-    compression: str = "snappy"
-    index: bool = True
+    compression: str = "zstd"  # Better compression than snappy
+    compression_level: int = 3  # ZSTD compression level
+    index: bool = False  # Don't store index as separate column
     partition_by: List[str] = field(default_factory=lambda: ["exchange", "symbol", "interval"])
     max_file_size_mb: int = 100
     enable_metadata: bool = True
     enable_validation: bool = True
+    row_group_size: int = 50000  # Optimized row group size
+    use_dictionary_encoding: bool = True  # Enable dictionary encoding for categorical data
+    enable_schema_optimization: bool = True  # Enable schema optimization
+    enable_compression_analysis: bool = True  # Enable compression analysis
 
 
 class KlinesParquetManager:
@@ -92,6 +97,20 @@ class KlinesParquetManager:
         # Storage tracking
         self._metadata_cache: Dict[str, KlinesMetadata] = {}
         self._batch_counter: Dict[str, int] = {}
+        self._compression_stats: Dict[str, Any] = {}
+        
+        # Column optimization mapping
+        self.column_optimizations = {
+            'timestamp': {'dtype': 'datetime64[ns]', 'nullable': False},
+            'open': {'dtype': 'float32', 'nullable': False},
+            'high': {'dtype': 'float32', 'nullable': False},
+            'low': {'dtype': 'float32', 'nullable': False},
+            'close': {'dtype': 'float32', 'nullable': False},
+            'volume': {'dtype': 'float32', 'nullable': False},
+            'symbol': {'dtype': 'category', 'nullable': False},
+            'exchange': {'dtype': 'category', 'nullable': False},
+            'interval': {'dtype': 'category', 'nullable': False},
+        }
         
         self.logger.info(f"✅ KlinesParquetManager initialized with base_dir: {self.base_dir}")
     
@@ -129,8 +148,8 @@ class KlinesParquetManager:
             if batch_id is None:
                 batch_id = self._generate_batch_id(symbol, exchange, interval)
             
-            # Prepare data for storage
-            storage_df = self._prepare_data_for_storage(df, symbol, exchange, interval)
+            # Apply comprehensive optimizations
+            storage_df = self._apply_comprehensive_optimizations(df, symbol, exchange, interval)
             
             # Determine storage path
             storage_path = self._get_storage_path(symbol, exchange, interval, batch_id)
@@ -138,15 +157,21 @@ class KlinesParquetManager:
             # Ensure directory exists
             storage_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Store data
-            success = self._store_dataframe(storage_df, storage_path)
+            # Get optimal parquet write parameters
+            parquet_kwargs = self._get_optimal_parquet_kwargs(storage_df)
+            
+            # Store data with optimizations
+            success = self._store_dataframe_optimized(storage_df, storage_path, parquet_kwargs)
             if not success:
                 return False
             
-            # Create and store metadata
-            klines_metadata = self._create_metadata(
+            # Calculate compression statistics
+            compression_stats = self._calculate_compression_stats(df, storage_df, storage_path)
+            
+            # Create and store metadata with compression stats
+            klines_metadata = self._create_enhanced_metadata(
                 storage_df, symbol, exchange, interval, batch_id, 
-                storage_path, metadata
+                storage_path, metadata, compression_stats
             )
             
             # Store metadata
@@ -344,59 +369,182 @@ class KlinesParquetManager:
         self._batch_counter[f"{symbol}_{exchange}_{interval}"] = counter
         return f"batch_{counter:03d}_{timestamp}"
     
-    def _prepare_data_for_storage(
+    
+    def _apply_comprehensive_optimizations(
         self, 
         df: pd.DataFrame, 
         symbol: str, 
         exchange: str, 
         interval: str
     ) -> pd.DataFrame:
-        """Prepare DataFrame for storage."""
-        storage_df = df.copy()
-        
-        # Ensure required columns exist
-        if 'exchange' not in storage_df.columns:
-            storage_df['exchange'] = exchange
-        if 'symbol' not in storage_df.columns:
-            storage_df['symbol'] = symbol
-        if 'interval' not in storage_df.columns:
-            storage_df['interval'] = interval
-        
-        # Ensure timestamp is datetime
-        if 'timestamp' in storage_df.columns:
-            if not pd.api.types.is_datetime64_any_dtype(storage_df['timestamp']):
-                storage_df['timestamp'] = pd.to_datetime(storage_df['timestamp'], utc=True)
-        elif isinstance(storage_df.index, pd.DatetimeIndex):
-            storage_df = storage_df.reset_index()
-            storage_df.rename(columns={'index': 'timestamp'}, inplace=True)
-        
-        # Sort by timestamp
-        storage_df = storage_df.sort_values('timestamp')
-        
-        # Optimize data types
-        storage_df = self._optimize_dataframe_dtypes(storage_df)
-        
-        return storage_df
-    
-    def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame data types for storage efficiency."""
+        """Apply comprehensive optimizations to DataFrame."""
         optimized_df = df.copy()
         
-        # Optimize numeric columns
-        for col in optimized_df.select_dtypes(include=[np.number]).columns:
-            if col in ['open', 'high', 'low', 'close', 'volume']:
-                # Use float32 for OHLCV data (sufficient precision for financial data)
-                optimized_df[col] = optimized_df[col].astype(np.float32)
-            elif col in ['trades', 'number_of_trades']:
-                # Use int32 for trade counts
-                optimized_df[col] = optimized_df[col].astype(np.int32)
+        # 1. Optimize data types
+        optimized_df = self._optimize_dtypes(optimized_df)
         
-        # Optimize string columns
-        for col in optimized_df.select_dtypes(include=['object']).columns:
-            if col in ['symbol', 'exchange', 'interval']:
-                optimized_df[col] = optimized_df[col].astype('string')
+        # 2. Sort data for better compression
+        optimized_df = self._sort_for_compression(optimized_df)
+        
+        # 3. Remove unnecessary columns
+        optimized_df = self._remove_unnecessary_columns(optimized_df)
+        
+        # 4. Optimize categorical data
+        optimized_df = self._optimize_categorical_data(optimized_df)
+        
+        # 5. Handle missing values efficiently
+        optimized_df = self._handle_missing_values(optimized_df)
+        
+        # 6. Add required columns if missing
+        optimized_df = self._ensure_required_columns(optimized_df, symbol, exchange, interval)
         
         return optimized_df
+    
+    def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize data types for parquet storage."""
+        optimized_df = df.copy()
+        
+        for col, config in self.column_optimizations.items():
+            if col in optimized_df.columns:
+                target_dtype = config['dtype']
+                
+                try:
+                    if target_dtype == 'category':
+                        # Use category for high-cardinality string columns
+                        optimized_df[col] = optimized_df[col].astype('category')
+                    elif target_dtype == 'datetime64[ns]':
+                        # Ensure proper datetime format
+                        if not pd.api.types.is_datetime64_any_dtype(optimized_df[col]):
+                            optimized_df[col] = pd.to_datetime(optimized_df[col], utc=True)
+                    else:
+                        # Convert to target numeric type
+                        optimized_df[col] = optimized_df[col].astype(target_dtype)
+                        
+                except Exception as e:
+                    self.logger.warning(f"Could not optimize {col} to {target_dtype}: {e}")
+        
+        return optimized_df
+    
+    def _sort_for_compression(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Sort data for better compression efficiency."""
+        if 'timestamp' in df.columns:
+            return df.sort_values('timestamp').reset_index(drop=True)
+        return df
+    
+    def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove columns that don't add value for storage."""
+        # Keep only essential columns
+        essential_columns = [
+            'timestamp', 'open', 'high', 'low', 'close', 'volume',
+            'symbol', 'exchange', 'interval'
+        ]
+        
+        # Add any additional columns that exist
+        existing_columns = [col for col in essential_columns if col in df.columns]
+        additional_columns = [col for col in df.columns if col not in essential_columns]
+        
+        return df[existing_columns + additional_columns]
+    
+    def _optimize_categorical_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize categorical columns for better compression."""
+        optimized_df = df.copy()
+        
+        categorical_columns = ['symbol', 'exchange', 'interval']
+        for col in categorical_columns:
+            if col in optimized_df.columns:
+                # Use category type for better compression
+                optimized_df[col] = optimized_df[col].astype('category')
+        
+        return optimized_df
+    
+    def _handle_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Handle missing values efficiently."""
+        optimized_df = df.copy()
+        
+        # For OHLCV data, forward fill missing values
+        ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in ohlcv_columns:
+            if col in optimized_df.columns:
+                if optimized_df[col].isnull().any():
+                    optimized_df[col] = optimized_df[col].fillna(method='ffill')
+        
+        return optimized_df
+    
+    def _ensure_required_columns(self, df: pd.DataFrame, symbol: str, exchange: str, interval: str) -> pd.DataFrame:
+        """Ensure required columns exist."""
+        optimized_df = df.copy()
+        
+        if 'exchange' not in optimized_df.columns:
+            optimized_df['exchange'] = exchange
+        if 'symbol' not in optimized_df.columns:
+            optimized_df['symbol'] = symbol
+        if 'interval' not in optimized_df.columns:
+            optimized_df['interval'] = interval
+        
+        return optimized_df
+    
+    def _get_optimal_parquet_kwargs(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Get optimal parquet write parameters."""
+        kwargs = {
+            'engine': 'pyarrow',
+            'index': self.config.index,
+            'compression': self.config.compression,
+        }
+        
+        # Add compression level for zstd
+        if self.config.compression == 'zstd':
+            kwargs['compression_level'] = self.config.compression_level
+        
+        # Row group size optimization
+        if len(df) > 0:
+            optimal_row_group_size = min(
+                self.config.row_group_size,
+                max(1000, len(df) // 10)  # At least 10 row groups
+            )
+            kwargs['row_group_size'] = optimal_row_group_size
+        
+        # Dictionary encoding for categorical columns
+        if self.config.use_dictionary_encoding:
+            categorical_columns = df.select_dtypes(include=['category']).columns.tolist()
+            if categorical_columns:
+                kwargs['use_dictionary'] = True
+        
+        return kwargs
+    
+    def _store_dataframe_optimized(self, df: pd.DataFrame, path: Path, kwargs: Dict[str, Any]) -> bool:
+        """Store DataFrame with optimizations."""
+        try:
+            df.to_parquet(path, **kwargs)
+            return True
+        except Exception as e:
+            tprint_error(f"❌ Failed to store optimized DataFrame: {e}")
+            return False
+    
+    def _calculate_compression_stats(
+        self, 
+        original_df: pd.DataFrame, 
+        optimized_df: pd.DataFrame, 
+        file_path: Path
+    ) -> Dict[str, Any]:
+        """Calculate compression statistics."""
+        if not file_path.exists():
+            return {}
+        
+        original_size = original_df.memory_usage(deep=True).sum()
+        file_size = file_path.stat().st_size
+        compression_ratio = (1 - file_size / original_size) * 100 if original_size > 0 else 0
+        
+        return {
+            'original_size_bytes': original_size,
+            'file_size_bytes': file_size,
+            'file_size_mb': file_size / (1024 * 1024),
+            'compression_ratio': compression_ratio,
+            'optimization_applied': True
+        }
+    
+    def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Legacy method - now handled by _optimize_dtypes."""
+        return self._optimize_dtypes(df)
     
     def _get_storage_path(
         self, 
@@ -414,19 +562,50 @@ class KlinesParquetManager:
             f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
         )
     
-    def _store_dataframe(self, df: pd.DataFrame, path: Path) -> bool:
-        """Store DataFrame to parquet file."""
-        try:
-            df.to_parquet(
-                path,
-                compression=self.config.compression,
-                index=self.config.index,
-                engine='pyarrow'
-            )
-            return True
-        except Exception as e:
-            tprint_error(f"❌ Failed to store DataFrame: {e}")
-            return False
+    
+    def _create_enhanced_metadata(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        interval: str,
+        batch_id: str,
+        file_path: Path,
+        additional_metadata: Optional[Dict[str, Any]] = None,
+        compression_stats: Optional[Dict[str, Any]] = None
+    ) -> KlinesMetadata:
+        """Create enhanced metadata with optimization details."""
+        file_size = file_path.stat().st_size if file_path.exists() else 0
+        
+        # Calculate compression ratio
+        compression_ratio = 0.0
+        if compression_stats and 'compression_ratio' in compression_stats:
+            compression_ratio = compression_stats['compression_ratio']
+        elif file_size > 0 and len(df) > 0:
+            # Fallback calculation
+            estimated_size = len(df) * len(df.columns) * 8  # Rough estimate
+            compression_ratio = (1 - file_size / estimated_size) * 100 if estimated_size > 0 else 0
+        
+        return KlinesMetadata(
+            symbol=symbol,
+            exchange=exchange,
+            interval=interval,
+            batch_id=batch_id,
+            start_time=df['timestamp'].min() if 'timestamp' in df.columns else df.index.min(),
+            end_time=df['timestamp'].max() if 'timestamp' in df.columns else df.index.max(),
+            record_count=len(df),
+            file_size_bytes=file_size,
+            compression_ratio=compression_ratio,
+            created_at=datetime.now(),
+            additional_metadata={
+                **(additional_metadata or {}),
+                'optimization_applied': True,
+                'compression_used': self.config.compression,
+                'row_group_size': self.config.row_group_size,
+                'dictionary_encoding': self.config.use_dictionary_encoding,
+                'compression_stats': compression_stats or {}
+            }
+        )
     
     def _create_metadata(
         self,
@@ -615,6 +794,52 @@ class KlinesParquetManager:
         except Exception as e:
             tprint_error(f"❌ Failed to get storage stats: {e}")
             return {"error": str(e)}
+    
+    def get_optimization_recommendations(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Get optimization recommendations based on data characteristics."""
+        recommendations = {
+            'compression': self.config.compression,
+            'estimated_size_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
+            'row_count': len(df),
+            'column_count': len(df.columns),
+            'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
+        }
+        
+        # Compression recommendation based on data size
+        if len(df) > 1000000:  # > 1M rows
+            recommendations['compression'] = 'zstd'
+            recommendations['reason'] = 'Large dataset - use zstd for better compression'
+        elif len(df) > 100000:  # > 100K rows
+            recommendations['compression'] = 'lz4'
+            recommendations['reason'] = 'Medium dataset - use lz4 for good balance'
+        else:
+            recommendations['compression'] = 'snappy'
+            recommendations['reason'] = 'Small dataset - use snappy for speed'
+        
+        # Row group size recommendation
+        if len(df) > 0:
+            optimal_row_groups = max(1, len(df) // 50000)  # ~50k rows per group
+            recommendations['row_group_size'] = min(100000, len(df) // optimal_row_groups)
+        
+        return recommendations
+    
+    def get_compression_stats(self) -> Dict[str, Any]:
+        """Get overall compression statistics."""
+        if not self._compression_stats:
+            return {"message": "No compression statistics available"}
+        
+        total_original_size = sum(stats.get('original_size_bytes', 0) for stats in self._compression_stats.values())
+        total_file_size = sum(stats.get('file_size_bytes', 0) for stats in self._compression_stats.values())
+        overall_compression_ratio = (1 - total_file_size / total_original_size) * 100 if total_original_size > 0 else 0
+        
+        return {
+            "total_files": len(self._compression_stats),
+            "total_original_size_mb": total_original_size / (1024 * 1024),
+            "total_file_size_mb": total_file_size / (1024 * 1024),
+            "overall_compression_ratio": overall_compression_ratio,
+            "average_compression_ratio": np.mean([stats.get('compression_ratio', 0) for stats in self._compression_stats.values()]) if self._compression_stats else 0,
+            "compression_stats": self._compression_stats
+        }
 
 
 # Convenience functions

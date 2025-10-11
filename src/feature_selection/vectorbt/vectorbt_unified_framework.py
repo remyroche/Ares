@@ -105,8 +105,12 @@ class VectorBTUnifiedFramework:
         tprint_success("🚀 VectorBTUnifiedFramework initialized")
     
     def _initialize_selectors(self):
-        """Initialize all VectorBT selectors."""
+        """Initialize all VectorBT selectors with enhanced configuration."""
         try:
+            # Ensure VectorBT optimizations are enabled by default
+            self.config.setup_vectorbt_optimizations()
+            
+            # Initialize all selectors with enhanced configuration
             self.correlation_filter = VectorBTCorrelationFilter(self.config)
             self.mutual_information = VectorBTMutualInformation(self.config)
             self.stability_selection = VectorBTStabilitySelection(self.config)
@@ -115,7 +119,7 @@ class VectorBTUnifiedFramework:
             self.rfe_selector = VectorBTRFESelector(self.config)
             self.feature_selector = VectorBTFeatureSelector(self.config)
             
-            tprint_debug("✅ All VectorBT selectors initialized")
+            tprint_success("✅ All VectorBT selectors initialized with enhanced optimizations")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize selectors: {e}")

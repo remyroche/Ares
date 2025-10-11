@@ -142,8 +142,8 @@ class VectorBTCorrelationFilter:
                 # Create VectorBT DataFrame
                 df = self._create_vectorbt_dataframe(X, feature_names)
                 
-                # Use VectorBT's optimized correlation computation
-                if hasattr(df, 'vbt') and self.config.enable_chunked_processing:
+                # Use VectorBT's optimized correlation computation by default
+                if hasattr(df, 'vbt'):
                     # Use VectorBT's built-in correlation with optimizations
                     try:
                         corr_matrix = df.vbt.rolling_corr(

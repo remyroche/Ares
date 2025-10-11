@@ -86,7 +86,12 @@ class VectorBTFeatureSelector:
                 if self.config.max_workers:
                     vbt.settings['array_wrapper']['max_workers'] = self.config.max_workers
             
-            tprint_debug("✅ VectorBT configured with enhanced optimizations")
+            # Enable VectorBT optimizations by default
+            vbt.settings['array_wrapper']['enable_rolling'] = True
+            vbt.settings['array_wrapper']['enable_chunked'] = True
+            vbt.settings['array_wrapper']['enable_parallel'] = True
+            
+            tprint_success("✅ VectorBT configured with enhanced optimizations and enabled by default")
             
         except Exception as e:
             tprint_warning(f"⚠️ VectorBT setup warning: {e}")
@@ -198,8 +203,8 @@ class VectorBTFeatureSelector:
                 # Create VectorBT DataFrame
                 df = self._create_vectorbt_dataframe(X, [f"feature_{i}" for i in range(X.shape[1])])
                 
-                # Use VectorBT's optimized correlation computation
-                if hasattr(df, 'vbt') and self.config.enable_chunked_processing:
+                # Use VectorBT's optimized correlation computation by default
+                if hasattr(df, 'vbt'):
                     # Use VectorBT's built-in correlation with optimizations
                     try:
                         corr_matrix = df.vbt.rolling_corr(
@@ -212,12 +217,17 @@ class VectorBTFeatureSelector:
                         corr_matrix = corr_matrix.vbt.fillna(0)  # Fill NaN with 0
                         corr_matrix = corr_matrix.vbt.clip(-1, 1)  # Ensure valid correlation range
                         
+                        # Track VectorBT performance
+                        self._track_vectorbt_performance("VectorBT Correlation", time.time(), True)
+                        
                     except Exception as vbt_e:
                         self.logger.debug(f"VectorBT correlation failed, using standard: {vbt_e}")
                         corr_matrix = df.corr()
+                        self._track_vectorbt_performance("Standard Correlation", time.time(), False)
                 else:
                     # Standard correlation computation
                     corr_matrix = df.corr()
+                    self._track_vectorbt_performance("Standard Correlation", time.time(), False)
                 
                 # VectorBT-optimized high correlation detection
                 high_corr_mask = np.abs(corr_matrix.values) > threshold
@@ -282,12 +292,14 @@ class VectorBTFeatureSelector:
             try:
                 from sklearn.feature_selection import mutual_info_regression
                 
-                # Use VectorBT for parallel computation if available
-                if self.config.enable_parallel and X.shape[1] > 100:
+                # Use VectorBT for parallel computation by default
+                if X.shape[1] > 50:  # Lower threshold to use VectorBT more often
                     mi_scores = self._compute_mutual_information_vectorbt_parallel(X, y)
+                    self._track_vectorbt_performance("VectorBT Mutual Information", time.time(), True)
                 else:
-                    # Standard computation
+                    # Standard computation for small datasets
                     mi_scores = mutual_info_regression(X, y, random_state=42)
+                    self._track_vectorbt_performance("Standard Mutual Information", time.time(), False)
                 
                 # VectorBT-optimized top-k selection
                 top_k_indices = np.argsort(mi_scores)[-k:]

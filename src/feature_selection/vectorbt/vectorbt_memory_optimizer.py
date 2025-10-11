@@ -411,7 +411,7 @@ class VectorBTMemoryOptimizer:
     def _memory_efficient_variance_filter(self, X: np.ndarray, threshold: float = 0.01) -> np.ndarray:
         """Memory-efficient variance filtering with VectorBT optimization."""
         try:
-            # Use VectorBT for memory-efficient operations
+            # Use VectorBT for memory-efficient operations by default
             vbt_array = vbt.array(X)
             
             # Use VectorBT's memory-efficient variance computation
@@ -421,6 +421,7 @@ class VectorBTMemoryOptimizer:
                 chunked=True
             ).iloc[-1]
             
+            tprint_debug("📊 Using VectorBT memory-efficient variance computation")
             return variances > threshold
             
         except Exception as e:
@@ -441,6 +442,7 @@ class VectorBTMemoryOptimizer:
                     if memory_info['memory_warning']:
                         tprint_warning(f"⚠️ High memory usage: {memory_info['current_memory_mb']:.1f}MB")
             
+            tprint_debug("📊 Using fallback chunked variance computation")
             return variances > threshold
     
     def get_memory_stats(self) -> Dict[str, Any]:

@@ -144,8 +144,8 @@ class VectorBTMutualInformation:
                 elif len(feature_names) != X.shape[1]:
                     raise ValueError(f"Feature names length {len(feature_names)} doesn't match X shape[1] {X.shape[1]}")
                 
-                # Use VectorBT for parallel computation if available
-                if self.config.enable_parallel and X.shape[1] > 100:
+                # Use VectorBT for parallel computation by default
+                if X.shape[1] > 50:  # Lower threshold to use VectorBT more often
                     mi_scores = self._compute_mutual_information_parallel(X, y)
                 else:
                     mi_scores = self._compute_mutual_information_standard(X, y)

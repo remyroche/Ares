@@ -35,7 +35,7 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 from src.utils.data.gap_detector import GapDetector
-from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer, ExchangeType
 
 
 class KlinesDataProcessingPipeline:
@@ -54,7 +54,7 @@ class KlinesDataProcessingPipeline:
         self.historical_pipeline = HistoricalDataPipeline(data_dir)
         self.gap_detector = GapDetector(data_dir)
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
-        self.data_standardizer = ExchangeDataStandardizer(data_dir)
+        self.data_standardizer = UnifiedExchangeStandardizer()
 
         # Quality checker will be initialized when first used
         self._quality_checker: Optional[KlinesDataQualityChecker] = None
@@ -82,19 +82,13 @@ class KlinesDataProcessingPipeline:
             Tuple of (standardized_dataframe, standardization_report)
         """
         try:
-            standardized_df, report = self.data_standardizer.standardize_data(
-                df, exchange, symbol, interval, validate_quality=True
+            standardized_df = self.data_standardizer.standardize_to_dataframe(
+                df, ExchangeType(exchange.upper()), symbol, interval
             )
             
-            if report['success']:
-                tprint_success(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
-                if report.get('warnings'):
-                    for warning in report['warnings']:
-                        tprint_warning(f"⚠️ {warning}")
-            else:
-                tprint_error(f"❌ Data standardization failed: {report.get('errors', [])}")
-                
-            return standardized_df, report
+            tprint_success(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
+            
+            return standardized_df, {"success": True, "shape": standardized_df.shape}
             
         except Exception as e:
             tprint_error(f"❌ Failed to standardize data format: {e}")

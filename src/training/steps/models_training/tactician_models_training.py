@@ -105,6 +105,18 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
     MATH_VALIDATION_AVAILABLE = False
 
+# Import enhanced validation utilities
+try:
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_training_data, validate_model_config, validate_regime_data,
+        ValidationResult
+    )
+    VALIDATION_UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
@@ -634,15 +646,9 @@ class TacticianModelsTrainingStep:
     ) -> Dict[str, Any]:
         """Train NAS/TAS timing models using the dedicated orchestrator."""
 
-        try:
-            from .nas_tas.training_orchestrator import (
-                TrainingOrchestrator,
-                OrchestratorConfig,
-                OrchestrationMode,
-            )
-        except ImportError as e:
-            tprint_warning(f"⚠️ NAS/TAS orchestrator not available: {e}")
-            return {'models': {}, 'metrics': {}, 'error': str(e)}
+        # NAS-TAS functionality removed - directory deleted
+        tprint_warning("⚠️ NAS/TAS orchestrator not available - directory has been removed")
+        return {'models': {}, 'metrics': {}, 'error': 'NAS-TAS functionality has been removed'}
 
         tprint_debug(
             f"🧠 Preparing NAS/TAS training for {model_type.value} with {len(feature_columns)} features"

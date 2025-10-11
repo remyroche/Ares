@@ -78,26 +78,41 @@ class VectorBTCorrelationFilter:
         return result
     
     def _create_vectorbt_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
-        """Create VectorBT-optimized DataFrame with advanced operations."""
+        """Create VectorBT-optimized DataFrame with enhanced financial operations."""
         try:
             # Use VectorBT's optimized DataFrame creation
             df = vbt.PandasDataFrame(X, columns=feature_names)
             
-            # Enable VectorBT-specific optimizations
+            # Enhanced financial time series indexing
             if self.config.enable_financial_optimization:
-                # Use proper financial time series indexing
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='1min')
-                # Enable VectorBT's financial data optimizations
+                # Use proper financial time series indexing with business days
+                df.index = pd.bdate_range(start='2020-01-01', periods=len(df), freq='1min')
+                
+                # Leverage VectorBT's financial data optimizations
                 try:
                     df = df.vbt.freq_infer()  # Infer optimal frequency
-                    df = df.vbt.resample_apply('1D', 'last')  # Resample for efficiency
+                    df = df.vbt.resample_apply('1H', 'last')  # More efficient resampling
+                    
+                    # Use VectorBT's financial data validation
+                    df = df.vbt.validate()  # Validate financial data integrity
+                    
+                    # Enable VectorBT's rolling window optimizations
+                    if hasattr(df, 'vbt') and self.config.enable_vectorbt_rolling:
+                        df = df.vbt.rolling_apply('mean', window=100)  # Pre-compute rolling stats
+                        
                 except Exception as freq_e:
-                    self.logger.debug(f"Frequency optimization skipped: {freq_e}")
+                    self.logger.debug(f"Financial optimization skipped: {freq_e}")
             
-            # Enable VectorBT's memory optimizations
+            # Enhanced memory optimizations
             if self.config.enable_memory_optimization:
                 try:
-                    df = df.vbt.ffill()  # Forward fill for missing values
+                    # Use VectorBT's chunked operations
+                    df = df.vbt.chunked_apply('ffill', chunk_size=self.config.chunk_size)
+                    
+                    # Enable VectorBT's memory mapping for large datasets
+                    if X.nbytes > self.config.memory_mapping_threshold:
+                        df = df.vbt.memory_map()  # Memory map large datasets
+                        
                 except Exception as mem_e:
                     self.logger.debug(f"Memory optimization skipped: {mem_e}")
             
@@ -108,7 +123,7 @@ class VectorBTCorrelationFilter:
             # Fallback to standard DataFrame
             df = pd.DataFrame(X, columns=feature_names)
             if self.config.enable_financial_optimization:
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+                df.index = pd.bdate_range(start='2020-01-01', periods=len(df), freq='D')
             return df
     
     def filter_features(self, X: np.ndarray, threshold: float = None, 

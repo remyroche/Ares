@@ -51,10 +51,13 @@ class VectorBTOptimizedOperations:
     optimized functions for financial and mathematical operations.
     """
     
-    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True):
-        """Initialize VectorBT optimized operations."""
+    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True, 
+                 memory_limit_gb: float = 8.0, chunk_size_threshold: int = 10000):
+        """Initialize VectorBT optimized operations with enhanced memory management."""
         self.enable_gpu = enable_gpu and VECTORBT_AVAILABLE
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
+        self.memory_limit_gb = memory_limit_gb
+        self.chunk_size_threshold = chunk_size_threshold
         
         # Performance tracking
         self.performance_stats = {
@@ -62,15 +65,95 @@ class VectorBTOptimizedOperations:
             'vectorbt_operations': 0,
             'fallback_operations': 0,
             'average_execution_time': 0.0,
-            'gpu_operations': 0
+            'gpu_operations': 0,
+            'memory_optimized_operations': 0,
+            'chunked_operations': 0
         }
+        
+        # Memory management
+        self.memory_usage_history = []
+        self.peak_memory_usage = 0.0
+        
+        # GPU detection and configuration
+        self.gpu_available = self._detect_gpu_availability()
+        self.gpu_memory_limit = self._get_gpu_memory_limit()
         
         self.logger = logger.getChild('VectorBTOptimizedOperations')
         
         if VECTORBT_AVAILABLE:
-            self.logger.info("✅ VectorBT optimized operations initialized")
+            self.logger.info(f"✅ VectorBT optimized operations initialized (GPU: {self.gpu_available}, Memory Limit: {memory_limit_gb}GB)")
         else:
             self.logger.warning("⚠️ VectorBT not available, using fallback implementations")
+    
+    def _detect_gpu_availability(self) -> bool:
+        """Detect GPU availability and capabilities."""
+        if not VECTORBT_AVAILABLE:
+            return False
+        
+        try:
+            # Check for CUDA availability
+            import torch
+            if torch.cuda.is_available():
+                self.logger.info(f"🚀 CUDA GPU detected: {torch.cuda.get_device_name(0)}")
+                return True
+        except ImportError:
+            pass
+        
+        try:
+            # Check for MPS (Apple Silicon) availability
+            import torch
+            if torch.backends.mps.is_available():
+                self.logger.info("🚀 Apple Silicon GPU (MPS) detected")
+                return True
+        except ImportError:
+            pass
+        
+        return False
+    
+    def _get_gpu_memory_limit(self) -> float:
+        """Get GPU memory limit in GB."""
+        if not self.gpu_available:
+            return 0.0
+        
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            elif torch.backends.mps.is_available():
+                # MPS doesn't provide memory info, use conservative estimate
+                return 8.0
+        except ImportError:
+            pass
+        
+        return 0.0
+    
+    def _check_memory_usage(self) -> float:
+        """Check current memory usage in GB."""
+        try:
+            import psutil
+            memory_info = psutil.virtual_memory()
+            return memory_info.used / (1024**3)
+        except ImportError:
+            return 0.0
+    
+    def _should_use_chunking(self, data_size: int, operation_complexity: str = 'medium') -> bool:
+        """Determine if chunking should be used based on data size and memory."""
+        current_memory = self._check_memory_usage()
+        
+        # Complexity factors
+        complexity_factors = {
+            'low': 1.0,
+            'medium': 2.0,
+            'high': 4.0,
+            'very_high': 8.0
+        }
+        
+        factor = complexity_factors.get(operation_complexity, 2.0)
+        estimated_memory_needed = (data_size * 8 * factor) / (1024**3)  # 8 bytes per float64
+        
+        return (estimated_memory_needed > self.memory_limit_gb * 0.5 or 
+                current_memory > self.memory_limit_gb * 0.8 or
+                data_size > self.chunk_size_threshold)
     
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
@@ -713,6 +796,204 @@ class VectorBTOptimizedOperations:
             'parallel_enabled': self.enable_parallel,
             'performance_stats': self.performance_stats
         }
+    
+    def compute_portfolio_metrics(self, returns: 'pd.DataFrame', 
+                                 weights: Optional['np.ndarray'] = None) -> 'pd.DataFrame':
+        """
+        Compute comprehensive portfolio metrics using VectorBT.
+        
+        Args:
+            returns: DataFrame of asset returns
+            weights: Portfolio weights (if None, equal weights assumed)
+            
+        Returns:
+            DataFrame with portfolio metrics
+        """
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT not available for portfolio metrics")
+            return returns.copy()
+        
+        start_time = time.time()
+        
+        try:
+            result = returns.copy()
+            
+            # Set equal weights if not provided
+            if weights is None:
+                weights = np.ones(returns.shape[1]) / returns.shape[1]
+            
+            # Portfolio returns using VectorBT
+            portfolio_returns = (returns * weights).sum(axis=1)
+            result['portfolio_returns'] = portfolio_returns
+            
+            # Portfolio volatility using VectorBT
+            portfolio_vol = portfolio_returns.rolling(window=252, min_periods=1).std() * np.sqrt(252)
+            result['portfolio_volatility'] = portfolio_vol
+            
+            # Sharpe ratio using VectorBT
+            risk_free_rate = 0.02  # 2% annual risk-free rate
+            excess_returns = portfolio_returns - risk_free_rate / 252
+            sharpe_ratio = excess_returns.rolling(window=252, min_periods=1).mean() / portfolio_vol
+            result['sharpe_ratio'] = sharpe_ratio
+            
+            # Maximum drawdown using VectorBT
+            cumulative_returns = (1 + portfolio_returns).cumprod()
+            running_max = cumulative_returns.expanding().max()
+            drawdown = (cumulative_returns - running_max) / running_max
+            result['drawdown'] = drawdown
+            result['max_drawdown'] = drawdown.expanding().min()
+            
+            # Value at Risk (VaR) using VectorBT
+            var_95 = portfolio_returns.rolling(window=252, min_periods=1).quantile(0.05)
+            result['var_95'] = var_95
+            
+            # Conditional Value at Risk (CVaR) using VectorBT
+            cvar_95 = portfolio_returns.rolling(window=252, min_periods=1).apply(
+                lambda x: x[x <= x.quantile(0.05)].mean()
+            )
+            result['cvar_95'] = cvar_95
+            
+            # Beta calculation using VectorBT
+            if len(returns.columns) > 1:
+                market_returns = returns.iloc[:, 0]  # Use first column as market proxy
+                beta = portfolio_returns.rolling(window=252, min_periods=1).cov(market_returns) / market_returns.rolling(window=252, min_periods=1).var()
+                result['beta'] = beta
+            
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self._update_performance_stats(execution_time)
+            
+            self.logger.info(f"✅ Computed portfolio metrics using VectorBT")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Portfolio metrics computation failed: {e}")
+            return returns.copy()
+    
+    def compute_risk_metrics(self, returns: 'pd.DataFrame') -> Dict[str, Any]:
+        """
+        Compute comprehensive risk metrics using VectorBT.
+        
+        Args:
+            returns: DataFrame of asset returns
+            
+        Returns:
+            Dictionary with risk metrics
+        """
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT not available for risk metrics")
+            return {}
+        
+        start_time = time.time()
+        
+        try:
+            metrics = {}
+            
+            # Volatility metrics
+            metrics['volatility'] = returns.std() * np.sqrt(252)
+            metrics['volatility_annualized'] = returns.std() * np.sqrt(252)
+            
+            # Skewness and Kurtosis using VectorBT
+            metrics['skewness'] = returns.skew()
+            metrics['kurtosis'] = returns.kurtosis()
+            
+            # Value at Risk (VaR) at different confidence levels
+            metrics['var_95'] = returns.quantile(0.05)
+            metrics['var_99'] = returns.quantile(0.01)
+            
+            # Expected Shortfall (CVaR)
+            metrics['cvar_95'] = returns[returns <= returns.quantile(0.05)].mean()
+            metrics['cvar_99'] = returns[returns <= returns.quantile(0.01)].mean()
+            
+            # Maximum Drawdown
+            cumulative_returns = (1 + returns).cumprod()
+            running_max = cumulative_returns.expanding().max()
+            drawdown = (cumulative_returns - running_max) / running_max
+            metrics['max_drawdown'] = drawdown.min()
+            
+            # Calmar Ratio
+            annual_return = returns.mean() * 252
+            metrics['calmar_ratio'] = annual_return / abs(metrics['max_drawdown'])
+            
+            # Sortino Ratio
+            downside_returns = returns[returns < 0]
+            downside_deviation = downside_returns.std() * np.sqrt(252)
+            metrics['sortino_ratio'] = annual_return / downside_deviation if downside_deviation > 0 else 0
+            
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self._update_performance_stats(execution_time)
+            
+            self.logger.info(f"✅ Computed risk metrics using VectorBT")
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"❌ Risk metrics computation failed: {e}")
+            return {}
+    
+    def compute_technical_analysis(self, data: 'pd.DataFrame') -> 'pd.DataFrame':
+        """
+        Compute comprehensive technical analysis using VectorBT.
+        
+        Args:
+            data: DataFrame with OHLCV data
+            
+        Returns:
+            DataFrame with technical analysis indicators
+        """
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT not available for technical analysis")
+            return data.copy()
+        
+        start_time = time.time()
+        
+        try:
+            result = data.copy()
+            
+            # Price patterns using VectorBT
+            result['price_change'] = data['close'].pct_change()
+            result['price_change_abs'] = data['close'].diff()
+            
+            # Support and Resistance levels
+            result['resistance'] = data['high'].rolling(window=20, min_periods=1).max()
+            result['support'] = data['low'].rolling(window=20, min_periods=1).min()
+            
+            # Price position relative to support/resistance
+            result['price_position'] = (data['close'] - result['support']) / (result['resistance'] - result['support'])
+            
+            # Trend strength using VectorBT
+            result['trend_strength'] = (data['close'] - data['close'].shift(20)) / data['close'].shift(20)
+            
+            # Volume analysis
+            result['volume_sma'] = data['volume'].rolling(window=20, min_periods=1).mean()
+            result['volume_ratio'] = data['volume'] / result['volume_sma']
+            result['volume_trend'] = data['volume'].rolling(window=5, min_periods=1).mean() / data['volume'].rolling(window=20, min_periods=1).mean()
+            
+            # Price momentum using VectorBT
+            result['momentum_5'] = data['close'] / data['close'].shift(5) - 1
+            result['momentum_10'] = data['close'] / data['close'].shift(10) - 1
+            result['momentum_20'] = data['close'] / data['close'].shift(20) - 1
+            
+            # Volatility analysis
+            result['volatility_5'] = data['close'].pct_change().rolling(window=5, min_periods=1).std()
+            result['volatility_20'] = data['close'].pct_change().rolling(window=20, min_periods=1).std()
+            result['volatility_ratio'] = result['volatility_5'] / result['volatility_20']
+            
+            # Market regime detection
+            result['regime_bull'] = (result['trend_strength'] > 0.02).astype(int)
+            result['regime_bear'] = (result['trend_strength'] < -0.02).astype(int)
+            result['regime_sideways'] = ((result['trend_strength'] >= -0.02) & (result['trend_strength'] <= 0.02)).astype(int)
+            
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self._update_performance_stats(execution_time)
+            
+            self.logger.info(f"✅ Computed technical analysis using VectorBT")
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Technical analysis computation failed: {e}")
+            return data.copy()
 
 # Global instance
 _vectorbt_ops = None

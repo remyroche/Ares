@@ -36,7 +36,7 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     analyze_duplicates_comprehensive
 )
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer
 
 # Import the enhanced pipeline
 from .enhanced_klines_processing_pipeline import (
@@ -70,7 +70,7 @@ class KlinesDataProcessingPipeline:
         
         # Initialize legacy components for backward compatibility
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
-        self.data_standardizer = ExchangeDataStandardizer(data_dir)
+        self.data_standardizer = UnifiedExchangeStandardizer()
 
         # Quality checker will be initialized when first used
         self._quality_checker: Optional[KlinesDataQualityChecker] = None

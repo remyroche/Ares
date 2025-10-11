@@ -1,8 +1,9 @@
 """
-Base Scaler Interface
+Base Scaler Interface with Native VectorBT Support
 
 Provides a shared interface for all scaling and normalization operations
-across feature_generation and feature_engineering_roadmap systems.
+across feature_generation and feature_engineering_roadmap systems with
+native VectorBT optimization for maximum performance.
 """
 
 from abc import ABC, abstractmethod
@@ -10,6 +11,39 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import numpy as np
 import logging
+import warnings
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
 # Import utility functions
 try:
@@ -29,25 +63,15 @@ try:
 except ImportError:
     MATH_VALIDATION_AVAILABLE = False
 
-# Import VectorBT scaler
-try:
-    from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler, VECTORBT_AVAILABLE
-    VECTORBT_SCALER_AVAILABLE = True
-except ImportError:
-    VECTORBT_SCALER_AVAILABLE = False
-    VectorBTScaler = None
-    VectorBTBatchScaler = None
-    VECTORBT_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
 
 class BaseScaler(ABC):
     """
-    Abstract base class for all scaling/transformation operations.
+    Abstract base class for all scaling/transformation operations with native VectorBT support.
     
     This interface ensures consistency between feature_generation's normalization
-    and feature_engineering_roadmap's transform systems.
+    and feature_engineering_roadmap's transform systems while providing VectorBT optimization.
     
     All scalers must implement:
     - fit_transform: Fit parameters and transform data
@@ -56,9 +80,116 @@ class BaseScaler(ABC):
     - set_state: Restore state from persistence
     """
     
-    def __init__(self):
-        """Initialize the scaler."""
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 1000):
+        """
+        Initialize the scaler with VectorBT support.
+        
+        Args:
+            use_vectorbt: Whether to use VectorBT optimizations
+            enable_gpu: Whether to enable GPU acceleration
+            vectorbt_threshold: Minimum data size for VectorBT optimization
+        """
         self.fitted = False
+        self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
+        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.vectorbt_threshold = vectorbt_threshold
+        
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'gpu_accelerations': 0,
+            'pandas_fallbacks': 0
+        }
+    
+    def _should_use_vectorbt(self, data: pd.Series) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (self.use_vectorbt and 
+                len(data) >= self.vectorbt_threshold and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """
+        Perform VectorBT rolling operation with fallback to pandas.
+        
+        Args:
+            data: Input data series
+            operation: Operation type ('mean', 'std', 'var', 'min', 'max', 'sum')
+            window: Rolling window size
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling operation
+        """
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        self.performance_stats['vectorbt_operations'] += 1
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        
+        except Exception as e:
+            logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
+            self.performance_stats['pandas_fallbacks'] += 1
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+                                 window: int, **kwargs) -> pd.Series:
+        """
+        Perform VectorBT rolling apply operation with fallback to pandas.
+        
+        Args:
+            data: Input data series
+            func: Function to apply
+            window: Rolling window size
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling apply operation
+        """
+        if not self._should_use_vectorbt(data):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        self.performance_stats['vectorbt_operations'] += 1
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            self.performance_stats['pandas_fallbacks'] += 1
+            return data.rolling(window=window).apply(func, **kwargs)
     
     @abstractmethod
     def fit_transform(self, data: pd.Series) -> pd.Series:

@@ -36,6 +36,40 @@ from ..base_calculations import (
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
 class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility regime features optimized for 15m timeframe."""
     
@@ -289,7 +323,7 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         
         # Vectorized approach using pandas rolling
         returns_series = pd.Series(returns)
-        vol = returns_series.rolling(window=window).std().dropna().values
+        vol = self._vectorbt_rolling_operation(returns_series, "std", window).dropna().values
         
         return vol
     
@@ -319,8 +353,8 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         
         # Vectorized regime strength calculation
         vol_series = pd.Series(vol)
-        rolling_std = vol_series.rolling(window=window).std()
-        rolling_mean = vol_series.rolling(window=window).mean()
+        rolling_std = self._vectorbt_rolling_operation(vol_series, "std", window)
+        rolling_mean = self._vectorbt_rolling_operation(vol_series, "mean", window)
         
         # Regime strength based on consistency of volatility level
         vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
@@ -355,11 +389,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_window_size = max(1, window // 4)
         
         # Calculate rolling volatility
-        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
         # Calculate consistency using rolling coefficient of variation
-        vol_rolling_std = rolling_vol.rolling(window=window).std()
-        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
+        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
         
         cv = vol_rolling_std / (vol_rolling_mean + 1e-8)
         consistency = (1 - cv).clip(0, 1)
@@ -375,8 +409,8 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling volatility for both windows
-        vol1 = returns_series.rolling(window=window).std().shift(window)
-        vol2 = returns_series.rolling(window=window).std()
+        vol1 = self._vectorbt_rolling_operation(returns_series, "std", window).shift(window)
+        vol2 = self._vectorbt_rolling_operation(returns_series, "std", window)
         
         # Volatility of volatility
         vol_of_vol = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
@@ -393,11 +427,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_window_size = max(1, window // 4)
         
         # Calculate rolling volatility
-        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
         # Calculate uncertainty using rolling coefficient of variation
-        vol_rolling_std = rolling_vol.rolling(window=window).std()
-        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
+        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
         
         vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
         uncertainty = vol_vol.clip(0, 1)
@@ -413,8 +447,8 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         returns_series = pd.Series(returns)
         
         # Calculate rolling volatility for both windows
-        vol1 = returns_series.rolling(window=window).std().shift(window)
-        vol2 = returns_series.rolling(window=window).std()
+        vol1 = self._vectorbt_rolling_operation(returns_series, "std", window).shift(window)
+        vol2 = self._vectorbt_rolling_operation(returns_series, "std", window)
         
         # Significant change threshold (50% change)
         change_ratio = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
@@ -432,11 +466,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_window_size = max(1, window // 2)
         
         # Calculate rolling volatility
-        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
         # Vectorized transition probability using volatility changes
         vol_changes = rolling_vol.diff()
-        vol_mean = rolling_vol.rolling(window=window).mean()
+        vol_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
         
         # Transition probability based on volatility change rate
         transition_prob = vol_changes.abs() / (vol_mean + 1e-8)
@@ -465,11 +499,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_window_size = max(1, window // 4)
         
         # Calculate rolling volatility
-        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
         # Calculate stability using rolling coefficient of variation
-        vol_rolling_std = rolling_vol.rolling(window=window).std()
-        vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
+        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
         
         vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
         stability = (1 - vol_vol).clip(0, 1)
@@ -486,7 +520,7 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_window_size = max(1, window // 4)
         
         # Calculate rolling volatility
-        rolling_vol = returns_series.rolling(window=vol_window_size).std()
+        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
         # Vectorized persistence using rolling autocorrelation
         persistence = rolling_vol.rolling(window=window).apply(
@@ -495,3 +529,51 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         ).fillna(0)
         
         return persistence.values
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

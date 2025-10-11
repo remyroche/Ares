@@ -23,6 +23,40 @@ try:
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 from ..base_calculations import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     BaseCalculator,
     BaseCalculationType,
     BaseCalculationConfig,
@@ -92,8 +126,21 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
             return np.full(len(prices), np.nan)
 
         returns = np.diff(np.log(prices))
-        volatility = pd.Series(returns).rolling(window=period-1).std().values
-        return np.concatenate([[np.nan], volatility])
+        returns_series = pd.Series(returns)
+        
+        # Use VectorBT if available and data is large enough
+        if self._should_use_vectorbt(pd.DataFrame({'returns': returns_series})):
+            try:
+                volatility = self._vectorbt_rolling_operation(returns_series, 'std', period-1)
+                self.performance_stats['vectorbt_operations'] += 1
+            except Exception as e:
+                self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+                volatility = returns_series.rolling(window=period-1).std()
+                self.performance_stats['pandas_fallbacks'] += 1
+        else:
+            volatility = returns_series.rolling(window=period-1).std()
+        
+        return np.concatenate([[np.nan], volatility.values])
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
         if not data.empty:

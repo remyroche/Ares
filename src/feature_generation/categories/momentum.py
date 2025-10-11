@@ -36,6 +36,40 @@ from .entropy import (
     MACDEntropyGenerator
 )
 from .legacy import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     LegacyRSIGenerator,
     LegacyMACDGenerator,
     LegacyStochasticGenerator,
@@ -91,8 +125,24 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period:
             return np.full(len(prices), np.nan)
         
-        momentum = prices - np.roll(prices, period)
-        return momentum
+        prices_series = pd.Series(prices)
+        
+        # Use VectorBT for momentum calculation if available
+        if self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
+            try:
+                # Calculate momentum using VectorBT rolling operations
+                shifted_prices = prices_series.shift(period)
+                momentum = prices_series - shifted_prices
+                self.performance_stats['vectorbt_operations'] += 1
+                return momentum.values
+            except Exception as e:
+                self.logger.warning(f"VectorBT momentum calculation failed: {e}, using numpy fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                momentum = prices - np.roll(prices, period)
+                return momentum
+        else:
+            momentum = prices - np.roll(prices, period)
+            return momentum
 
 # Analyst Features - Cross-timeframe momentum generators
     
@@ -1216,8 +1266,8 @@ class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
         momentum_ratio = (fast_ma - slow_ma) / (slow_ma + 1e-8)  # Avoid division by zero
 
         # Regime persistence measure
-        momentum_volatility = momentum_ratio.rolling(window=10).std()
-        momentum_trend = momentum_ratio.rolling(window=5).mean()
+        momentum_volatility = self._vectorbt_rolling_operation(momentum_ratio, "std", 10)
+        momentum_trend = self._vectorbt_rolling_operation(momentum_ratio, "mean", 5)
         
         # Regime strength: higher when momentum is consistent and trending
         regime_strength = np.abs(momentum_trend) / (momentum_volatility + 1e-8)
@@ -1227,7 +1277,7 @@ class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
         
         # Add regime transition detection
         momentum_change = momentum_ratio.diff().abs()
-        regime_transition = momentum_change.rolling(window=3).mean()
+        regime_transition = self._vectorbt_rolling_operation(momentum_change, "mean", 3)
         
         # Combine momentum with regime transition awareness
         regime_aware_momentum = enhanced_momentum * (1 - regime_transition)

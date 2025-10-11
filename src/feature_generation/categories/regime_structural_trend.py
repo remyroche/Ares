@@ -29,6 +29,40 @@ try:
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 from ..base_calculations import (
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
     BaseCalculator,
     BaseCalculationType,
     BaseCalculationConfig,
@@ -299,8 +333,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Pre-calculate rolling statistics for efficiency
-        rolling_mean = prices_series.rolling(window=window).mean()
-        rolling_std = prices_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(prices_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(prices_series, "std", window)
         
         # Vectorized trend persistence using slope approximation
         x = np.arange(window)
@@ -422,8 +456,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Pre-calculate rolling statistics
-        rolling_mean = prices_series.rolling(window=window).mean()
-        rolling_std = prices_series.rolling(window=window).std()
+        rolling_mean = self._vectorbt_rolling_operation(prices_series, "mean", window)
+        rolling_std = self._vectorbt_rolling_operation(prices_series, "std", window)
         
         # Simplified R-squared using variance ratio
         # R² ≈ 1 - (variance_around_trend / total_variance)
@@ -461,7 +495,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         second_diff = first_diff.diff()
         
         # Rolling acceleration using second differences
-        acceleration = second_diff.rolling(window=window).mean()
+        acceleration = self._vectorbt_rolling_operation(second_diff, "mean", window)
         
         return acceleration.fillna(0).values
     
@@ -484,7 +518,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Calculate rolling volatility and price changes
-        rolling_vol = prices_series.rolling(window=window).std()
+        rolling_vol = self._vectorbt_rolling_operation(prices_series, "std", window)
         price_change = (prices_series - prices_series.shift(window)).abs()
         
         # Vectorized intensity calculation
@@ -501,8 +535,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Calculate rolling highs and lows
-        rolling_highs = prices_series.rolling(window=window).max()
-        rolling_lows = prices_series.rolling(window=window).min()
+        rolling_highs = self._vectorbt_rolling_operation(prices_series, "max", window)
+        rolling_lows = self._vectorbt_rolling_operation(prices_series, "min", window)
         
         # Structure strength based on position within range
         price_range = rolling_highs - rolling_lows
@@ -522,8 +556,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Calculate rolling price levels and their consistency
-        rolling_highs = prices_series.rolling(window=window).max()
-        rolling_lows = prices_series.rolling(window=window).min()
+        rolling_highs = self._vectorbt_rolling_operation(prices_series, "max", window)
+        rolling_lows = self._vectorbt_rolling_operation(prices_series, "min", window)
         
         # Strength based on price level consistency (simplified)
         price_range = rolling_highs - rolling_lows
@@ -561,8 +595,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
         
         # Calculate rolling price level consistency
-        rolling_std = prices_series.rolling(window=window).std()
-        rolling_mean = prices_series.rolling(window=window).mean()
+        rolling_std = self._vectorbt_rolling_operation(prices_series, "std", window)
+        rolling_mean = self._vectorbt_rolling_operation(prices_series, "mean", window)
         
         # Consistency based on coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -598,7 +632,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_changes = price_series.diff()
         
         # Calculate rolling means for both windows
-        trend1 = price_changes.rolling(window=window).mean()
+        trend1 = self._vectorbt_rolling_operation(price_changes, "mean", window)
         trend2 = trend1.shift(-window)
         
         # Vectorized change detection using simplified approach
@@ -695,8 +729,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_changes = price_series.diff()
         
         # Calculate rolling volatility of price changes
-        trend_vol = price_changes.rolling(window=window).std()
-        trend_mean = price_changes.rolling(window=window).mean().abs()
+        trend_vol = self._vectorbt_rolling_operation(price_changes, "std", window)
+        trend_mean = self._vectorbt_rolling_operation(price_changes, "mean", window).abs()
         
         # Vectorized transition probability calculation
         transition_prob = np.minimum(1, trend_vol / (trend_mean + 1e-8))
@@ -716,7 +750,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         second_diff = first_diff.diff()
         
         # Rolling momentum using second differences
-        momentum = second_diff.rolling(window=window).mean()
+        momentum = self._vectorbt_rolling_operation(second_diff, "mean", window)
         
         return momentum.fillna(0).values
     
@@ -729,8 +763,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
         
         # Calculate rolling coefficient of variation for stability
-        rolling_std = price_series.rolling(window=window).std()
-        rolling_mean = price_series.rolling(window=window).mean()
+        rolling_std = self._vectorbt_rolling_operation(price_series, "std", window)
+        rolling_mean = self._vectorbt_rolling_operation(price_series, "mean", window)
         
         # Stability based on low coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -770,10 +804,58 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_changes = price_series.diff()
         
         # Rolling entropy using rolling standard deviation as proxy
-        rolling_std = price_changes.rolling(window=window).std()
-        rolling_mean = price_changes.rolling(window=window).mean().abs()
+        rolling_std = self._vectorbt_rolling_operation(price_changes, "std", window)
+        rolling_mean = self._vectorbt_rolling_operation(price_changes, "mean", window).abs()
         
         # Entropy proxy using coefficient of variation
         entropy = rolling_std / (rolling_mean + 1e-8)
         
         return entropy.fillna(0).values
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")

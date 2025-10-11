@@ -3,6 +3,8 @@ Base Feature Generator Classes
 
 This module defines the base classes and interfaces for feature generation,
 providing a standardized way to create and manage feature generators.
+
+Enhanced with native VectorBT support for maximum performance.
 """
 
 import copy
@@ -14,6 +16,41 @@ from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
 import numpy as np
+import warnings
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +83,7 @@ class FeatureCategory(Enum):
 
 @dataclass
 class FeatureConfig:
-    """Configuration for feature generation."""
+    """Configuration for feature generation with native VectorBT support."""
     name: str
     category: FeatureCategory
     description: str
@@ -61,6 +98,13 @@ class FeatureConfig:
     gpu_accelerated: bool = False
     enable_feature_selection: bool = True
     
+    # VectorBT native optimization settings
+    use_vectorbt: bool = True
+    vectorbt_threshold: int = 1000  # Minimum samples for VectorBT optimization
+    enable_gpu: bool = False
+    enable_parallel: bool = True
+    vectorbt_memory_limit_gb: float = 8.0
+    
     def __post_init__(self):
         if self.optional_columns is None:
             self.optional_columns = []
@@ -68,6 +112,11 @@ class FeatureConfig:
             self.parameters = {}
         if self.dependencies is None:
             self.dependencies = []
+        
+        # Auto-enable VectorBT optimizations for large lookbacks
+        if self.default_lookback > 50:
+            self.use_vectorbt = True
+            self.enable_parallel = True
 
 @dataclass
 class FeatureResult:
@@ -86,36 +135,188 @@ class FeatureResult:
 
 class FeatureGenerator(ABC):
     """
-    Abstract base class for feature generators.
+    Abstract base class for feature generators with native VectorBT support.
     
     This class defines the interface that all feature generators must implement,
     providing a standardized way to generate features with consistent error handling,
-    logging, and performance tracking.
+    logging, performance tracking, and native VectorBT optimization.
     """
     
     def __init__(self, config: FeatureConfig):
         """
-        Initialize the feature generator.
+        Initialize the feature generator with native VectorBT support.
         
         Args:
-            config: Feature configuration
+            config: Feature configuration with VectorBT settings
         """
         self.config = config
         self.logger = logger.getChild(f'{self.__class__.__name__}')
+        
+        # VectorBT configuration
+        self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
+        self.enable_gpu = config.enable_gpu and CUPY_AVAILABLE
+        self.enable_parallel = config.enable_parallel and VECTORBT_AVAILABLE
+        self.vectorbt_threshold = config.vectorbt_threshold
+        
         self.performance_stats = {
             'total_generations': 0,
             'successful_generations': 0,
             'failed_generations': 0,
             'average_computation_time': 0.0,
-            'total_computation_time': 0.0
+            'total_computation_time': 0.0,
+            'vectorbt_operations': 0,
+            'gpu_accelerations': 0,
+            'parallel_operations': 0
         }
 
         # Optional state storage for incremental generation support
         self._state: Dict[str, Any] = {}
         self._state_loaded: bool = False
 
+        # Configure VectorBT if available
+        if self.use_vectorbt:
+            self._configure_vectorbt()
+
         # Reduced logging - only log at category level, not individual features
         # self.logger.info(f"Initialized {self.__class__.__name__} for {config.name}")
+    
+    def _configure_vectorbt(self):
+        """Configure VectorBT global settings for optimal performance."""
+        if not VECTORBT_AVAILABLE:
+            return
+        
+        try:
+            # Configure VectorBT settings
+            vbt.settings.setting('array_wrapper', 'pandas')
+            vbt.settings.setting('caching', True)
+            vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
+            
+            if self.enable_gpu:
+                try:
+                    vbt.settings.setting('use_gpu', True)
+                    self.logger.debug("✅ VectorBT GPU acceleration enabled")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ GPU acceleration not available: {e}")
+                    self.enable_gpu = False
+            
+            if self.enable_parallel:
+                try:
+                    vbt.settings.setting('use_parallel', True)
+                    self.logger.debug("✅ VectorBT parallel processing enabled")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Parallel processing not available: {e}")
+                    self.enable_parallel = False
+                    
+        except Exception as e:
+            self.logger.warning(f"VectorBT configuration failed: {e}")
+    
+    def _should_use_vectorbt(self, data: pd.DataFrame) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (self.use_vectorbt and 
+                len(data) >= self.vectorbt_threshold and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """
+        Perform VectorBT rolling operation with fallback to pandas.
+        
+        Args:
+            data: Input data series
+            operation: Operation type ('mean', 'std', 'var', 'min', 'max', 'sum', 'corr', 'cov')
+            window: Rolling window size
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling operation
+        """
+        if not self._should_use_vectorbt(pd.DataFrame({'temp': data})):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        self.performance_stats['vectorbt_operations'] += 1
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            elif operation == 'corr':
+                other = kwargs.get('other')
+                if other is None:
+                    raise ValueError("'other' parameter required for correlation")
+                return rolling_corr(data, other, window=window, **kwargs)
+            elif operation == 'cov':
+                other = kwargs.get('other')
+                if other is None:
+                    raise ValueError("'other' parameter required for covariance")
+                return rolling_cov(data, other, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        elif operation == 'corr':
+            other = kwargs.get('other')
+            if other is None:
+                raise ValueError("'other' parameter required for correlation")
+            return data.rolling(window=window).corr(other)
+        elif operation == 'cov':
+            other = kwargs.get('other')
+            if other is None:
+                raise ValueError("'other' parameter required for covariance")
+            return data.rolling(window=window).cov(other)
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _vectorbt_apply_operation(self, data: pd.Series, func: Callable, 
+                                 window: int, **kwargs) -> pd.Series:
+        """
+        Perform VectorBT rolling apply operation with fallback to pandas.
+        
+        Args:
+            data: Input data series
+            func: Function to apply
+            window: Rolling window size
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling apply operation
+        """
+        if not self._should_use_vectorbt(pd.DataFrame({'temp': data})):
+            return data.rolling(window=window).apply(func, **kwargs)
+        
+        self.performance_stats['vectorbt_operations'] += 1
+        
+        try:
+            return rolling_apply(data, func, window=window, **kwargs)
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            return data.rolling(window=window).apply(func, **kwargs)
     
     @abstractmethod
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -489,18 +690,18 @@ class CompositeFeatureGenerator(FeatureGenerator):
 
 class VectorizedFeatureGenerator(FeatureGenerator):
     """
-    Base class for vectorized feature generators that leverage matrix operations.
+    Base class for vectorized feature generators with native VectorBT support.
     
     This class provides optimized vectorized computation capabilities
-    using the matrix operations framework and new optimization utilities.
+    using VectorBT's optimized backend, matrix operations framework, and optimization utilities.
     """
     
     def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True, enable_vectorization_optimization: bool = True):
         """
-        Initialize vectorized feature generator.
+        Initialize vectorized feature generator with native VectorBT support.
         
         Args:
-            config: Feature configuration
+            config: Feature configuration with VectorBT settings
             enable_matrix_ops: Whether to enable matrix operations
             enable_vectorization_optimization: Whether to enable vectorization optimization
         """
@@ -577,7 +778,7 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                                     windows: List[int],
                                     columns: Optional[List[str]] = None) -> pd.DataFrame:
         """
-        Perform vectorized rolling operations with hardware optimization.
+        Perform vectorized rolling operations with VectorBT optimization.
         
         Args:
             data: Input DataFrame
@@ -588,12 +789,39 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         Returns:
             DataFrame with rolling features
         """
+        # Use VectorBT if available and data is large enough
+        if self._should_use_vectorbt(data):
+            return self._vectorbt_rolling_operations(data, operations, windows, columns)
+        
+        # Fallback to vectorization optimizer
         if self.enable_vectorization_optimization and self.vectorization_optimizer:
             return self.vectorization_optimizer.vectorized_rolling_operations(
                 data, operations, windows, columns
             )
         else:
             return self._fallback_rolling_operations(data, operations, windows, columns)
+    
+    def _vectorbt_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                   windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform rolling operations using VectorBT optimization."""
+        result = data.copy()
+        process_columns = columns or data.select_dtypes(include=[np.number]).columns
+        
+        for col in process_columns:
+            for operation in operations:
+                for window in windows:
+                    try:
+                        result[f'{col}_{operation}_{window}'] = self._vectorbt_rolling_operation(
+                            data[col], operation, window
+                        )
+                        self.performance_stats['vectorbt_operations'] += 1
+                    except Exception as e:
+                        self.logger.warning(f"VectorBT operation failed for {col}_{operation}_{window}: {e}")
+                        result[f'{col}_{operation}_{window}'] = self._pandas_rolling_operation(
+                            data[col], operation, window
+                        )
+        
+        return result
     
     def _fallback_rolling_operations(self, 
                                    data: pd.DataFrame,

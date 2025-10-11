@@ -156,23 +156,35 @@ class VectorBTBacktestingEngine:
         logger.info(f"📊 Initial capital: ${self.config.initial_capital:,.2f}")
     
     def _configure_vectorbt(self):
-        """Configure VectorBT global settings."""
-        # Set memory limit
+        """Configure VectorBT global settings for optimal performance."""
+        # Set memory limit and chunking for large datasets
         if self.config.memory_limit_gb:
-            vbt.settings.array_wrapper['freq'] = '1min'  # Default frequency
             vbt.settings.array_wrapper['freq'] = '1min'
+            vbt.settings.array_wrapper['chunk_size'] = self.config.chunk_size
+            vbt.settings.array_wrapper['memory_limit'] = self.config.memory_limit_gb * 1024**3
         
-        # Configure parallel processing
+        # Configure parallel processing with optimal settings
         if self.config.enable_parallel:
             vbt.settings.parallel['threading'] = True
-            vbt.settings.parallel['threading'] = True
+            vbt.settings.parallel['multiprocessing'] = True
+            vbt.settings.parallel['n_jobs'] = -1  # Use all available cores
         
-        # Configure GPU usage
+        # Configure GPU usage with memory management
         if self.config.use_gpu and CUPY_AVAILABLE:
             vbt.settings.array_wrapper['freq'] = '1min'
-            logger.info("🚀 GPU acceleration enabled")
+            vbt.settings.array_wrapper['use_gpu'] = True
+            vbt.settings.array_wrapper['gpu_memory_fraction'] = 0.8  # Use 80% of GPU memory
+            logger.info("🚀 GPU acceleration enabled with memory management")
         else:
             logger.info("💻 CPU-only mode")
+        
+        # Enable caching for repeated operations
+        vbt.settings.caching['enabled'] = True
+        vbt.settings.caching['dir'] = 'data_cache/vectorbt_cache'
+        
+        # Optimize for financial data
+        vbt.settings.array_wrapper['freq_precision'] = 0
+        vbt.settings.array_wrapper['freq_rep'] = 'auto'
     
     def run_backtest(self, 
                     signals: Union[np.ndarray, pd.DataFrame],
@@ -284,22 +296,51 @@ class VectorBTBacktestingEngine:
             signals_df = signals_df.fillna(0)
     
     def _run_cpu_backtest(self, prices_df, signals_df, **kwargs):
-        """Run CPU-based VectorBT backtest."""
+        """Run CPU-based VectorBT backtest with optimizations."""
         logger.debug("🔄 Running CPU-based VectorBT backtest...")
         
-        # Create VectorBT portfolio
-        portfolio = vbt.Portfolio.from_signals(
-            prices_df,
-            signals_df,
-            init_cash=self.config.initial_capital,
-            fees=self.config.commission_rate,
-            slippage=self.config.slippage_rate,
-            freq='1min',
-            **kwargs
-        )
-        
-        self.performance_stats['cpu_operations'] += 1
-        return portfolio
+        # Use VectorBT's optimized portfolio creation with memory management
+        try:
+            # Enable chunked processing for large datasets
+            if len(prices_df) > self.config.chunk_size:
+                portfolio = vbt.Portfolio.from_signals(
+                    prices_df,
+                    signals_df,
+                    init_cash=self.config.initial_capital,
+                    fees=self.config.commission_rate,
+                    slippage=self.config.slippage_rate,
+                    freq='1min',
+                    chunked=True,  # Enable chunked processing
+                    **kwargs
+                )
+            else:
+                portfolio = vbt.Portfolio.from_signals(
+                    prices_df,
+                    signals_df,
+                    init_cash=self.config.initial_capital,
+                    fees=self.config.commission_rate,
+                    slippage=self.config.slippage_rate,
+                    freq='1min',
+                    **kwargs
+                )
+            
+            self.performance_stats['cpu_operations'] += 1
+            return portfolio
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Optimized CPU backtest failed: {e}, using fallback")
+            # Fallback to basic implementation
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                init_cash=self.config.initial_capital,
+                fees=self.config.commission_rate,
+                slippage=self.config.slippage_rate,
+                freq='1min',
+                **kwargs
+            )
+            self.performance_stats['cpu_operations'] += 1
+            return portfolio
     
     def _run_gpu_backtest(self, prices_df, signals_df, **kwargs):
         """Run GPU-accelerated VectorBT backtest."""

@@ -38,7 +38,7 @@ class UnifiedMatrixOperations:
     
     def matrix_multiply(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """
-        Perform matrix multiplication with optimization.
+        Perform matrix multiplication with VectorBT optimization.
         
         Args:
             a: First matrix
@@ -47,10 +47,19 @@ class UnifiedMatrixOperations:
         Returns:
             Result of matrix multiplication
         """
+        # Try VectorBT optimization first
+        try:
+            from .matrix_operations.vectorbt_optimizations import vectorbt_matrix_multiply
+            return vectorbt_matrix_multiply(a, b)
+        except ImportError:
+            pass
+        
         if self._ops and hasattr(self._ops, 'matrix_multiply'):
             return self._ops.matrix_multiply(a, b)
         else:
-            # Fallback to numpy
+            # Fallback to numpy with optimization
+            a = np.ascontiguousarray(a)
+            b = np.ascontiguousarray(b)
             return np.dot(a, b)
     
     def matrix_inverse(self, matrix: np.ndarray) -> np.ndarray:

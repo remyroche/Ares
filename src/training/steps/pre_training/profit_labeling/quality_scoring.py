@@ -72,6 +72,12 @@ except ImportError:
 try:
     from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
 
+# Import VectorBT optimizer
+from .vectorbt_optimizer import (
+    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean, 
+    optimized_rolling_std, optimized_volatility, optimized_returns
+)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -170,6 +176,9 @@ class QualityScoringConfig:
     # Quality checks
     min_samples_for_evaluation: int = 100
     max_evaluation_time_seconds: int = 300
+    
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
 
 
 @dataclass
@@ -265,6 +274,9 @@ class LabelQualityScorer:
                 self.oof_manager = None
         else:
             self.oof_manager = None
+
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = get_vectorbt_optimizer(self.config.vectorbt_config)
 
         tprint_info("📊 Label Quality Scorer initialized")
         tprint_info(f"   → Baseline models: {self.config.baseline_models}")
@@ -459,17 +471,18 @@ class LabelQualityScorer:
             features_data['log_returns'] = np.log(close_prices / np.roll(close_prices, 1))
             features_data['log_returns'][0] = 0  # Handle first value
 
-            # Volatility (rolling std) - use vectorized operations
+            # Volatility (rolling std) - use VectorBT for better performance
             returns_series = pd.Series(features_data['returns'], index=target_index)
-            features_data['volatility'] = returns_series.rolling(self.config.feature_window).std().fillna(0).values
+            features_data['volatility'] = optimized_rolling_std(returns_series, self.config.feature_window).fillna(0).values
 
             # Price momentum
             shifted_close = np.roll(close_prices, self.config.feature_window)
             shifted_close[:self.config.feature_window] = close_prices[0]  # Pad initial values
             features_data['price_momentum'] = close_prices / shifted_close - 1
 
-            # Volume-based features (vectorized)
-            rolling_volume_mean = pd.Series(volume_values, index=target_index).rolling(self.config.feature_window).mean().bfill().values
+            # Volume-based features using VectorBT
+            volume_series = pd.Series(volume_values, index=target_index)
+            rolling_volume_mean = optimized_rolling_mean(volume_series, self.config.feature_window).bfill().values
             features_data['volume_ratio'] = np.divide(volume_values, rolling_volume_mean, out=np.zeros_like(volume_values), where=rolling_volume_mean!=0)
 
             # Volume momentum
@@ -480,8 +493,9 @@ class LabelQualityScorer:
             features_data['high_low_ratio'] = (high_prices - low_prices) / close_prices
             features_data['close_open_ratio'] = close_prices / open_prices - 1
 
-            # Technical indicators
-            rolling_close_mean = pd.Series(close_prices, index=target_index).rolling(self.config.feature_window).mean().bfill().values
+            # Technical indicators using VectorBT
+            close_series = pd.Series(close_prices, index=target_index)
+            rolling_close_mean = optimized_rolling_mean(close_series, self.config.feature_window).bfill().values
             features_data['sma_ratio'] = close_prices / rolling_close_mean
 
             # RSI calculation
@@ -516,9 +530,16 @@ class LabelQualityScorer:
             return pd.Series(0, index=prices.index)
 
     def _calculate_rsi_vectorized(self, prices: np.ndarray, window: int) -> np.ndarray:
-        """Calculate RSI indicator using vectorized operations."""
+        """Calculate RSI indicator using VectorBT for optimal performance."""
         try:
-            # Vectorized RSI calculation for better performance
+            # Use VectorBT for RSI calculation
+            prices_series = pd.Series(prices)
+            rsi_series = self.vectorbt_optimizer.calculate_rsi(prices_series, window)
+            return rsi_series.values
+
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT RSI calculation failed: {e}")
+            # Fallback to original vectorized implementation
             deltas = np.diff(prices)
             deltas = np.concatenate([[0], deltas])  # Pad first difference
 
@@ -527,7 +548,6 @@ class LabelQualityScorer:
             losses = np.where(deltas < 0, -deltas, 0)
 
             # Rolling means using vectorized operations
-            # Use cumulative approach for efficiency
             gains_rolling = np.zeros_like(gains, dtype=float)
             losses_rolling = np.zeros_like(losses, dtype=float)
 
@@ -545,12 +565,6 @@ class LabelQualityScorer:
             rsi = 100 - (100 / (1 + rs))
 
             return rsi
-
-        except Exception as e:
-            tprint_warning(f"⚠️ Vectorized RSI calculation failed: {e}")
-            # Fallback to pandas implementation
-            prices_series = pd.Series(prices)
-            return self._calculate_rsi(prices_series, window).values
     
     def _assess_predictability(self, target_labels: pd.Series, features: pd.DataFrame) -> Dict[str, Any]:
         """Assess predictability using baseline models."""

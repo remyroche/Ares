@@ -178,6 +178,9 @@ class EnhancedDataLabelsConfig:
     regime_config: RegimeConfig = field(default_factory=RegimeConfig)
     fairness_config: ValidationFairnessConfig = field(default_factory=ValidationFairnessConfig)
     
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
+    
     # Quality thresholds
     min_data_quality_score: float = 0.7
     min_label_stability_score: float = 0.6
@@ -227,6 +230,9 @@ class EnhancedDataLabelsSystem:
 
         # Initialize serialization utilities
         self.serializer = UniversalSerializer()
+
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = get_vectorbt_optimizer(self.config.vectorbt_config)
 
         # State tracking
         self.label_history: List[Dict[str, Any]] = []
@@ -601,9 +607,9 @@ class EnhancedDataLabelsSystem:
         try:
             tprint_info("🎯 Generating trading-aware labels...")
             
-            # Calculate volatility for regime conditioning
-            returns = market_data['close'].pct_change().dropna()
-            volatility = self._vectorbt_rolling_operation(returns, "std", 20) * np.sqrt(252)  # Annualized
+            # Calculate volatility for regime conditioning using VectorBT optimizer
+            returns = optimized_returns(market_data['close'], method='pct_change').dropna()
+            volatility = optimized_volatility(returns, window=20, annualize=True)
             
             # Generate analyst labels (Should we trade?)
             analyst_labels, analyst_confidence = self.label_definitions.generate_analyst_labels(
@@ -858,6 +864,12 @@ class EnhancedDataLabelsSystem:
                         except Exception as e:
                             from src.utils.tprint import tprint_warning
 
+# Import VectorBT optimizer
+from .vectorbt_optimizer import (
+    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean, 
+    optimized_rolling_std, optimized_volatility, optimized_returns
+)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -934,22 +946,35 @@ except ImportError:
 
                         for lag in lags:
                             if len(series) > lag:
-                                # Use matrix operations for autocorrelation calculation
-                                shifted_values = np.roll(values, lag, axis=0)
-                                # Remove the first lag elements where shift occurred
-                                valid_values = values[lag:]
-                                valid_shifted = shifted_values[lag:]
+                                # Use VectorBT rolling correlation for better performance
+                                try:
+                                    # Create lagged series
+                                    lagged_series = series.shift(lag).dropna()
+                                    current_series = series.iloc[lag:].reindex(lagged_series.index)
+                                    
+                                    if len(current_series) > 10 and len(lagged_series) > 10:
+                                        # Use VectorBT rolling correlation
+                                        rolling_corr = self.vectorbt_optimizer.rolling_corr(
+                                            current_series, lagged_series, window=min(20, len(current_series))
+                                        )
+                                        autocorr = rolling_corr.mean()
+                                        
+                                        if not pd.isna(autocorr):
+                                            lag_scores.append(abs(autocorr))
+                                except Exception as e:
+                                    # Fallback to matrix operations
+                                    shifted_values = np.roll(values, lag, axis=0)
+                                    valid_values = values[lag:]
+                                    valid_shifted = shifted_values[lag:]
 
-                                if len(valid_values) > 10:
-                                    # Compute correlation using matrix operations
-                                    correlation_matrix = self.matrix_ops.calculate_pairwise_similarities(
-                                        valid_values, method='cosine'
-                                    )
-                                    # Extract correlation coefficient (diagonal element)
-                                    autocorr = correlation_matrix[0, 0] if correlation_matrix.shape[0] > 0 else 0.0
+                                    if len(valid_values) > 10:
+                                        correlation_matrix = self.matrix_ops.calculate_pairwise_similarities(
+                                            valid_values, method='cosine'
+                                        )
+                                        autocorr = correlation_matrix[0, 0] if correlation_matrix.shape[0] > 0 else 0.0
 
-                                    if not pd.isna(autocorr):
-                                        lag_scores.append(abs(autocorr))
+                                        if not pd.isna(autocorr):
+                                            lag_scores.append(abs(autocorr))
 
                         if lag_scores:
                             avg_autocorr = np.mean(lag_scores)

@@ -440,14 +440,28 @@ class WeightOptimizationEngine:
                 
                 # Volatility regime
                 returns = market_data['close'].pct_change().dropna()
-                volatility = returns.rolling(20).std()
+                # Use VectorBT-optimized rolling std
+                try:
+                    from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_std
+                    volatility = vectorbt_rolling_std(returns, 20)
+                    self.logger.debug("✅ Used VectorBT-optimized rolling std for volatility")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT rolling std failed: {e}, using pandas fallback")
+                    volatility = returns.rolling(20).std()
                 volatility_regime = np.mean(volatility) if len(volatility) > 0 else 0.0
                 
                 self.logger.debug(f"Volatility regime: {volatility_regime:.4f}")
                 
-                # Trend strength
-                sma_short = market_data['close'].rolling(10).mean()
-                sma_long = market_data['close'].rolling(50).mean()
+                # Trend strength using VectorBT-optimized rolling mean
+                try:
+                    from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_mean
+                    sma_short = vectorbt_rolling_mean(market_data['close'], 10)
+                    sma_long = vectorbt_rolling_mean(market_data['close'], 50)
+                    self.logger.debug("✅ Used VectorBT-optimized rolling mean for trend strength")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT rolling mean failed: {e}, using pandas fallback")
+                    sma_short = market_data['close'].rolling(10).mean()
+                    sma_long = market_data['close'].rolling(50).mean()
                 trend_strength = abs(np.mean((sma_short - sma_long) / sma_long)) if len(sma_short) > 0 else 0.0
                 
                 self.logger.debug(f"Trend strength: {trend_strength:.4f}")

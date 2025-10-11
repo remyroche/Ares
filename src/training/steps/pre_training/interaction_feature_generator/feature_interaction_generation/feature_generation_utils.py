@@ -331,12 +331,28 @@ class ImprovedFeatureGenerator:
         # Generate cross-timeframe features
         for period in self.config.cross_timeframe_periods:
             for col in numeric_cols:
-                # Generate different aggregations
-                cross_tf_features[f'ctf_{period}m_{col}_mean'] = data[col].rolling(period).mean()
-                cross_tf_features[f'ctf_{period}m_{col}_std'] = data[col].rolling(period).std()
-                cross_tf_features[f'ctf_{period}m_{col}_max'] = data[col].rolling(period).max()
-                cross_tf_features[f'ctf_{period}m_{col}_min'] = data[col].rolling(period).min()
-                cross_tf_features[f'ctf_{period}m_{col}_median'] = data[col].rolling(period).median()
+                # Generate different aggregations using VectorBT-optimized rolling operations
+                try:
+                    from src.utils.ml_common.native_vectorbt_integration import (
+                        vectorbt_rolling_mean, vectorbt_rolling_std, 
+                        vectorbt_rolling_max, vectorbt_rolling_min
+                    )
+                    
+                    cross_tf_features[f'ctf_{period}m_{col}_mean'] = vectorbt_rolling_mean(data[col], period)
+                    cross_tf_features[f'ctf_{period}m_{col}_std'] = vectorbt_rolling_std(data[col], period)
+                    cross_tf_features[f'ctf_{period}m_{col}_max'] = vectorbt_rolling_max(data[col], period)
+                    cross_tf_features[f'ctf_{period}m_{col}_min'] = vectorbt_rolling_min(data[col], period)
+                    cross_tf_features[f'ctf_{period}m_{col}_median'] = data[col].rolling(period).median()  # Keep median as pandas (no VectorBT equivalent)
+                    
+                    logger.debug("✅ Used VectorBT-optimized rolling operations for cross-timeframe features")
+                except Exception as e:
+                    logger.warning(f"⚠️ VectorBT rolling operations failed: {e}, using pandas fallback")
+                    # Fallback to pandas rolling operations
+                    cross_tf_features[f'ctf_{period}m_{col}_mean'] = data[col].rolling(period).mean()
+                    cross_tf_features[f'ctf_{period}m_{col}_std'] = data[col].rolling(period).std()
+                    cross_tf_features[f'ctf_{period}m_{col}_max'] = data[col].rolling(period).max()
+                    cross_tf_features[f'ctf_{period}m_{col}_min'] = data[col].rolling(period).min()
+                    cross_tf_features[f'ctf_{period}m_{col}_median'] = data[col].rolling(period).median()
         
         # Fast-fail: Must have generated features
         if not cross_tf_features:
@@ -559,14 +575,28 @@ class ImprovedFeatureGenerator:
                 
                 for window in self.config.rolling_windows:
                     if len(series) > window:
-                        # Use pandas rolling operations for better performance
-                        rolling = series.rolling(window=window, min_periods=1)
-                        
-                        # Basic statistics (vectorized)
-                        features[f'{col}_ma_{window}'] = rolling.mean().values
-                        features[f'{col}_std_{window}'] = rolling.std().values
-                        features[f'{col}_min_{window}'] = rolling.min().values
-                        features[f'{col}_max_{window}'] = rolling.max().values
+                        # Use VectorBT-optimized rolling operations for better performance
+                        try:
+                            from src.utils.ml_common.native_vectorbt_integration import (
+                                vectorbt_rolling_mean, vectorbt_rolling_std,
+                                vectorbt_rolling_min, vectorbt_rolling_max
+                            )
+                            
+                            # Basic statistics using VectorBT
+                            features[f'{col}_ma_{window}'] = vectorbt_rolling_mean(series, window).values
+                            features[f'{col}_std_{window}'] = vectorbt_rolling_std(series, window).values
+                            features[f'{col}_min_{window}'] = vectorbt_rolling_min(series, window).values
+                            features[f'{col}_max_{window}'] = vectorbt_rolling_max(series, window).values
+                            
+                            logger.debug(f"✅ Used VectorBT-optimized rolling statistics for {col} window {window}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ VectorBT rolling statistics failed for {col} window {window}: {e}, using pandas fallback")
+                            # Fallback to pandas rolling operations
+                            rolling = series.rolling(window=window, min_periods=1)
+                            features[f'{col}_ma_{window}'] = rolling.mean().values
+                            features[f'{col}_std_{window}'] = rolling.std().values
+                            features[f'{col}_min_{window}'] = rolling.min().values
+                            features[f'{col}_max_{window}'] = rolling.max().values
                         
                         # Advanced statistics (only if window is large enough)
                         if window >= 10:
@@ -663,44 +693,80 @@ class ImprovedFeatureGenerator:
         return ema
     
     def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean with proper handling of edge cases."""
+        """Calculate rolling mean with VectorBT optimization and proper handling of edge cases."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        # Use pandas rolling for efficiency and correct length
-        series = pd.Series(data)
-        rolling = series.rolling(window=window, min_periods=1)
-        return rolling.mean().values
+        # Use VectorBT-optimized rolling mean
+        try:
+            from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_mean
+            series = pd.Series(data)
+            result = vectorbt_rolling_mean(series, window)
+            logger.debug("✅ Used VectorBT-optimized rolling mean")
+            return result.values
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT rolling mean failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            series = pd.Series(data)
+            rolling = series.rolling(window=window, min_periods=1)
+            return rolling.mean().values
     
     def _rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling standard deviation."""
+        """Calculate rolling standard deviation with VectorBT optimization."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        # Use pandas rolling for efficiency and correct length
-        series = pd.Series(data)
-        rolling = series.rolling(window=window, min_periods=1)
-        return rolling.std().values
+        # Use VectorBT-optimized rolling std
+        try:
+            from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_std
+            series = pd.Series(data)
+            result = vectorbt_rolling_std(series, window)
+            logger.debug("✅ Used VectorBT-optimized rolling std")
+            return result.values
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT rolling std failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            series = pd.Series(data)
+            rolling = series.rolling(window=window, min_periods=1)
+            return rolling.std().values
     
     def _rolling_min(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling minimum."""
+        """Calculate rolling minimum with VectorBT optimization."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        # Use pandas rolling for efficiency and correct length
-        series = pd.Series(data)
-        rolling = series.rolling(window=window, min_periods=1)
-        return rolling.min().values
+        # Use VectorBT-optimized rolling min
+        try:
+            from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_min
+            series = pd.Series(data)
+            result = vectorbt_rolling_min(series, window)
+            logger.debug("✅ Used VectorBT-optimized rolling min")
+            return result.values
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT rolling min failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            series = pd.Series(data)
+            rolling = series.rolling(window=window, min_periods=1)
+            return rolling.min().values
     
     def _rolling_max(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling maximum."""
+        """Calculate rolling maximum with VectorBT optimization."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        # Use pandas rolling for efficiency and correct length
-        series = pd.Series(data)
-        rolling = series.rolling(window=window, min_periods=1)
-        return rolling.max().values
+        # Use VectorBT-optimized rolling max
+        try:
+            from src.utils.ml_common.native_vectorbt_integration import vectorbt_rolling_max
+            series = pd.Series(data)
+            result = vectorbt_rolling_max(series, window)
+            logger.debug("✅ Used VectorBT-optimized rolling max")
+            return result.values
+        except Exception as e:
+            logger.warning(f"⚠️ VectorBT rolling max failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            series = pd.Series(data)
+            rolling = series.rolling(window=window, min_periods=1)
+            return rolling.max().values
     
     def _rolling_skew(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling skewness."""

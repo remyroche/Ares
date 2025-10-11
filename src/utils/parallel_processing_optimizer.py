@@ -168,15 +168,37 @@ class MacM1ParallelOptimizer:
         def rolling_operation(chunk_df: pd.DataFrame, window_size: int, op: str) -> pd.DataFrame:
             numeric_cols = chunk_df.select_dtypes(include=[np.number]).columns
             result = chunk_df.copy()
-            for col in numeric_cols:
-                if op == 'mean':
-                    result[f'{col}_rolling_{window_size}'] = chunk_df[col].rolling(window_size).mean()
-                elif op == 'std':
-                    result[f'{col}_rolling_{window_size}_std'] = chunk_df[col].rolling(window_size).std()
-                elif op == 'min':
-                    result[f'{col}_rolling_{window_size}_min'] = chunk_df[col].rolling(window_size).min()
-                elif op == 'max':
-                    result[f'{col}_rolling_{window_size}_max'] = chunk_df[col].rolling(window_size).max()
+            
+            # Use VectorBT-optimized rolling operations
+            try:
+                from src.utils.ml_common.native_vectorbt_integration import (
+                    vectorbt_rolling_mean, vectorbt_rolling_std,
+                    vectorbt_rolling_min, vectorbt_rolling_max
+                )
+                
+                for col in numeric_cols:
+                    if op == 'mean':
+                        result[f'{col}_rolling_{window_size}'] = vectorbt_rolling_mean(chunk_df[col], window_size)
+                    elif op == 'std':
+                        result[f'{col}_rolling_{window_size}_std'] = vectorbt_rolling_std(chunk_df[col], window_size)
+                    elif op == 'min':
+                        result[f'{col}_rolling_{window_size}_min'] = vectorbt_rolling_min(chunk_df[col], window_size)
+                    elif op == 'max':
+                        result[f'{col}_rolling_{window_size}_max'] = vectorbt_rolling_max(chunk_df[col], window_size)
+                        
+                logger.debug(f"✅ Used VectorBT-optimized rolling operations for {op} with window {window_size}")
+            except Exception as e:
+                logger.warning(f"⚠️ VectorBT rolling operations failed: {e}, using pandas fallback")
+                # Fallback to pandas rolling operations
+                for col in numeric_cols:
+                    if op == 'mean':
+                        result[f'{col}_rolling_{window_size}'] = chunk_df[col].rolling(window_size).mean()
+                    elif op == 'std':
+                        result[f'{col}_rolling_{window_size}_std'] = chunk_df[col].rolling(window_size).std()
+                    elif op == 'min':
+                        result[f'{col}_rolling_{window_size}_min'] = chunk_df[col].rolling(window_size).min()
+                    elif op == 'max':
+                        result[f'{col}_rolling_{window_size}_max'] = chunk_df[col].rolling(window_size).max()
             return result
         feature_funcs = [partial(rolling_operation, window_size = w, op = operation) for w in window_sizes]
         return self.parallel_feature_engineering(df, feature_funcs)

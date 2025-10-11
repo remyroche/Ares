@@ -70,6 +70,11 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_accelerations': 0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -119,8 +124,20 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period:
             return np.full(len(prices), np.nan)
 
-        sma = pd.Series(prices).rolling(window=period).mean().values
-        return sma
+        prices_series = pd.Series(prices)
+        
+        # Use VectorBT if available and data is large enough
+        if self._should_use_vectorbt(pd.DataFrame({'close': prices_series})):
+            try:
+                sma = self._vectorbt_rolling_operation(prices_series, 'mean', period)
+                self.performance_stats['vectorbt_operations'] += 1
+                return sma.values
+            except Exception as e:
+                self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                return prices_series.rolling(window=period).mean().values
+        else:
+            return prices_series.rolling(window=period).mean().values
 
     def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         """Calculate Exponential Moving Average."""
@@ -237,6 +254,54 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
                 data, operations, windows, columns
             )
         return data
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
 class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for Average Directional Index (ADX)."""

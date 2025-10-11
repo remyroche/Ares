@@ -102,9 +102,9 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe momentum."""
+        """Generate cross-timeframe momentum using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        momentum = base_values.pct_change(self.timeframe)
+        momentum = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe)
         return momentum
 
 # Cross-Timeframe Volatility Generator
@@ -153,9 +153,9 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe volatility."""
+        """Generate cross-timeframe volatility using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volatility = base_values.rolling(window=self.timeframe).std()
+        volatility = rolling_std(base_values, window=self.timeframe)
         return volatility
 
 # Cross-Timeframe Volume Generator
@@ -204,9 +204,9 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe volume."""
+        """Generate cross-timeframe volume using VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        volume_ma = base_values.rolling(window=self.timeframe).mean()
+        volume_ma = rolling_mean(base_values, window=self.timeframe)
         return volume_ma
 
 # Cross-Timeframe Trend Generator
@@ -268,7 +268,7 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
             except:
                 return 0.0
         
-        trend = base_values.rolling(window=self.timeframe).apply(calculate_trend_strength, raw=False)
+        trend = rolling_apply(base_values, calculate_trend_strength, window=self.timeframe)
         return trend
 
 # Cross-Timeframe High-Low Generator
@@ -317,8 +317,8 @@ class CrossTimeframeHighLowGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe high-low range."""
-        hl_range = (data['high'] - data['low']).rolling(window=self.timeframe).mean()
+        """Generate cross-timeframe high-low range using VectorBT."""
+        hl_range = rolling_mean(data['high'] - data['low'], window=self.timeframe)
         return hl_range
 
 # Cross-Timeframe Ratio Generator
@@ -369,21 +369,21 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe ratio."""
+        """Generate cross-timeframe ratio using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         
         if self.feature_type == "momentum":
-            short_feature = base_values.pct_change(self.short_timeframe)
-            long_feature = base_values.pct_change(self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
         elif self.feature_type == "volatility":
-            short_feature = base_values.rolling(window=self.short_timeframe).std()
-            long_feature = base_values.rolling(window=self.long_timeframe).std()
+            short_feature = rolling_std(base_values, window=self.short_timeframe)
+            long_feature = rolling_std(base_values, window=self.long_timeframe)
         elif self.feature_type == "sma":
-            short_feature = base_values.rolling(window=self.short_timeframe).mean()
-            long_feature = base_values.rolling(window=self.long_timeframe).mean()
+            short_feature = rolling_mean(base_values, window=self.short_timeframe)
+            long_feature = rolling_mean(base_values, window=self.long_timeframe)
         else:  # Default to momentum
-            short_feature = base_values.pct_change(self.short_timeframe)
-            long_feature = base_values.pct_change(self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
         
         # Calculate ratio with safe division
         ratio = short_feature / (long_feature + 1e-8)  # Add small epsilon to prevent division by zero
@@ -438,21 +438,21 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe correlation."""
+        """Generate cross-timeframe correlation using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         
         if self.feature_type == "momentum":
-            feature1 = base_values.pct_change(self.timeframe1)
-            feature2 = base_values.pct_change(self.timeframe2)
+            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe1)
+            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe2)
         elif self.feature_type == "volatility":
-            feature1 = base_values.rolling(window=self.timeframe1).std()
-            feature2 = base_values.rolling(window=self.timeframe2).std()
+            feature1 = rolling_std(base_values, window=self.timeframe1)
+            feature2 = rolling_std(base_values, window=self.timeframe2)
         else:  # Default to momentum
-            feature1 = base_values.pct_change(self.timeframe1)
-            feature2 = base_values.pct_change(self.timeframe2)
+            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe1)
+            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe2)
         
-        # Calculate rolling correlation
-        correlation = feature1.rolling(window=self.correlation_window).corr(feature2)
+        # Calculate rolling correlation using VectorBT
+        correlation = rolling_corr(feature1, feature2, window=self.correlation_window)
         return correlation
 
 # Cross-Timeframe Divergence Generator
@@ -503,21 +503,21 @@ class CrossTimeframeDivergenceGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe divergence."""
+        """Generate cross-timeframe divergence using VectorBT."""
         base_values = self.base_calculator.calculate(data)
         
         if self.feature_type == "momentum":
-            short_feature = base_values.pct_change(self.short_timeframe)
-            long_feature = base_values.pct_change(self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
         elif self.feature_type == "volatility":
-            short_feature = base_values.rolling(window=self.short_timeframe).std()
-            long_feature = base_values.rolling(window=self.long_timeframe).std()
+            short_feature = rolling_std(base_values, window=self.short_timeframe)
+            long_feature = rolling_std(base_values, window=self.long_timeframe)
         elif self.feature_type == "sma":
-            short_feature = base_values.rolling(window=self.short_timeframe).mean()
-            long_feature = base_values.rolling(window=self.long_timeframe).mean()
+            short_feature = rolling_mean(base_values, window=self.short_timeframe)
+            long_feature = rolling_mean(base_values, window=self.long_timeframe)
         else:  # Default to momentum
-            short_feature = base_values.pct_change(self.short_timeframe)
-            long_feature = base_values.pct_change(self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
         
         # Calculate divergence (difference)
         divergence = short_feature - long_feature
@@ -609,20 +609,21 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate fractional change feature across timeframes."""
+        """Generate fractional change feature across timeframes using VectorBT."""
         if self.feature_type == "volatility":
-            fast_vol = data["close"].pct_change().rolling(window=self.fast_tf).std()
-            slow_vol = data["close"].pct_change().rolling(window=self.slow_tf).std()
-            fractional_change = fast_vol / slow_vol
+            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+            fast_vol = rolling_std(returns, window=self.fast_tf)
+            slow_vol = rolling_std(returns, window=self.slow_tf)
+            fractional_change = fast_vol / (slow_vol + 1e-8)
         elif self.feature_type == "momentum":
-            fast_momentum = data["close"].pct_change(self.fast_tf)
-            slow_momentum = data["close"].pct_change(self.slow_tf)
-            fractional_change = fast_momentum / slow_momentum
+            fast_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.fast_tf)
+            slow_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.slow_tf)
+            fractional_change = fast_momentum / (slow_momentum + 1e-8)
         elif self.feature_type == "volume":
             if "volume" in data.columns:
-                fast_volume = data["volume"].rolling(window=self.fast_tf).mean()
-                slow_volume = data["volume"].rolling(window=self.slow_tf).mean()
-                fractional_change = fast_volume / slow_volume
+                fast_volume = rolling_mean(data["volume"], window=self.fast_tf)
+                slow_volume = rolling_mean(data["volume"], window=self.slow_tf)
+                fractional_change = fast_volume / (slow_volume + 1e-8)
             else:
                 fractional_change = pd.Series(np.zeros(len(data)), index=data.index)
         else:
@@ -676,16 +677,16 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
         lag_bars = self.target_tf // self.source_tf - 1
 
         if self.alignment_method == "lag":
-            # Lag fast timeframe features by appropriate number of bars
-            returns = data["close"].pct_change()
-            aligned_returns = returns.shift(lag_bars)
+            # Lag fast timeframe features by appropriate number of bars using VectorBT
+            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+            aligned_returns = rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
             return aligned_returns.fillna(0)
         elif self.alignment_method == "resample":
-            # Resample to target timeframe
+            # Resample to target timeframe using VectorBT
             resampled = data["close"].resample(f'{self.target_tf}min').last()
             # Forward fill to original frequency
             aligned = resampled.reindex(data.index, method='ffill')
-            return (aligned / aligned.shift(1) - 1).fillna(0)
+            return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, window=2).fillna(0)
         else:
             return pd.Series(np.zeros(len(data)), index=data.index)
 
@@ -737,14 +738,14 @@ class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
             # Create features for each timeframe
             tf_features = []
             for tf in self.timeframes:
-                # Calculate returns for this timeframe
-                returns = data["close"].pct_change(tf)
+                # Calculate returns for this timeframe using VectorBT
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf)
 
-                # Calculate volatility for this timeframe
-                volatility = self._vectorbt_rolling_operation(returns, "std", tf)
+                # Calculate volatility for this timeframe using VectorBT
+                volatility = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf)
 
-                # Calculate momentum for this timeframe
-                momentum = data["close"].pct_change(tf * 5)
+                # Calculate momentum for this timeframe using VectorBT
+                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf * 5)
 
                 tf_features.append(pd.concat([returns, volatility, momentum], axis=1))
 
@@ -900,38 +901,38 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         """Calculate feature with proper lag handling to avoid lookahead bias."""
         try:
             if feature_type == "momentum":
-                # Calculate momentum with lag
+                # Calculate momentum with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)  # Lag by 20% of timeframe
-                returns = data["close"].pct_change(timeframe)
-                return returns.shift(lag_bars)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=timeframe)
+                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
 
             elif feature_type == "volatility":
-                # Calculate volatility with lag
+                # Calculate volatility with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
-                returns = data["close"].pct_change()
-                vol = self._vectorbt_rolling_operation(returns, "std", timeframe)
-                return vol.shift(lag_bars)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+                vol = rolling_std(returns, window=timeframe)
+                return rolling_apply(vol, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
 
             elif feature_type == "volume":
                 if "volume" in data.columns:
                     lag_bars = max(1, timeframe // 5)
-                    vol_ma = data["volume"].rolling(window=timeframe).mean()
-                    return vol_ma.shift(lag_bars)
+                    vol_ma = rolling_mean(data["volume"], window=timeframe)
+                    return rolling_apply(vol_ma, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
                 else:
                     return None
 
             elif feature_type == "trend":
-                # Calculate trend strength with lag
+                # Calculate trend strength with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
                 trend = self._calculate_trend_strength(data["close"], timeframe)
-                return trend.shift(lag_bars)
+                return rolling_apply(trend, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
 
             elif feature_type == "range":
-                # Calculate high-low range with lag
+                # Calculate high-low range with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
                 if "high" in data.columns and "low" in data.columns:
-                    hl_range = (data["high"] - data["low"]).rolling(window=timeframe).mean()
-                    return hl_range.shift(lag_bars)
+                    hl_range = rolling_mean(data["high"] - data["low"], window=timeframe)
+                    return rolling_apply(hl_range, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
                 else:
                     return None
 
@@ -952,7 +953,7 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             except:
                 return 0.0
 
-        return series.rolling(window=window).apply(calc_slope, raw=False)
+        return rolling_apply(series, calc_slope, window=window)
 
     def _generate_alignment_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Generate cross-timeframe alignment features."""
@@ -976,23 +977,23 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         """Align features from source timeframe to target timeframe."""
         try:
             if method == "lag":
-                # Lag fast timeframe features by appropriate number of bars
+                # Lag fast timeframe features by appropriate number of bars using VectorBT
                 lag_bars = target_tf // source_tf - 1
-                returns = data["close"].pct_change()
-                return returns.shift(lag_bars)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
 
             elif method == "resample":
-                # Resample to target timeframe
+                # Resample to target timeframe using VectorBT
                 resampled = data["close"].resample(f'{target_tf}min').last()
                 # Forward fill to original frequency
                 aligned = resampled.reindex(data.index, method='ffill')
-                return (aligned / aligned.shift(1) - 1).fillna(0)
+                return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, window=2).fillna(0)
 
             elif method == "interpolate":
-                # Interpolate between timeframes
-                returns = data["close"].pct_change()
+                # Interpolate between timeframes using VectorBT
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
                 # Simple interpolation (in practice, would use more sophisticated methods)
-                return returns.rolling(window=target_tf//source_tf).mean()
+                return rolling_mean(returns, window=target_tf//source_tf)
 
             else:
                 return None
@@ -1027,14 +1028,14 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             # Create features for each timeframe
             tf_features = []
             for tf in timeframes:
-                # Calculate returns for this timeframe
-                returns = data["close"].pct_change(tf).fillna(0)
+                # Calculate returns for this timeframe using VectorBT
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf).fillna(0)
 
-                # Calculate volatility for this timeframe
-                vol = data["close"].pct_change().rolling(window=tf).std().fillna(0)
+                # Calculate volatility for this timeframe using VectorBT
+                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf).fillna(0)
 
-                # Calculate momentum for this timeframe
-                momentum = data["close"].pct_change(tf * 2).fillna(0)
+                # Calculate momentum for this timeframe using VectorBT
+                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf * 2).fillna(0)
 
                 # Calculate trend for this timeframe
                 trend = self._calculate_trend_strength(data["close"], tf).fillna(0)
@@ -1069,8 +1070,8 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             # Create input features
             input_features = []
             for tf in timeframes:
-                returns = data["close"].pct_change(tf).fillna(0)
-                vol = data["close"].pct_change().rolling(window=tf).std().fillna(0)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf).fillna(0)
+                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf).fillna(0)
                 input_features.extend([returns, vol])
 
             feature_matrix = pd.concat(input_features, axis=1).fillna(0)
@@ -1171,9 +1172,9 @@ except ImportError:
         """Generate regime-aware cross-timeframe features."""
         features = {}
 
-        # Detect market regimes
-        returns = data["close"].pct_change()
-        vol_regime = self._vectorbt_rolling_operation(returns, "std", 20)
+        # Detect market regimes using VectorBT
+        returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+        vol_regime = rolling_std(returns, window=20)
         
         # Define regimes
         low_vol_threshold = vol_regime.quantile(0.33)
@@ -1190,9 +1191,9 @@ except ImportError:
                 if tf1 >= tf2:
                     continue
 
-                # Calculate features
-                feature1 = data["close"].pct_change(tf1)
-                feature2 = data["close"].pct_change(tf2)
+                # Calculate features using VectorBT
+                feature1 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf1)
+                feature2 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf2)
 
                 # Low volatility regime features
                 low_vol_mask = low_vol_regime == 1
@@ -1222,12 +1223,12 @@ except ImportError:
                 if tf1 >= tf2:
                     continue
 
-                # Calculate features
-                feature1 = data["close"].pct_change(tf1)
-                feature2 = data["close"].pct_change(tf2)
+                # Calculate features using VectorBT
+                feature1 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf1)
+                feature2 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf2)
 
-                # Rolling correlation
-                correlation = feature1.rolling(window=correlation_window).corr(feature2)
+                # Rolling correlation using VectorBT
+                correlation = rolling_corr(feature1, feature2, window=correlation_window)
                 features[f"correlation_{tf1}_{tf2}_{correlation_window}"] = correlation.fillna(0).values
 
                 # Correlation stability

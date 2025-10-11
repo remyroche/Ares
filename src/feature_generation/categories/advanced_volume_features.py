@@ -366,8 +366,8 @@ class AdvancedVolumeFeatures(VectorBTFeatureGenerator):
             for period in self.config.vwap_periods:
                 for vwap_type in self.config.vwap_types:
                     if vwap_type == 'standard':
-                        # Standard VWAP
-                        vwap = (data['close'] * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
+                        # Standard VWAP using VectorBT
+                        vwap = rolling_sum(data['close'] * data['volume'], window=period) / rolling_sum(data['volume'], window=period)
                         features[f'vwap_{period}'] = vwap
                         
                         # VWAP deviation
@@ -379,25 +379,25 @@ class AdvancedVolumeFeatures(VectorBTFeatureGenerator):
                         features[f'vwap_position_{period}'] = (vwap - vwap_low) / (vwap_high - vwap_low)
                         
                     elif vwap_type == 'exponential':
-                        # Exponential VWAP
+                        # Exponential VWAP using VectorBT
                         alpha = 2 / (period + 1)
-                        vwap_ema = data['close'].ewm(alpha=alpha).mean()
+                        vwap_ema = vbt.MA.run(data['close'], window=period, short_window=period//2).ma
                         features[f'vwap_ema_{period}'] = vwap_ema
                         
                         # VWAP EMA deviation
                         features[f'vwap_ema_deviation_{period}'] = (data['close'] - vwap_ema) / vwap_ema
                         
                     elif vwap_type == 'volume_weighted':
-                        # Volume-weighted VWAP with additional weighting
-                        volume_weight = data['volume'] / data['volume'].rolling(window=period).mean()
+                        # Volume-weighted VWAP with additional weighting using VectorBT
+                        volume_weight = data['volume'] / rolling_mean(data['volume'], window=period)
                         weighted_price = data['close'] * volume_weight
-                        vwap_weighted = weighted_price.rolling(window=period).sum() / volume_weight.rolling(window=period).sum()
+                        vwap_weighted = rolling_sum(weighted_price, window=period) / rolling_sum(volume_weight, window=period)
                         features[f'vwap_weighted_{period}'] = vwap_weighted
                         
                         # Weighted VWAP deviation
                         features[f'vwap_weighted_deviation_{period}'] = (data['close'] - vwap_weighted) / vwap_weighted
                 
-                # VWAP bands
+                # VWAP bands using VectorBT
                 vwap = features[f'vwap_{period}']
                 vwap_std = rolling_std(data['close'], window=period)
                 features[f'vwap_upper_band_{period}'] = vwap + (2 * vwap_std)
@@ -488,9 +488,9 @@ class AdvancedVolumeFeatures(VectorBTFeatureGenerator):
             price_bins = 20  # Number of price bins for volume profile
             
             for period in [20, 50, 100]:
-                # Create price bins
-                price_min = data['close'].rolling(window=period).min()
-                price_max = data['close'].rolling(window=period).max()
+                # Create price bins using VectorBT
+                price_min = rolling_min(data['close'], window=period)
+                price_max = rolling_max(data['close'], window=period)
                 price_range = price_max - price_min
                 
                 # Volume profile
@@ -650,16 +650,16 @@ class AdvancedVolumeFeatures(VectorBTFeatureGenerator):
         """Generate basic volume features as fallback."""
         features = pd.DataFrame(index=data.index)
         
-        # Basic volume moving averages
-        features['volume_sma_20'] = data['volume'].rolling(window=20).mean()
-        features['volume_sma_50'] = data['volume'].rolling(window=50).mean()
+        # Basic volume moving averages using VectorBT
+        features['volume_sma_20'] = rolling_mean(data['volume'], window=20)
+        features['volume_sma_50'] = rolling_mean(data['volume'], window=50)
         
-        # Basic volume rate of change
-        features['volume_roc_5'] = data['volume'].pct_change(5)
-        features['volume_roc_20'] = data['volume'].pct_change(20)
+        # Basic volume rate of change using VectorBT
+        features['volume_roc_5'] = rolling_apply(data['volume'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=5)
+        features['volume_roc_20'] = rolling_apply(data['volume'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=20)
         
-        # Basic volume volatility
-        features['volume_volatility'] = data['volume'].rolling(window=20).std()
+        # Basic volume volatility using VectorBT
+        features['volume_volatility'] = rolling_std(data['volume'], window=20)
         
         return features
 

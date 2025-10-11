@@ -442,6 +442,27 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             data = context.data
         
+        # Fast-fail: Validate input data early
+        if data.empty:
+            raise RuntimeError("CRITICAL: Input data is empty in feature engineering stage")
+        
+        if len(data) < 10:
+            raise RuntimeError(f"CRITICAL: Insufficient data for feature generation: {len(data)} < 10")
+        
+        # Check for required columns
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
+        missing_cols = set(required_cols) - set(data.columns)
+        if missing_cols:
+            raise RuntimeError(f"CRITICAL: Missing required columns for feature generation: {missing_cols}")
+        
+        # Check for all-NaN data
+        if data.isnull().all().all():
+            raise RuntimeError("CRITICAL: All data is NaN - cannot generate features")
+        
+        tprint_debug(f"🔍 Input data shape: {data.shape}")
+        tprint_debug(f"🔍 Input data columns: {list(data.columns)}")
+        tprint_debug(f"🔍 Data types: {data.dtypes.to_dict()}")
+        
         # Use improved feature generation with fast-fail validation
         from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
         
@@ -458,14 +479,18 @@ class EnhancedOptimizedInteractionOrchestrator:
         )
         
         # Generate base features using improved generator - fast-fail on error
-        feature_generator = ImprovedFeatureGenerator(feature_config)
-        generated_features = feature_generator.generate_meaningful_features(data)
+        try:
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            generated_features = feature_generator.generate_meaningful_features(data)
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL: Feature generation failed: {e}")
         
         # CRITICAL: Fast-fail if no features generated
         if generated_features.empty or len(generated_features.columns) == 0:
             raise RuntimeError("CRITICAL: Feature generation failed - no features created")
         
         tprint_info(f"✅ Generated {len(generated_features.columns)} validated base features")
+        tprint_debug(f"🔍 Generated features: {list(generated_features.columns)[:10]}{'...' if len(generated_features.columns) > 10 else ''}")
         
         # Apply memory optimization using the matrix operations utility - fast-fail on error
         try:
@@ -474,11 +499,16 @@ class EnhancedOptimizedInteractionOrchestrator:
         except ImportError:
             tprint_warning("⚠️ Matrix operations not available, using basic optimization")
             optimized_features = self._basic_memory_optimization(generated_features)
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL: Memory optimization failed: {e}")
         
         # Store in memory-efficient format
         if self.config.use_parquet:
-            table = self.memory_processor.to_columnar(optimized_features, "generated_features")
-            context.pipeline_state['generated_features'] = table
+            try:
+                table = self.memory_processor.to_columnar(optimized_features, "generated_features")
+                context.pipeline_state['generated_features'] = table
+            except Exception as e:
+                raise RuntimeError(f"CRITICAL: Failed to convert to columnar format: {e}")
         else:
             context.pipeline_state['generated_features'] = optimized_features
         
@@ -859,16 +889,43 @@ class EnhancedOptimizedInteractionOrchestrator:
         self.start_time = time.time()
         
         try:
+            # Fast-fail: Validate training input early
+            if not training_input:
+                raise ValueError("CRITICAL: No training input provided")
+            
             # Extract data from training input
             if 'data' in training_input:
                 data = training_input['data']
             elif 'features' in training_input:
                 data = training_input['features']
             else:
-                raise ValueError("No data found in training_input")
+                raise ValueError("CRITICAL: No data found in training_input")
+            
+            # Fast-fail: Validate data early
+            if data is None:
+                raise ValueError("CRITICAL: Data is None in training input")
+            
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"CRITICAL: Data must be a pandas DataFrame, got {type(data)}")
+            
+            if data.empty:
+                raise ValueError("CRITICAL: Input data is empty")
+            
+            if len(data) < 10:
+                raise ValueError(f"CRITICAL: Insufficient data: {len(data)} < 10 rows")
+            
+            # Check for required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            missing_cols = set(required_cols) - set(data.columns)
+            if missing_cols:
+                raise ValueError(f"CRITICAL: Missing required columns: {missing_cols}")
+            
+            # Check for all-NaN data
+            if data.isnull().all().all():
+                raise ValueError("CRITICAL: All data is NaN - cannot generate features")
             
             # Check for and remove duplicate columns
-            if isinstance(data, pd.DataFrame) and len(data.columns) != len(set(data.columns)):
+            if len(data.columns) != len(set(data.columns)):
                 duplicate_cols = [col for col in data.columns if list(data.columns).count(col) > 1]
                 unique_duplicates = list(set(duplicate_cols))
                 tprint_warning(f"⚠️ Input data has duplicate columns: {unique_duplicates[:10]}{'...' if len(unique_duplicates) > 10 else ''}")
@@ -887,6 +944,10 @@ class EnhancedOptimizedInteractionOrchestrator:
             elif 'ares_mode' in pipeline_state:
                 execution_mode = pipeline_state['ares_mode']
             
+            tprint_info(f"🔍 Input data shape: {data.shape}")
+            tprint_info(f"🔍 Input data columns: {list(data.columns)}")
+            tprint_info(f"🎯 Running in {execution_mode.upper()} mode")
+            
             # Create execution context
             context = ExecutionContext(
                 data=data,
@@ -895,7 +956,6 @@ class EnhancedOptimizedInteractionOrchestrator:
             )
             context.pipeline_state['target_column'] = target_column
             context.pipeline_state['execution_mode'] = execution_mode
-            tprint_info(f"🎯 Running in {execution_mode.upper()} mode")
             
             # Execute pipeline
             if self.config.enable_parallel_processing and self.dag_executor:
@@ -911,6 +971,10 @@ class EnhancedOptimizedInteractionOrchestrator:
             early_filtering_result = context.pipeline_state.get('early_filtering_result')
             interaction_pruning_result = context.pipeline_state.get('interaction_pruning_result')
             budgeted_optimization_result = context.pipeline_state.get('budgeted_optimization_result')
+            
+            # Fast-fail: Check if features were actually generated
+            if final_features.empty or len(final_features.columns) == 0:
+                raise RuntimeError("CRITICAL: No features generated - pipeline failed")
             
             # Calculate performance metrics
             execution_time = time.time() - self.start_time

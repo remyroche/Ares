@@ -232,55 +232,46 @@ class DAGExecutor:
         tprint_success("🚀 Starting DAG execution with parallel processing")
         start_time = time.time()
         
-        # Build execution order
-        self.build_execution_order()
+        # Build execution order once
+        execution_order = self.build_execution_order()
         
         # Initialize process pool
         if self.use_processes:
             self.process_pool = ProcessPoolExecutor(max_workers=self.max_workers)
         
         try:
-            # Execute nodes in waves - recalculate parallel groups after each wave
-            remaining_nodes = set(self.execution_order)
-            wave_number = 0
-            
-            while remaining_nodes:
-                wave_number += 1
+            # Execute nodes in topological order
+            for node_id in execution_order:
+                if self.nodes[node_id].status == ExecutionStatus.COMPLETED:
+                    continue
                 
-                # Identify nodes that can run now (all dependencies completed)
-                parallel_groups = self.identify_parallel_groups()
+                # Check if all dependencies are completed
+                if not all(self.nodes[dep].status == ExecutionStatus.COMPLETED 
+                          for dep in self.nodes[node_id].dependencies):
+                    tprint_warning(f"⚠️ Node {node_id} dependencies not met, skipping")
+                    continue
                 
-                # If no nodes are ready, we have a deadlock or all remaining nodes failed
-                if not parallel_groups or all(len(group) == 0 for group in parallel_groups):
-                    tprint_warning(f"⚠️ No more nodes can execute. Remaining: {len(remaining_nodes)}, Completed: {len(self.completed_nodes)}, Failed: {len(self.failed_nodes)}")
-                    break
-                
-                # Execute the current wave of parallel groups
-                for group_idx, group in enumerate(parallel_groups):
-                    # Skip empty groups
-                    if not group:
-                        continue
-                        
-                    tprint_info(f"🔄 Wave {wave_number}, Executing group {group_idx + 1}/{len(parallel_groups)}: {group}")
+                # Execute the node
+                try:
+                    await self._execute_single_node(node_id, context)
                     
-                    if len(group) == 1:
-                        # Single node - execute directly
-                        await self._execute_single_node(group[0], context)
-                    else:
-                        # Multiple nodes - execute in parallel
-                        await self._execute_parallel_group(group, context)
-                    
-                    # Update completed/failed nodes and remove from remaining
-                    for node_id in group:
-                        if self.nodes[node_id].status == ExecutionStatus.COMPLETED:
-                            self.completed_nodes.add(node_id)
-                            remaining_nodes.discard(node_id)
-                        elif self.nodes[node_id].status == ExecutionStatus.FAILED:
-                            self.failed_nodes.add(node_id)
-                            remaining_nodes.discard(node_id)
+                    # Update status
+                    if self.nodes[node_id].status == ExecutionStatus.COMPLETED:
+                        self.completed_nodes.add(node_id)
+                    elif self.nodes[node_id].status == ExecutionStatus.FAILED:
+                        self.failed_nodes.add(node_id)
+                        # Fast-fail: Stop execution if critical node fails
+                        if self.nodes[node_id].node_type in [NodeType.INITIALIZATION, NodeType.FEATURE_ENGINEERING]:
+                            raise RuntimeError(f"CRITICAL: Node {node_id} failed - stopping execution")
                 
-                # After processing all groups in this wave, loop back to recalculate next wave
-                # The while loop will continue and identify the next set of nodes that can run
+                except Exception as e:
+                    tprint_error(f"❌ Node {node_id} execution failed: {e}")
+                    self.nodes[node_id].status = ExecutionStatus.FAILED
+                    self.failed_nodes.add(node_id)
+                    
+                    # Fast-fail: Stop execution if critical node fails
+                    if self.nodes[node_id].node_type in [NodeType.INITIALIZATION, NodeType.FEATURE_ENGINEERING]:
+                        raise RuntimeError(f"CRITICAL: Node {node_id} failed - stopping execution")
             
             # Calculate performance metrics
             self.total_execution_time = time.time() - start_time
@@ -290,7 +281,8 @@ class DAGExecutor:
             results = self._collect_results()
             
             tprint_success(f"✅ DAG execution completed in {self.total_execution_time:.3f}s")
-            tprint_info(f"📊 Parallel efficiency: {self.parallel_efficiency:.1%}")
+            tprint_info(f"📊 Completed nodes: {len(self.completed_nodes)}")
+            tprint_info(f"📊 Failed nodes: {len(self.failed_nodes)}")
             tprint_info(f"💾 Peak memory usage: {self.memory_peak_mb:.2f} MB")
             
             return results

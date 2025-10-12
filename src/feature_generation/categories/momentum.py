@@ -1029,21 +1029,9 @@ class RSIZScoreGenerator(VectorizedFeatureGenerator):
         return pd.Series(rsi_zscore, index=data.index)
     
     def _calculate_rsi(self, prices: np.ndarray, period: int) -> np.ndarray:
-        """Calculate RSI."""
-        if len(prices) < period + 1:
-            return np.full(len(prices), np.nan)
-        
-        delta = np.diff(prices, prepend=prices[0])
-        gains = np.where(delta > 0, delta, 0)
-        losses = np.where(delta < 0, -delta, 0)
-        
-        avg_gains = self._rolling_mean(gains, period)
-        avg_losses = self._rolling_mean(losses, period)
-        
-        rs = np.divide(avg_gains, avg_losses, out=np.ones_like(avg_gains), where=avg_losses!=0)
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
+        """Calculate RSI using centralized technical indicators utilities."""
+        from ..utils.centralized_technical_indicators import calculate_rsi
+        return calculate_rsi(prices, period)
     
     def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling mean."""

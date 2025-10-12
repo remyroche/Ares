@@ -116,19 +116,10 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
             return self._calculate_rsi_pandas(close)
     
     def _calculate_rsi_unified(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using UnifiedVectorizationManager for intelligent optimization."""
-        try:
-            # Use UnifiedVectorizationManager for optimal RSI calculation
-            data = {'close': close, 'period': self.period}
-            result = self.unified_manager.optimize_operation(
-                OperationType.TECHNICAL_INDICATORS,
-                data,
-                **{'indicator': 'rsi', 'window': self.period}
-            )
-            return result.result.rename(f'legacy_rsi_{self.period}')
-        except Exception as e:
-            # Fallback to VectorBTRollingOptimizer
-            return self._calculate_rsi_vectorbt(close)
+        """Calculate RSI using centralized technical indicators utilities."""
+        from ..utils.centralized_technical_indicators import calculate_rsi
+        rsi_series = calculate_rsi(close, self.period)
+        return rsi_series.rename(f'legacy_rsi_{self.period}')
     
     def _calculate_rsi_vectorbt(self, close: pd.Series) -> pd.Series:
         """Calculate RSI using VectorBTRollingOptimizer for maximum performance."""
@@ -234,19 +225,10 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
             return self._calculate_macd_pandas(close)
     
     def _calculate_macd_unified(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using UnifiedVectorizationManager for intelligent optimization."""
-        try:
-            # Use UnifiedVectorizationManager for optimal MACD calculation
-            data = {'close': close, 'fast': self.fast, 'slow': self.slow, 'signal': self.signal}
-            result = self.unified_manager.optimize_operation(
-                OperationType.TECHNICAL_INDICATORS,
-                data,
-                **{'indicator': 'macd', 'fast_window': self.fast, 'slow_window': self.slow, 'signal_window': self.signal}
-            )
-            return result.result.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-        except Exception as e:
-            # Fallback to VectorBTRollingOptimizer
-            return self._calculate_macd_vectorbt(close)
+        """Calculate MACD using centralized technical indicators utilities."""
+        from ..utils.centralized_technical_indicators import calculate_macd
+        macd_line, signal_line, histogram = calculate_macd(close, self.fast, self.slow, self.signal)
+        return macd_line.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
     
     def _calculate_macd_vectorbt(self, close: pd.Series) -> pd.Series:
         """Calculate MACD using VectorBTRollingOptimizer for maximum performance."""
@@ -475,14 +457,10 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
             return self._calculate_ema_pandas(close)
     
     def _calculate_ema_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate EMA using VectorBT optimized operations."""
-        try:
-            # Use VectorBT EMA if available
-            ema = close.ewm(span=self.period).mean()
-            return ema.rename(f'legacy_ema_{self.period}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_ema_pandas(close)
+        """Calculate EMA using centralized technical indicators utilities."""
+        from ..utils.centralized_technical_indicators import calculate_ema
+        ema_series = calculate_ema(close, self.period)
+        return ema_series.rename(f'legacy_ema_{self.period}')
     
     def _calculate_ema_pandas(self, close: pd.Series) -> pd.Series:
         """Calculate EMA using pandas operations."""

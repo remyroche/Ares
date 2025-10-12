@@ -50,7 +50,39 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# VectorBT Rolling Optimizer
+# NEW: Unified VectorBT Optimization Components
+try:
+    from ..utils.unified_optimization_wrapper import (
+        UnifiedOptimizationWrapper,
+        UnifiedOptimizationConfig,
+        OptimizationMode,
+        create_unified_optimizer
+    )
+    from ..utils.consolidated_rolling_optimizer import (
+        RollingOperationConfig,
+        RollingOperationType,
+        get_global_rolling_optimizer
+    )
+    from ..utils.statistical_calculations_optimizer import (
+        StatisticalOperationConfig,
+        StatisticalOperationType,
+        get_global_statistical_optimizer
+    )
+    UNIFIED_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_OPTIMIZATION_AVAILABLE = False
+    UnifiedOptimizationWrapper = None
+    UnifiedOptimizationConfig = None
+    OptimizationMode = None
+    create_unified_optimizer = None
+    RollingOperationConfig = None
+    RollingOperationType = None
+    get_global_rolling_optimizer = None
+    StatisticalOperationConfig = None
+    StatisticalOperationType = None
+    get_global_statistical_optimizer = None
+
+# Legacy VectorBT Rolling Optimizer (fallback)
 try:
     from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     ROLLING_OPTIMIZER_AVAILABLE = True
@@ -59,7 +91,7 @@ except ImportError:
     get_vectorbt_rolling_optimizer = None
     VectorBTRollingOptimizer = None
 
-# Optimization utilities
+# Legacy optimization utilities (fallback)
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
@@ -119,20 +151,53 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
-    """Advanced feature generator for volatility-based features with VectorBT optimization."""
+    """Advanced feature generator for volatility-based features with comprehensive VectorBT optimization."""
 
-    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, base_calculation: Optional[BaseCalculationType] = None):
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, 
+                 base_calculation: Optional[BaseCalculationType] = None,
+                 enable_gpu: bool = True, 
+                 enable_parallel: bool = True,
+                 optimization_mode: OptimizationMode = OptimizationMode.AUTO):
         self.period = period
         self.base_calculation = base_calculation
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
-        # Initialize VectorBT rolling optimizer
-        if ROLLING_OPTIMIZER_AVAILABLE:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        # Initialize NEW unified optimization components
+        if UNIFIED_OPTIMIZATION_AVAILABLE:
+            self.optimization_config = UnifiedOptimizationConfig(
+                mode=optimization_mode,
+                enable_gpu=enable_gpu,
+                enable_parallel=enable_parallel,
+                performance_threshold=1000,
+                enable_performance_monitoring=True
+            )
+            
+            self.unified_optimizer = create_unified_optimizer(self.optimization_config)
+            self.rolling_optimizer = get_global_rolling_optimizer()
+            self.statistical_optimizer = get_global_statistical_optimizer()
+            
+            # Performance tracking
+            self.performance_stats = {
+                'total_features_generated': 0,
+                'optimized_operations': 0,
+                'fallback_operations': 0,
+                'gpu_operations': 0,
+                'batch_operations': 0,
+                'total_generation_time': 0.0,
+                'average_time_per_feature': 0.0,
+                'memory_usage_mb': 0.0
+            }
         else:
+            # Fallback to legacy optimizers
+            self.unified_optimizer = None
             self.rolling_optimizer = None
+            self.statistical_optimizer = None
+            self.performance_stats = {}
+            
+            if ROLLING_OPTIMIZER_AVAILABLE:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:

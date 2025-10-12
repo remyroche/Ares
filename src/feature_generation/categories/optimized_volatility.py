@@ -186,6 +186,7 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
                 self.use_hardware_accel = False
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating optimized GARCH feature with p={self.p}, q={self.q}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -195,28 +196,35 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
 
     def _generate_optimized_garch(self, data: pd.DataFrame) -> pd.Series:
         """Generate GARCH features with multiple optimizations."""
+        tprint(f"Starting GARCH optimization with {len(data)} data points")
         close_prices = data['close'].dropna()
         if len(close_prices) < self.config.min_lookback:
+            tprint(f"⚠️ Insufficient data for GARCH: {len(close_prices)} < {self.config.min_lookback}")
             return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
 
         # Calculate returns
         returns = 100 * close_prices.pct_change().dropna()
         
         if len(returns) < 50:
+            tprint(f"⚠️ Insufficient returns for GARCH: {len(returns)} < 50")
             return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
 
         try:
             # Use hardware-optimized approach if available
             if self.use_hardware_accel and self.hardware_manager:
+                tprint("Using hardware-optimized GARCH approach")
                 return self._generate_hardware_optimized_garch(returns, data)
             elif len(returns) > 1000:
                 # For large datasets, use parallel processing
+                tprint(f"Using parallel GARCH processing for large dataset: {len(returns)} points")
                 return self._generate_parallel_garch(returns, data)
             else:
                 # For smaller datasets, use cached approach
+                tprint(f"Using cached GARCH approach for dataset: {len(returns)} points")
                 return self._generate_cached_garch(returns, data)
                 
         except Exception as e:
+            tprint(f"⚠️ Optimized GARCH calculation failed: {e}")
             logging.getLogger(__name__).warning(f"⚠️ Optimized GARCH calculation failed: {e}")
             return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
 
@@ -820,40 +828,6 @@ def benchmark_volatility_optimizations(data: pd.DataFrame,
     """Benchmark different volatility optimization approaches."""
     import time
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-    
     results = {
         'standard_volatility': {},
         'optimized_volatility': {},
@@ -892,68 +866,3 @@ except ImportError:
         results['gpu_accelerated']['memory'] = 'N/A'
     
     return results
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

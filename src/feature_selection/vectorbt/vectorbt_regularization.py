@@ -254,6 +254,7 @@ class VectorBTRegularizationSelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT LASSO feature selection with {X.shape[1]} features, target: {k}")
         def _select_features_lasso():
             try:
                 # Validate inputs
@@ -330,6 +331,7 @@ class VectorBTRegularizationSelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT ElasticNet feature selection with {X.shape[1]} features, target: {k}")
         def _select_features_elasticnet():
             try:
                 # Validate inputs
@@ -424,6 +426,7 @@ class VectorBTRegularizationSelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT adaptive regularization feature selection with {X.shape[1]} features, target: {k}")
         def _select_features_adaptive():
             try:
                 # Validate inputs

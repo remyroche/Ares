@@ -284,6 +284,7 @@ class VectorBTMRMRSelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT mRMR feature selection with {X.shape[1]} features, target: {k}")
         k = k or self.config.mrmr_max_features
         alpha = alpha or self.config.mrmr_alpha
         beta = beta or self.config.mrmr_beta
@@ -392,6 +393,7 @@ class VectorBTMRMRSelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT adaptive mRMR feature selection with {X.shape[1]} features, target: {k}")
         k = k or self.config.mrmr_max_features
         
         def _select_features_adaptive():

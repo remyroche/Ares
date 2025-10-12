@@ -4,7 +4,7 @@ VectorBT Feature Selection Configuration
 This module provides configuration classes for VectorBT-optimized feature selection.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict, Any
 import numpy as np
 
@@ -39,10 +39,8 @@ class VectorBTFeatureSelectionConfig:
     
     # Missing field definitions
     chunk_overlap: int = 100
-    enable_vectorbt_financial: bool = True
     
     # Financial data specific optimizations
-    enable_vectorbt_financial: bool = True
     vectorbt_freq_inference: bool = True
     vectorbt_resample_freq: str = '1D'
     

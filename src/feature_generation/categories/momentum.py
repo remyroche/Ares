@@ -108,6 +108,7 @@ try:
 from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
 from ..core.feature_bank import get_global_feature_bank
+from ..utils.consolidated_technical_indicators import get_consolidated_indicators, IndicatorConfig
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
@@ -346,6 +347,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self,
                  period: int = 14,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 use_consolidated_indicators: bool = True,
                  **base_kwargs):
         """
         Initialize RSI generator.
@@ -353,6 +355,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         Args:
             period: RSI period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            use_consolidated_indicators: Whether to use consolidated technical indicators
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -381,17 +384,32 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_consolidated_indicators = use_consolidated_indicators
+        
+        # Initialize consolidated technical indicators if enabled
+        if self.use_consolidated_indicators:
+            self.consolidated_indicators = get_consolidated_indicators()
+        else:
+            self.consolidated_indicators = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate RSI based on the specified base calculation."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate RSI based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             close = data['close']
             
-            # Traditional RSI calculation using VectorBT optimization
+            # Use consolidated technical indicators if available
+            if self.use_consolidated_indicators and self.consolidated_indicators:
+                try:
+                    rsi = self.consolidated_indicators.calculate_rsi(close, self.period)
+                    return rsi
+                except Exception as e:
+                    logger.warning(f"Consolidated RSI calculation failed: {e}, using fallback")
+            
+            # Fallback to traditional RSI calculation using VectorBT optimization
             delta = close.diff()
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
@@ -435,13 +453,25 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             # For other base calculations, calculate RSI on base values
             base_values = self.base_calculator.calculate(data)
             
+            # Use consolidated technical indicators if available
+            if self.use_consolidated_indicators and self.consolidated_indicators:
+                try:
+                    rsi = self.consolidated_indicators.calculate_rsi(base_values, self.period)
+                    return rsi
+                except Exception as e:
+                    logger.warning(f"Consolidated RSI calculation failed for base values: {e}, using fallback")
+            
+            # Fallback to traditional calculation
             delta = base_values.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=self.period).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=self.period).mean()
             rs = gain / loss.replace(0, 1)
             rsi = 100 - (100 / (1 + rs))
             
-            return rsiclass MACDGenerator(VectorizedFeatureGenerator):
+            return rsi
+
+
+class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
     def __init__(self,
@@ -449,6 +479,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                  slow: int = 26,
                  signal: int = 9,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 use_consolidated_indicators: bool = True,
                  **base_kwargs):
         """
         Initialize MACD generator.
@@ -458,6 +489,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             slow: Slow EMA period
             signal: Signal line EMA period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            use_consolidated_indicators: Whether to use consolidated technical indicators
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -490,22 +522,42 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         self.slow = slow
         self.signal = signal
         self.base_calculation = base_calculation
+        self.use_consolidated_indicators = use_consolidated_indicators
+        
+        # Initialize consolidated technical indicators if enabled
+        if self.use_consolidated_indicators:
+            self.consolidated_indicators = get_consolidated_indicators()
+        else:
+            self.consolidated_indicators = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MACD based on the specified base calculation."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate MACD based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate MACD
+        # Use consolidated technical indicators if available
+        if self.use_consolidated_indicators and self.consolidated_indicators:
+            try:
+                macd_result = self.consolidated_indicators.calculate_macd(
+                    base_values, self.fast, self.slow, self.signal
+                )
+                return macd_result['macd']  # Return just the MACD line
+            except Exception as e:
+                logger.warning(f"Consolidated MACD calculation failed: {e}, using fallback")
+        
+        # Fallback to traditional MACD calculation
         ema_fast = base_values.ewm(span=self.fast).mean()
         ema_slow = base_values.ewm(span=self.slow).mean()
         macd = ema_fast - ema_slow
         
-        return macdclass StochasticGenerator(VectorizedFeatureGenerator):
+        return macd
+
+
+class StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
     
     def __init__(self, 

@@ -73,11 +73,16 @@ _feature_selection_framework: Optional['FeatureSelectionFramework'] = None
 
 def get_feature_selection_utils() -> 'FeatureSelectionFramework':
     """Get or create the global feature selection framework instance."""
+    tprint("🔄 Getting feature selection framework instance...")
     global _feature_selection_framework
     
     if _feature_selection_framework is None:
+        tprint("🔄 Initializing new feature selection framework...")
         _feature_selection_framework = FeatureSelectionFramework()
+        tprint("✅ Feature selection framework initialized")
         logger.info("✅ Feature selection framework initialized")
+    else:
+        tprint("✅ Using existing feature selection framework")
     
     return _feature_selection_framework
 
@@ -138,21 +143,28 @@ class FeatureSelectionFramework:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize feature selection framework with comprehensive optimization tools."""
+        tprint("🚀 Initializing FeatureSelectionFramework with comprehensive optimizations...")
         self.config = config or {}
         self.logger = logger.getChild('FeatureSelection')
         
         _LOGGER.info("🚀 Initializing FeatureSelectionFramework with comprehensive optimizations...")
 
         # Configuration defaults
+        tprint("🔄 Setting up configuration defaults...")
         self.enable_gpu = self.config.get('enable_gpu', True)
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
         
         # Initialize comprehensive optimization tools
+        tprint("🔄 Initializing optimization tools...")
         self._initialize_optimization_tools()
         self.memory_threshold = self.config.get('memory_threshold', 0.8)
         self.random_state = self.config.get('random_state', 42)
 
+        tprint(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
+        tprint(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
+        tprint(f"⚙️ Configuration - Max workers: {self.max_workers}")
+        tprint(f"⚙️ Configuration - Memory threshold: {self.memory_threshold}")
         _LOGGER.info(f"⚙️ Configuration - GPU enabled: {self.enable_gpu}")
         _LOGGER.info(f"⚙️ Configuration - Parallel processing: {self.enable_parallel}")
         _LOGGER.info(f"⚙️ Configuration - Max workers: {self.max_workers}")
@@ -1784,49 +1796,69 @@ class FeatureSelectionFramework:
         Returns:
             Comprehensive results with optimization metadata
         """
+        tprint("🚀 Starting comprehensive feature selection...")
+        tprint(f"📊 Input shapes - X: {X.shape}, y: {y.shape}, features: {len(feature_names)}")
+        tprint(f"📊 Target count: {target_count}, model_type: {model_type}, optimizations: {enable_all_optimizations}")
+        
         # Input validation
         if X is None or y is None or feature_names is None:
+            tprint("❌ Invalid input: X, y, and feature_names cannot be None")
             _LOGGER.error("❌ Invalid input: X, y, and feature_names cannot be None")
             return {'error': 'Invalid input parameters', 'selected_features': []}
         
         if len(feature_names) != X.shape[1]:
+            tprint(f"❌ Mismatch: {len(feature_names)} feature names but {X.shape[1]} features")
             _LOGGER.error(f"❌ Mismatch: {len(feature_names)} feature names but {X.shape[1]} features")
             return {'error': 'Feature count mismatch', 'selected_features': []}
         
         if len(X) != len(y):
+            tprint(f"❌ Mismatch: {len(X)} samples in X but {len(y)} in y")
             _LOGGER.error(f"❌ Mismatch: {len(X)} samples in X but {len(y)} in y")
             return {'error': 'Sample count mismatch', 'selected_features': []}
         
         if target_count <= 0 or target_count > len(feature_names):
+            tprint(f"❌ Invalid target_count: {target_count}. Must be between 1 and {len(feature_names)}")
             _LOGGER.error(f"❌ Invalid target_count: {target_count}. Must be between 1 and {len(feature_names)}")
             return {'error': 'Invalid target count', 'selected_features': []}
         
         if len(X) == 0 or X.shape[1] == 0:
+            tprint("⚠️ Empty dataset provided")
             _LOGGER.warning("⚠️ Empty dataset provided")
             return {'error': 'Empty dataset', 'selected_features': []}
         
         start_time = time.time()
+        tprint("🚀 Starting comprehensive feature selection with all optimizations...")
         _LOGGER.info("🚀 Starting comprehensive feature selection with all optimizations...")
         
         try:
             # Data quality validation
+            tprint("🔄 Validating data quality...")
             data_quality = self._validate_data_quality(X, y)
             if not data_quality['is_valid']:
+                tprint(f"⚠️ Data quality issues: {data_quality['issues']}")
                 _LOGGER.warning(f"⚠️ Data quality issues: {data_quality['issues']}")
+            else:
+                tprint("✅ Data quality validation passed")
             
             # Memory optimization
             if self.memory_optimizer and enable_all_optimizations:
+                tprint("🧠 Optimizing memory usage...")
                 _LOGGER.info("🧠 Optimizing memory usage...")
                 self.memory_optimizer.optimize_memory_usage()
+                tprint("✅ Memory optimization completed")
             
             # Run hierarchical feature selection with all optimizations
+            tprint("🔄 Running hierarchical feature selection...")
             results = self.hierarchical_feature_selection(
                 X, y, feature_names, target_count, model_type
             )
+            tprint("✅ Hierarchical feature selection completed")
             
             # Add comprehensive optimization metadata
             execution_time = time.time() - start_time
+            tprint(f"⏱️ Execution time: {execution_time:.3f}s")
             optimization_stats = self.get_optimization_stats()
+            tprint("📊 Collecting optimization statistics...")
             
             results['comprehensive_metadata'] = {
                 'execution_time': execution_time,
@@ -1845,6 +1877,9 @@ class FeatureSelectionFramework:
                 }
             }
             
+            tprint("✅ Comprehensive feature selection completed successfully")
+            tprint(f"📊 Final features: {len(results.get('selected_features', []))}")
+            tprint(f"⏱️ Total execution time: {execution_time:.3f}s")
             _LOGGER.info("✅ Comprehensive feature selection completed successfully")
             _LOGGER.info(f"📊 Final features: {len(results.get('selected_features', []))}")
             _LOGGER.info(f"⏱️ Total execution time: {execution_time:.3f}s")
@@ -1853,6 +1888,7 @@ class FeatureSelectionFramework:
             
         except Exception as e:
             execution_time = time.time() - start_time
+            tprint(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
             _LOGGER.error(f"❌ Comprehensive feature selection failed after {execution_time:.3f}s: {e}")
             
             # Enhanced error context

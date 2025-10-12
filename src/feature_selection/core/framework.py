@@ -14,6 +14,13 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import numpy as np
 import pandas as pd
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # Import the training framework components
 from src.training.utils.feature_selection.main_framework import (
     FeatureSelectionFramework as _TrainingFeatureSelectionFramework,
@@ -36,8 +43,10 @@ def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> 
     """
     Get a global instance of the training FeatureSelectionFramework to be used as the core engine.
     """
+    tprint("Getting feature selection framework")
     global _GLOBAL_FS_FRAMEWORK
     if _GLOBAL_FS_FRAMEWORK is None:
+        tprint("Initializing new feature selection framework")
         _GLOBAL_FS_FRAMEWORK = _TrainingFeatureSelectionFramework(config)
     return _GLOBAL_FS_FRAMEWORK
 
@@ -73,6 +82,7 @@ def select_features(
         feature_names: Optional list of feature names
         framework_config: Optional configuration for the underlying framework
     """
+    tprint(f"Selecting features with method: {method}, max_features: {max_features}")
     framework = get_feature_selection_framework(framework_config)
 
     # Normalize inputs

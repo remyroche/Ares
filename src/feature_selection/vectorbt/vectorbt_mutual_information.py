@@ -125,6 +125,7 @@ class VectorBTMutualInformation:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT mutual information feature selection with {X.shape[1]} features, target: {k}")
         k = k or self.config.mutual_info_k
         
         def _select_features():
@@ -306,6 +307,7 @@ class VectorBTMutualInformation:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT mutual information threshold selection with {X.shape[1]} features, threshold: {threshold}")
         def _select_with_threshold():
             try:
                 # Validate inputs

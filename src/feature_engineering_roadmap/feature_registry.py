@@ -12,6 +12,13 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -537,6 +544,7 @@ class FeatureRegistry:
 
     def compute_feature(self, name: str, data: pd.DataFrame) -> pd.Series:
         """Compute a feature using the registered implementation."""
+        tprint(f"Computing feature '{name}' with data shape: {data.shape}")
         metadata = self.get_feature_metadata(name)
         missing_fields = set(metadata.fields_required) - set(data.columns)
         if missing_fields:

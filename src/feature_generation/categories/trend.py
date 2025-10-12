@@ -132,14 +132,27 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        # Optimize DataFrame for processing using Unified Vectorization Manager
+        if self.unified_manager:
+            data = self.unified_manager.optimize_dataframe(data)
 
         close_prices = data['close']
         
-        # Use VectorBT for SMA calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
+        # Use Unified Vectorization Manager for optimized rolling operations
+        if self.unified_manager and self._should_use_vectorbt(close_prices):
+            try:
+                # Use the unified manager for rolling operations with automatic optimization
+                sma = self.unified_manager.rolling_operation(close_prices, 'mean', window=20)
+                return sma.rename('sma_20')
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager SMA calculation failed: {e}, using VectorBT fallback")
+                if self.vectorbt_optimizer:
+                    sma = self.vectorbt_optimizer.rolling_mean(close_prices, window=20)
+                    return sma.rename('sma_20')
+                else:
+                    sma = self._calculate_sma(close_prices.values, period=20)
+                    return pd.Series(sma, index=data.index, name='sma_20')
+        elif self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
             try:
                 sma = self.vectorbt_optimizer.rolling_mean(close_prices, window=20)
                 return sma.rename('sma_20')
@@ -180,7 +193,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
 
     def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
         """
-        Calculate Average Directional Index (ADX).
+        Calculate Average Directional Index (ADX) with optimized VectorBT operations.
 
         Args:
             high: High prices
@@ -211,8 +224,42 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         dm_plus_series = pd.Series(dm_plus)
         dm_minus_series = pd.Series(dm_minus)
 
-        # Calculate Directional Indicators using VectorBT optimization
-        if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
+        # Use Unified Vectorization Manager for optimized rolling operations
+        if self.unified_manager and self._should_use_vectorbt(tr_series):
+            try:
+                # Batch process multiple rolling operations for better performance
+                rolling_results = self.unified_manager.batch_process_features(
+                    pd.DataFrame({
+                        'dm_plus': dm_plus_series,
+                        'dm_minus': dm_minus_series,
+                        'tr': tr_series
+                    }),
+                    [
+                        {'name': 'dm_plus_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'dm_plus'}},
+                        {'name': 'dm_minus_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'dm_minus'}},
+                        {'name': 'tr_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'tr'}}
+                    ]
+                )
+                dm_plus_mean = rolling_results['dm_plus_mean']
+                dm_minus_mean = rolling_results['dm_minus_mean']
+                tr_mean = rolling_results['tr_mean']
+            except Exception as e:
+                logger.warning(f"Unified Vectorization Manager ADX calculation failed: {e}, using VectorBT fallback")
+                if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
+                    try:
+                        dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
+                        dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
+                        tr_mean = self.vectorbt_optimizer.rolling_mean(tr_series, window=period)
+                    except Exception as e2:
+                        logger.warning(f"VectorBT ADX calculation failed: {e2}, using pandas fallback")
+                        dm_plus_mean = dm_plus_series.rolling(period).mean()
+                        dm_minus_mean = dm_minus_series.rolling(period).mean()
+                        tr_mean = tr_series.rolling(period).mean()
+                else:
+                    dm_plus_mean = dm_plus_series.rolling(period).mean()
+                    dm_minus_mean = dm_minus_series.rolling(period).mean()
+                    tr_mean = tr_series.rolling(period).mean()
+        elif self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
             try:
                 dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus_series, window=period)
                 dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus_series, window=period)
@@ -233,7 +280,17 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
         
-        if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
+        # Use optimized rolling mean for final ADX calculation
+        if self.unified_manager and self._should_use_vectorbt(pd.Series(dx)):
+            try:
+                adx = self.unified_manager.rolling_operation(pd.Series(dx), 'mean', window=period)
+            except Exception as e:
+                logger.warning(f"Unified Vectorization Manager ADX rolling mean failed: {e}, using VectorBT fallback")
+                if self.vectorbt_optimizer:
+                    adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
+                else:
+                    adx = pd.Series(dx).rolling(period).mean()
+        elif self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
             try:
                 adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
             except Exception as e:
@@ -297,6 +354,103 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         """Determine if VectorBT should be used based on data size and configuration."""
         return (VECTORBT_AVAILABLE and 
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def generate_optimized_trend_features(self, data: pd.DataFrame, 
+                                        feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple trend features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated trend features
+        """
+        if self.unified_manager:
+            # Use Unified Vectorization Manager for batch processing
+            return self.unified_manager.batch_process_features(data, feature_configs)
+        elif self.vectorbt_optimizer:
+            # Fallback to individual VectorBT operations
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                try:
+                    if feature_type == 'rolling':
+                        operation = params.get('operation', 'mean')
+                        window = params.get('window', 20)
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            if operation == 'mean':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_mean(data[column], window)
+                            elif operation == 'std':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_std(data[column], window)
+                            elif operation == 'var':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_var(data[column], window)
+                            elif operation == 'min':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_min(data[column], window)
+                            elif operation == 'max':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_max(data[column], window)
+                            elif operation == 'sum':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_sum(data[column], window)
+                    
+                    elif feature_type == 'scaling':
+                        method = params.get('method', 'zscore')
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            if method == 'zscore':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_apply(
+                                    data[column], lambda x: (x - x.mean()) / x.std(), window=20
+                                )
+                            elif method == 'minmax':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_apply(
+                                    data[column], lambda x: (x - x.min()) / (x.max() - x.min()), window=20
+                                )
+                    
+                except Exception as e:
+                    self.logger.warning(f"Feature {feature_name} failed: {e}")
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+            
+            return pd.DataFrame(results, index=data.index)
+        else:
+            # Fallback to pandas operations
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                try:
+                    if feature_type == 'rolling':
+                        operation = params.get('operation', 'mean')
+                        window = params.get('window', 20)
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            rolling_obj = data[column].rolling(window=window)
+                            if operation == 'mean':
+                                results[feature_name] = rolling_obj.mean()
+                            elif operation == 'std':
+                                results[feature_name] = rolling_obj.std()
+                            elif operation == 'var':
+                                results[feature_name] = rolling_obj.var()
+                            elif operation == 'min':
+                                results[feature_name] = rolling_obj.min()
+                            elif operation == 'max':
+                                results[feature_name] = rolling_obj.max()
+                            elif operation == 'sum':
+                                results[feature_name] = rolling_obj.sum()
+                    
+                except Exception as e:
+                    self.logger.warning(f"Feature {feature_name} failed: {e}")
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+            
+            return pd.DataFrame(results, index=data.index)
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:

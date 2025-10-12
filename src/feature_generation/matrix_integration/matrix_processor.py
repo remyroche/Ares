@@ -37,6 +37,9 @@ class MatrixFeatureProcessor:
         # Initialize matrix operations
         try:
             from ...utils.matrix_operations import get_unified_matrix_operations
+            self.matrix_ops = get_unified_matrix_operations()
+        except ImportError:
+            self.matrix_ops = None
 
 # VectorBT imports for native optimization
 try:

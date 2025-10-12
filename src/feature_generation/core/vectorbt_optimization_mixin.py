@@ -295,7 +295,7 @@ class VectorBTOptimizationMixin:
             avg_gain = vbt.rolling_mean(gain, window=window)
             avg_loss = vbt.rolling_mean(loss, window=window)
             
-            rs = avg_gain / avg_loss
+            rs = avg_gain / avg_loss.replace(0, 1e-8)  # Avoid division by zero
             rsi = 100 - (100 / (1 + rs))
             
             return rsi

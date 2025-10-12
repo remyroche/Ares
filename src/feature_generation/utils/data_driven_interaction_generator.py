@@ -380,15 +380,6 @@ class DataDrivenInteractionGenerator:
             memory_efficient=True
         )
         
-        interaction_types['cubic'] = InteractionType(
-            name='cubic',
-            function=self._cubic_interaction,
-            description='Cubic transformation of feature',
-            complexity=2,
-            vectorbt_optimized=True,
-            batch_processable=True,
-            memory_efficient=True
-        )
         
         # Statistical interactions
         interaction_types['skewness'] = InteractionType(
@@ -455,6 +446,87 @@ class DataDrivenInteractionGenerator:
             batch_processable=True,
             memory_efficient=True,
             parameters={'window': 20}
+        )
+        
+        # Scaled/Normalized interactions
+        interaction_types['scaled_sum'] = InteractionType(
+            name='scaled_sum',
+            function=self._scaled_sum_interaction,
+            description='Sum of scaled/normalized features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['scaled_difference'] = InteractionType(
+            name='scaled_difference',
+            function=self._scaled_difference_interaction,
+            description='Difference of scaled/normalized features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['scaled_product'] = InteractionType(
+            name='scaled_product',
+            function=self._scaled_product_interaction,
+            description='Product of scaled/normalized features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['scaled_ratio'] = InteractionType(
+            name='scaled_ratio',
+            function=self._scaled_ratio_interaction,
+            description='Ratio of scaled/normalized features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_scaled_product'] = InteractionType(
+            name='log_scaled_product',
+            function=self._log_scaled_product_interaction,
+            description='Log of scaled product features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_scaled_sum'] = InteractionType(
+            name='log_scaled_sum',
+            function=self._log_scaled_sum_interaction,
+            description='Log of scaled sum features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['minmax_scaled_product'] = InteractionType(
+            name='minmax_scaled_product',
+            function=self._minmax_scaled_product_interaction,
+            description='Product of min-max scaled features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['robust_scaled_difference'] = InteractionType(
+            name='robust_scaled_difference',
+            function=self._robust_scaled_difference_interaction,
+            description='Difference of robust scaled features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
         )
         
         return interaction_types
@@ -656,7 +728,14 @@ class DataDrivenInteractionGenerator:
         # Add polynomial interactions for non-normal distributions
         avg_skewness = np.mean([abs(s) for s in characteristics['feature_skewness'].values()])
         if avg_skewness > 0.5:
-            selected_types.extend(['quadratic', 'cubic'])
+            selected_types.extend(['quadratic'])
+        
+        # Add scaled interactions for better normalization
+        selected_types.extend(['scaled_sum', 'scaled_difference', 'scaled_product', 'scaled_ratio'])
+        
+        # Add advanced scaled interactions for complex patterns
+        if characteristics['avg_variance'] > 0.01:
+            selected_types.extend(['log_scaled_product', 'log_scaled_sum', 'minmax_scaled_product', 'robust_scaled_difference'])
         
         # Add momentum interactions for time series data
         if characteristics['n_samples'] > 50:
@@ -887,9 +966,6 @@ class DataDrivenInteractionGenerator:
         """Quadratic interaction."""
         return feat ** 2
     
-    def _cubic_interaction(self, feat: pd.Series) -> pd.Series:
-        """Cubic interaction."""
-        return feat ** 3
     
     def _skewness_interaction(self, feat: pd.Series) -> pd.Series:
         """Skewness interaction using VectorBT rolling optimizer."""
@@ -922,6 +998,133 @@ class DataDrivenInteractionGenerator:
         momentum1 = feat1.pct_change()
         momentum2 = feat2.pct_change()
         return momentum1 * momentum2
+    
+    # Scaled/Normalized interaction implementations
+    def _scaled_sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Sum of scaled/normalized features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        return scaled1 + scaled2
+    
+    def _scaled_difference_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Difference of scaled/normalized features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        return scaled1 - scaled2
+    
+    def _scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Product of scaled/normalized features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        return scaled1 * scaled2
+    
+    def _scaled_ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Ratio of scaled/normalized features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        return scaled1 / (scaled2 + 1e-08)
+    
+    def _log_scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of scaled product features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        product = scaled1 * scaled2
+        # Add small constant to avoid log(0)
+        return np.log(np.abs(product) + 1e-08)
+    
+    def _log_scaled_sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of scaled sum features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            scaled1 = zscore(feat1)
+            scaled2 = zscore(feat2)
+        else:
+            scaled1 = (feat1 - feat1.mean()) / feat1.std()
+            scaled2 = (feat2 - feat2.mean()) / feat2.std()
+        
+        sum_val = scaled1 + scaled2
+        # Add small constant to avoid log(0)
+        return np.log(np.abs(sum_val) + 1e-08)
+    
+    def _minmax_scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Product of min-max scaled features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='minmax')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='minmax')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            # Min-max scaling: (x - min) / (max - min)
+            scaled1 = (feat1 - feat1.min()) / (feat1.max() - feat1.min())
+            scaled2 = (feat2 - feat2.min()) / (feat2.max() - feat2.min())
+        else:
+            scaled1 = (feat1 - feat1.min()) / (feat1.max() - feat1.min())
+            scaled2 = (feat2 - feat2.min()) / (feat2.max() - feat2.min())
+        
+        return scaled1 * scaled2
+    
+    def _robust_scaled_difference_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Difference of robust scaled features using VectorBT scaling."""
+        if self.vectorization_manager:
+            scaled1 = self.vectorization_manager.scale_data(feat1, method='robust')
+            scaled2 = self.vectorization_manager.scale_data(feat2, method='robust')
+        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            # Robust scaling: (x - median) / IQR
+            q1_1, q3_1 = feat1.quantile([0.25, 0.75])
+            q1_2, q3_2 = feat2.quantile([0.25, 0.75])
+            iqr_1 = q3_1 - q1_1
+            iqr_2 = q3_2 - q1_2
+            scaled1 = (feat1 - feat1.median()) / (iqr_1 + 1e-08)
+            scaled2 = (feat2 - feat2.median()) / (iqr_2 + 1e-08)
+        else:
+            q1_1, q3_1 = feat1.quantile([0.25, 0.75])
+            q1_2, q3_2 = feat2.quantile([0.25, 0.75])
+            iqr_1 = q3_1 - q1_1
+            iqr_2 = q3_2 - q1_2
+            scaled1 = (feat1 - feat1.median()) / (iqr_1 + 1e-08)
+            scaled2 = (feat2 - feat2.median()) / (iqr_2 + 1e-08)
+        
+        return scaled1 - scaled2
     
     # Cache management methods
     def _generate_cache_key(self, feature_combo: Tuple[str, ...], interaction_type: str) -> str:

@@ -10,7 +10,6 @@ import json
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING, Mapping
-import logging
 from pathlib import Path
 import asyncio
 
@@ -48,7 +47,6 @@ from .utils.vectorbt_utils import (
     create_vectorbt_tools, VectorBTConfig, get_vectorbt_performance_stats,
     VECTORBT_UTILS_AVAILABLE
 )
-from src.training.config.data_locator import DataLocator
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
     validate_selection_artifact,
@@ -249,13 +247,13 @@ class FinalFeatureSelectionStep:
     @staticmethod
     def _standardize_feature_frame(data: pd.DataFrame) -> pd.DataFrame:
         """Ensure feature columns follow the ``X_*`` naming convention."""
-
+        tprint_debug("🔧 Standardizing feature frame columns")
         return standardize_namespace_frame(data, ColumnNamespace.FEATURE, allowed_unprefixed={"datetime"})
 
     @staticmethod
     def _standardize_target_frame(data: pd.DataFrame) -> pd.DataFrame:
         """Ensure target columns follow the ``y_*`` naming convention."""
-
+        tprint_debug("🔧 Standardizing target frame columns")
         return standardize_namespace_frame(data, ColumnNamespace.TARGET)
 
     @log_all_calls
@@ -450,6 +448,7 @@ class FinalFeatureSelectionStep:
                 if outcome_files:
                     latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
                     self.logger.info(f"📂 Loading target data from fallback outcomes file: {latest_outcome_file}")
+                    tprint_debug(f"   📂 Fallback file: {latest_outcome_file}")
                     result = self._load_standardized_target_from_file(
                         latest_outcome_file,
                         expected_symbol=symbol,
@@ -457,7 +456,14 @@ class FinalFeatureSelectionStep:
                         expected_timeframe=timeframe,
                     )
                     if result is not None:
+                        tprint_success(f"   ✅ Successfully loaded from fallback file")
                         return result
+                    else:
+                        tprint_warning(f"   ⚠️ Fallback file loaded but returned None")
+                else:
+                    tprint_warning(f"   ⚠️ No fallback files found matching pattern: {pattern}")
+            else:
+                tprint_warning(f"   ⚠️ Outcomes directory does not exist: {outcomes_dir}")
 
         # Fallback: try to load from data_cache or other locations
         tprint_warning(f"⚠️ No standardized target data found for {symbol}/{exchange}/{timeframe}")
@@ -473,6 +479,7 @@ class FinalFeatureSelectionStep:
         expected_timeframe: str,
     ) -> Optional[pd.DataFrame]:
         """Load standardized target data from a manifest-referenced outcome file."""
+        tprint_debug(f"📂 Loading standardized target from file: {outcome_file}")
         try:
             with open(outcome_file, 'r', encoding='utf-8') as handle:
                 outcome_data = json.load(handle)
@@ -577,6 +584,7 @@ class FinalFeatureSelectionStep:
 
     def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
         """Select the best target based on horizon weights and availability for feature selection."""
+        tprint_debug("🎯 Selecting best target with weights")
         try:
             if not weights or not target_columns:
                 # No weights available, use first available target
@@ -895,6 +903,7 @@ class FinalFeatureSelectionStep:
     
     def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for VectorBT processing."""
+        tprint_debug("⚡ Optimizing DataFrame for VectorBT processing")
         try:
             optimized_data = data.copy()
             
@@ -919,6 +928,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_outlier_handling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Handle outliers using VectorBT rolling operations."""
+        tprint_debug("🔧 Handling outliers with VectorBT operations")
         try:
             if not self.vectorbt_optimizer:
                 return data
@@ -947,6 +957,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_normalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Normalize data using VectorBT rolling operations."""
+        tprint_debug("📊 Normalizing data with VectorBT operations")
         try:
             if not self.vectorbt_optimizer:
                 return data
@@ -973,6 +984,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_optimize_target_data(self, target_data: Optional[pd.Series], feature_data: pd.DataFrame) -> Optional[pd.Series]:
         """Optimize target data using VectorBT operations."""
+        tprint_debug("🎯 Optimizing target data with VectorBT")
         if target_data is None:
             tprint("   ℹ️ No target data - will perform unsupervised feature selection")
             return None
@@ -1199,6 +1211,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_calculate_feature_importance(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
         """Calculate feature importance using VectorBT operations."""
+        tprint_debug("📊 Calculating feature importance with VectorBT")
         try:
             if not self.vectorbt_optimizer or y is None:
                 return {}
@@ -1220,6 +1233,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_stability_analysis(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
         """Perform stability analysis using VectorBT operations."""
+        tprint_debug("🔍 Performing stability analysis with VectorBT")
         try:
             if not self.vectorbt_optimizer:
                 return {}
@@ -1241,6 +1255,7 @@ class FinalFeatureSelectionStep:
     
     def _vectorbt_correlation_analysis(self, X: pd.DataFrame, window: int = 50) -> pd.DataFrame:
         """Perform correlation analysis using VectorBT optimization."""
+        tprint_debug(f"🔗 Performing correlation analysis with VectorBT (window={window})")
         try:
             if not self.vectorbt_optimizer:
                 return X.corr()
@@ -1261,6 +1276,7 @@ class FinalFeatureSelectionStep:
     
     def _get_enhanced_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive VectorBT performance statistics."""
+        tprint_debug("📊 Getting enhanced VectorBT performance statistics")
         stats = {}
         
         # Get VectorBT rolling optimizer stats
@@ -1290,7 +1306,7 @@ class FinalFeatureSelectionStep:
 
     def _collect_hypothesis_p_values(self, selection_result: Any) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
         """Extract horizon, feature, and lookback p-values from the selection result."""
-
+        tprint_debug("📊 Collecting hypothesis p-values from selection result")
         try:
             flattened = extract_p_value_mapping(vars(selection_result))
         except Exception as e:
@@ -1333,7 +1349,7 @@ class FinalFeatureSelectionStep:
     def _save_selection_results_sync(self, selection_result: Any, symbol: str, exchange: str,
                                      timeframe: str) -> None:
         """Synchronous helper for saving feature selection results."""
-
+        tprint_debug(f"💾 Saving selection results for {symbol}/{exchange}/{timeframe}")
         output_dir = self.final_features_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1563,6 +1579,9 @@ def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.D
         Dictionary with drift detection results
     """
     tprint("🔍 Detecting feature drift...")
+    tprint_debug(f"   📊 Training features: {train_features.shape}")
+    tprint_debug(f"   📊 Validation features: {val_features.shape}")
+    tprint_debug(f"   📊 Max mean shift threshold: {max_mean_shift}")
     
     drift_results = {
         'drifted_features': [],
@@ -1620,8 +1639,10 @@ async def run_final_feature_selection_step(symbol: str,
     runtime_config: Dict[str, Any] = dict(config or {})
 
     def _extract_timeframe_from_config(cfg: Mapping[str, Any]) -> Optional[str]:
+        tprint_debug("🔍 Extracting timeframe from config")
         candidate = cfg.get('timeframe')
         if isinstance(candidate, str) and candidate:
+            tprint_debug(f"   ✅ Found timeframe in config: {candidate}")
             return candidate
 
         custom_params = cfg.get('custom_params')
@@ -1629,10 +1650,13 @@ async def run_final_feature_selection_step(symbol: str,
             for key in ('timeframe', 'default_timeframe'):
                 candidate = custom_params.get(key)
                 if isinstance(candidate, str) and candidate:
+                    tprint_debug(f"   ✅ Found timeframe in custom_params: {candidate}")
                     return candidate
+        tprint_debug("   ⚠️ No timeframe found in config")
         return None
 
     def _config_indicates_analyst(cfg: Mapping[str, Any]) -> bool:
+        tprint_debug("🔍 Checking if config indicates analyst pipeline")
         analyst_truthy_strings = {'analyst', 'true', 'yes', 'enabled'}
 
         def _walk(value: Any, key_hint: Optional[str] = None) -> bool:

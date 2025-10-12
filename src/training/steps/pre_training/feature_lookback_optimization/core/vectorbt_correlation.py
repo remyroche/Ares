@@ -30,6 +30,32 @@ except ImportError:
     BBANDS = None
     nb = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_corr,
+        optimized_rolling_cov
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_corr = None
+    optimized_rolling_cov = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from .utils.error_handling import safe_operation, get_error_handler
@@ -47,6 +73,12 @@ class VectorBTCorrelationConfig:
     mi_approximation: bool = True
     parallel_processing: bool = True
     cache_size: int = 1000
+    
+    # Enhanced optimization settings
+    use_rolling_optimizer: bool = True
+    use_unified_vectorization: bool = True
+    rolling_optimizer_config: Optional[Dict[str, Any]] = None
+    unified_vectorization_config: Optional[Dict[str, Any]] = None
 
 
 class VectorBTCorrelationCalculator:
@@ -74,7 +106,10 @@ class VectorBTCorrelationCalculator:
         self._correlation_cache = {}
         self._mi_cache = {}
         
-        tprint_success("✅ VectorBT Correlation Calculator initialized")
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
+        
+        tprint_success("✅ VectorBT Correlation Calculator initialized with enhanced optimizations")
     
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
@@ -96,6 +131,37 @@ class VectorBTCorrelationCalculator:
             
         except Exception as e:
             self.logger.warning(f"Could not configure VectorBT settings: {e}")
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if self.config.use_rolling_optimizer and VECTORBT_UTILS_AVAILABLE:
+                rolling_config = self.config.rolling_optimizer_config or {}
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=rolling_config.get('enable_gpu', False),
+                    enable_parallel=rolling_config.get('enable_parallel', True),
+                    memory_efficient=rolling_config.get('memory_efficient', True)
+                )
+                self.logger.debug("VectorBT Rolling Optimizer initialized for correlation calculations")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("VectorBT Rolling Optimizer not available for correlation calculations")
+            
+            # Initialize Unified Vectorization Manager
+            if self.config.use_unified_vectorization and VECTORBT_UTILS_AVAILABLE:
+                unified_config = self.config.unified_vectorization_config or {}
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.debug("Unified Vectorization Manager initialized for correlation calculations")
+            else:
+                self.unified_manager = None
+                self.logger.warning("Unified Vectorization Manager not available for correlation calculations")
+            
+            self.logger.debug("Enhanced optimization components initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced component initialization failed: {e}")
+            # Don't raise - these are optional enhancements
     
     @safe_operation
     def calculate_correlations_vectorbt(
@@ -120,21 +186,87 @@ class VectorBTCorrelationCalculator:
         start_time = time.time()
         
         try:
-            # Convert to VectorBT arrays for optimized processing
-            features_vbt = self._prepare_vectorbt_arrays(features_list)
-            returns_vbt = self._prepare_vectorbt_arrays(returns_list)
-            
-            # Use VectorBT's optimized correlation calculation
-            correlations = self._vectorbt_correlation_batch(features_vbt, returns_vbt)
+            # Use enhanced optimization if available
+            if self.rolling_optimizer and self.unified_manager:
+                correlations = self._calculate_correlations_enhanced(features_list, returns_list)
+            else:
+                # Convert to VectorBT arrays for optimized processing
+                features_vbt = self._prepare_vectorbt_arrays(features_list)
+                returns_vbt = self._prepare_vectorbt_arrays(returns_list)
+                
+                # Use VectorBT's optimized correlation calculation
+                correlations = self._vectorbt_correlation_batch(features_vbt, returns_vbt)
+                correlations = correlations.tolist()
             
             computation_time = time.time() - start_time
             tprint_success(f"✅ VectorBT correlation calculation completed in {computation_time:.3f}s")
             
-            return correlations.tolist()
+            return correlations
             
         except Exception as e:
             self.logger.error(f"VectorBT correlation calculation failed: {e}")
             # Fallback to individual calculations
+            return self._fallback_correlation_calculation(features_list, returns_list)
+    
+    def _calculate_correlations_enhanced(
+        self, 
+        features_list: List[np.ndarray], 
+        returns_list: List[np.ndarray]
+    ) -> List[float]:
+        """Calculate correlations using enhanced VectorBT optimizations."""
+        try:
+            correlations = []
+            
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                # Configure operation for correlation calculation
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.STATISTICAL_COMPUTATION,
+                    data_size=len(features_list[0]) if features_list else 0,
+                    data_dimensions=(len(features_list[0]),) if features_list else (0,),
+                    memory_budget_mb=512.0,
+                    time_budget_seconds=30.0
+                )
+                
+                # Get optimal strategy
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected correlation strategy: {strategy}")
+            
+            for i, (feature, returns) in enumerate(zip(features_list, returns_list)):
+                try:
+                    # Use VectorBTRollingOptimizer for rolling correlation
+                    if self.rolling_optimizer and len(feature) > 50:
+                        # Calculate rolling correlation for more robust results
+                        rolling_corr = self.rolling_optimizer.rolling_corr(
+                            pd.Series(feature), 
+                            pd.Series(returns), 
+                            window=min(20, len(feature) // 4)
+                        )
+                        
+                        # Use mean of rolling correlations
+                        valid_corr = rolling_corr.dropna()
+                        if len(valid_corr) > 0:
+                            corr = valid_corr.mean()
+                        else:
+                            # Fallback to simple correlation
+                            corr = self._calculate_single_correlation_vectorbt(feature, returns)
+                    else:
+                        # Use standard VectorBT correlation
+                        corr = self._calculate_single_correlation_vectorbt(feature, returns)
+                    
+                    correlations.append(corr)
+                    
+                except Exception as e:
+                    self.logger.warning(f"Enhanced correlation calculation failed for feature {i}: {e}")
+                    # Fallback to standard method
+                    corr = self._calculate_single_correlation_vectorbt(feature, returns)
+                    correlations.append(corr)
+            
+            return correlations
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced correlation calculation failed: {e}")
+            # Fallback to standard method
             return self._fallback_correlation_calculation(features_list, returns_list)
     
     def _prepare_vectorbt_arrays(self, arrays_list: List[np.ndarray]) -> np.ndarray:

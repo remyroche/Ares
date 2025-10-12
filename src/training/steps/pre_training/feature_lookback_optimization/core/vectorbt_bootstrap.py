@@ -28,6 +28,34 @@ except ImportError:
     Portfolio = None
     Records = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_corr
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_corr = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from .utils.error_handling import safe_operation, get_error_handler
@@ -63,6 +91,12 @@ class VectorBTBootstrapConfig:
     use_vectorbt_portfolio: bool = True
     initial_capital: float = 100000.0
     fees: float = 0.001
+    
+    # Enhanced optimization settings
+    use_rolling_optimizer: bool = True
+    use_unified_vectorization: bool = True
+    rolling_optimizer_config: Optional[Dict[str, Any]] = None
+    unified_vectorization_config: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -107,7 +141,41 @@ class VectorBTBootstrapValidator:
         random.seed(self.config.random_seed)
         np.random.seed(self.config.random_seed)
         
-        tprint_success("✅ VectorBT Bootstrap Validator initialized")
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
+        
+        tprint_success("✅ VectorBT Bootstrap Validator initialized with enhanced optimizations")
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if self.config.use_rolling_optimizer and VECTORBT_UTILS_AVAILABLE:
+                rolling_config = self.config.rolling_optimizer_config or {}
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=rolling_config.get('enable_gpu', False),
+                    enable_parallel=rolling_config.get('enable_parallel', True),
+                    memory_efficient=rolling_config.get('memory_efficient', True)
+                )
+                self.logger.debug("VectorBT Rolling Optimizer initialized for bootstrap validation")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("VectorBT Rolling Optimizer not available for bootstrap validation")
+            
+            # Initialize Unified Vectorization Manager
+            if self.config.use_unified_vectorization and VECTORBT_UTILS_AVAILABLE:
+                unified_config = self.config.unified_vectorization_config or {}
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.debug("Unified Vectorization Manager initialized for bootstrap validation")
+            else:
+                self.unified_manager = None
+                self.logger.warning("Unified Vectorization Manager not available for bootstrap validation")
+            
+            self.logger.debug("Enhanced optimization components initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced component initialization failed: {e}")
+            # Don't raise - these are optional enhancements
     
     @safe_operation
     def validate_lookback_period(
@@ -145,6 +213,10 @@ class VectorBTBootstrapValidator:
                     is_valid=False,
                     error_message="Invalid inputs"
                 )
+            
+            # Use enhanced optimization if available
+            if self.rolling_optimizer and self.unified_manager:
+                return self._validate_lookback_period_enhanced(feature_values, target_values, lookback_period, n_samples)
             
             # Generate bootstrap samples
             bootstrap_samples = self._generate_bootstrap_samples(
@@ -197,6 +269,339 @@ class VectorBTBootstrapValidator:
             
         except Exception as e:
             self.logger.error(f"Bootstrap validation failed: {e}")
+            return BootstrapResult(
+                mean_score=0.0,
+                std_score=0.0,
+                confidence_interval=(0.0, 0.0),
+                scores=[],
+                execution_time=time.time() - start_time,
+                n_samples=0,
+                is_valid=False,
+                error_message=str(e)
+            )
+    
+    def _validate_lookback_period_enhanced(
+        self,
+        feature_values: np.ndarray,
+        target_values: np.ndarray,
+        lookback_period: int,
+        n_samples: int
+    ) -> BootstrapResult:
+        """Validate lookback period using enhanced VectorBT optimizations."""
+        start_time = time.time()
+        
+        try:
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                # Configure operation for bootstrap validation
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.CROSS_VALIDATION,
+                    data_size=len(feature_values),
+                    data_dimensions=(len(feature_values),),
+                    memory_budget_mb=512.0,
+                    time_budget_seconds=60.0
+                )
+                
+                # Get optimal strategy
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected bootstrap validation strategy: {strategy}")
+            
+            # Generate bootstrap samples using enhanced methods
+            bootstrap_samples = self._generate_bootstrap_samples_enhanced(
+                feature_values, target_values, n_samples
+            )
+            
+            if not bootstrap_samples:
+                return BootstrapResult(
+                    mean_score=0.0,
+                    std_score=0.0,
+                    confidence_interval=(0.0, 0.0),
+                    scores=[],
+                    execution_time=time.time() - start_time,
+                    n_samples=0,
+                    is_valid=False,
+                    error_message="Could not generate enhanced bootstrap samples"
+                )
+            
+            # Score bootstrap samples using enhanced methods
+            scores = self._score_bootstrap_samples_enhanced(bootstrap_samples, lookback_period)
+            
+            if not scores:
+                return BootstrapResult(
+                    mean_score=0.0,
+                    std_score=0.0,
+                    confidence_interval=(0.0, 0.0),
+                    scores=[],
+                    execution_time=time.time() - start_time,
+                    n_samples=0,
+                    is_valid=False,
+                    error_message="Could not score enhanced bootstrap samples"
+                )
+            
+            # Calculate statistics using enhanced methods
+            mean_score = self._calculate_mean_enhanced(scores)
+            std_score = self._calculate_std_enhanced(scores)
+            confidence_interval = self._calculate_confidence_interval_enhanced(scores)
+            
+            result = BootstrapResult(
+                mean_score=mean_score,
+                std_score=std_score,
+                confidence_interval=confidence_interval,
+                scores=scores,
+                execution_time=time.time() - start_time,
+                n_samples=len(scores),
+                is_valid=True
+            )
+            
+            tprint_success(f"✅ Enhanced bootstrap validation completed: mean={mean_score:.4f}, std={std_score:.4f}")
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced bootstrap validation failed: {e}")
+            # Fallback to standard method
+            return self._validate_lookback_period_standard(feature_values, target_values, lookback_period, n_samples)
+    
+    def _generate_bootstrap_samples_enhanced(
+        self,
+        feature_values: np.ndarray,
+        target_values: np.ndarray,
+        n_samples: int
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Generate bootstrap samples using enhanced VectorBT optimizations."""
+        try:
+            samples = []
+            
+            for i in range(n_samples):
+                if self.config.bootstrap_method == BootstrapMethod.BLOCK:
+                    # Use block bootstrap with VectorBTRollingOptimizer
+                    sample = self._generate_block_bootstrap_sample_enhanced(feature_values, target_values)
+                else:
+                    # Use standard bootstrap
+                    sample = self._generate_simple_bootstrap_sample(feature_values, target_values)
+                
+                if sample is not None:
+                    samples.append(sample)
+            
+            return samples
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced bootstrap sample generation failed: {e}")
+            return self._generate_bootstrap_samples(feature_values, target_values, n_samples)
+    
+    def _generate_block_bootstrap_sample_enhanced(
+        self,
+        feature_values: np.ndarray,
+        target_values: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate block bootstrap sample using VectorBTRollingOptimizer."""
+        try:
+            n = len(feature_values)
+            block_size = self.config.block_size
+            
+            # Use VectorBTRollingOptimizer for block selection
+            if self.rolling_optimizer and n > block_size * 2:
+                # Calculate rolling statistics to identify stable blocks
+                rolling_std = self.rolling_optimizer.rolling_std(
+                    pd.Series(feature_values), window=block_size
+                )
+                
+                # Select blocks with lower volatility for more stable samples
+                stable_blocks = rolling_std.dropna()
+                if len(stable_blocks) > 0:
+                    # Select blocks with below-median volatility
+                    threshold = stable_blocks.median()
+                    stable_indices = stable_blocks[stable_blocks <= threshold].index
+                    
+                    if len(stable_indices) > 0:
+                        # Randomly select from stable blocks
+                        selected_blocks = np.random.choice(stable_indices, size=n // block_size, replace=True)
+                        
+                        # Reconstruct sample
+                        sample_features = []
+                        sample_targets = []
+                        
+                        for block_start in selected_blocks:
+                            block_end = min(block_start + block_size, n)
+                            sample_features.extend(feature_values[block_start:block_end])
+                            sample_targets.extend(target_values[block_start:block_end])
+                        
+                        return np.array(sample_features[:n]), np.array(sample_targets[:n])
+            
+            # Fallback to standard block bootstrap
+            return self._generate_block_bootstrap_sample(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced block bootstrap sample generation failed: {e}")
+            return self._generate_block_bootstrap_sample(feature_values, target_values)
+    
+    def _score_bootstrap_samples_enhanced(
+        self,
+        bootstrap_samples: List[Tuple[np.ndarray, np.ndarray]],
+        lookback_period: int
+    ) -> List[float]:
+        """Score bootstrap samples using enhanced VectorBT optimizations."""
+        try:
+            scores = []
+            
+            for feature_values, target_values in bootstrap_samples:
+                # Use enhanced scoring with rolling statistics
+                if self.rolling_optimizer and len(feature_values) > 50:
+                    # Calculate rolling correlation for more robust scoring
+                    rolling_corr = self.rolling_optimizer.rolling_corr(
+                        pd.Series(feature_values), 
+                        pd.Series(target_values), 
+                        window=min(20, len(feature_values) // 4)
+                    )
+                    
+                    # Use mean of rolling correlations as score
+                    valid_corr = rolling_corr.dropna()
+                    if len(valid_corr) > 0:
+                        score = abs(valid_corr.mean())
+                    else:
+                        # Fallback to simple correlation
+                        score = abs(np.corrcoef(feature_values, target_values)[0, 1])
+                else:
+                    # Use standard scoring
+                    score = abs(np.corrcoef(feature_values, target_values)[0, 1])
+                
+                scores.append(score)
+            
+            return scores
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced bootstrap sample scoring failed: {e}")
+            return self._score_bootstrap_samples(bootstrap_samples, lookback_period)
+    
+    def _calculate_mean_enhanced(self, scores: List[float]) -> float:
+        """Calculate mean using enhanced VectorBT optimizations."""
+        try:
+            if self.rolling_optimizer and len(scores) > 20:
+                # Use rolling mean for more robust statistics
+                rolling_mean = self.rolling_optimizer.rolling_mean(
+                    pd.Series(scores), window=min(10, len(scores) // 2)
+                )
+                
+                # Use mean of rolling means
+                valid_mean = rolling_mean.dropna()
+                if len(valid_mean) > 0:
+                    return valid_mean.mean()
+            
+            # Fallback to standard mean
+            return np.mean(scores)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced mean calculation failed: {e}")
+            return np.mean(scores)
+    
+    def _calculate_std_enhanced(self, scores: List[float]) -> float:
+        """Calculate standard deviation using enhanced VectorBT optimizations."""
+        try:
+            if self.rolling_optimizer and len(scores) > 20:
+                # Use rolling std for more robust statistics
+                rolling_std = self.rolling_optimizer.rolling_std(
+                    pd.Series(scores), window=min(10, len(scores) // 2)
+                )
+                
+                # Use mean of rolling stds
+                valid_std = rolling_std.dropna()
+                if len(valid_std) > 0:
+                    return valid_std.mean()
+            
+            # Fallback to standard std
+            return np.std(scores)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced std calculation failed: {e}")
+            return np.std(scores)
+    
+    def _calculate_confidence_interval_enhanced(self, scores: List[float]) -> Tuple[float, float]:
+        """Calculate confidence interval using enhanced VectorBT optimizations."""
+        try:
+            if self.rolling_optimizer and len(scores) > 20:
+                # Use rolling quantiles for more robust confidence intervals
+                rolling_q25 = self.rolling_optimizer.rolling_quantile(
+                    pd.Series(scores), window=min(10, len(scores) // 2), q=0.25
+                )
+                rolling_q75 = self.rolling_optimizer.rolling_quantile(
+                    pd.Series(scores), window=min(10, len(scores) // 2), q=0.75
+                )
+                
+                # Use mean of rolling quantiles
+                valid_q25 = rolling_q25.dropna()
+                valid_q75 = rolling_q75.dropna()
+                
+                if len(valid_q25) > 0 and len(valid_q75) > 0:
+                    return (valid_q25.mean(), valid_q75.mean())
+            
+            # Fallback to standard confidence interval
+            return self._calculate_confidence_interval(scores)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced confidence interval calculation failed: {e}")
+            return self._calculate_confidence_interval(scores)
+    
+    def _validate_lookback_period_standard(
+        self,
+        feature_values: np.ndarray,
+        target_values: np.ndarray,
+        lookback_period: int,
+        n_samples: int
+    ) -> BootstrapResult:
+        """Validate lookback period using standard VectorBT methods."""
+        start_time = time.time()
+        
+        try:
+            # Generate bootstrap samples
+            bootstrap_samples = self._generate_bootstrap_samples(
+                feature_values, target_values, n_samples
+            )
+            
+            if not bootstrap_samples:
+                return BootstrapResult(
+                    mean_score=0.0,
+                    std_score=0.0,
+                    confidence_interval=(0.0, 0.0),
+                    scores=[],
+                    execution_time=time.time() - start_time,
+                    n_samples=0,
+                    is_valid=False,
+                    error_message="Could not generate bootstrap samples"
+                )
+            
+            # Score bootstrap samples
+            scores = self._score_bootstrap_samples(bootstrap_samples, lookback_period)
+            
+            if not scores:
+                return BootstrapResult(
+                    mean_score=0.0,
+                    std_score=0.0,
+                    confidence_interval=(0.0, 0.0),
+                    scores=[],
+                    execution_time=time.time() - start_time,
+                    n_samples=0,
+                    is_valid=False,
+                    error_message="Could not score bootstrap samples"
+                )
+            
+            # Calculate statistics
+            mean_score = np.mean(scores)
+            std_score = np.std(scores)
+            confidence_interval = self._calculate_confidence_interval(scores)
+            
+            result = BootstrapResult(
+                mean_score=mean_score,
+                std_score=std_score,
+                confidence_interval=confidence_interval,
+                scores=scores,
+                execution_time=time.time() - start_time,
+                n_samples=len(scores),
+                is_valid=True
+            )
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Standard bootstrap validation failed: {e}")
             return BootstrapResult(
                 mean_score=0.0,
                 std_score=0.0,

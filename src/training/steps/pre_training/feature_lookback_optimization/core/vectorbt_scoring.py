@@ -26,6 +26,34 @@ except ImportError:
     Portfolio = None
     Records = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_corr
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_corr = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from .utils.error_handling import safe_operation, get_error_handler
@@ -58,6 +86,12 @@ class VectorBTScoringConfig:
     use_rolling_metrics: bool = True
     rolling_window: int = 50
     parallel_processing: bool = True
+    
+    # Enhanced optimization settings
+    use_rolling_optimizer: bool = True
+    use_unified_vectorization: bool = True
+    rolling_optimizer_config: Optional[Dict[str, Any]] = None
+    unified_vectorization_config: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -92,7 +126,10 @@ class VectorBTScoringSystem:
         # Configure VectorBT settings
         self._configure_vectorbt()
         
-        tprint_success("✅ VectorBT Scoring System initialized")
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
+        
+        tprint_success("✅ VectorBT Scoring System initialized with enhanced optimizations")
     
     def _configure_vectorbt(self):
         """Configure VectorBT for optimal scoring performance."""
@@ -109,6 +146,37 @@ class VectorBTScoringSystem:
             
         except Exception as e:
             self.logger.warning(f"Could not configure VectorBT settings: {e}")
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if self.config.use_rolling_optimizer and VECTORBT_UTILS_AVAILABLE:
+                rolling_config = self.config.rolling_optimizer_config or {}
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=rolling_config.get('enable_gpu', False),
+                    enable_parallel=rolling_config.get('enable_parallel', True),
+                    memory_efficient=rolling_config.get('memory_efficient', True)
+                )
+                self.logger.debug("VectorBT Rolling Optimizer initialized for scoring")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("VectorBT Rolling Optimizer not available for scoring")
+            
+            # Initialize Unified Vectorization Manager
+            if self.config.use_unified_vectorization and VECTORBT_UTILS_AVAILABLE:
+                unified_config = self.config.unified_vectorization_config or {}
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.debug("Unified Vectorization Manager initialized for scoring")
+            else:
+                self.unified_manager = None
+                self.logger.warning("Unified Vectorization Manager not available for scoring")
+            
+            self.logger.debug("Enhanced optimization components initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced component initialization failed: {e}")
+            # Don't raise - these are optional enhancements
     
     @safe_operation
     def score_feature_lookback(
@@ -144,6 +212,10 @@ class VectorBTScoringSystem:
                     is_valid=False,
                     error_message="Invalid inputs"
                 )
+            
+            # Use enhanced optimization if available
+            if self.rolling_optimizer and self.unified_manager:
+                return self._score_feature_enhanced(feature_values, target_values, lookback_period, method)
             
             # Create signals from feature values
             signals = self._create_signals_from_feature(feature_values, target_values)
@@ -501,6 +573,231 @@ def score_feature_with_vectorbt(
     return scoring_system.score_feature_lookback(
         feature_values, target_values, lookback_period, method
     )
+
+
+    def _score_feature_enhanced(
+        self,
+        feature_values: np.ndarray,
+        target_values: np.ndarray,
+        lookback_period: int,
+        method: ScoringMethod
+    ) -> ScoringResult:
+        """Score feature using enhanced VectorBT optimizations."""
+        start_time = time.time()
+        
+        try:
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                # Configure operation for scoring
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.VECTORBT_METRICS,
+                    data_size=len(feature_values),
+                    data_dimensions=(len(feature_values),),
+                    memory_budget_mb=256.0,
+                    time_budget_seconds=15.0
+                )
+                
+                # Get optimal strategy
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected scoring strategy: {strategy}")
+            
+            # Calculate score using VectorBTRollingOptimizer for rolling statistics
+            if method == ScoringMethod.SHARPE_RATIO:
+                score = self._calculate_sharpe_ratio_enhanced(feature_values, target_values)
+            elif method == ScoringMethod.SORTINO_RATIO:
+                score = self._calculate_sortino_ratio_enhanced(feature_values, target_values)
+            elif method == ScoringMethod.CALMAR_RATIO:
+                score = self._calculate_calmar_ratio_enhanced(feature_values, target_values)
+            elif method == ScoringMethod.RISK_ADJUSTED_RETURN:
+                score = self._calculate_risk_adjusted_return_enhanced(feature_values, target_values)
+            elif method == ScoringMethod.MUTUAL_INFORMATION:
+                score = self._calculate_mutual_information_enhanced(feature_values, target_values)
+            else:  # COMPOSITE
+                score = self._calculate_composite_score_enhanced(feature_values, target_values)
+            
+            # Create result
+            result = ScoringResult(
+                score=score,
+                method=method.value,
+                metrics=self._get_scoring_metrics(feature_values, target_values),
+                execution_time=time.time() - start_time,
+                is_valid=True
+            )
+            
+            return result
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced scoring failed: {e}")
+            # Fallback to standard method
+            return self._score_feature_standard(feature_values, target_values, lookback_period, method)
+    
+    def _calculate_sharpe_ratio_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate Sharpe ratio using VectorBTRollingOptimizer."""
+        try:
+            if self.rolling_optimizer and len(feature_values) > 50:
+                # Use rolling statistics for more robust calculation
+                rolling_mean = self.rolling_optimizer.rolling_mean(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                rolling_std = self.rolling_optimizer.rolling_std(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling Sharpe ratio
+                rolling_sharpe = (rolling_mean - self.config.risk_free_rate) / (rolling_std + 1e-10)
+                
+                # Use mean of rolling Sharpe ratios
+                valid_sharpe = rolling_sharpe.dropna()
+                if len(valid_sharpe) > 0:
+                    return valid_sharpe.mean()
+            
+            # Fallback to standard calculation
+            return self._calculate_sharpe_ratio(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced Sharpe ratio calculation failed: {e}")
+            return self._calculate_sharpe_ratio(feature_values, target_values)
+    
+    def _calculate_sortino_ratio_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate Sortino ratio using VectorBTRollingOptimizer."""
+        try:
+            if self.rolling_optimizer and len(feature_values) > 50:
+                # Use rolling statistics for more robust calculation
+                rolling_mean = self.rolling_optimizer.rolling_mean(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate downside deviation using rolling operations
+                downside_returns = np.where(target_values < 0, target_values, 0)
+                rolling_downside_std = self.rolling_optimizer.rolling_std(
+                    pd.Series(downside_returns), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling Sortino ratio
+                rolling_sortino = (rolling_mean - self.config.risk_free_rate) / (rolling_downside_std + 1e-10)
+                
+                # Use mean of rolling Sortino ratios
+                valid_sortino = rolling_sortino.dropna()
+                if len(valid_sortino) > 0:
+                    return valid_sortino.mean()
+            
+            # Fallback to standard calculation
+            return self._calculate_sortino_ratio(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced Sortino ratio calculation failed: {e}")
+            return self._calculate_sortino_ratio(feature_values, target_values)
+    
+    def _calculate_calmar_ratio_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate Calmar ratio using VectorBTRollingOptimizer."""
+        try:
+            if self.rolling_optimizer and len(feature_values) > 50:
+                # Use rolling statistics for more robust calculation
+                rolling_mean = self.rolling_optimizer.rolling_mean(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling maximum drawdown
+                cumulative_returns = np.cumprod(1 + target_values)
+                rolling_max = self.rolling_optimizer.rolling_max(
+                    pd.Series(cumulative_returns), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling drawdown
+                rolling_drawdown = (cumulative_returns - rolling_max) / (rolling_max + 1e-10)
+                rolling_max_drawdown = self.rolling_optimizer.rolling_max(
+                    pd.Series(rolling_drawdown), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling Calmar ratio
+                rolling_calmar = rolling_mean / (rolling_max_drawdown + 1e-10)
+                
+                # Use mean of rolling Calmar ratios
+                valid_calmar = rolling_calmar.dropna()
+                if len(valid_calmar) > 0:
+                    return valid_calmar.mean()
+            
+            # Fallback to standard calculation
+            return self._calculate_calmar_ratio(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced Calmar ratio calculation failed: {e}")
+            return self._calculate_calmar_ratio(feature_values, target_values)
+    
+    def _calculate_risk_adjusted_return_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate risk-adjusted return using VectorBTRollingOptimizer."""
+        try:
+            if self.rolling_optimizer and len(feature_values) > 50:
+                # Use rolling statistics for more robust calculation
+                rolling_mean = self.rolling_optimizer.rolling_mean(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                rolling_std = self.rolling_optimizer.rolling_std(
+                    pd.Series(target_values), window=min(20, len(target_values) // 4)
+                )
+                
+                # Calculate rolling risk-adjusted return
+                rolling_risk_adj = rolling_mean / (rolling_std + 1e-10)
+                
+                # Use mean of rolling risk-adjusted returns
+                valid_risk_adj = rolling_risk_adj.dropna()
+                if len(valid_risk_adj) > 0:
+                    return valid_risk_adj.mean()
+            
+            # Fallback to standard calculation
+            return self._calculate_risk_adjusted_return(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced risk-adjusted return calculation failed: {e}")
+            return self._calculate_risk_adjusted_return(feature_values, target_values)
+    
+    def _calculate_mutual_information_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate mutual information using VectorBTRollingOptimizer."""
+        try:
+            if self.rolling_optimizer and len(feature_values) > 50:
+                # Use rolling correlation for mutual information approximation
+                rolling_corr = self.rolling_optimizer.rolling_corr(
+                    pd.Series(feature_values), 
+                    pd.Series(target_values), 
+                    window=min(20, len(target_values) // 4)
+                )
+                
+                # Use mean of rolling correlations as mutual information approximation
+                valid_corr = rolling_corr.dropna()
+                if len(valid_corr) > 0:
+                    return abs(valid_corr.mean())
+            
+            # Fallback to standard calculation
+            return self._calculate_mutual_information(feature_values, target_values)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced mutual information calculation failed: {e}")
+            return self._calculate_mutual_information(feature_values, target_values)
+    
+    def _calculate_composite_score_enhanced(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
+        """Calculate composite score using VectorBTRollingOptimizer."""
+        try:
+            # Calculate individual scores using enhanced methods
+            sharpe = self._calculate_sharpe_ratio_enhanced(feature_values, target_values)
+            sortino = self._calculate_sortino_ratio_enhanced(feature_values, target_values)
+            calmar = self._calculate_calmar_ratio_enhanced(feature_values, target_values)
+            risk_adj = self._calculate_risk_adjusted_return_enhanced(feature_values, target_values)
+            mi = self._calculate_mutual_information_enhanced(feature_values, target_values)
+            
+            # Weighted composite score
+            composite_score = (
+                0.3 * sharpe +
+                0.25 * sortino +
+                0.2 * calmar +
+                0.15 * risk_adj +
+                0.1 * mi
+            )
+            
+            return composite_score
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced composite score calculation failed: {e}")
+            return self._calculate_composite_score(feature_values, target_values)
 
 
 # Test function

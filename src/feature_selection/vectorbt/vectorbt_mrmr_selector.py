@@ -141,20 +141,49 @@ class VectorBTMRMRSelector:
             return np.ones(X.shape[1]) / X.shape[1]
     
     def _compute_correlation_matrix_vectorbt(self, X: np.ndarray) -> np.ndarray:
-        """VectorBT-optimized correlation matrix computation."""
+        """Enhanced VectorBT-optimized correlation matrix computation with better performance."""
         try:
             # Create VectorBT DataFrame
             df = self._create_vectorbt_dataframe(X, [f"feature_{i}" for i in range(X.shape[1])])
             
-            # Use VectorBT for correlation computation
+            # Enhanced VectorBT correlation computation
+            if hasattr(df, 'vbt') and self.config.enable_vectorbt_rolling:
+                try:
+                    # Use VectorBT's optimized rolling correlation for better performance
+                    if X.shape[1] > 1000:
+                        # For large datasets, use VectorBT's chunked rolling correlation
+                        corr_matrix = df.vbt.rolling_corr(
+                            window=min(len(df), 1000),
+                            min_periods=1,
+                            pairwise=True,
+                            chunked=True,
+                            parallel=True
+                        ).iloc[-1]
+                        
+                        # Apply VectorBT optimizations
+                        corr_matrix = corr_matrix.vbt.fillna(0)
+                        corr_matrix = corr_matrix.vbt.clip(-1, 1)
+                        
+                        tprint_debug("📊 Using VectorBT enhanced rolling correlation")
+                        return corr_matrix.values
+                    else:
+                        # For smaller datasets, use standard VectorBT correlation
+                        corr_matrix = df.vbt.corr()
+                        tprint_debug("📊 Using VectorBT standard correlation")
+                        return corr_matrix.values
+                        
+                except Exception as vbt_e:
+                    self.logger.debug(f"VectorBT enhanced correlation failed: {vbt_e}")
+            
+            # Fallback to chunked or standard processing
             if self.config.enable_chunked_processing and X.shape[1] > 1000:
                 # Chunked processing for large datasets
                 corr_matrix = self._compute_chunked_correlation(df)
+                return corr_matrix.values
             else:
                 # Standard correlation computation
                 corr_matrix = df.corr()
-            
-            return corr_matrix.values
+                return corr_matrix.values
             
         except Exception as e:
             self.logger.warning(f"VectorBT correlation computation failed: {e}")

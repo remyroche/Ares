@@ -278,7 +278,8 @@ class VIFModule:
                         vif_scores[feature_name] = float('inf')
                     else:
                         vif_scores[feature_name] = 1.0 / (1.0 - r_squared)
-                except:
+                except Exception as vif_e:
+                    tprint_debug(f"⚠️ VIF calculation failed for {feature_name}: {vif_e}")
                     vif_scores[feature_name] = 1.0
             
             return vif_scores

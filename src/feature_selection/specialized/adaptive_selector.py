@@ -481,7 +481,8 @@ class AdaptiveFeatureSelector:
             top_indices = np.argsort(correlations)[-n_select:]
             selected_features = [feature_names[i] for i in top_indices]
             
-        except Exception:
+        except Exception as minimal_e:
+            tprint_warning(f"⚠️ Minimal selection failed: {minimal_e}")
             # Fallback: select first few features
             selected_features = feature_names[:n_select]
         

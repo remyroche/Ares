@@ -13,8 +13,12 @@ from src.utils.logger import system_logger
 # Configure logging
 _LOGGER = system_logger.getChild('MLCommon')
 
-def tprint(message: str, level: str = "INFO") -> None:
-    """Print message with timestamp and level."""
+# Import the proper tprint from utils
+from src.utils.tprint import tprint
+
+# Legacy function for backward compatibility (deprecated)
+def legacy_tprint(message: str, level: str = "INFO") -> None:
+    """Legacy print message with timestamp and level (deprecated - use tprint from src.utils.tprint)."""
     if level.upper() == "ERROR":
         _LOGGER.error(message)
     elif level.upper() == "WARNING":

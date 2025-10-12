@@ -7,64 +7,22 @@ native VectorBT optimization for maximum performance.
 """
 
 import logging
-import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Import VectorBT optimization modules
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
-    warnings.warn("VectorBT optimization modules not available. Using basic VectorBT functions.")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-# Import utility functions
-try:
-    from src.utils.tprint import tprint
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
+# Import common utilities
+from ..utils import (
+    TPRINT_AVAILABLE, tprint,
+    VECTORBT_AVAILABLE, vbt, rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply,
+    scale, rank, zscore, winsorize, clip, quantile,
+    VECTORBT_OPTIMIZER_AVAILABLE, VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+    UnifiedVectorizationManager, get_unified_vectorization_manager,
+    CUPY_AVAILABLE, cp,
+    MATH_VALIDATION_AVAILABLE, safe_divide, check_for_inf_nan, validate_numeric_array, is_valid_number
+)
 
 # Check if VectorBT scaler is available
 try:
@@ -74,17 +32,6 @@ except ImportError:
     VECTORBT_SCALER_AVAILABLE = False
     VectorBTScaler = None
     VectorBTBatchScaler = None
-    
-try:
-    from src.utils.math_validation import (
-        safe_divide,
-        check_for_inf_nan,
-        validate_numeric_array,
-        is_valid_number
-    )
-    MATH_VALIDATION_AVAILABLE = True
-except ImportError:
-    MATH_VALIDATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +97,8 @@ class BaseScaler(ABC):
     
     def _should_use_vectorbt(self, data: pd.Series) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseScaler] Checking VectorBT usage: use_vectorbt={self.use_vectorbt}, data_size={len(data)}, threshold={self.vectorbt_threshold}", color="cyan")
         return (self.use_vectorbt and 
                 len(data) >= self.vectorbt_threshold and 
                 VECTORBT_AVAILABLE)
@@ -168,7 +117,12 @@ class BaseScaler(ABC):
         Returns:
             Result of rolling operation
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseScaler] Performing VectorBT rolling operation: {operation} with window={window}", color="cyan")
+        
         if not self._should_use_vectorbt(data):
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [BaseScaler] VectorBT not suitable, using pandas fallback", color="yellow")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
         self.performance_stats['total_operations'] += 1
@@ -221,6 +175,9 @@ class BaseScaler(ABC):
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseScaler] Using pandas fallback for rolling operation: {operation} with window={window}", color="yellow")
+        
         if operation == 'mean':
             return data.rolling(window=window).mean()
         elif operation == 'std':
@@ -234,6 +191,8 @@ class BaseScaler(ABC):
         elif operation == 'sum':
             return data.rolling(window=window).sum()
         else:
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [BaseScaler] Unsupported operation: {operation}", color="red")
             raise ValueError(f"Unsupported operation: {operation}")
     
     def _vectorbt_apply_operation(self, data: pd.Series, func, 
@@ -250,7 +209,12 @@ class BaseScaler(ABC):
         Returns:
             Result of rolling apply operation
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseScaler] Performing VectorBT rolling apply operation with window={window}", color="cyan")
+        
         if not self._should_use_vectorbt(data):
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [BaseScaler] VectorBT not suitable for apply, using pandas fallback", color="yellow")
             return data.rolling(window=window).apply(func, **kwargs)
         
         self.performance_stats['total_operations'] += 1
@@ -460,6 +424,9 @@ class BaseScaler(ABC):
         Returns:
             Dictionary containing performance metrics
         """
+        if TPRINT_AVAILABLE:
+            tprint("🔧 [BaseScaler] Getting performance statistics", color="cyan")
+        
         stats = self.performance_stats.copy()
         
         # Add optimizer stats if available
@@ -490,6 +457,9 @@ class BaseScaler(ABC):
     
     def reset_performance_stats(self) -> None:
         """Reset all performance statistics."""
+        if TPRINT_AVAILABLE:
+            tprint("🔧 [BaseScaler] Resetting performance statistics", color="cyan")
+        
         self.performance_stats = {
             'vectorbt_operations': 0,
             'optimizer_operations': 0,
@@ -642,52 +612,77 @@ def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = T
             logger.warning(f"Failed to create VectorBT batch scaler: {e}, using fallback")
     
     # Fallback: create individual scalers for each column with optimization
-    class FallbackBatchScaler:
-        def __init__(self, method: str = 'zscore', use_optimizer: bool = True, 
-                     use_unified_manager: bool = True, **kwargs):
-            self.method = method
-            self.kwargs = kwargs
-            self.use_optimizer = use_optimizer
-            self.use_unified_manager = use_unified_manager
-            self.scalers = {}
-        
-        def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
-            result = data.copy()
-            for col in data.columns:
-                scaler = create_optimized_scaler(self.method, use_optimizer=self.use_optimizer,
-                                               use_unified_manager=self.use_unified_manager, **self.kwargs)
-                result[col] = scaler.fit_transform(data[col])
-                self.scalers[col] = scaler
-            return result
-        
-        def transform(self, data: pd.DataFrame) -> pd.DataFrame:
-            result = data.copy()
-            for col in data.columns:
-                if col in self.scalers:
-                    result[col] = self.scalers[col].transform(data[col])
-                else:
-                    result[col] = data[col]
-            return result
-        
-        def get_performance_stats(self) -> Dict[str, Any]:
-            """Get aggregated performance statistics from all scalers."""
-            stats = {
-                'total_operations': 0,
-                'vectorbt_operations': 0,
-                'optimizer_operations': 0,
-                'unified_manager_operations': 0,
-                'pandas_fallbacks': 0,
-                'memory_optimizations': 0
-            }
-            
-            for scaler in self.scalers.values():
-                if hasattr(scaler, 'get_performance_stats'):
-                    scaler_stats = scaler.get_performance_stats()
-                    for key, value in scaler_stats.items():
-                        if key in stats:
-                            stats[key] += value
-            
-            return stats
-    
-    return FallbackBatchScaler(method, use_optimizer=use_optimizer, 
+    return _FallbackBatchScaler(method, use_optimizer=use_optimizer, 
                               use_unified_manager=use_unified_manager, **kwargs)
+
+
+class _FallbackBatchScaler:
+    """Fallback batch scaler that creates individual scalers for each column."""
+    
+    def __init__(self, method: str = 'zscore', use_optimizer: bool = True, 
+                 use_unified_manager: bool = True, **kwargs):
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [_FallbackBatchScaler] Initializing fallback batch scaler with method={method}", color="cyan")
+        
+        self.method = method
+        self.kwargs = kwargs
+        self.use_optimizer = use_optimizer
+        self.use_unified_manager = use_unified_manager
+        self.scalers = {}
+    
+    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [_FallbackBatchScaler] Starting fit_transform on {data.shape[0]}x{data.shape[1]} data", color="cyan")
+        
+        result = data.copy()
+        for col in data.columns:
+            scaler = create_optimized_scaler(self.method, use_optimizer=self.use_optimizer,
+                                           use_unified_manager=self.use_unified_manager, **self.kwargs)
+            result[col] = scaler.fit_transform(data[col])
+            self.scalers[col] = scaler
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"✅ [_FallbackBatchScaler] Fit_transform completed for {len(self.scalers)} columns", color="green")
+        
+        return result
+    
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [_FallbackBatchScaler] Starting transform on {data.shape[0]}x{data.shape[1]} data", color="cyan")
+        
+        result = data.copy()
+        for col in data.columns:
+            if col in self.scalers:
+                result[col] = self.scalers[col].transform(data[col])
+            else:
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [_FallbackBatchScaler] No scaler found for column '{col}', keeping original", color="yellow")
+                result[col] = data[col]
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"✅ [_FallbackBatchScaler] Transform completed", color="green")
+        
+        return result
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get aggregated performance statistics from all scalers."""
+        if TPRINT_AVAILABLE:
+            tprint("🔧 [_FallbackBatchScaler] Getting aggregated performance statistics", color="cyan")
+        
+        stats = {
+            'total_operations': 0,
+            'vectorbt_operations': 0,
+            'optimizer_operations': 0,
+            'unified_manager_operations': 0,
+            'pandas_fallbacks': 0,
+            'memory_optimizations': 0
+        }
+        
+        for scaler in self.scalers.values():
+            if hasattr(scaler, 'get_performance_stats'):
+                scaler_stats = scaler.get_performance_stats()
+                for key, value in scaler_stats.items():
+                    if key in stats:
+                        stats[key] += value
+        
+        return stats

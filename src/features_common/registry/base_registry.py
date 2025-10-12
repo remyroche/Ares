@@ -9,6 +9,9 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 import logging
 
+# Import common utilities
+from ..utils import TPRINT_AVAILABLE, tprint
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +29,8 @@ class BaseFeatureRegistry(ABC):
     
     def __init__(self):
         """Initialize the registry."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseFeatureRegistry] Initializing {self.__class__.__name__}", color="cyan")
         self.logger = logger.getChild(self.__class__.__name__)
     
     @abstractmethod
@@ -83,6 +88,8 @@ class BaseFeatureRegistry(ABC):
         Returns:
             Number of features in registry
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseFeatureRegistry] Getting registry length", color="cyan")
         return len(self.list_names())
     
     def __contains__(self, name: str) -> bool:
@@ -95,6 +102,8 @@ class BaseFeatureRegistry(ABC):
         Returns:
             True if feature exists, False otherwise
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseFeatureRegistry] Checking if feature '{name}' exists", color="cyan")
         return self.get_by_name(name) is not None
     
     def validate(self) -> bool:
@@ -104,10 +113,18 @@ class BaseFeatureRegistry(ABC):
         Returns:
             True if valid, False otherwise
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseFeatureRegistry] Validating registry integrity", color="cyan")
+        
         try:
             # Basic validation: check if we can list names
             names = self.list_names()
-            return isinstance(names, list)
+            is_valid = isinstance(names, list)
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [BaseFeatureRegistry] Registry validation {'passed' if is_valid else 'failed'}", color="green" if is_valid else "red")
+            return is_valid
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [BaseFeatureRegistry] Registry validation failed: {e}", color="red")
             self.logger.error(f"Registry validation failed: {e}")
             return False

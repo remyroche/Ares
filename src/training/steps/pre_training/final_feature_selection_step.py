@@ -41,6 +41,20 @@ from src.utils.tprint import (
     tprint_success,
     tprint_warning,
 )
+
+# Import VectorBT optimization utilities
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    from src.feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+    tprint("✅ VectorBT optimization utilities available for final feature selection")
+except ImportError as e:
+    VECTORBT_UTILS_AVAILABLE = False
+    tprint(f"⚠️ VectorBT optimization utilities not available: {e}")
 from src.training.config.data_locator import DataLocator
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
@@ -206,12 +220,50 @@ class FinalFeatureSelectionStep:
             priority_categories=profile['priority_categories']
         )
 
+        # Initialize VectorBT optimization tools if available
+        if VECTORBT_UTILS_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=False,  # Conservative for feature selection
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000
+                )
+                
+                # Initialize unified vectorization manager
+                vectorization_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000,
+                    enable_monitoring=True,
+                    batch_size=10000,
+                    enable_batch_processing=True
+                )
+                self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+                
+                tprint("✅ VectorBT optimization tools initialized for final feature selection")
+                self.vectorbt_enabled = True
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimization initialization failed: {e}")
+                self.vectorbt_optimizer = None
+                self.vectorization_manager = None
+                self.vectorbt_enabled = False
+        else:
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
+            self.vectorbt_enabled = False
+            tprint("⚠️ VectorBT optimization disabled or not available")
+
         self.logger.info("🚀 FinalFeatureSelectionStep initialized")
         self.logger.info(f"🎯 Model Type: {model_type}")
         self.logger.info(f"📊 Target Features: {profile['target_features']} (range: {profile['min_features']}-{profile['max_features']})")
         tprint("✅ FinalFeatureSelectionStep initialization complete")
         tprint(f"   🎯 Model Type: {model_type}")
         tprint(f"   📊 Feature targets: {profile['stage_targets']}")
+        tprint(f"   ⚡ VectorBT optimization: {'Enabled' if self.vectorbt_enabled else 'Disabled'}")
 
     @staticmethod
     def _standardize_feature_frame(data: pd.DataFrame) -> pd.DataFrame:
@@ -274,9 +326,13 @@ class FinalFeatureSelectionStep:
             else:
                 tprint("⚠️ No target data found - will perform unsupervised feature selection")
             
-            # Prepare data for feature selection
-            tprint("🔄 Preparing data for feature selection...")
-            X, y = self._prepare_data(feature_data, target_data)
+            # Prepare data for feature selection with VectorBT optimization
+            if self.vectorbt_enabled:
+                tprint("🔄 Preparing data for feature selection with VectorBT optimization...")
+                X, y = self._vectorbt_optimized_data_preparation(feature_data, target_data)
+            else:
+                tprint("🔄 Preparing data for feature selection...")
+                X, y = self._prepare_data(feature_data, target_data)
             tprint(f"✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
             
             # Run feature selection
@@ -296,9 +352,25 @@ class FinalFeatureSelectionStep:
             tprint(f"   🎯 Multi-horizon profit labels: {'✅ Used' if target_data is not None else '❌ Not found'}")
             tprint(f"   ⚙️ Feature lookback optimization: {'✅ Integrated' if 'lookback_optimized' in str(selection_result).lower() else '❌ Not applied'}")
             tprint(f"   🔧 PID-based features: {'✅ Used' if len(feature_data.columns) > 50 else '❌ Insufficient features'}")
-            tprint(f"   ⚡ Vectorization: ✅ Enabled")
+            tprint(f"   ⚡ VectorBT optimization: {'✅ Enabled' if self.vectorbt_enabled else '❌ Disabled'}")
             tprint(f"   💾 Caching: ✅ Enabled")
             tprint(f"   📊 tprint logging: ✅ Comprehensive")
+            
+            # Log VectorBT performance statistics if available
+            if self.vectorbt_enabled and self.vectorization_manager:
+                try:
+                    stats = self.vectorization_manager.get_performance_stats()
+                    tprint("📊 VECTORBT PERFORMANCE STATISTICS:")
+                    tprint(f"   🔢 Total operations: {stats.get('total_operations', 0)}")
+                    tprint(f"   ⚡ VectorBT operations: {stats.get('vectorbt_operations', 0)}")
+                    tprint(f"   🖥️ GPU operations: {stats.get('gpu_operations', 0)}")
+                    tprint(f"   📦 Batch operations: {stats.get('batch_operations', 0)}")
+                    tprint(f"   🧠 Memory optimizations: {stats.get('memory_optimizations', 0)}")
+                    tprint(f"   ⏱️ Average operation time: {stats.get('average_operation_time', 0):.4f}s")
+                    tprint(f"   📈 VectorBT usage rate: {stats.get('vectorbt_usage_rate', 0):.2%}")
+                    tprint(f"   💾 Cache hit rate: {stats.get('cache_hit_rate', 0):.2%}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Could not retrieve VectorBT performance stats: {e}")
 
             tprint("✅ Final feature selection completed successfully")
             return True
@@ -747,6 +819,74 @@ class FinalFeatureSelectionStep:
         
         tprint(f"✅ Data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
         return X, y
+
+    def _vectorbt_optimized_data_preparation(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
+        """Prepare data using VectorBT optimization for enhanced performance."""
+        tprint("🔄 Preparing data with VectorBT optimization...")
+        tprint(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
+        
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            # Fallback to standard preparation
+            return self._prepare_data(feature_data, target_data)
+        
+        try:
+            # Clean feature data
+            X = feature_data.copy()
+            
+            # Remove non-numeric columns
+            numeric_columns = X.select_dtypes(include=[np.number]).columns
+            non_numeric_count = len(X.columns) - len(numeric_columns)
+            if non_numeric_count > 0:
+                tprint(f"   🗑️ Removing {non_numeric_count} non-numeric columns")
+            X = X[numeric_columns]
+            
+            # Use VectorBT for optimized data processing
+            # Handle missing values with VectorBT scaling
+            missing_count = X.isnull().sum().sum()
+            if missing_count > 0:
+                tprint(f"   🔧 Handling {missing_count} missing values using VectorBT optimization")
+                # Use VectorBT scaling which handles NaN values efficiently
+                X_scaled = self.vectorization_manager.scale_data(X, method='zscore')
+                # Fill remaining NaN values
+                X = X_scaled.fillna(X_scaled.median())
+            else:
+                tprint("   ✅ No missing values found")
+            
+            # Remove infinite values using VectorBT
+            inf_count = np.isinf(X.values).sum()
+            if inf_count > 0:
+                tprint(f"   🔧 Handling {inf_count} infinite values using VectorBT")
+                X = X.replace([np.inf, -np.inf], np.nan)
+                X = X.fillna(X.median())
+            else:
+                tprint("   ✅ No infinite values found")
+            
+            # Optimize DataFrame for VectorBT processing
+            X_optimized = self.vectorization_manager.optimize_dataframe(X)
+            
+            tprint(f"   ✅ VectorBT-optimized data: {len(X_optimized)} samples, {len(X_optimized.columns)} features")
+            
+            # Prepare target data if available
+            y = None
+            if target_data is not None:
+                tprint(f"   🎯 Processing target data: {target_data.shape[0]} samples")
+                # Align target data with feature data
+                common_indices = X_optimized.index.intersection(target_data.index)
+                if len(common_indices) > 0:
+                    X_optimized = X_optimized.loc[common_indices]
+                    y = target_data.loc[common_indices]
+                    tprint(f"   ✅ Aligned target data: {len(y)} samples")
+                else:
+                    tprint("   ⚠️ No common indices between features and target")
+            else:
+                tprint("   ℹ️ No target data - will perform unsupervised feature selection")
+            
+            tprint(f"✅ VectorBT-optimized data preparation completed: {X_optimized.shape[0]} samples, {X_optimized.shape[1]} features")
+            return X_optimized, y
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT data preparation failed: {e}, using fallback")
+            return self._prepare_data(feature_data, target_data)
     
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:

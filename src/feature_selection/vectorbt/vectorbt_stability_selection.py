@@ -180,6 +180,7 @@ class VectorBTStabilitySelection:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT stability selection with {X.shape[1]} features, bootstrap: {n_bootstrap}, threshold: {threshold}")
         n_bootstrap = n_bootstrap or self.config.n_bootstrap
         threshold = threshold or self.config.stability_threshold
         

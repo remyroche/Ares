@@ -179,6 +179,7 @@ class VectorBTRFESelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT RFE feature selection with {X.shape[1]} features, target: {k}, model: {model_type}")
         step = step or self.config.rfe_step
         
         def _select_features():
@@ -295,6 +296,7 @@ class VectorBTRFESelector:
         Returns:
             Dictionary with selection results
         """
+        tprint(f"🚀 Starting VectorBT parallel RFE feature selection with {X.shape[1]} features, target: {k}, model: {model_type}")
         step = step or self.config.rfe_step
         
         def _select_features_parallel():

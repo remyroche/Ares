@@ -7,6 +7,7 @@ interface, ensuring they can work with the new unified feature generation system
 
 import logging
 import time
+import warnings
 from typing import Any, Dict, List, Optional, Union
 
 # Conditional imports to handle missing dependencies gracefully

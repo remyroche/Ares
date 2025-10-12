@@ -486,17 +486,15 @@ class ComprehensiveTradeMonitor:
             tprint_warning(f"⚠️ Failed to extract market context: {e}")
     
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> float:
-        """Calculate RSI indicator."""
+        """Calculate RSI indicator using centralized calculator."""
         try:
             if len(prices) < period + 1:
                 return 50.0
             
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+            # Import centralized RSI calculator
+            from src.feature_generation.indicators import RSICalculator
             
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
+            rsi = RSICalculator.calculate(prices, period)
             return float(rsi.iloc[-1])
             
         except Exception:

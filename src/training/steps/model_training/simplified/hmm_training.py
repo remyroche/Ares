@@ -389,26 +389,21 @@ class HMMTrainingPipeline:
 
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
+        """Calculate RSI indicator using centralized calculator."""
         try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except (ValueError, ZeroDivisionError, IndexError) as e:
+            from src.feature_generation.indicators import RSICalculator
+            return RSICalculator.calculate(prices, period)
+        except Exception as e:
             self.logger.warning(f"RSI calculation failed: {e}")
             return pd.Series([50] * len(prices), index=prices.index)
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
-        """Calculate MACD indicator."""
+        """Calculate MACD indicator using centralized calculator."""
         try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except (ValueError, IndexError, TypeError) as e:
+            from src.feature_generation.indicators import MACDCalculator
+            macd_line, _, _ = MACDCalculator.calculate(prices, fast, slow, 9)
+            return macd_line
+        except Exception as e:
             self.logger.warning(f"MACD calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 

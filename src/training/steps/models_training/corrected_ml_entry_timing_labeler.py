@@ -853,30 +853,19 @@ class CorrectedMLEntryTimingLabeler:
         return metrics
     
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-        rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        return rsi
+        """Calculate RSI indicator using centralized calculator."""
+        from src.feature_generation.indicators import RSICalculator
+        return RSICalculator.calculate(prices, window)
     
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate MACD indicator."""
-        ema_fast = prices.ewm(span=fast).mean()
-        ema_slow = prices.ewm(span=slow).mean()
-        macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
-        histogram = macd_line - signal_line
-        return macd_line, signal_line, histogram
+        """Calculate MACD indicator using centralized calculator."""
+        from src.feature_generation.indicators import MACDCalculator
+        return MACDCalculator.calculate(prices, fast, slow, signal)
     
     def _calculate_bollinger_bands(self, prices: pd.Series, window: int = 20, num_std: float = 2) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Calculate Bollinger Bands."""
-        rolling_mean = prices.rolling(window).mean()
-        rolling_std = prices.rolling(window).std()
-        upper_band = rolling_mean + (rolling_std * num_std)
-        lower_band = rolling_mean - (rolling_std * num_std)
-        return upper_band, rolling_mean, lower_band
+        """Calculate Bollinger Bands using centralized calculator."""
+        from src.feature_generation.indicators import BollingerBandsCalculator
+        return BollingerBandsCalculator.calculate(prices, window, num_std)
     
     def save_models(self, filepath: str) -> None:
         """Save trained models and scalers."""

@@ -13,6 +13,7 @@ This module implements comprehensive feature engineering with:
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, List, Optional, Union, Any, Tuple
 import logging
 import time
@@ -20,7 +21,6 @@ from pathlib import Path
 from contextlib import nullcontext
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-import warnings
 
 # Define MathValidationError class
 class MathValidationError(Exception):
@@ -460,14 +460,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                gc.collect()
-                self.logger.info(f"   Memory cleanup after {chunks_processed} chunks")
-        
-        # Combine all chunks
-        combined_indicators = pd.concat(all_indicators, axis=0)
-        
-        self.logger.info(f"✅ Chunked processing completed: {chunks_processed} chunks, {combined_indicators.shape[1]} indicators")
-        return combined_indicators
 
     def _extract_rsi_batch(self, data: pd.DataFrame, periods: List[int]) -> Dict[str, np.ndarray]:
         """Extract RSI indicators for multiple periods in batch."""

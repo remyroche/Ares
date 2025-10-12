@@ -1522,11 +1522,6 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
 
         volume = data['volume']
         
-        # Use VectorBT for volume trend strength calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
-            try:
-                short_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.short_period)
-                long_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.long_period)
         """Generate Volume Trend Strength using VectorBT."""
         volume = data['volume']
         

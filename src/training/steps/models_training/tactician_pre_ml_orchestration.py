@@ -890,6 +890,16 @@ except ImportError as e:
     print(f"⚠️ WARNING: VectorBT Rolling Optimizer not available: {e}")
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
 
+# Import Unified Vectorization Manager for matrix operations
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -962,7 +972,11 @@ except ImportError:
             # Volatility features
             returns = lookback_data['close'].pct_change().dropna()
             features['volatility_5'] = returns.std() if len(returns) > 0 else 0
-            features['volatility_10'] = returns.rolling(5).std().iloc[-1] if len(returns) >= 5 else 0
+            # Use VectorBT-optimized rolling operation
+            if len(returns) >= 5:
+                features['volatility_10'] = self._optimized_rolling_operation(returns, 'std', 5).iloc[-1]
+            else:
+                features['volatility_10'] = 0
 
             # Volume features
             features['volume_ratio'] = current_bar['volume'] / lookback_data['volume'].mean() if lookback_data['volume'].mean() > 0 else 1
@@ -1130,6 +1144,14 @@ class TacticianPreMLOrchestrator:
             else:
                 self.vectorbt_optimizer = None
                 tprint_warning("⚠️ VectorBT Rolling Optimizer not available, using fallback methods")
+
+            # Initialize Unified Vectorization Manager for matrix operations
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                tprint_success("✅ Unified Vectorization Manager initialized")
+            else:
+                self.vectorization_manager = None
+                tprint_warning("⚠️ Unified Vectorization Manager not available")
 
             tprint_success(f"✅ TacticianPreMLOrchestrator initialized (timeframe: {self.config.timeframe})")
             tprint_info(f"🎯 Analyst signal threshold: {self.config.analyst_confidence_threshold:.2%}")
@@ -2082,3 +2104,77 @@ async def execute_tactician_pre_ml_orchestration(
                                  window: int, **kwargs) -> pd.Series:
         """Legacy method - now uses optimized rolling operations."""
         return self._optimized_rolling_operation(data, 'apply', window, func=func, **kwargs)
+
+    def _optimize_matrix_operations(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
+        """
+        Optimize matrix operations using Unified Vectorization Manager.
+        
+        Args:
+            X: Input matrix
+            operation_type: Type of matrix operation
+            **kwargs: Additional parameters
+            
+        Returns:
+            Optimized operation result
+        """
+        if self.vectorization_manager is not None:
+            try:
+                tprint_debug(f"🔄 Using Unified Vectorization Manager for {operation_type}")
+                
+                # Create operation configuration
+                config = OperationConfig(
+                    operation_type=OperationType.MATRIX_MULTIPLICATION if operation_type == 'matrix_mult' else OperationType.STATISTICAL_COMPUTATION,
+                    data_size=len(X),
+                    data_dimensions=X.shape,
+                    memory_budget_mb=self.config.memory_limit_gb * 1024
+                )
+                
+                # Prepare data for optimization
+                data = {'matrix': X, **kwargs}
+                
+                # Use VectorBT optimization
+                result = self.vectorization_manager.optimize_operation(
+                    config.operation_type,
+                    data,
+                    config
+                )
+                
+                tprint_success(f"✅ Matrix operation {operation_type} optimized (performance gain: {result.performance_gain:.2f}x)")
+                return result.result
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified Vectorization Manager failed for {operation_type}: {e}, using fallback")
+                return self._fallback_matrix_operation(X, operation_type, **kwargs)
+        else:
+            tprint_warning(f"⚠️ Unified Vectorization Manager not available, using fallback for {operation_type}")
+            return self._fallback_matrix_operation(X, operation_type, **kwargs)
+
+    def _fallback_matrix_operation(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
+        """
+        Fallback matrix operation using standard numpy/pandas.
+        
+        Args:
+            X: Input matrix
+            operation_type: Type of matrix operation
+            **kwargs: Additional parameters
+            
+        Returns:
+            Operation result
+        """
+        try:
+            if operation_type == 'matrix_mult':
+                other = kwargs.get('other')
+                return np.dot(X, other) if other is not None else X
+            elif operation_type == 'statistical':
+                return {
+                    'mean': np.mean(X, axis=0),
+                    'std': np.std(X, axis=0),
+                    'min': np.min(X, axis=0),
+                    'max': np.max(X, axis=0)
+                }
+            else:
+                raise ValueError(f"Unsupported matrix operation: {operation_type}")
+                
+        except Exception as e:
+            tprint_error(f"❌ Fallback matrix operation failed for {operation_type}: {e}")
+            raise

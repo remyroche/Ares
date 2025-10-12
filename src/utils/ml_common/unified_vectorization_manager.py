@@ -90,12 +90,15 @@ class UnifiedVectorizationManager:
 
     def __init__(self):
         """Initialize the unified vectorization manager."""
+        tprint("🚀 Initializing Unified Vectorization Manager...")
         self.logger = logging.getLogger(__name__)
 
         # Initialize optimization components
+        tprint("🔄 Initializing optimization components...")
         self._initialize_components()
 
         # Performance tracking
+        tprint("🔄 Setting up performance tracking...")
         self.performance_history = []
         self.optimization_stats = {
             'total_operations': 0,
@@ -104,98 +107,130 @@ class UnifiedVectorizationManager:
             'total_computation_time': 0.0
         }
 
+        tprint("✅ Unified Vectorization Manager initialized")
         self.logger.info("✅ Unified Vectorization Manager initialized")
 
     def _initialize_components(self):
         """Initialize all optimization components."""
+        tprint("🔄 Initializing optimization components...")
         # Import and initialize optimization modules
         try:
             # Matrix operations
+            tprint("🔄 Loading matrix operations...")
             from ..matrix_operations import get_unified_matrix_operations
             self.matrix_ops = get_unified_matrix_operations()
             self.matrix_ops_available = True
-        except Exception:
+            tprint("✅ Matrix operations loaded")
+        except Exception as e:
+            tprint(f"⚠️ Matrix operations not available: {e}")
             self.matrix_ops = None
             self.matrix_ops_available = False
 
         try:
             # Vectorized backtesting
+            tprint("🔄 Loading vectorized backtesting...")
             from .vectorized_backtesting import VectorizedBacktestingEngine, BacktestMode
             self.backtesting_engine = VectorizedBacktestingEngine()
             self.backtesting_available = True
-        except Exception:
+            tprint("✅ Vectorized backtesting loaded")
+        except Exception as e:
+            tprint(f"⚠️ Vectorized backtesting not available: {e}")
             self.backtesting_engine = None
             self.backtesting_available = False
 
         # VectorBT components
         try:
             # VectorBT backtesting engine
+            tprint("🔄 Loading VectorBT backtesting engine...")
             from .vectorbt_backtesting_engine import VectorBTBacktestingEngine, BacktestMode as VectorBTBacktestMode
             self.vectorbt_backtesting_engine = VectorBTBacktestingEngine()
             self.vectorbt_backtesting_available = True
-        except Exception:
+            tprint("✅ VectorBT backtesting engine loaded")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT backtesting engine not available: {e}")
             self.vectorbt_backtesting_engine = None
             self.vectorbt_backtesting_available = False
 
         try:
             # VectorBT financial metrics
+            tprint("🔄 Loading VectorBT financial metrics...")
             from .vectorbt_financial_metrics import VectorBTFinancialMetrics
             self.vectorbt_metrics = VectorBTFinancialMetrics()
             self.vectorbt_metrics_available = True
-        except Exception:
+            tprint("✅ VectorBT financial metrics loaded")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT financial metrics not available: {e}")
             self.vectorbt_metrics = None
             self.vectorbt_metrics_available = False
 
         try:
             # VectorBT portfolio optimization
+            tprint("🔄 Loading VectorBT portfolio optimization...")
             from .vectorbt_portfolio_optimization import VectorBTPortfolioOptimizer
             self.vectorbt_portfolio_optimizer = VectorBTPortfolioOptimizer()
             self.vectorbt_portfolio_optimization_available = True
-        except Exception:
+            tprint("✅ VectorBT portfolio optimization loaded")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT portfolio optimization not available: {e}")
             self.vectorbt_portfolio_optimizer = None
             self.vectorbt_portfolio_optimization_available = False
 
         try:
             # Matrix cross-validation
+            tprint("🔄 Loading matrix cross-validation...")
             from .matrix_cross_validation import MatrixCrossValidator
             self.cv_engine = MatrixCrossValidator()
             self.cv_available = True
-        except Exception:
+            tprint("✅ Matrix cross-validation loaded")
+        except Exception as e:
+            tprint(f"⚠️ Matrix cross-validation not available: {e}")
             self.cv_engine = None
             self.cv_available = False
 
         try:
             # Feature importance analyzer
+            tprint("🔄 Loading feature importance analyzer...")
             from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
             self.feature_analyzer = FeatureImportanceAnalyzer()
             self.feature_selection_available = True
-        except Exception:
+            tprint("✅ Feature importance analyzer loaded")
+        except Exception as e:
+            tprint(f"⚠️ Feature importance analyzer not available: {e}")
             self.feature_analyzer = None
             self.feature_selection_available = False
 
         try:
             # Technical indicators
+            tprint("🔄 Loading technical indicators...")
             from ..utils.feature_generators import FeatureGenerators
             self.technical_indicators = FeatureGenerators()
             self.technical_indicators_available = True
-        except Exception:
+            tprint("✅ Technical indicators loaded")
+        except Exception as e:
+            tprint(f"⚠️ Technical indicators not available: {e}")
             self.technical_indicators = None
             self.technical_indicators_available = False
 
         try:
             # HMM operations
+            tprint("🔄 Loading HMM operations...")
             from ..hmm_composite_manager import EnhancedHMMCompositeManager
             self.hmm_manager = EnhancedHMMCompositeManager()
             self.hmm_available = True
-        except Exception:
+            tprint("✅ HMM operations loaded")
+        except Exception as e:
+            tprint(f"⚠️ HMM operations not available: {e}")
             self.hmm_manager = None
             self.hmm_available = False
 
         # Hardware detection
+        tprint("🔄 Detecting hardware capabilities...")
         self._detect_hardware_capabilities()
+        tprint("✅ Component initialization completed")
 
     def _detect_hardware_capabilities(self):
         """Detect available hardware capabilities."""
+        tprint("🔄 Detecting hardware capabilities...")
         self.hardware_caps = {
             'cpu_cores': 1,
             'gpu_available': False,
@@ -205,24 +240,36 @@ class UnifiedVectorizationManager:
         }
 
         # Detect CPU cores
+        tprint("🔄 Detecting CPU cores...")
         import multiprocessing
         self.hardware_caps['cpu_cores'] = multiprocessing.cpu_count()
+        tprint(f"📊 CPU cores detected: {self.hardware_caps['cpu_cores']}")
 
         # Detect GPU availability
+        tprint("🔄 Detecting GPU availability...")
         if TORCH_AVAILABLE:
             if torch.cuda.is_available():
                 self.hardware_caps['gpu_available'] = True
                 self.hardware_caps['gpu_type'] = 'cuda'
                 self.hardware_caps['gpu_memory_gb'] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                tprint(f"📊 CUDA GPU detected with {self.hardware_caps['gpu_memory_gb']:.1f}GB memory")
             elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
                 self.hardware_caps['gpu_available'] = True
                 self.hardware_caps['gpu_type'] = 'mps'
                 self.hardware_caps['mps_available'] = True
+                tprint("📊 MPS GPU detected")
+            else:
+                tprint("📊 No GPU detected")
+        else:
+            tprint("⚠️ PyTorch not available for GPU detection")
 
         # Detect memory
+        tprint("🔄 Detecting system memory...")
         import psutil
         self.hardware_caps['memory_gb'] = psutil.virtual_memory().total / (1024**3)
+        tprint(f"📊 System memory: {self.hardware_caps['memory_gb']:.1f}GB")
 
+        tprint(f"🖥️ Hardware capabilities: {self.hardware_caps}")
         self.logger.info(f"🖥️ Hardware detected: {self.hardware_caps}")
 
     def optimize_operation(self, operation_type: OperationType,
@@ -241,24 +288,35 @@ class UnifiedVectorizationManager:
         Returns:
             OptimizationResult with optimized execution
         """
+        tprint(f"🚀 Starting operation optimization for {operation_type.value}...")
         start_time = time.time()
 
         # Create default config if not provided
         if config is None:
+            tprint("🔄 Creating default configuration...")
             config = self._create_default_config(operation_type, data)
+            tprint(f"📊 Default config created - data_size: {config.data_size}, dimensions: {config.data_dimensions}")
 
         # Select optimal strategy
+        tprint("🔄 Selecting optimal strategy...")
         strategy = self._select_optimal_strategy(operation_type, config)
+        tprint(f"📊 Selected strategy: {strategy.value}")
 
         # Execute operation with selected strategy
+        tprint("🔄 Executing operation with selected strategy...")
         result, metadata = self._execute_with_strategy(strategy, operation_type, data, config, **kwargs)
+        tprint("✅ Operation execution completed")
 
         # Calculate performance metrics
         computation_time = time.time() - start_time
+        tprint(f"⏱️ Computation time: {computation_time:.3f}s")
         memory_used = self._estimate_memory_usage(data, operation_type)
+        tprint(f"🧠 Memory used: {memory_used:.1f}MB")
         performance_gain = self._calculate_performance_gain(operation_type, computation_time, metadata)
+        tprint(f"📈 Performance gain: {performance_gain:.2f}x")
 
         # Update statistics
+        tprint("🔄 Updating performance statistics...")
         self._update_performance_stats(strategy, computation_time, performance_gain)
 
         optimization_result = OptimizationResult(
@@ -270,6 +328,7 @@ class UnifiedVectorizationManager:
             metadata=metadata
         )
 
+        tprint(f"✅ Operation {operation_type.value} completed with {strategy.value} strategy")
         self.logger.info(f"✅ Operation {operation_type.value} completed with {strategy.value} strategy")
         return optimization_result
 
@@ -713,7 +772,14 @@ class UnifiedVectorizationManager:
     def _combine_chunk_results(self, chunk_results: List[Any], operation_type: OperationType) -> Any:
         """Combine results from multiple chunks."""
         if not chunk_results:
-            return None
+            tprint("⚠️ No chunk results to combine, returning empty result")
+            # Return appropriate empty result based on operation type
+            if operation_type == OperationType.FEATURE_ENGINEERING:
+                return pd.DataFrame()
+            elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING]:
+                return {}
+            else:
+                return []
 
         if operation_type == OperationType.FEATURE_ENGINEERING:
             # Concatenate DataFrames
@@ -1027,8 +1093,6 @@ if __name__ == "__main__":
     )
 
     print("✅ Matrix multiplication test completed")
-    print(".3f")
-    print(".1f")
     # Print optimization stats
     stats = manager.get_optimization_stats()
     print("\n📊 Optimization Statistics:")

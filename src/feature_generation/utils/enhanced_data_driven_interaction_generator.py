@@ -21,6 +21,13 @@ import logging
 import time
 import warnings
 
+# Import tprint for comprehensive logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # Import the data-driven feature selector
 try:
     from .data_driven_feature_selector import (
@@ -213,67 +220,126 @@ class EnhancedDataDrivenInteractionGenerator:
         Returns:
             EnhancedInteractionResult with selected features and generated interactions
         """
-        start_time = time.time()
-        logger.info(f"🚀 Starting enhanced data-driven interaction generation")
-        logger.info(f"📊 Input data shape: {data.shape}")
+        tprint("🚀 Starting enhanced data-driven interaction generation")
+        tprint(f"📊 Input data shape: {data.shape}")
         
-        # Step 1: Select features using data-driven approach
-        feature_selection_start = time.time()
-        selected_features_result = self._select_features(data, targets, available_categories)
-        feature_selection_time = time.time() - feature_selection_start
-        
-        logger.info(f"✅ Feature selection completed in {feature_selection_time:.2f}s")
-        logger.info(f"📊 Selected {len(selected_features_result.selected_features)} features")
-        logger.info(f"📊 Categories used: {list(selected_features_result.category_distribution.keys())}")
-        
-        # Step 2: Generate features for selected feature set
-        selected_features_df = self._generate_selected_features(data, selected_features_result)
-        logger.info(f"📊 Generated feature DataFrame: {selected_features_df.shape}")
-        
-        # Step 3: Generate interactions between selected features
-        interaction_generation_start = time.time()
-        interactions = self._generate_interactions(selected_features_df, targets)
-        interaction_generation_time = time.time() - interaction_generation_start
-        
-        logger.info(f"✅ Interaction generation completed in {interaction_generation_time:.2f}s")
-        logger.info(f"📊 Generated {len(interactions)} interactions")
-        
-        # Step 4: Calculate overall metrics
-        total_processing_time = time.time() - start_time
-        
-        # Update performance stats
-        self.performance_stats.update({
-            'total_processing_time': total_processing_time,
-            'feature_selection_time': feature_selection_time,
-            'interaction_generation_time': interaction_generation_time,
-            'total_features_analyzed': selected_features_result.total_features_analyzed,
-            'selected_features_count': len(selected_features_result.selected_features),
-            'generated_interactions_count': len(interactions),
-            'feature_categories_used': len(selected_features_result.category_distribution),
-            'interaction_types_used': len(set(i.interaction_type for i in interactions))
-        })
-        
-        # Create enhanced result
-        result = EnhancedInteractionResult(
-            selected_features=selected_features_result.selected_features,
-            feature_selection_metrics=selected_features_result.quality_metrics,
-            interactions=interactions,
-            interaction_metrics=self._calculate_interaction_metrics(interactions),
-            total_processing_time=total_processing_time,
-            total_features_analyzed=selected_features_result.total_features_analyzed,
-            final_feature_count=len(selected_features_result.selected_features),
-            final_interaction_count=len(interactions),
+        try:
+            start_time = time.time()
+            
+            # Validate inputs
+            if data is None or data.empty:
+                tprint("❌ ERROR: Input data is None or empty")
+                return self._create_empty_result()
+            
+            if not isinstance(data, pd.DataFrame):
+                tprint("❌ ERROR: Input data must be a pandas DataFrame")
+                return self._create_empty_result()
+            
+            tprint(f"✅ Input validation passed: {len(data.columns)} features, {len(data)} samples")
+            
+            # Step 1: Select features using data-driven approach
+            tprint("🎯 Step 1: Data-driven feature selection...")
+            feature_selection_start = time.time()
+            try:
+                selected_features_result = self._select_features(data, targets, available_categories)
+                feature_selection_time = time.time() - feature_selection_start
+                
+                if selected_features_result.metadata.get('error', False):
+                    tprint("❌ ERROR: Feature selection failed")
+                    return self._create_empty_result()
+                
+                tprint(f"✅ Feature selection completed in {feature_selection_time:.2f}s")
+                tprint(f"📊 Selected {len(selected_features_result.selected_features)} features")
+                tprint(f"📊 Categories used: {list(selected_features_result.category_distribution.keys())}")
+            except Exception as e:
+                tprint(f"❌ ERROR: Feature selection failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 2: Generate features for selected feature set
+            tprint("🔧 Step 2: Generating features for selected feature set...")
+            try:
+                selected_features_df = self._generate_selected_features(data, selected_features_result)
+                tprint(f"✅ Generated feature DataFrame: {selected_features_df.shape}")
+            except Exception as e:
+                tprint(f"❌ ERROR: Feature generation failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 3: Generate interactions between selected features
+            tprint("⚡ Step 3: Generating interactions between selected features...")
+            interaction_generation_start = time.time()
+            try:
+                interactions = self._generate_interactions(selected_features_df, targets)
+                interaction_generation_time = time.time() - interaction_generation_start
+                
+                tprint(f"✅ Interaction generation completed in {interaction_generation_time:.2f}s")
+                tprint(f"📊 Generated {len(interactions)} interactions")
+            except Exception as e:
+                tprint(f"❌ ERROR: Interaction generation failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 4: Calculate overall metrics
+            total_processing_time = time.time() - start_time
+            
+            # Update performance stats
+            self.performance_stats.update({
+                'total_processing_time': total_processing_time,
+                'feature_selection_time': feature_selection_time,
+                'interaction_generation_time': interaction_generation_time,
+                'total_features_analyzed': selected_features_result.total_features_analyzed,
+                'selected_features_count': len(selected_features_result.selected_features),
+                'generated_interactions_count': len(interactions),
+                'feature_categories_used': len(selected_features_result.category_distribution),
+                'interaction_types_used': len(set(i.interaction_type for i in interactions))
+            })
+            
+            # Create enhanced result
+            tprint("📊 Step 4: Creating enhanced result...")
+            try:
+                result = EnhancedInteractionResult(
+                    selected_features=selected_features_result.selected_features,
+                    feature_selection_metrics=selected_features_result.quality_metrics,
+                    interactions=interactions,
+                    interaction_metrics=self._calculate_interaction_metrics(interactions),
+                    total_processing_time=total_processing_time,
+                    total_features_analyzed=selected_features_result.total_features_analyzed,
+                    final_feature_count=len(selected_features_result.selected_features),
+                    final_interaction_count=len(interactions),
+                    config=self.config.__dict__,
+                    metadata={
+                        'feature_selection_result': selected_features_result,
+                        'performance_stats': self.performance_stats.copy()
+                    }
+                )
+                
+                tprint(f"✅ Enhanced interaction generation completed in {total_processing_time:.2f}s")
+                tprint(f"📊 Final results: {result.final_feature_count} features, {result.final_interaction_count} interactions")
+                tprint(f"📊 Performance: {self.performance_stats}")
+                
+                return result
+                
+            except Exception as e:
+                tprint(f"❌ ERROR: Result creation failed: {e}")
+                return self._create_empty_result()
+                
+        except Exception as e:
+            tprint(f"❌ CRITICAL ERROR: Enhanced interaction generation failed: {e}")
+            logger.exception("Critical error in generate_interactions")
+            return self._create_empty_result()
+    
+    def _create_empty_result(self) -> EnhancedInteractionResult:
+        """Create an empty result for error cases."""
+        return EnhancedInteractionResult(
+            selected_features=[],
+            feature_selection_metrics={},
+            interactions=[],
+            interaction_metrics={},
+            total_processing_time=0.0,
+            total_features_analyzed=0,
+            final_feature_count=0,
+            final_interaction_count=0,
             config=self.config.__dict__,
-            metadata={
-                'feature_selection_result': selected_features_result,
-                'performance_stats': self.performance_stats.copy()
-            }
+            metadata={'error': True}
         )
-        
-        logger.info(f"✅ Enhanced interaction generation completed in {total_processing_time:.2f}s")
-        logger.info(f"📊 Final results: {result.final_feature_count} features, {result.final_interaction_count} interactions")
-        
-        return result
     
     def _select_features(self, 
                         data: pd.DataFrame,

@@ -21,6 +21,13 @@ from itertools import combinations
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import tprint for comprehensive logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # Import feature bank and categories
 try:
     from ..core.feature_bank import get_global_feature_bank, FeatureBank
@@ -181,45 +188,102 @@ class DataDrivenFeatureSelector:
         Returns:
             FeatureSelectionResult with selected features and metadata
         """
-        start_time = time.time()
-        logger.info(f"🚀 Starting data-driven feature selection")
-        logger.info(f"📊 Input data shape: {data.shape}")
+        tprint("🚀 Starting data-driven feature selection")
+        tprint(f"📊 Input data shape: {data.shape}")
         
-        # Step 1: Generate all available features
-        all_features = self._generate_all_features(data, available_categories)
-        logger.info(f"📊 Generated {len(all_features.columns)} features from feature bank")
-        
-        # Step 2: Analyze feature characteristics
-        feature_scores = self._analyze_features(all_features, targets)
-        logger.info(f"📊 Analyzed {len(feature_scores)} features")
-        
-        # Step 3: Select features with diversity constraints
-        selected_features = self._select_diverse_features(feature_scores)
-        logger.info(f"📊 Selected {len(selected_features)} features")
-        
-        # Step 4: Calculate quality metrics
-        quality_metrics = self._calculate_quality_metrics(selected_features, all_features, targets)
-        
-        # Step 5: Create result
-        selection_time = time.time() - start_time
-        result = FeatureSelectionResult(
-            selected_features=selected_features,
-            category_distribution=self._calculate_category_distribution(selected_features),
-            aspect_distribution=self._calculate_aspect_distribution(selected_features),
-            total_features_analyzed=len(feature_scores),
-            selection_time=selection_time,
-            quality_metrics=quality_metrics,
-            metadata={
-                'config': self.config.__dict__,
-                'data_shape': data.shape,
-                'targets_provided': targets is not None
-            }
+        try:
+            start_time = time.time()
+            
+            # Validate inputs
+            if data is None or data.empty:
+                tprint("❌ ERROR: Input data is None or empty")
+                return self._create_empty_result()
+            
+            if not isinstance(data, pd.DataFrame):
+                tprint("❌ ERROR: Input data must be a pandas DataFrame")
+                return self._create_empty_result()
+            
+            tprint(f"✅ Input validation passed: {len(data.columns)} features, {len(data)} samples")
+            
+            # Step 1: Generate all available features
+            tprint("🔧 Generating all available features from feature bank...")
+            try:
+                all_features = self._generate_all_features(data, available_categories)
+                tprint(f"✅ Generated {len(all_features.columns)} features from feature bank")
+            except Exception as e:
+                tprint(f"❌ ERROR: Feature generation failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 2: Analyze feature characteristics
+            tprint("🔍 Analyzing feature characteristics...")
+            try:
+                feature_scores = self._analyze_features(all_features, targets)
+                tprint(f"✅ Analyzed {len(feature_scores)} features")
+            except Exception as e:
+                tprint(f"❌ ERROR: Feature analysis failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 3: Select features with diversity constraints
+            tprint("🎯 Selecting features with diversity constraints...")
+            try:
+                selected_features = self._select_diverse_features(feature_scores)
+                tprint(f"✅ Selected {len(selected_features)} features")
+            except Exception as e:
+                tprint(f"❌ ERROR: Feature selection failed: {e}")
+                return self._create_empty_result()
+            
+            # Step 4: Calculate quality metrics
+            tprint("📊 Calculating quality metrics...")
+            try:
+                quality_metrics = self._calculate_quality_metrics(selected_features, all_features, targets)
+                tprint(f"✅ Calculated {len(quality_metrics)} quality metrics")
+            except Exception as e:
+                tprint(f"⚠️ WARNING: Quality metrics calculation failed: {e}, using defaults")
+                quality_metrics = {}
+            
+            # Step 5: Create result
+            selection_time = time.time() - start_time
+            try:
+                result = FeatureSelectionResult(
+                    selected_features=selected_features,
+                    category_distribution=self._calculate_category_distribution(selected_features),
+                    aspect_distribution=self._calculate_aspect_distribution(selected_features),
+                    total_features_analyzed=len(feature_scores),
+                    selection_time=selection_time,
+                    quality_metrics=quality_metrics,
+                    metadata={
+                        'config': self.config.__dict__,
+                        'data_shape': data.shape,
+                        'targets_provided': targets is not None
+                    }
+                )
+                
+                tprint(f"✅ Feature selection completed in {selection_time:.2f}s")
+                tprint(f"📊 Category distribution: {result.category_distribution}")
+                tprint(f"📊 Aspect distribution: {result.aspect_distribution}")
+                
+                return result
+                
+            except Exception as e:
+                tprint(f"❌ ERROR: Result creation failed: {e}")
+                return self._create_empty_result()
+                
+        except Exception as e:
+            tprint(f"❌ CRITICAL ERROR: Feature selection failed: {e}")
+            logger.exception("Critical error in select_features")
+            return self._create_empty_result()
+    
+    def _create_empty_result(self) -> FeatureSelectionResult:
+        """Create an empty result for error cases."""
+        return FeatureSelectionResult(
+            selected_features=[],
+            category_distribution={},
+            aspect_distribution={},
+            total_features_analyzed=0,
+            selection_time=0.0,
+            quality_metrics={},
+            metadata={'error': True}
         )
-        
-        logger.info(f"✅ Feature selection completed in {selection_time:.2f}s")
-        logger.info(f"📊 Category distribution: {result.category_distribution}")
-        
-        return result
     
     def _generate_all_features(self, 
                               data: pd.DataFrame,

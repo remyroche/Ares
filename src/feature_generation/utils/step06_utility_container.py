@@ -375,6 +375,9 @@ def load_data(filepath):
 # M1 utilities - using available hardware optimizations
 try:
     from src.utils.hardware.m1_optimizations import M1MemoryOptimizer, M1DataManager
+except ImportError:
+    M1MemoryOptimizer = None
+    M1DataManager = None
 
 # VectorBT imports for native optimization
 try:

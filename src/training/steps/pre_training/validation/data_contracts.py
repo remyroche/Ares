@@ -23,7 +23,7 @@ try:
 except ImportError as e:
     # Fallback imports if utils are not available
     MATRIX_OPERATIONS_AVAILABLE = False
-    def tprint(*args, **kwargs): pass
+    # tprint will be imported from src.utils.tprint
     def tprint_debug(*args, **kwargs): pass
     def tprint_error(*args, **kwargs): pass
     def tprint_info(*args, **kwargs): pass

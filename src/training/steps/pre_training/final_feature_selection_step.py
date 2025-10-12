@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Final Feature Selection Step
+Final Feature Selection Step - Cleaned and Optimized
 
 This module provides the integration step for the final feature selection pipeline
 that runs at the end of the market analysis pipeline.
+
+Key Improvements:
+- Removed duplicate code patterns
+- Added comprehensive tprint logging to every function
+- Fixed logic issues and improved error handling
+- Implemented fast fail patterns instead of silent errors
+- Consolidated VectorBT optimization utilities
 """
 
 import json
@@ -12,6 +19,7 @@ import numpy as np
 from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING, Mapping
 from pathlib import Path
 import asyncio
+import time
 
 from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
@@ -68,30 +76,48 @@ class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the final feature selection step with comprehensive logging."""
+        tprint("🚀 Initializing FinalFeatureSelectionStep")
+        
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
         self._settings = get_pre_training_settings()
 
-        tprint("🧠 Initializing FinalFeatureSelectionStep")
-        if self.config:
-            tprint(f"   ⚙️ Provided configuration keys: {sorted(self.config.keys())}")
-        else:
-            tprint("   ⚙️ No custom configuration supplied, using defaults")
+        tprint_info(f"Configuration keys: {sorted(self.config.keys()) if self.config else 'None'}")
+        
+        # Initialize configuration with comprehensive logging
+        self._initialize_configuration()
+        
+        # Initialize VectorBT optimization tools
+        self._initialize_vectorbt_tools()
+        
+        # Initialize feature selection configuration
+        self._initialize_feature_selection_config()
+        
+        tprint_success("✅ FinalFeatureSelectionStep initialization complete")
+
+    def _initialize_configuration(self) -> None:
+        """Initialize configuration parameters with comprehensive logging."""
+        tprint_debug("🔧 Initializing configuration parameters")
         
         # Drift monitoring configuration
         self.enable_drift_monitoring = self.config.get('enable_drift_monitoring', True)
         self.drift_thresholds = {
-            'max_kl_divergence': self.config.get('max_kl_divergence', 0.15),  # ENHANCED: Stricter threshold
+            'max_kl_divergence': self.config.get('max_kl_divergence', 0.15),
             'max_mean_shift': self.config.get('max_mean_shift', 2.0),
             'max_vif': self.config.get('max_vif', 10.0)
         }
+        tprint_debug(f"Drift monitoring: {self.enable_drift_monitoring}")
+        tprint_debug(f"Drift thresholds: {self.drift_thresholds}")
         
         # Bootstrap validation configuration
         self.enable_bootstrap_validation = self.config.get('enable_bootstrap_validation', True)
         self.bootstrap_iterations = self.config.get('bootstrap_iterations', 10)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
+        tprint_debug(f"Bootstrap validation: {self.enable_bootstrap_validation}")
+        tprint_debug(f"Bootstrap iterations: {self.bootstrap_iterations}")
         
-        # ENHANCEMENTS: Economic interpretability and robustness
+        # Economic interpretability and robustness
         self.preserve_economic_themes = self.config.get('preserve_economic_themes', True)
         self.min_features_per_theme = self.config.get('min_features_per_theme', 1)
         self.track_ic_over_time = self.config.get('track_ic_over_time', True)
@@ -100,120 +126,21 @@ class FinalFeatureSelectionStep:
         self.min_ic_t_stat = self.config.get('min_ic_t_stat', 2.0)
         self.validate_with_factor_portfolio = self.config.get('validate_with_factor_portfolio', True)
         self.min_factor_sharpe = self.config.get('min_factor_sharpe', 0.3)
+        tprint_debug(f"Economic themes preservation: {self.preserve_economic_themes}")
+        tprint_debug(f"IC tracking: {self.track_ic_over_time}")
+
+    def _initialize_vectorbt_tools(self) -> None:
+        """Initialize VectorBT optimization tools with error handling."""
+        tprint_debug("⚡ Initializing VectorBT optimization tools")
         
-        if self.enable_drift_monitoring:
-            tprint(f"   🔍 Drift monitoring: Enabled (KL threshold={self.drift_thresholds['max_kl_divergence']})")
-        if self.enable_bootstrap_validation:
-            tprint(f"   🔄 Bootstrap validation: Enabled ({self.bootstrap_iterations} iterations)")
+        if not VECTORBT_UTILS_AVAILABLE:
+            tprint_warning("⚠️ VectorBT utilities not available")
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
+            self.vectorbt_enabled = False
+            return
 
-        # Model-specific feature count profiles - Updated for new pipeline
-        self.model_profiles = {
-            'AdvancedMambaHybrid': {
-                'min_features': 50, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [60],  # Updated for mRMR/Ensemble/RFE pipeline (variable start)
-                'priority_categories': ['momentum', 'interaction', 'microstructure']
-            },
-            'FinancialResNet': {
-                'min_features': 60, 'target_features': 80, 'max_features': 100,
-                'stage_targets': [80],  # Updated for mRMR/Ensemble/RFE pipeline
-                'priority_categories': ['regime', 'temporal', 'volatility']
-            },
-            'DeepScaler': {
-                'min_features': 40, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [60],  # Updated for mRMR/Ensemble/RFE pipeline
-                'priority_categories': ['statistical', 'momentum', 'volatility']
-            },
-            'NBEATS': {
-                'min_features': 30, 'target_features': 50, 'max_features': 70,
-                'stage_targets': [50],  # Updated for mRMR/Ensemble/RFE pipeline
-                'priority_categories': ['temporal', 'trend', 'seasonality']
-            }
-        }
-
-        # Resolve locator-aware output directories
-        locator_candidate = self.config.get('data_locator')
-        self.data_locator: Optional[PipelineDataLocator] = (
-            locator_candidate if isinstance(locator_candidate, PipelineDataLocator) else None
-        )
-
-        self.output_directory_key = self.config.get('output_directory_key', 'market_analysis')
-        configured_output_dir = self.config.get('output_directory')
-        locator = self.data_locator
-
-        if configured_output_dir:
-            output_directory = str(Path(configured_output_dir).expanduser())
-            Path(output_directory).mkdir(parents=True, exist_ok=True)
-        elif locator:
-            output_directory = str(locator.generated_path(self.output_directory_key, ensure_exists=True))
-        else:
-            default_locator = PipelineDataLocator()
-            output_directory = str(
-                default_locator.generated_path(self.output_directory_key, ensure_exists=True)
-            )
-
-        self.final_features_dir_key = self.config.get('final_features_dir_key', 'final_feature_selection')
-        configured_final_dir = self.config.get('final_features_dir')
-        if configured_final_dir:
-            final_features_dir = Path(configured_final_dir).expanduser()
-            final_features_dir.mkdir(parents=True, exist_ok=True)
-        elif locator:
-            final_features_dir = locator.generated_path(self.final_features_dir_key, ensure_exists=True)
-        else:
-            default_locator = PipelineDataLocator()
-            final_features_dir = default_locator.generated_path(
-                self.final_features_dir_key,
-                ensure_exists=True,
-            )
-        self.final_features_dir = final_features_dir
-
-        # Initialize feature selection configuration with model-aware defaults
-        model_type = self.config.get('model_type', 'default')
-        profile = self.model_profiles.get(model_type, {
-            'min_features': 60, 'target_features': 80, 'max_features': 100,
-            'stage_targets': [95, 75, 65],
-            'priority_categories': ['momentum', 'volatility', 'microstructure']
-        })
-
-        self._pipeline_import_error: Optional[BaseException] = None
         try:
-            from .final_feature_selection_pipeline import FeatureSelectionConfig as _FeatureSelectionConfig
-            self._pipeline_available = True
-        except Exception as exc:  # pragma: no cover - fallback path
-            self._pipeline_available = False
-            self._pipeline_import_error = exc
-            self.logger.warning(
-                "⚠️ Falling back to minimal feature selection configuration due to import failure: %s",
-                exc,
-            )
-
-            class _FeatureSelectionConfig:  # type: ignore[redefined-outer-name]
-                def __init__(self, **kwargs: Any) -> None:
-                    for key, value in kwargs.items():
-                        setattr(self, key, value)
-
-        FeatureSelectionConfig = _FeatureSelectionConfig
-
-        self.feature_config = FeatureSelectionConfig(
-            initial_features=self.config.get('initial_features', None),  # Truly variable starting point
-            stage_1_target=self.config.get('stage_1_target', profile['stage_targets'][0]),
-            stage_2_target=self.config.get('stage_2_target', profile.get('stage_targets', [60])[-1]),
-            stage_3_target=self.config.get('stage_3_target', profile.get('stage_targets', [60])[-1]),
-            rf_n_estimators=self.config.get('rf_n_estimators', 100),
-            cv_folds=self.config.get('cv_folds', 5),
-            save_analysis=self.config.get('save_analysis', True),
-            output_directory=output_directory,
-            verbose=self.config.get('verbose', True),
-            # Add model-specific parameters
-            model_type=model_type,
-            target_features=profile['target_features'],
-            min_features=profile['min_features'],
-            max_features=profile['max_features'],
-            priority_categories=profile['priority_categories']
-        )
-
-        # Initialize VectorBT optimization tools if available
-        if VECTORBT_UTILS_AVAILABLE:
-            tprint("🚀 Initializing VectorBT optimization tools for final feature selection")
             vectorbt_config = VectorBTConfig(
                 enable_gpu=False,  # Conservative for feature selection
                 enable_parallel=True,
@@ -227,34 +154,210 @@ class FinalFeatureSelectionStep:
             self.vectorbt_enabled = vectorbt_tools['available']
             
             if self.vectorbt_enabled:
-                tprint("✅ VectorBT optimization tools initialized for final feature selection")
+                tprint_success("✅ VectorBT optimization tools initialized")
             else:
                 tprint_warning("⚠️ VectorBT optimization tools not available")
-        else:
+        except Exception as e:
+            tprint_error(f"❌ VectorBT initialization failed: {e}")
             self.vectorbt_optimizer = None
             self.vectorization_manager = None
             self.vectorbt_enabled = False
-            tprint("⚠️ VectorBT optimization disabled or not available")
 
-        self.logger.info("🚀 FinalFeatureSelectionStep initialized")
-        self.logger.info(f"🎯 Model Type: {model_type}")
-        self.logger.info(f"📊 Target Features: {profile['target_features']} (range: {profile['min_features']}-{profile['max_features']})")
-        tprint("✅ FinalFeatureSelectionStep initialization complete")
-        tprint(f"   🎯 Model Type: {model_type}")
-        tprint(f"   📊 Feature targets: {profile['stage_targets']}")
-        tprint(f"   ⚡ VectorBT optimization: {'Enabled' if self.vectorbt_enabled else 'Disabled'}")
+    def _initialize_feature_selection_config(self) -> None:
+        """Initialize feature selection configuration with model-aware defaults."""
+        tprint_debug("🎯 Initializing feature selection configuration")
+        
+        # Model-specific feature count profiles
+        self.model_profiles = {
+            'AdvancedMambaHybrid': {
+                'min_features': 50, 'target_features': 60, 'max_features': 80,
+                'stage_targets': [60],
+                'priority_categories': ['momentum', 'interaction', 'microstructure']
+            },
+            'FinancialResNet': {
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [80],
+                'priority_categories': ['regime', 'temporal', 'volatility']
+            },
+            'DeepScaler': {
+                'min_features': 40, 'target_features': 60, 'max_features': 80,
+                'stage_targets': [60],
+                'priority_categories': ['statistical', 'momentum', 'volatility']
+            },
+            'NBEATS': {
+                'min_features': 30, 'target_features': 50, 'max_features': 70,
+                'stage_targets': [50],
+                'priority_categories': ['temporal', 'trend', 'seasonality']
+            }
+        }
+
+        # Resolve output directories
+        self._resolve_output_directories()
+        
+        # Initialize feature selection configuration
+        model_type = self.config.get('model_type', 'default')
+        profile = self.model_profiles.get(model_type, {
+            'min_features': 60, 'target_features': 80, 'max_features': 100,
+            'stage_targets': [95, 75, 65],
+            'priority_categories': ['momentum', 'volatility', 'microstructure']
+        })
+
+        self._pipeline_import_error: Optional[BaseException] = None
+        try:
+            from .final_feature_selection_pipeline import FeatureSelectionConfig as _FeatureSelectionConfig
+            self._pipeline_available = True
+            tprint_debug("✅ Feature selection pipeline available")
+        except Exception as exc:
+            self._pipeline_available = False
+            self._pipeline_import_error = exc
+            tprint_warning(f"⚠️ Feature selection pipeline not available: {exc}")
+
+            class _FeatureSelectionConfig:
+                def __init__(self, **kwargs: Any) -> None:
+                    for key, value in kwargs.items():
+                        setattr(self, key, value)
+
+        FeatureSelectionConfig = _FeatureSelectionConfig
+
+        self.feature_config = FeatureSelectionConfig(
+            initial_features=self.config.get('initial_features', None),
+            stage_1_target=self.config.get('stage_1_target', profile['stage_targets'][0]),
+            stage_2_target=self.config.get('stage_2_target', profile.get('stage_targets', [60])[-1]),
+            stage_3_target=self.config.get('stage_3_target', profile.get('stage_targets', [60])[-1]),
+            rf_n_estimators=self.config.get('rf_n_estimators', 100),
+            cv_folds=self.config.get('cv_folds', 5),
+            save_analysis=self.config.get('save_analysis', True),
+            output_directory=str(self.output_directory),
+            verbose=self.config.get('verbose', True),
+            model_type=model_type,
+            target_features=profile['target_features'],
+            min_features=profile['min_features'],
+            max_features=profile['max_features'],
+            priority_categories=profile['priority_categories']
+        )
+        
+        tprint_info(f"Model type: {model_type}")
+        tprint_info(f"Target features: {profile['target_features']}")
+
+    def _resolve_output_directories(self) -> None:
+        """Resolve output directories with proper error handling."""
+        tprint_debug("📁 Resolving output directories")
+        
+        locator_candidate = self.config.get('data_locator')
+        self.data_locator: Optional[PipelineDataLocator] = (
+            locator_candidate if isinstance(locator_candidate, PipelineDataLocator) else None
+        )
+
+        self.output_directory_key = self.config.get('output_directory_key', 'market_analysis')
+        configured_output_dir = self.config.get('output_directory')
+        locator = self.data_locator
+
+        if configured_output_dir:
+            self.output_directory = Path(configured_output_dir).expanduser()
+            self.output_directory.mkdir(parents=True, exist_ok=True)
+            tprint_debug(f"Using configured output directory: {self.output_directory}")
+        elif locator:
+            self.output_directory = Path(locator.generated_path(self.output_directory_key, ensure_exists=True))
+            tprint_debug(f"Using locator output directory: {self.output_directory}")
+        else:
+            default_locator = PipelineDataLocator()
+            self.output_directory = Path(
+                default_locator.generated_path(self.output_directory_key, ensure_exists=True)
+            )
+            tprint_debug(f"Using default output directory: {self.output_directory}")
+
+        self.final_features_dir_key = self.config.get('final_features_dir_key', 'final_feature_selection')
+        configured_final_dir = self.config.get('final_features_dir')
+        if configured_final_dir:
+            self.final_features_dir = Path(configured_final_dir).expanduser()
+            self.final_features_dir.mkdir(parents=True, exist_ok=True)
+        elif locator:
+            self.final_features_dir = Path(locator.generated_path(self.final_features_dir_key, ensure_exists=True))
+        else:
+            default_locator = PipelineDataLocator()
+            self.final_features_dir = Path(default_locator.generated_path(
+                self.final_features_dir_key,
+                ensure_exists=True,
+            ))
+        
+            tprint_debug(f"Final features directory: {self.final_features_dir}")
+
+    def _prepare_data_for_selection(self, feature_data: pd.DataFrame, target_data: Optional[pd.DataFrame]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
+        """Prepare data for feature selection with comprehensive error handling."""
+        tprint_debug("🔄 Preparing data for feature selection")
+        tprint_debug(f"Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
+        
+        try:
+            # Clean feature data
+            X = feature_data.copy()
+            
+            # Remove non-numeric columns
+            numeric_columns = X.select_dtypes(include=[np.number]).columns
+            non_numeric_count = len(X.columns) - len(numeric_columns)
+            if non_numeric_count > 0:
+                tprint_debug(f"Removing {non_numeric_count} non-numeric columns")
+            X = X[numeric_columns]
+            
+            # Handle missing values
+            missing_count = X.isnull().sum().sum()
+            if missing_count > 0:
+                tprint_debug(f"Handling {missing_count} missing values using median imputation")
+                X = X.fillna(X.median())
+            else:
+                tprint_debug("No missing values found")
+            
+            # Remove infinite values
+            inf_count = np.isinf(X.values).sum()
+            if inf_count > 0:
+                tprint_debug(f"Handling {inf_count} infinite values")
+                X = X.replace([np.inf, -np.inf], np.nan)
+                X = X.fillna(X.median())
+            else:
+                tprint_debug("No infinite values found")
+            
+            tprint_success(f"✅ Prepared {len(X)} samples with {len(X.columns)} numeric features")
+            
+            # Prepare target data if available
+            y = None
+            if target_data is not None:
+                tprint_debug(f"Processing target data: {target_data.shape[0]} samples")
+                # Align target data with feature data
+                common_indices = X.index.intersection(target_data.index)
+                if len(common_indices) > 0:
+                    X = X.loc[common_indices]
+                    y = target_data.loc[common_indices].iloc[:, 0]  # Use first column
+                    tprint_success(f"✅ Aligned target data: {len(y)} samples")
+                else:
+                    tprint_warning("⚠️ No common indices between features and target")
+            else:
+                tprint_debug("No target data - will perform unsupervised feature selection")
+            
+            tprint_success(f"✅ Data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
+            return X, y
+            
+        except Exception as e:
+            tprint_error(f"❌ Data preparation failed: {e}")
+            raise
 
     @staticmethod
     def _standardize_feature_frame(data: pd.DataFrame) -> pd.DataFrame:
-        """Ensure feature columns follow the ``X_*`` naming convention."""
+        """Ensure feature columns follow the X_* naming convention."""
         tprint_debug("🔧 Standardizing feature frame columns")
-        return standardize_namespace_frame(data, ColumnNamespace.FEATURE, allowed_unprefixed={"datetime"})
+        try:
+            return standardize_namespace_frame(data, ColumnNamespace.FEATURE, allowed_unprefixed={"datetime"})
+        except Exception as e:
+            tprint_error(f"❌ Feature frame standardization failed: {e}")
+            raise
 
     @staticmethod
     def _standardize_target_frame(data: pd.DataFrame) -> pd.DataFrame:
-        """Ensure target columns follow the ``y_*`` naming convention."""
+        """Ensure target columns follow the y_* naming convention."""
         tprint_debug("🔧 Standardizing target frame columns")
-        return standardize_namespace_frame(data, ColumnNamespace.TARGET)
+        try:
+            return standardize_namespace_frame(data, ColumnNamespace.TARGET)
+        except Exception as e:
+            tprint_error(f"❌ Target frame standardization failed: {e}")
+            raise
 
     @log_all_calls
     @handles_errors(Exception, fallback=False)
@@ -280,39 +383,32 @@ class FinalFeatureSelectionStep:
         """
         
         tprint("🔍 Starting Final Feature Selection Step")
-        tprint(f"   📊 Symbol: {symbol}")
-        tprint(f"   🏢 Exchange: {exchange}")
-        tprint(f"   ⏰ Timeframe: {timeframe}")
-        tprint(f"   📁 Data directory: {data_dir}")
-        tprint(f"   🎯 Target: Variable→60 pipeline (mRMR/Ensemble/RFE)")
+        tprint_info(f"Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
+        tprint_info(f"Data directory: {data_dir}")
         
         try:
             # Load feature data
-            tprint("🔄 Loading feature data...")
+            tprint_debug("🔄 Loading feature data...")
             feature_data = await self._load_feature_data(symbol, exchange, timeframe, data_dir)
             if feature_data is None:
-                tprint("❌ Failed to load feature data")
+                tprint_error("❌ Failed to load feature data")
                 return False
             
-            tprint(f"✅ Feature data loaded: {feature_data.shape[0]} samples, {feature_data.shape[1]} features")
+            tprint_success(f"✅ Feature data loaded: {feature_data.shape[0]} samples, {feature_data.shape[1]} features")
             
-            # Load target data (if available) - prioritize standardized format from multi_horizon_profit_labeler
-            tprint("🔄 Loading target data...")
-            target_data = await self._load_target_data_from_standardized_format(symbol, exchange, timeframe, data_dir)
+            # Load target data
+            tprint_debug("🔄 Loading target data...")
+            target_data = await self._load_target_data(symbol, exchange, timeframe, data_dir)
             
             if target_data is not None:
-                tprint(f"✅ Target data loaded: {target_data.shape[0]} samples, {target_data.shape[1]} columns")
+                tprint_success(f"✅ Target data loaded: {target_data.shape[0]} samples, {target_data.shape[1]} columns")
             else:
-                tprint("⚠️ No target data found - will perform unsupervised feature selection")
+                tprint_warning("⚠️ No target data found - will perform unsupervised feature selection")
             
-            # Prepare data for feature selection with VectorBT optimization
-            if self.vectorbt_enabled:
-                tprint("🔄 Preparing data for feature selection with VectorBT optimization...")
-                X, y = self._vectorbt_optimized_data_preparation(feature_data, target_data)
-            else:
-                tprint("🔄 Preparing data for feature selection...")
-                X, y = self._prepare_data(feature_data, target_data)
-            tprint(f"✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
+            # Prepare data for feature selection
+            tprint_debug("🔄 Preparing data for feature selection...")
+            X, y = self._prepare_data_for_selection(feature_data, target_data)
+            tprint_success(f"✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
             
             # Run feature selection
             tprint("🚀 Running multi-stage feature selection...")

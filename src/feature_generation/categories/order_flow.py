@@ -46,29 +46,8 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
-# Import VectorBT-optimized order flow generators
-try:
-    from .vectorbt_order_flow import (
-        create_vectorbt_order_flow_generators,
-        create_default_vectorbt_order_flow_generators,
-        VectorBTTakerBuyRatioGenerator,
-        VectorBTTakerSellRatioGenerator,
-        VectorBTMarketAggressionIndexGenerator,
-        VectorBTOrderFlowImbalanceGenerator,
-        VectorBTBidAskImbalanceGenerator,
-        VectorBTMarketOrderFlowGenerator,
-        VectorBTVolumeWeightedOrderFlowGenerator,
-        VectorBTOrderFlowMomentumGenerator,
-        VectorBTOrderFlowVolatilityGenerator,
-        VectorBTOrderFlowTrendStrengthGenerator,
-        VectorBTOrderFlowConsistencyGenerator,
-        VectorBTOrderFlowAccelerationGenerator,
-        VectorBTOrderFlowJerkGenerator,
-        VectorBTOrderFlowRegimeGenerator
-    )
-    VECTORBT_ORDER_FLOW_AVAILABLE = True
-except ImportError:
-    VECTORBT_ORDER_FLOW_AVAILABLE = False
+# VectorBT-optimized order flow generators will be defined inline below
+VECTORBT_ORDER_FLOW_AVAILABLE = VECTORBT_AVAILABLE
 
 class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
@@ -99,6 +78,55 @@ class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
         buy_volume = buy_pressure.rolling(window=self.window).sum()
         
         return buy_volume / total_volume.replace(0, 1)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:

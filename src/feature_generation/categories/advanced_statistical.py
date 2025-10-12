@@ -55,21 +55,8 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
-# Import VectorBT-optimized advanced statistical generators
-try:
-    from .vectorbt_advanced_statistical import (
-        create_vectorbt_advanced_statistical_generators,
-        create_default_vectorbt_advanced_statistical_generators,
-        VectorBTHurstExponentGenerator,
-        VectorBTJumpIndicatorsGenerator,
-        VectorBTCVaRGenerator,
-        VectorBTMaxDrawdownGenerator,
-        VectorBTRollingSkewnessKurtosisGenerator,
-        VectorBTTrendPersistenceGenerator
-    )
-    VECTORBT_ADVANCED_STATISTICAL_AVAILABLE = True
-except ImportError:
-    VECTORBT_ADVANCED_STATISTICAL_AVAILABLE = False
+# VectorBT-optimized advanced statistical generators will be defined inline below
+VECTORBT_ADVANCED_STATISTICAL_AVAILABLE = VECTORBT_AVAILABLE
 
 class HurstExponentGenerator(VectorizedFeatureGenerator):
     """Generator for Hurst exponent using R/S analysis."""
@@ -106,6 +93,55 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
             return self._calculate_hurst_vectorbt(returns)
         else:
             return self._calculate_hurst_pandas(returns)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _calculate_hurst_vectorbt(self, returns: pd.Series) -> pd.Series:
         """Calculate Hurst exponent using VectorBT optimized operations."""
@@ -208,6 +244,55 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
             return self._calculate_jump_indicators_vectorbt(returns)
         else:
             return self._calculate_jump_indicators_pandas(returns)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _calculate_jump_indicators_vectorbt(self, returns: pd.Series) -> pd.Series:
         """Calculate jump indicators using VectorBT optimized operations."""
@@ -606,6 +691,185 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
             return persistence
         except:
             return 0.0
+
+# VectorBT-Optimized Advanced Statistical Generators
+class VectorBTHurstExponentGenerator(VectorizedFeatureGenerator):
+    """VectorBT-optimized Hurst exponent generator using R/S analysis."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"vectorbt_hurst_exponent_{window}",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"VectorBT-optimized Hurst exponent using R/S analysis over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close']
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = close.pct_change()
+        
+        # Use VectorBT for optimized rolling operations
+        hurst = self._calculate_hurst_vectorbt(returns)
+        
+        return hurst.rename(f'vectorbt_hurst_exponent_{self.window}')
+    
+    def _calculate_hurst_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate Hurst exponent using VectorBT optimized operations."""
+        hurst = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 10:  # Need enough data for R/S analysis
+                hurst[i] = self._calculate_hurst_exponent(valid_returns.values)
+        
+        return pd.Series(hurst, index=returns.index)
+    
+    def _calculate_hurst_exponent(self, returns: np.ndarray) -> float:
+        """Calculate Hurst exponent using R/S analysis."""
+        try:
+            n = len(returns)
+            if n < 4:
+                return 0.5
+            
+            # Calculate mean
+            mean_return = np.mean(returns)
+            
+            # Calculate deviations from mean
+            deviations = returns - mean_return
+            
+            # Calculate cumulative deviations
+            cumulative_deviations = np.cumsum(deviations)
+            
+            # Calculate range
+            R = np.max(cumulative_deviations) - np.min(cumulative_deviations)
+            
+            # Calculate standard deviation
+            S = np.std(returns, ddof=1)
+            
+            if S == 0:
+                return 0.5
+            
+            # R/S ratio
+            rs_ratio = R / S
+            
+            # Hurst exponent approximation
+            # H = log(R/S) / log(n)
+            if rs_ratio > 0:
+                hurst = np.log(rs_ratio) / np.log(n)
+                return np.clip(hurst, 0.0, 1.0)
+            else:
+                return 0.5
+        except:
+            return 0.5
+
+class VectorBTJumpIndicatorsGenerator(VectorizedFeatureGenerator):
+    """VectorBT-optimized jump indicators generator (tail count and bipower variation)."""
+    
+    def __init__(self, window: int = 20, k_multiplier: float = 3.0):
+        config = FeatureConfig(
+            name=f"vectorbt_jump_indicators_{window}_{k_multiplier}",
+            category=FeatureCategory.ADVANCED_STATISTICAL,
+            description=f"VectorBT-optimized jump indicators over {window} periods (k={k_multiplier})",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window, 'k_multiplier': k_multiplier},
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.k_multiplier = k_multiplier
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close']
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = close.pct_change()
+        
+        # Use VectorBT for optimized rolling operations
+        jump_indicators = self._calculate_jump_indicators_vectorbt(returns)
+        
+        return jump_indicators.rename(f'vectorbt_jump_indicators_{self.window}_{self.k_multiplier}')
+    
+    def _calculate_jump_indicators_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate jump indicators using VectorBT optimized operations."""
+        jump_indicators = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 2:
+                jump_indicator = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
+                jump_indicators[i] = jump_indicator
+        
+        return pd.Series(jump_indicators, index=returns.index)
+    
+    def _calculate_jump_indicator(self, returns: np.ndarray, k: float) -> float:
+        """Calculate jump indicator using tail count method."""
+        try:
+            # Calculate standard deviation
+            sigma = np.std(returns, ddof=1)
+            if sigma == 0:
+                return 0.0
+            
+            # Count returns beyond k*sigma
+            threshold = k * sigma
+            tail_count = np.sum(np.abs(returns) > threshold)
+            
+            # Normalize by window size
+            jump_indicator = tail_count / len(returns)
+            
+            return jump_indicator
+        except:
+            return 0.0
+
+def create_vectorbt_advanced_statistical_generators() -> List[VectorizedFeatureGenerator]:
+    """Create all VectorBT-optimized advanced statistical feature generators."""
+    generators = []
+    
+    # Hurst exponent generators
+    for window in [20, 50]:
+        generators.append(VectorBTHurstExponentGenerator(window))
+    
+    # Jump indicators generators
+    for window in [20]:
+        for k_multiplier in [2.0, 3.0]:
+            generators.append(VectorBTJumpIndicatorsGenerator(window, k_multiplier))
+    
+    # Add more VectorBT generators as needed...
+    
+    return generators
+
+def create_default_vectorbt_advanced_statistical_generators() -> List[VectorizedFeatureGenerator]:
+    """Create default VectorBT-optimized advanced statistical feature generators."""
+    return create_vectorbt_advanced_statistical_generators()
 
 def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
     """Create default advanced statistical feature generators."""

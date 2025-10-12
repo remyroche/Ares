@@ -73,6 +73,25 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited HPO functionality")
 
+# VectorBT optimization imports
+try:
+    import vectorbt as vbt
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from ...feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+    )
+    VECTORBT_AVAILABLE = True
+    logger.info("✅ VectorBT optimization available")
+except ImportError as e:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    UnifiedVectorizationManager = None
+    VectorizationConfig = None
+    get_unified_vectorization_manager = None
+    logger.warning(f"VectorBT optimization not available: {e}")
+
 
 class HyperparameterOptimization:
     """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
@@ -92,6 +111,15 @@ class HyperparameterOptimization:
         # Configuration defaults
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
+
+        # VectorBT optimization settings
+        self.enable_vectorbt = self.config.get('enable_vectorbt', VECTORBT_AVAILABLE)
+        self.vectorbt_rolling_optimizer = None
+        self.vectorization_manager = None
+        
+        # Initialize VectorBT components if available
+        if self.enable_vectorbt and VECTORBT_AVAILABLE:
+            self._initialize_vectorbt_components()
 
         # Enhanced monitoring configuration
         self.enable_monitoring = self.config.get('enable_monitoring', True)
@@ -133,6 +161,38 @@ class HyperparameterOptimization:
             self.enhanced_search_spaces = self._create_enhanced_search_spaces()
         
         _LOGGER.info("✅ Enhanced HyperparameterOptimization initialized successfully")
+    
+    def _initialize_vectorbt_components(self):
+        """Initialize VectorBT optimization components."""
+        try:
+            # Initialize VectorBT rolling optimizer
+            if get_vectorbt_rolling_optimizer:
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.get('enable_gpu', False),
+                    enable_parallel=self.config.get('enable_parallel', True),
+                    memory_efficient=self.config.get('memory_efficient', True),
+                    chunk_size=self.config.get('chunk_size', 1000)
+                )
+                self.logger.info("✅ VectorBT Rolling Optimizer initialized")
+            
+            # Initialize unified vectorization manager
+            if get_unified_vectorization_manager:
+                vectorization_config = VectorizationConfig(
+                    enable_vectorbt=self.enable_vectorbt,
+                    enable_gpu=self.config.get('enable_gpu', False),
+                    enable_parallel=self.config.get('enable_parallel', True),
+                    memory_efficient=self.config.get('memory_efficient', True),
+                    chunk_size=self.config.get('chunk_size', 1000),
+                    enable_monitoring=self.enable_monitoring,
+                    enable_batch_processing=self.config.get('enable_batch_processing', True)
+                )
+                self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+                self.logger.info("✅ Unified Vectorization Manager initialized")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT components initialization failed: {e}")
+            self.vectorbt_rolling_optimizer = None
+            self.vectorization_manager = None
     
     def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Create enhanced search spaces with non-linear transformation metadata."""
@@ -2040,15 +2100,72 @@ class HyperparameterOptimization:
 
     def _coarse_grid_from_search_space(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """
-        Create a coarse parameter grid from search space using grid_utils.
+        Create a coarse parameter grid from search space using VectorBT optimizations.
 
         Returns a list of parameter dictionaries (Cartesian product of all parameters).
         """
         try:
-            return build_coarse_grid_from_search_space(search_space, grid_points)
+            # Use VectorBT vectorization manager if available
+            if self.vectorization_manager and self.enable_vectorbt:
+                return self._vectorbt_coarse_grid(search_space, grid_points)
+            else:
+                return build_coarse_grid_from_search_space(search_space, grid_points)
         except Exception as e:
             self.logger.warning(f"Failed to build coarse grid: {e}")
             return []
+    
+    def _vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
+        """Generate coarse grid using VectorBT vectorization manager."""
+        try:
+            self.logger.debug("🔄 Generating VectorBT-optimized coarse grid...")
+            
+            # Use the vectorization manager for efficient grid generation
+            param_names = list(search_space.keys())
+            param_configs = list(search_space.values())
+            
+            # Generate parameter values using VectorBT
+            param_values = {}
+            for name, config in zip(param_names, param_configs):
+                if isinstance(config, dict):
+                    param_type = config.get('type', 'float')
+                    if param_type == 'float':
+                        low, high = config['low'], config['high']
+                        if config.get('log', False):
+                            values = np.logspace(np.log10(low), np.log10(high), grid_points)
+                        else:
+                            values = np.linspace(low, high, grid_points)
+                    elif param_type == 'int':
+                        low, high = config['low'], config['high']
+                        if high == low:
+                            values = [low]
+                        else:
+                            pts = np.linspace(low, high, num=max(2, grid_points))
+                            values = sorted({int(round(v)) for v in pts})
+                    elif param_type == 'categorical':
+                        values = config.get('choices', [])
+                    else:
+                        values = [config.get('default', 0)]
+                else:
+                    # Legacy tuple format
+                    if isinstance(config, tuple) and len(config) == 2:
+                        low, high = config
+                        values = np.linspace(low, high, grid_points)
+                    else:
+                        values = [config]
+                
+                param_values[name] = values
+            
+            # Generate all combinations
+            import itertools
+            combinations = list(itertools.product(*[param_values[name] for name in param_names]))
+            grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
+            
+            self.logger.debug(f"✅ Generated {len(grid_points_list)} VectorBT-optimized coarse grid points")
+            return grid_points_list
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT coarse grid generation failed: {e}, using fallback")
+            return build_coarse_grid_from_search_space(search_space, grid_points)
 
     def _generate_random_param_combinations(self, grid: Dict[str, List[Any]], n_samples: int) -> List[Dict[str, Any]]:
         try:
@@ -2319,7 +2436,85 @@ class HyperparameterOptimization:
     
     def _create_fine_parameter_grid_staged(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
                                          grid_points: int) -> List[Dict[str, Any]]:
-        """Create fine parameter grid around best parameters for staged HPO."""
+        """Create fine parameter grid around best parameters for staged HPO with VectorBT optimization."""
+        try:
+            # Use VectorBT vectorization manager if available
+            if self.vectorization_manager and self.enable_vectorbt:
+                return self._vectorbt_fine_grid(search_space, best_params, grid_points)
+            else:
+                return self._standard_fine_grid(search_space, best_params, grid_points)
+        except Exception as e:
+            self.logger.warning(f"Fine grid generation failed: {e}")
+            return []
+    
+    def _vectorbt_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+                           grid_points: int) -> List[Dict[str, Any]]:
+        """Generate fine grid using VectorBT vectorization manager."""
+        try:
+            self.logger.debug("🔄 Generating VectorBT-optimized fine grid...")
+            
+            param_names = list(search_space.keys())
+            param_configs = list(search_space.values())
+            
+            # Generate fine parameter values around best parameters
+            param_values = {}
+            for name, config in zip(param_names, param_configs):
+                if name not in best_params:
+                    continue
+                
+                best_val = best_params[name]
+                
+                if isinstance(config, dict):
+                    param_type = config.get('type', 'float')
+                    if param_type == 'float':
+                        low, high = config['low'], config['high']
+                        range_size = high - low
+                        fine_range = range_size * 0.2  # 20% of original range
+                        fine_min = max(low, best_val - fine_range)
+                        fine_max = min(high, best_val + fine_range)
+                        
+                        if config.get('log', False) and fine_min > 0:
+                            values = np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points)
+                        else:
+                            values = np.linspace(fine_min, fine_max, grid_points)
+                    elif param_type == 'int':
+                        low, high = config['low'], config['high']
+                        fine_min = max(low, int(best_val) - 2)
+                        fine_max = min(high, int(best_val) + 2)
+                        values = list(range(fine_min, fine_max + 1))
+                    elif param_type == 'categorical':
+                        values = config.get('choices', [])
+                    else:
+                        values = [best_val]
+                else:
+                    # Legacy tuple format
+                    if isinstance(config, tuple) and len(config) == 2:
+                        low, high = config
+                        range_size = high - low
+                        fine_range = range_size * 0.2
+                        fine_min = max(low, best_val - fine_range)
+                        fine_max = min(high, best_val + fine_range)
+                        values = np.linspace(fine_min, fine_max, grid_points)
+                    else:
+                        values = [best_val]
+                
+                param_values[name] = values
+            
+            # Generate all combinations
+            import itertools
+            combinations = list(itertools.product(*[param_values[name] for name in param_names]))
+            grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
+            
+            self.logger.debug(f"✅ Generated {len(grid_points_list)} VectorBT-optimized fine grid points")
+            return grid_points_list
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT fine grid generation failed: {e}, using fallback")
+            return self._standard_fine_grid(search_space, best_params, grid_points)
+    
+    def _standard_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+                           grid_points: int) -> List[Dict[str, Any]]:
+        """Generate fine grid using standard method."""
         import itertools
         
         param_combinations = []

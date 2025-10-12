@@ -42,11 +42,20 @@ except ImportError as e:
 try:
     import vectorbt as vbt
     from ..unified_vectorization_manager import get_unified_vectorization_manager, OperationType
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from ...feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager as get_feature_vectorization_manager
+    )
     VECTORBT_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"VectorBT optimization not available: {e}")
     VECTORBT_AVAILABLE = False
     vbt = None
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    UnifiedVectorizationManager = None
+    VectorizationConfig = None
+    get_feature_vectorization_manager = None
 
 
 @dataclass
@@ -93,6 +102,14 @@ class OptimizationConfig:
     vectorbt_memory_limit_gb: float = 4.0
     vectorbt_use_gpu: bool = True
     vectorbt_enable_parallel: bool = True
+    
+    # Enhanced VectorBT integration settings
+    enable_vectorbt_rolling_optimizer: bool = True
+    enable_unified_vectorization: bool = True
+    vectorbt_batch_size: int = 1000
+    vectorbt_memory_efficient: bool = True
+    vectorbt_enable_caching: bool = True
+    vectorbt_cache_size: int = 1000
 
     # Adaptive grid refinement settings
     enable_adaptive_grid_refinement: bool = True
@@ -291,10 +308,44 @@ class BayesianTPEOptimizer:
             self.performance_monitor = None
 
     def _initialize_vectorbt_optimization(self):
-        """Initialize VectorBT optimization components."""
+        """Initialize VectorBT optimization components with enhanced integration."""
         try:
             # Initialize unified vectorization manager
             self.vectorbt_manager = get_unified_vectorization_manager()
+            
+            # Initialize VectorBT rolling optimizer if enabled
+            self.vectorbt_rolling_optimizer = None
+            if self.config.enable_vectorbt_rolling_optimizer and get_vectorbt_rolling_optimizer:
+                try:
+                    self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                        enable_gpu=self.config.vectorbt_use_gpu,
+                        enable_parallel=self.config.vectorbt_enable_parallel,
+                        memory_efficient=self.config.vectorbt_memory_efficient,
+                        chunk_size=self.config.vectorbt_chunk_size
+                    )
+                    self.logger.info("✅ VectorBT Rolling Optimizer initialized")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT Rolling Optimizer initialization failed: {e}")
+            
+            # Initialize enhanced unified vectorization manager if enabled
+            self.enhanced_vectorization_manager = None
+            if self.config.enable_unified_vectorization and get_feature_vectorization_manager:
+                try:
+                    vectorization_config = VectorizationConfig(
+                        enable_vectorbt=self.config.enable_vectorbt_optimization,
+                        enable_gpu=self.config.vectorbt_use_gpu,
+                        enable_parallel=self.config.vectorbt_enable_parallel,
+                        memory_efficient=self.config.vectorbt_memory_efficient,
+                        max_memory_gb=self.config.vectorbt_memory_limit_gb,
+                        chunk_size=self.config.vectorbt_chunk_size,
+                        enable_monitoring=True,
+                        batch_size=self.config.vectorbt_batch_size,
+                        enable_batch_processing=True
+                    )
+                    self.enhanced_vectorization_manager = get_feature_vectorization_manager(vectorization_config)
+                    self.logger.info("✅ Enhanced Unified Vectorization Manager initialized")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Enhanced Vectorization Manager initialization failed: {e}")
             
             # Configure VectorBT settings
             if vbt:
@@ -317,6 +368,8 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT optimization initialization failed: {e}")
             self.vectorbt_manager = None
+            self.vectorbt_rolling_optimizer = None
+            self.enhanced_vectorization_manager = None
 
     def optimize(self, objective: Callable, search_space: Dict[str, Any],
                 **kwargs) -> Dict[str, Any]:
@@ -1626,11 +1679,120 @@ class BayesianTPEOptimizer:
     def _generate_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """Generate coarse grid using VectorBT vectorized operations with enhanced performance."""
         try:
-            if not self.vectorbt_manager or not vbt:
+            # Use enhanced vectorization manager if available
+            if self.enhanced_vectorization_manager:
+                return self._enhanced_vectorbt_coarse_grid(search_space, grid_points)
+            elif self.vectorbt_manager and vbt:
+                return self._standard_vectorbt_coarse_grid(search_space, grid_points)
+            else:
                 # Fallback to original method
                 return build_coarse_grid_from_search_space(search_space, grid_points)
 
-            self.logger.debug("🔄 Generating VectorBT coarse grid with enhanced vectorization...")
+        except Exception as e:
+            self.logger.warning(f"VectorBT coarse grid generation failed: {e}, using fallback")
+            return build_coarse_grid_from_search_space(search_space, grid_points)
+    
+    def _enhanced_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
+        """Generate coarse grid using enhanced VectorBT vectorization manager."""
+        try:
+            self.logger.debug("🔄 Generating enhanced VectorBT coarse grid...")
+            
+            # Use the enhanced vectorization manager for grid generation
+            param_names = list(search_space.keys())
+            param_configs = list(search_space.values())
+            
+            # Generate parameter values using VectorBT
+            param_values = {}
+            for name, config in zip(param_names, param_configs):
+                if isinstance(config, dict):
+                    param_type = config.get('type', 'float')
+                    if param_type == 'float':
+                        low, high = config['low'], config['high']
+                        if config.get('log', False):
+                            values = np.logspace(np.log10(low), np.log10(high), grid_points)
+                        else:
+                            values = np.linspace(low, high, grid_points)
+                    elif param_type == 'int':
+                        low, high = config['low'], config['high']
+                        if high == low:
+                            values = [low]
+                        else:
+                            pts = np.linspace(low, high, num=max(2, grid_points))
+                            values = sorted({int(round(v)) for v in pts})
+                    elif param_type == 'categorical':
+                        values = config.get('choices', [])
+                    else:
+                        values = [config.get('default', 0)]
+                else:
+                    # Legacy tuple format
+                    if isinstance(config, tuple) and len(config) == 2:
+                        low, high = config
+                        values = np.linspace(low, high, grid_points)
+                    else:
+                        values = [config]
+                
+                param_values[name] = values
+            
+            # Generate all combinations using VectorBT if beneficial
+            if len(param_values) > 1 and self._should_use_vectorbt_combinations(param_values):
+                combinations = self._vectorbt_generate_combinations(param_values)
+            else:
+                combinations = list(itertools.product(*[param_values[name] for name in param_names]))
+            
+            grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
+            
+            self.logger.debug(f"✅ Generated {len(grid_points_list)} enhanced VectorBT coarse grid points")
+            return grid_points_list
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced VectorBT coarse grid generation failed: {e}")
+            raise
+    
+    def _should_use_vectorbt_combinations(self, param_values: Dict[str, List]) -> bool:
+        """Determine if VectorBT should be used for combination generation."""
+        if not self.enhanced_vectorization_manager:
+            return False
+        
+        # Use VectorBT for large parameter spaces
+        total_combinations = 1
+        for values in param_values.values():
+            total_combinations *= len(values)
+        
+        return total_combinations > 1000
+    
+    def _vectorbt_generate_combinations(self, param_values: Dict[str, List]) -> List[Tuple]:
+        """Generate combinations using VectorBT vectorized operations."""
+        try:
+            # Convert parameter values to arrays
+            param_arrays = {}
+            for name, values in param_values.items():
+                param_arrays[name] = np.array(values)
+            
+            # Use VectorBT for efficient combination generation
+            names = list(param_arrays.keys())
+            arrays = list(param_arrays.values())
+            
+            # Generate meshgrid for all parameters
+            meshgrid = np.meshgrid(*arrays, indexing='ij')
+            
+            # Reshape to get all combinations
+            combinations = []
+            for i in range(meshgrid[0].size):
+                combo = tuple(meshgrid[j].flat[i] for j in range(len(meshgrid)))
+                combinations.append(combo)
+            
+            return combinations
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT combination generation failed: {e}, using itertools")
+            # Fallback to itertools
+            import itertools
+            return list(itertools.product(*param_values.values()))
+    
+    def _standard_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
+        """Generate coarse grid using standard VectorBT operations."""
+        try:
+            self.logger.debug("🔄 Generating standard VectorBT coarse grid...")
             
             # Use VectorBT's advanced parameter space generation
             param_combinations = []

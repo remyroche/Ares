@@ -17,7 +17,7 @@ import pandas as pd
 # Import utility modules
 from src.utils.common_utilities import CommonUtilities
 from src.utils.serialization_utils import UniversalSerializer
-from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+from ..utils.tprint_utils import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
 
 
 # Exception classes for fast failing
@@ -92,6 +92,7 @@ class StandardizedErrorHandler:
 
     def __init__(self, logger=None, component_name: str = "FeatureLookbackOptimization"):
         """Initialize the error handler."""
+        tprint(f"🔧 Initializing StandardizedErrorHandler for {component_name}...")
         self.logger = logger or logging.getLogger(__name__)
         self.component_name = component_name
         self.common_utils = CommonUtilities()
@@ -100,6 +101,7 @@ class StandardizedErrorHandler:
         # Error tracking
         self.error_counts = {}
         self.recent_errors = []
+        tprint(f"✅ StandardizedErrorHandler initialized successfully for {component_name}")
 
     def handle_error(
         self,
@@ -155,21 +157,27 @@ class StandardizedErrorHandler:
 
     def handle_warning(self, warning_msg: str, operation: str, context: Optional[Dict[str, Any]] = None):
         """Handle warnings in a standardized way."""
+        tprint_warning(f"⚠️ [{self.component_name}] {operation}: {warning_msg}")
         try:
             self.logger.warning(f"[{self.component_name}] {operation}: {warning_msg}")
             if context:
                 self.logger.debug(f"Warning context: {context}")
+                tprint_debug(f"Warning context: {context}")
         except Exception as e:
             self.logger.error(f"Failed to handle warning: {e}")
+            tprint_error(f"❌ Failed to handle warning: {e}")
 
     def handle_info(self, info_msg: str, operation: str, context: Optional[Dict[str, Any]] = None):
         """Handle info messages in a standardized way."""
+        tprint(f"ℹ️ [{self.component_name}] {operation}: {info_msg}")
         try:
             self.logger.info(f"[{self.component_name}] {operation}: {info_msg}")
             if context:
                 self.logger.debug(f"Info context: {context}")
+                tprint_debug(f"Info context: {context}")
         except Exception as e:
             self.logger.error(f"Failed to handle info message: {e}")
+            tprint_error(f"❌ Failed to handle info message: {e}")
 
     def _create_error_details(
         self,
@@ -266,19 +274,25 @@ class StandardizedErrorHandler:
         log_message = f"[{self.component_name}] {error_details.operation}: {error_details.error}"
 
         if error_details.severity == ErrorSeverity.CRITICAL:
+            tprint_error(f"🚨 CRITICAL: {log_message}")
             self.logger.critical(log_message)
             self.logger.critical(f"Stack trace: {error_details.stack_trace}")
         elif error_details.severity == ErrorSeverity.HIGH:
+            tprint_error(f"❌ HIGH: {log_message}")
             self.logger.error(log_message)
             self.logger.debug(f"Stack trace: {error_details.stack_trace}")
         elif error_details.severity == ErrorSeverity.MEDIUM:
+            tprint_warning(f"⚠️ MEDIUM: {log_message}")
             self.logger.warning(log_message)
             self.logger.debug(f"Context: {error_details.context}")
         else:
+            tprint(f"ℹ️ LOW: {log_message}")
             self.logger.info(log_message)
 
     def _track_error(self, error_details: ErrorDetails):
         """Track error statistics."""
+        tprint_debug(f"📊 Tracking error: {error_details.category.value} - {error_details.severity.value}")
+        
         # Track by category
         category_key = f"category_{error_details.category.value}"
         self.error_counts[category_key] = self.error_counts.get(category_key, 0) + 1
@@ -290,21 +304,31 @@ class StandardizedErrorHandler:
         # Track by operation
         operation_key = f"operation_{error_details.operation}"
         self.error_counts[operation_key] = self.error_counts.get(operation_key, 0) + 1
+        
+        tprint_debug(f"📊 Error tracking updated: {len(self.recent_errors)} recent errors")
 
     # Removed all recovery methods - fast failing doesn't need them
 
     def get_error_statistics(self) -> Dict[str, int]:
         """Get error statistics."""
-        return self.error_counts.copy()
+        tprint_debug("📊 Retrieving error statistics...")
+        stats = self.error_counts.copy()
+        tprint_debug(f"📊 Error statistics: {stats}")
+        return stats
 
     def get_recent_errors(self, limit: int = 10) -> List[ErrorDetails]:
         """Get recent errors."""
-        return self.recent_errors[-limit:].copy()
+        tprint_debug(f"📊 Retrieving recent errors (limit={limit})...")
+        recent = self.recent_errors[-limit:].copy()
+        tprint_debug(f"📊 Retrieved {len(recent)} recent errors")
+        return recent
 
     def reset_error_tracking(self):
         """Reset error tracking statistics."""
+        tprint("🔄 Resetting error tracking statistics...")
         self.error_counts.clear()
         self.recent_errors.clear()
+        tprint("✅ Error tracking statistics reset successfully")
 
 
 # Utility functions for safe operations

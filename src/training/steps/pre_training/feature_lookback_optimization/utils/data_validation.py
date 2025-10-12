@@ -488,23 +488,4 @@ def get_data_validator(validation_level: ValidationLevel = ValidationLevel.STAND
     return _global_validator
 
 
-def validate_optimization_data(data: pd.DataFrame,
-                              feature_names: List[str],
-                              target_column: str,
-                              lookback_range: List[int],
-                              validation_level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
-    """
-    Convenience function for comprehensive data validation.
-    
-    Args:
-        data: Input DataFrame
-        feature_names: List of feature names to optimize
-        target_column: Target column name
-        lookback_range: List of lookback values
-        validation_level: Level of validation to perform
-        
-    Returns:
-        Validation result
-    """
-    validator = get_data_validator(validation_level)
-    return validator.validate_optimization_inputs(data, feature_names, target_column, lookback_range)
+# Removed duplicate validate_optimization_data function - use fast_failing_validation.py instead

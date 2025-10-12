@@ -7,7 +7,7 @@ to improve maintainability and reduce hardcoded values.
 
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from src.utils.tprint import tprint
+from .utils.tprint_utils import tprint
 
 tprint("📋 Loading feature lookback optimization constants...")
 

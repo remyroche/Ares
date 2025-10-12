@@ -28,7 +28,7 @@ from src.utils.matrix_operations import (
     gpu_matrix_multiply,
     correlation_matrix_gpu
 )
-from src.utils.tprint import (
+from .utils.tprint_utils import (
     tprint,
     tprint_debug,
     tprint_info,

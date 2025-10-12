@@ -28,6 +28,15 @@ warnings.filterwarnings('ignore')
 # ML Utilities
 from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
 from src.utils.ml_common.oof_generator import OOFGenerator
+
+# VectorBT optimization imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.vectorbt_optimization_integration import get_optimization_manager
+    VECTORBT_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_AVAILABLE = False
+    print(f"Warning: VectorBT optimization tools not available: {e}")
 from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
 
 # Math and validation utilities
@@ -228,6 +237,9 @@ class WalkForwardAnalyzer:
         # Initialize OOF generator
         self.oof_generator = OOFGenerator()
         
+        # Initialize VectorBT optimization
+        self._init_vectorbt_optimization()
+        
         # Initialize hardware optimization if available
         self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.enable_hardware_optimization
         if self.hardware_enabled:
@@ -255,6 +267,42 @@ class WalkForwardAnalyzer:
         tprint(f"   Hardware optimization: {self.hardware_enabled}", "info")
         
         tprint("✅ Walk-Forward Analyzer initialization complete", "success")
+    
+    def _init_vectorbt_optimization(self):
+        """Initialize VectorBT optimization tools."""
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT optimization tools not available")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
+            return
+        
+        try:
+            # Initialize VectorBT rolling optimizer
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                chunk_size=config.get('chunk_size', 1000),
+                fast_fail=True,
+                enable_logging=True
+            )
+            self.logger.info("✅ VectorBT rolling optimizer initialized")
+            
+            # Initialize VectorBT optimization manager
+            self.optimization_manager = get_optimization_manager(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                max_memory_gb=config.get('max_memory_gb', 8.0),
+                chunk_size=config.get('chunk_size', 1000),
+                enable_monitoring=True
+            )
+            self.logger.info("✅ VectorBT optimization manager initialized")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize VectorBT optimization: {e}")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
     
     def _init_hardware_optimization(self):
         """Initialize hardware optimization components"""
@@ -685,7 +733,12 @@ class WalkForwardAnalyzer:
             if 'close' in data.columns:
                 prices = data['close'].values
                 returns = np.diff(prices) / prices[:-1]
-                volatility = pd.Series(returns).rolling(window=20).std()
+                
+                # Use VectorBT rolling optimizer if available
+                if self.rolling_optimizer is not None:
+                    volatility = self.rolling_optimizer.rolling_std(pd.Series(returns), window=20)
+                else:
+                    volatility = pd.Series(returns).rolling(window=20).std()
                 
                 # Detect significant changes in volatility
                 volatility_changes = []

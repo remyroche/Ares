@@ -14,12 +14,12 @@ import warnings
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-# Import tprint for consistent logging
-try:
-    from tprint import tprint
-except ImportError:
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
+# Import centralized logging and error handling
+from ..utils.centralized_logging import tprint, log_function_execution, fast_fail_error
+from ..utils.error_handling import (
+    DataValidationError, ConfigurationError, ComputationError,
+    validate_required_columns, validate_finite_values, safe_divide
+)
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
@@ -43,10 +43,6 @@ from ...utils.math_validation import safe_divide, validate_finite, safe_percenta
 from .entropy import (
     RSIEntropyGenerator,
     MACDEntropyGenerator
-)
-from .legacy import (
-    LegacyStochasticGenerator,
-    LegacyWilliamsRGenerator
 )
 
 # VectorBT imports for native optimization
@@ -137,10 +133,7 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
-# LegacyRSIGenerator, LegacyMACDGenerator, and LegacyStochasticGenerator removed - use VectorBT versions instead
-from .legacy import (
-    LegacyWilliamsRGenerator
-)
+# LegacyRSIGenerator, LegacyMACDGenerator, LegacyStochasticGenerator, and LegacyWilliamsRGenerator removed - use VectorBT versions instead
 
 class MomentumFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for momentum-based features with optimization."""

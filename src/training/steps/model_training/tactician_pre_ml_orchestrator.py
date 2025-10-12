@@ -179,7 +179,7 @@ class OrchestratorConfig:
     max_lookback_periods: int = 20
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
-    max_cross_timeframe_features: int = 50
+    max_cross_timeframe_features: int = 15
     max_features: int = 200  # Maximum features after selection
 
     # Horizon labeling parameters

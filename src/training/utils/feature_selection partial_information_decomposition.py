@@ -74,7 +74,7 @@ class PIDConfig:
     
     # Cross-timeframe parameters
     timeframes: List[str] = None  # ["1m", "5m", "15m", "1h", "4h", "1d"]
-    max_cross_timeframe_features: int = 50  # Up to 50 cross-timeframe features
+    max_cross_timeframe_features: int = 15  # Up to 15 cross-timeframe features
     cross_timeframe_threshold: float = 0.15
     
     # Advanced matrix operations parameters

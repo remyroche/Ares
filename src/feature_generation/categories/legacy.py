@@ -66,165 +66,108 @@ from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
 from ..core.feature_bank import get_global_feature_bank
 
+# Centralized indicators utility
+from ..utils.centralized_indicators import get_centralized_indicators
+
 class LegacyRSIGenerator(VectorizedFeatureGenerator):
-    def __init__(self, period: int = 14):
+    """Legacy RSI generator using centralized utilities for consistency."""
+    
+    def __init__(self, period: int = 14, normalize: bool = False, normalization_method: str = 'zscore'):
         config = FeatureConfig(
             name=f"legacy_rsi_{period}",
             category=FeatureCategory.LEGACY,
-            description=f"Legacy RSI {period} - traditional implementation",
+            description=f"Legacy RSI {period} using centralized utilities - traditional implementation",
             required_columns=["close"],
             default_lookback=period * 2,
             min_lookback=period,
-            max_lookback=period * 3
+            max_lookback=period * 3,
+            parameters={
+                'period': period,
+                'normalize': normalize,
+                'normalization_method': normalization_method
+            }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.period = period
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate RSI using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         close = data['close']
         
-        # Use VectorBT for optimized RSI calculation if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:
-            return self._calculate_rsi_vectorbt(close)
-        else:
-            return self._calculate_rsi_pandas(close)
-    
-    def _calculate_rsi_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using VectorBT optimized operations."""
-        try:
-            # Use VectorBT RSI if available
-            rsi_result = vbt.RSI.run(close, window=self.period)
-            return rsi_result.rsi.rename(f'legacy_rsi_{self.period}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_rsi_pandas(close)
-    
-    def _calculate_rsi_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using pandas operations."""
-        # Vectorized RSI calculation using numpy
-        rsi = self._calculate_rsi_vectorized(close.values, self.period)
-        return pd.Series(rsi, index=close.index, name=f'legacy_rsi_{self.period}')
-    
-    def _calculate_rsi_vectorized(self, prices: np.ndarray, period: int) -> np.ndarray:
-        """Calculate RSI using vectorized numpy operations."""
-        if len(prices) < period + 1:
-            return np.full(len(prices), np.nan)
+        # Use centralized RSI calculation
+        rsi = self.indicators.calculate_rsi(close, self.period)
         
-        # Calculate price changes
-        delta = np.diff(prices, prepend=prices[0])
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            rsi = self.scaler.fit_transform(rsi)
         
-        # Separate gains and losses
-        gains = np.where(delta > 0, delta, 0)
-        losses = np.where(delta < 0, -delta, 0)
-        
-        # Calculate rolling means using numpy
-        avg_gains = self._rolling_mean_vectorized(gains, period)
-        avg_losses = self._rolling_mean_vectorized(losses, period)
-        
-        # Calculate RSI
-        rs = np.divide(avg_gains, avg_losses, out=np.ones_like(avg_gains), where=avg_losses!=0)
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
-    
-    def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_sma_vectorized(series, window).values
-        
-        # Use numpy's cumsum for efficient rolling mean calculation
-        cumsum = np.cumsum(data)
-        rolling_mean = np.full(len(data), np.nan)
-        
-        # Calculate rolling mean for valid windows
-        for i in range(window - 1, len(data)):
-            if i == window - 1:
-                rolling_mean[i] = cumsum[i] / window
-            else:
-                rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
-        
-        return rolling_mean
+        return rsi.rename(f'legacy_rsi_{self.period}')
 
 class LegacyMACDGenerator(VectorizedFeatureGenerator):
-    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
+    """Legacy MACD generator using centralized utilities for consistency."""
+    
+    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9, 
+                 normalize: bool = False, normalization_method: str = 'zscore'):
         config = FeatureConfig(
             name=f"legacy_macd_{fast}_{slow}_{signal}",
             category=FeatureCategory.LEGACY,
-            description=f"Legacy MACD {fast}/{slow}/{signal} - traditional implementation",
+            description=f"Legacy MACD {fast}/{slow}/{signal} using centralized utilities - traditional implementation",
             required_columns=["close"],
             default_lookback=slow * 2,
             min_lookback=slow,
-            max_lookback=slow * 3
+            max_lookback=slow * 3,
+            parameters={
+                'fast': fast,
+                'slow': slow,
+                'signal': signal,
+                'normalize': normalize,
+                'normalization_method': normalization_method
+            }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.fast = fast
         self.slow = slow
         self.signal = signal
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MACD using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         close = data['close']
         
-        # Use VectorBT for optimized MACD calculation if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:
-            return self._calculate_macd_vectorbt(close)
-        else:
-            return self._calculate_macd_pandas(close)
-    
-    def _calculate_macd_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using VectorBT optimized operations."""
-        try:
-            # Use VectorBT MACD if available
-            macd_result = vbt.MACD.run(close, fast_window=self.fast, slow_window=self.slow, signal_window=self.signal)
-            return macd_result.macd.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_macd_pandas(close)
-    
-    def _calculate_macd_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using pandas operations."""
-        # Vectorized MACD calculation using numpy
-        macd = self._calculate_macd_vectorized(close.values, self.fast, self.slow)
-        return pd.Series(macd, index=close.index, name=f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-    
-    def _calculate_macd_vectorized(self, prices: np.ndarray, fast: int, slow: int) -> np.ndarray:
-        """Calculate MACD using vectorized numpy operations."""
-        if len(prices) < slow:
-            return np.full(len(prices), np.nan)
+        # Use centralized MACD calculation
+        macd_line, signal_line, histogram = self.indicators.calculate_macd(
+            close, self.fast, self.slow, self.signal
+        )
         
-        # Calculate EMAs using vectorized operations
-        ema_fast = self._calculate_ema_vectorized(prices, fast)
-        ema_slow = self._calculate_ema_vectorized(prices, slow)
+        # Return MACD line (can be extended to return signal_line or histogram)
+        result = macd_line
         
-        # MACD line
-        macd = ema_fast - ema_slow
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            result = self.scaler.fit_transform(result)
         
-        return macd
-    
-    def _calculate_ema_vectorized(self, prices: np.ndarray, span: int) -> np.ndarray:
-        """Calculate EMA using centralized method."""
-        series = pd.Series(prices)
-        return self._calculate_ema_vectorized(series, span).values
-        
-        # Calculate alpha (smoothing factor)
-        alpha = 2.0 / (span + 1.0)
-        
-        # Initialize EMA array
-        ema = np.full(len(prices), np.nan)
-        ema[0] = prices[0]
-        
-        # Calculate EMA using vectorized operations
-        for i in range(1, len(prices)):
-            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
-        
-        return emaclass LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
+        return result.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20, std_dev: float = 2.0):
         config = FeatureConfig(
             name=f"legacy_bollinger_{period}_{std_dev}",
@@ -750,18 +693,21 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
 
 def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     """
-    Create default legacy feature generators.
+    Create default legacy feature generators using centralized utilities.
     
     Legacy features include traditional implementations of classic indicators
     that have been used in technical analysis for decades. These provide
     backward compatibility and serve as benchmarks for enhanced versions.
+    All generators now use centralized utilities for consistency.
     """
     generators = []
     
-    # Classic indicators with standard parameters
+    # Classic indicators with standard parameters using centralized utilities
     generators.extend([
-        LegacyRSIGenerator(14),
-        LegacyMACDGenerator(12, 26, 9),
+        LegacyRSIGenerator(14, normalize=True),
+        LegacyRSIGenerator(14, normalize=False),
+        LegacyMACDGenerator(12, 26, 9, normalize=True),
+        LegacyMACDGenerator(12, 26, 9, normalize=False),
         LegacyBollingerBandsGenerator(20, 2.0),
         LegacySMAGenerator(20),
         LegacyEMAGenerator(21),
@@ -781,10 +727,17 @@ def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     for period in ema_periods:
         generators.append(LegacyEMAGenerator(period))
     
-    # Additional legacy RSI periods
+    # Additional legacy RSI periods with both normalized and non-normalized versions
     rsi_periods = [9, 21, 25]
     for period in rsi_periods:
-        generators.append(LegacyRSIGenerator(period))
+        generators.append(LegacyRSIGenerator(period, normalize=True))
+        generators.append(LegacyRSIGenerator(period, normalize=False))
+    
+    # Additional legacy MACD configurations
+    macd_configs = [(8, 21, 5), (5, 35, 5)]
+    for fast, slow, signal in macd_configs:
+        generators.append(LegacyMACDGenerator(fast, slow, signal, normalize=True))
+        generators.append(LegacyMACDGenerator(fast, slow, signal, normalize=False))
     
     return generators
 

@@ -88,12 +88,7 @@ except ImportError:
     OperationType = None
     OptimizationStrategy = None
 
-# LegacyRSIGenerator removed - use VectorBTRSIGenerator from momentum.py instead
-
-# LegacyMACDGenerator removed - use VectorBTMACDGenerator from momentum.py instead
-
-
-# LegacyBollingerBandsGenerator removed - use VectorBTBollingerBandsGenerator from volatility.py instead
+# Legacy generators removed - use VectorBT versions from respective category modules
 
 class LegacySMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20):
@@ -111,6 +106,11 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         tprint(f"Generating legacy SMA feature with period {self.period}")
+        
+        if data.empty:
+            tprint("Warning: Empty data provided for SMA calculation")
+            return pd.Series(dtype=float, index=data.index, name=f'legacy_sma_{self.period}')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -128,18 +128,21 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
     def _calculate_sma_vectorbt(self, close: pd.Series) -> pd.Series:
         """Calculate SMA using VectorBT optimized operations."""
         try:
+            tprint(f"Calculating SMA using VectorBT with window {self.period}")
             # Use VectorBT rolling mean if available
             sma = rolling_mean(close, window=self.period)
             return sma.rename(f'legacy_sma_{self.period}')
         except Exception as e:
+            tprint(f"VectorBT SMA calculation failed: {e}, falling back to pandas")
             # Fallback to pandas implementation
             return self._calculate_sma_pandas(close)
     
     def _calculate_sma_pandas(self, close: pd.Series) -> pd.Series:
         """Calculate SMA using pandas operations."""
-        # Vectorized SMA calculation using numpy
-        sma = self._rolling_mean_vectorized(close.values, self.period)
-        return pd.Series(sma, index=close.index, name=f'legacy_sma_{self.period}')
+        tprint(f"Calculating SMA using pandas with window {self.period}")
+        # Use pandas rolling mean directly
+        sma = close.rolling(window=self.period).mean()
+        return sma.rename(f'legacy_sma_{self.period}')
     
     def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling mean using centralized method."""
@@ -163,6 +166,11 @@ class LegacyEMAGenerator(VectorizedFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         tprint(f"Generating legacy EMA feature with period {self.period}")
+        
+        if data.empty:
+            tprint("Warning: Empty data provided for EMA calculation")
+            return pd.Series(dtype=float, index=data.index, name=f'legacy_ema_{self.period}')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -180,23 +188,22 @@ class LegacyEMAGenerator(VectorizedFeatureGenerator):
     def _calculate_ema_vectorbt(self, close: pd.Series) -> pd.Series:
         """Calculate EMA using VectorBT optimized operations."""
         try:
+            tprint(f"Calculating EMA using VectorBT with span {self.period}")
             # Use VectorBT EMA if available
             ema = close.ewm(span=self.period).mean()
             return ema.rename(f'legacy_ema_{self.period}')
         except Exception as e:
+            tprint(f"VectorBT EMA calculation failed: {e}, falling back to pandas")
             # Fallback to pandas implementation
             return self._calculate_ema_pandas(close)
     
     def _calculate_ema_pandas(self, close: pd.Series) -> pd.Series:
         """Calculate EMA using pandas operations."""
-        # Vectorized EMA calculation using numpy
-        ema = self._calculate_ema_vectorized(close.values, self.period)
-        return pd.Series(ema, index=close.index, name=f'legacy_ema_{self.period}')
+        tprint(f"Calculating EMA using pandas with span {self.period}")
+        # Use pandas ewm directly
+        ema = close.ewm(span=self.period).mean()
+        return ema.rename(f'legacy_ema_{self.period}')
     
-    def _calculate_ema_vectorized(self, prices: np.ndarray, span: int) -> np.ndarray:
-        """Calculate EMA using centralized method."""
-        series = pd.Series(prices)
-        return self._calculate_ema_vectorized(series, span).values
 
 
 class LegacyATRGenerator(VectorizedFeatureGenerator):
@@ -214,6 +221,12 @@ class LegacyATRGenerator(VectorizedFeatureGenerator):
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy ATR feature with period {self.period}")
+        
+        if data.empty:
+            tprint("Warning: Empty data provided for ATR calculation")
+            return pd.Series(dtype=float, index=data.index, name=f'legacy_atr_{self.period}')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -224,66 +237,38 @@ class LegacyATRGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized ATR calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint(f"Using VectorBT for ATR calculation (data size: {len(close)})")
             return self._calculate_atr_vectorbt(high, low, close)
         else:
+            tprint(f"Using pandas for ATR calculation (data size: {len(close)})")
             return self._calculate_atr_pandas(high, low, close)
     
     def _calculate_atr_vectorbt(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate ATR using VectorBT optimized operations."""
         try:
+            tprint(f"Calculating ATR using VectorBT with window {self.period}")
             # Use VectorBT ATR if available
             atr_result = vbt.ATR.run(high, low, close, window=self.period)
             return atr_result.atr.rename(f'legacy_atr_{self.period}')
         except Exception as e:
+            tprint(f"VectorBT ATR calculation failed: {e}, falling back to pandas")
             # Fallback to pandas implementation
             return self._calculate_atr_pandas(high, low, close)
     
     def _calculate_atr_pandas(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate ATR using pandas operations."""
-        # Vectorized ATR calculation using numpy
-        atr = self._calculate_atr_vectorized(high.values, low.values, close.values, self.period)
-        return pd.Series(atr, index=close.index, name=f'legacy_atr_{self.period}')
-    
-    def _calculate_atr_vectorized(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
-        """Calculate ATR using vectorized numpy operations."""
-        if len(high) < period or len(low) < period or len(close) < period:
-            return np.full(len(close), np.nan)
-        
-        # Calculate True Range components
+        tprint(f"Calculating ATR using pandas with window {self.period}")
+        # Calculate True Range
         tr1 = high - low
-        
-        # Shift close by 1 period for previous close
-        prev_close = np.roll(close, 1)
-        prev_close[0] = close[0]  # First value uses current close
-        
-        tr2 = np.abs(high - prev_close)
-        tr3 = np.abs(low - prev_close)
-        
-        # True Range is the maximum of the three components
-        tr = np.maximum.reduce([tr1, tr2, tr3])
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         
         # Calculate ATR as rolling mean of True Range
-        atr = self._rolling_mean_vectorized(tr, period)
-        
-        return atr
+        atr = tr.rolling(window=self.period).mean()
+        return atr.rename(f'legacy_atr_{self.period}')
     
-    def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_sma_vectorized(series, window).values
-        
-        # Use numpy's cumsum for efficient rolling mean calculation
-        cumsum = np.cumsum(data)
-        rolling_mean = np.full(len(data), np.nan)
-        
-        # Calculate rolling mean for valid windows
-        for i in range(window - 1, len(data)):
-            if i == window - 1:
-                rolling_mean[i] = cumsum[i] / window
-            else:
-                rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
-        
-        return rolling_mean
+    
 
 
 # LegacyStochasticGenerator removed - use VectorBTStochasticGenerator from momentum.py instead
@@ -304,6 +289,12 @@ class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy Williams %R feature with period {self.period}")
+        
+        if data.empty:
+            tprint("Warning: Empty data provided for Williams %R calculation")
+            return pd.Series(dtype=float, index=data.index, name=f'legacy_williams_r_{self.period}')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -314,68 +305,35 @@ class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized Williams %R calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint(f"Using VectorBT for Williams %R calculation (data size: {len(close)})")
             return self._calculate_williams_r_vectorbt(high, low, close)
         else:
+            tprint(f"Using pandas for Williams %R calculation (data size: {len(close)})")
             return self._calculate_williams_r_pandas(high, low, close)
     
     def _calculate_williams_r_vectorbt(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate Williams %R using VectorBT optimized operations."""
         try:
+            tprint(f"Calculating Williams %R using VectorBT with window {self.period}")
             # Use VectorBT Williams %R if available
             willr_result = vbt.WILLR.run(high, low, close, window=self.period)
             return willr_result.willr.rename(f'legacy_williams_r_{self.period}')
         except Exception as e:
+            tprint(f"VectorBT Williams %R calculation failed: {e}, falling back to pandas")
             # Fallback to pandas implementation
             return self._calculate_williams_r_pandas(high, low, close)
     
     def _calculate_williams_r_pandas(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
         """Calculate Williams %R using pandas operations."""
-        # Vectorized Williams %R calculation using numpy
-        williams_r = self._calculate_williams_r_vectorized(high.values, low.values, close.values, self.period)
-        return pd.Series(williams_r, index=close.index, name=f'legacy_williams_r_{self.period}')
-    
-    def _calculate_williams_r_vectorized(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
-        """Calculate Williams %R using vectorized numpy operations."""
-        if len(high) < period or len(low) < period or len(close) < period:
-            return np.full(len(close), np.nan)
-        
-        # Calculate rolling min and max using vectorized operations
-        lowest_low = self._rolling_min_vectorized(low, period)
-        highest_high = self._rolling_max_vectorized(high, period)
+        tprint(f"Calculating Williams %R using pandas with window {self.period}")
+        # Calculate rolling min and max
+        lowest_low = low.rolling(window=self.period).min()
+        highest_high = high.rolling(window=self.period).max()
         
         # Calculate Williams %R
-        denominator = highest_high - lowest_low
-        williams_r = np.where(
-            denominator != 0,
-            -100 * ((highest_high - close) / denominator),
-            0
-        )
-        
-        return williams_r
+        williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
+        return williams_r.rename(f'legacy_williams_r_{self.period}')
     
-    def _rolling_min_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling min using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_rolling_min_vectorized(series, window).values
-        
-        rolling_min = np.full(len(data), np.nan)
-        
-        for i in range(window - 1, len(data)):
-            rolling_min[i] = np.min(data[i - window + 1:i + 1])
-        
-        return rolling_min
-    
-    def _rolling_max_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling max using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_rolling_max_vectorized(series, window).values
-        
-        rolling_max = np.full(len(data), np.nan)
-        
-        for i in range(window - 1, len(data)):
-            rolling_max[i] = np.max(data[i - window + 1:i + 1])
-        
-        return rolling_max
 
 
 class LegacyOBVGenerator(VectorizedFeatureGenerator):
@@ -392,6 +350,12 @@ class LegacyOBVGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint("Generating legacy OBV feature")
+        
+        if data.empty:
+            tprint("Warning: Empty data provided for OBV calculation")
+            return pd.Series(dtype=float, index=data.index, name='legacy_obv')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -401,42 +365,38 @@ class LegacyOBVGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized OBV calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint(f"Using VectorBT for OBV calculation (data size: {len(close)})")
             return self._calculate_obv_vectorbt(close, volume)
         else:
+            tprint(f"Using pandas for OBV calculation (data size: {len(close)})")
             return self._calculate_obv_pandas(close, volume)
     
     def _calculate_obv_vectorbt(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate OBV using VectorBT optimized operations."""
         try:
+            tprint("Calculating OBV using VectorBT")
             # Use VectorBT OBV if available
-            obv_result = self._calculate_obv_vectorized(close, volume)
+            obv_result = vbt.OBV.run(close, volume)
             return obv_result.obv.rename('legacy_obv')
         except Exception as e:
+            tprint(f"VectorBT OBV calculation failed: {e}, falling back to pandas")
             # Fallback to pandas implementation
             return self._calculate_obv_pandas(close, volume)
     
     def _calculate_obv_pandas(self, close: pd.Series, volume: pd.Series) -> pd.Series:
         """Calculate OBV using pandas operations."""
-        # Vectorized OBV calculation using numpy
-        obv = self._calculate_obv_vectorized(close.values, volume.values)
-        return pd.Series(obv, index=close.index, name='legacy_obv')
-    
-    def _calculate_obv_vectorized(self, close: np.ndarray, volume: np.ndarray) -> np.ndarray:
-        """Calculate OBV using vectorized numpy operations."""
-        if len(close) < 2 or len(volume) < 2:
-            return np.full(len(close), np.nan)
-        
+        tprint("Calculating OBV using pandas")
         # Calculate price changes
-        price_change = np.diff(close, prepend=close[0])
+        price_change = close.diff()
         
         # Calculate OBV based on price direction
         obv = np.where(price_change > 0, volume, 
                       np.where(price_change < 0, -volume, 0))
         
         # Cumulative sum
-        obv_cumsum = np.cumsum(obv)
-        
-        return obv_cumsum
+        obv_cumsum = pd.Series(obv, index=close.index).cumsum()
+        return obv_cumsum.rename('legacy_obv')
+    
 
 def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     """

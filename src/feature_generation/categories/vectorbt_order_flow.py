@@ -75,7 +75,10 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate taker buy ratio using VectorBT operations."""
+        tprint(f"Generating VectorBT taker buy ratio feature with window {self.window}")
+        
         if data.empty:
+            tprint("Warning: Empty data provided for taker buy ratio calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_taker_buy_ratio_{self.window}')
         
         close = data['close']
@@ -133,7 +136,10 @@ class VectorBTTakerSellRatioGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate taker sell ratio using VectorBT operations."""
+        tprint(f"Generating VectorBT taker sell ratio feature with window {self.window}")
+        
         if data.empty:
+            tprint("Warning: Empty data provided for taker sell ratio calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_taker_sell_ratio_{self.window}')
         
         close = data['close']

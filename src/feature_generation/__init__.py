@@ -169,18 +169,8 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Matrix integration not available: {e}")
 
-# HMM compatibility layer
-try:
-    from .compatibility.hmm_compatibility import (
-        HMMCompatibleFeatureGenerators,
-        FeatureGenerators,
-        get_hmm_compatible_generators
-    )
-    HMM_COMPATIBILITY_AVAILABLE = True
-except ImportError as e:
-    HMM_COMPATIBILITY_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning(f"HMM compatibility not available: {e}")
+# HMM compatibility layer - REMOVED (deprecated)
+HMM_COMPATIBILITY_AVAILABLE = False
 
 # Convenience functions
 try:
@@ -328,13 +318,7 @@ if MATRIX_INTEGRATION_AVAILABLE:
         "enable_matrix_acceleration"
     ])
 
-# HMM compatibility
-if HMM_COMPATIBILITY_AVAILABLE:
-    __all__.extend([
-        "HMMCompatibleFeatureGenerators",
-        "FeatureGenerators",
-        "get_hmm_compatible_generators"
-    ])
+# HMM compatibility - REMOVED (deprecated)
 
 # Convenience functions
 if CONVENIENCE_AVAILABLE:

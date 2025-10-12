@@ -65,6 +65,7 @@ except ImportError:
 from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
 from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
 from ..core.feature_bank import get_global_feature_bank
+from ..utils.consolidated_technical_indicators import get_consolidated_indicators, IndicatorConfig
 
 # Unified Vectorization Manager for intelligent optimization
 try:
@@ -82,7 +83,7 @@ except ImportError:
     OptimizationStrategy = None
 
 class LegacyRSIGenerator(VectorizedFeatureGenerator):
-    def __init__(self, period: int = 14):
+    def __init__(self, period: int = 14, use_consolidated_indicators: bool = True):
         config = FeatureConfig(
             name=f"legacy_rsi_{period}",
             category=FeatureCategory.LEGACY,
@@ -94,8 +95,15 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        self.use_consolidated_indicators = use_consolidated_indicators
         
-        # Initialize VectorBT optimizers
+        # Initialize consolidated technical indicators if enabled
+        if self.use_consolidated_indicators:
+            self.consolidated_indicators = get_consolidated_indicators()
+        else:
+            self.consolidated_indicators = None
+        
+        # Initialize VectorBT optimizers as fallback
         self.rolling_optimizer = get_vectorbt_rolling_optimizer()
         self.unified_manager = get_unified_vectorization_manager() if UNIFIED_MANAGER_AVAILABLE else None
     
@@ -106,6 +114,15 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
 
         close = data['close']
         
+        # Use consolidated technical indicators if available
+        if self.use_consolidated_indicators and self.consolidated_indicators:
+            try:
+                rsi = self.consolidated_indicators.calculate_rsi(close, self.period)
+                return rsi.rename(f'legacy_rsi_{self.period}')
+            except Exception as e:
+                logger.warning(f"Consolidated RSI calculation failed: {e}, using fallback")
+        
+        # Fallback to traditional optimization methods
         # Use UnifiedVectorizationManager for intelligent optimization if available
         if self.unified_manager and len(close) >= 100:
             return self._calculate_rsi_unified(close)

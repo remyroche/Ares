@@ -84,6 +84,7 @@ from ..base_calculations import (
     BaseCalculationConfig,
     create_base_calculator
 )
+from ..utils.consolidated_technical_indicators import get_consolidated_indicators, IndicatorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -801,6 +802,7 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 use_consolidated_indicators: bool = True,
                  **base_kwargs):
         """
         Initialize EMA generator.
@@ -808,6 +810,7 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         Args:
             period: EMA period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            use_consolidated_indicators: Whether to use consolidated technical indicators
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -836,14 +839,22 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_consolidated_indicators = use_consolidated_indicators
         
-        # Initialize VectorBT optimizer
+        # Initialize consolidated technical indicators if enabled
+        if self.use_consolidated_indicators:
+            self.consolidated_indicators = get_consolidated_indicators()
+        else:
+            self.consolidated_indicators = None
+        
+        # Initialize VectorBT optimizer as fallback
         if VECTORBT_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate EMA based on the specified base calculation."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -851,7 +862,15 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Use VectorBT for EMA calculation
+        # Use consolidated technical indicators if available
+        if self.use_consolidated_indicators and self.consolidated_indicators:
+            try:
+                ema = self.consolidated_indicators.calculate_ema(base_values, self.period)
+                return ema
+            except Exception as e:
+                logger.warning(f"Consolidated EMA calculation failed: {e}, using fallback")
+        
+        # Fallback to traditional EMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # VectorBT doesn't have direct EMA, so we use ewm

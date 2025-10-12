@@ -7,13 +7,19 @@ including CCI, ADX, Aroon, Ultimate Oscillator, KST, APO, CMO, NATR, PFE, T3, KA
 
 import numpy as np
 import pandas as pd
-import warnings
 import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
+
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
 
 # VectorBT imports for native optimization
 try:
@@ -737,7 +743,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 
                 return cci
 
-# ADX (Average Directional Index)class ADXGenerator(VectorizedFeatureGenerator):
+# ADX (Average Directional Index)
+class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for ADX (Average Directional Index) with different base calculations."""
     
     def __init__(self,
@@ -896,7 +903,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 adx = base_values.rolling(window=self.period).std()
                 return adx
 
-# Aroon Oscillatorclass AroonGenerator(VectorizedFeatureGenerator):
+# Aroon Oscillator
+class AroonGenerator(VectorizedFeatureGenerator):
     """Generator for Aroon Oscillator with different base calculations."""
     
     def __init__(self,
@@ -1018,7 +1026,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 
                 return aroon
 
-# Parabolic SARclass SARGenerator(VectorizedFeatureGenerator):
+# Parabolic SAR
+class SARGenerator(VectorizedFeatureGenerator):
     """Generator for Parabolic SAR with different base calculations."""
     
     def __init__(self,
@@ -1136,7 +1145,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 sar = self._calculate_sma_vectorized(base_values, 20)
                 return sar
 
-# Ultimate Oscillatorclass UltimateOscillatorGenerator(VectorizedFeatureGenerator):
+# Ultimate Oscillator
+class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Ultimate Oscillator with different base calculations."""
     
     def __init__(self,
@@ -1276,7 +1286,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 uo = base_values.rolling(window=self.period3).mean()
                 return uo
 
-# KST (Know Sure Thing)class KSTGenerator(VectorizedFeatureGenerator):
+# KST (Know Sure Thing)
+class KSTGenerator(VectorizedFeatureGenerator):
     """Generator for KST (Know Sure Thing) with different base calculations."""
     
     def __init__(self,
@@ -1431,7 +1442,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 kst = base_values.rolling(window=max(self.roc4, self.sma4)).mean()
                 return kst
 
-# APO (Absolute Price Oscillator)class APOGenerator(VectorizedFeatureGenerator):
+# APO (Absolute Price Oscillator)
+class APOGenerator(VectorizedFeatureGenerator):
     """Generator for APO (Absolute Price Oscillator) with different base calculations."""
     
     def __init__(self,
@@ -1519,7 +1531,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             
             return apo
 
-# CMO (Chande Momentum Oscillator)class CMOGenerator(VectorizedFeatureGenerator):
+# CMO (Chande Momentum Oscillator)
+class CMOGenerator(VectorizedFeatureGenerator):
     """Generator for CMO (Chande Momentum Oscillator) with different base calculations."""
     
     def __init__(self,
@@ -1587,7 +1600,8 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         
         return cmo
 
-# NATR (Normalized Average True Range)class NATRGenerator(VectorizedFeatureGenerator):
+# NATR (Normalized Average True Range)
+class NATRGenerator(VectorizedFeatureGenerator):
     """Generator for NATR (Normalized Average True Range) with different base calculations."""
     
     def __init__(self,

@@ -110,6 +110,7 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy SMA feature with period {self.period}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -118,8 +119,10 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized SMA calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint(f"Using VectorBT for SMA calculation (data size: {len(close)})")
             return self._calculate_sma_vectorbt(close)
         else:
+            tprint(f"Using pandas for SMA calculation (data size: {len(close)})")
             return self._calculate_sma_pandas(close)
     
     def _calculate_sma_vectorbt(self, close: pd.Series) -> pd.Series:
@@ -142,19 +145,9 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         """Calculate rolling mean using centralized method."""
         series = pd.Series(data)
         return self._calculate_sma_vectorized(series, window).values
-        
-        # Use numpy's cumsum for efficient rolling mean calculation
-        cumsum = np.cumsum(data)
-        rolling_mean = np.full(len(data), np.nan)
-        
-        # Calculate rolling mean for valid windows
-        for i in range(window - 1, len(data)):
-            if i == window - 1:
-                rolling_mean[i] = cumsum[i] / window
-            else:
-                rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
-        
-        return rolling_meanclass LegacyEMAGenerator(VectorizedFeatureGenerator):
+
+
+class LegacyEMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 21):
         config = FeatureConfig(
             name=f"legacy_ema_{period}",
@@ -169,6 +162,7 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy EMA feature with period {self.period}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -177,8 +171,10 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized EMA calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint(f"Using VectorBT for EMA calculation (data size: {len(close)})")
             return self._calculate_ema_vectorbt(close)
         else:
+            tprint(f"Using pandas for EMA calculation (data size: {len(close)})")
             return self._calculate_ema_pandas(close)
     
     def _calculate_ema_vectorbt(self, close: pd.Series) -> pd.Series:
@@ -201,19 +197,9 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         """Calculate EMA using centralized method."""
         series = pd.Series(prices)
         return self._calculate_ema_vectorized(series, span).values
-        
-        # Calculate alpha (smoothing factor)
-        alpha = 2.0 / (span + 1.0)
-        
-        # Initialize EMA array
-        ema = np.full(len(prices), np.nan)
-        ema[0] = prices[0]
-        
-        # Calculate EMA using vectorized operations
-        for i in range(1, len(prices)):
-            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
-        
-        return emaclass LegacyATRGenerator(VectorizedFeatureGenerator):
+
+
+class LegacyATRGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
             name=f"legacy_atr_{period}",
@@ -389,7 +375,10 @@ class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
         for i in range(window - 1, len(data)):
             rolling_max[i] = np.max(data[i - window + 1:i + 1])
         
-        return rolling_maxclass LegacyOBVGenerator(VectorizedFeatureGenerator):
+        return rolling_max
+
+
+class LegacyOBVGenerator(VectorizedFeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
             name="legacy_obv",

@@ -98,48 +98,6 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
             'optimization_success_rate': 0.0
         }
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT and UnifiedVectorizationManager."""
-        # Use UnifiedVectorizationManager for intelligent optimization
-        if self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE:
-            try:
-                from ...utils.ml_common.unified_vectorization_manager import OperationConfig
-                config = OperationConfig(
-                    operation_type=OperationType.FEATURE_ENGINEERING,
-                    data_size=len(data),
-                    data_dimensions=data.shape,
-                    memory_budget_mb=2048.0,  # Increased memory budget
-                    time_budget_seconds=60.0,  # Added time budget
-                    precision_requirement="high"  # High precision for financial data
-                )
-                
-                # Use UnifiedVectorizationManager for optimization
-                result = self.unified_manager.optimize_operation(
-                    OperationType.FEATURE_ENGINEERING,
-                    data,
-                    config
-                )
-                return result.result
-            except Exception as e:
-                self.logger.warning(f"UnifiedVectorizationManager optimization failed: {e}")
-        
-        # Enhanced VectorBT Rolling Optimizer fallback
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            try:
-                # Use VectorBT optimization for data processing with enhanced settings
-                optimized_data = self.vectorbt_optimizer._optimize_data_types(data)
-                
-                # Additional VectorBT-specific optimizations
-                if hasattr(self.vectorbt_optimizer, 'enable_gpu') and self.vectorbt_optimizer.enable_gpu:
-                    # GPU-specific optimizations
-                    optimized_data = self._apply_gpu_optimizations(optimized_data)
-                
-                return optimized_data
-            except Exception as e:
-                self.logger.warning(f"VectorBTRollingOptimizer optimization failed: {e}")
-        
-        # Fallback to parent class method
-        return super().optimize_dataframe_processing(data)
     
     def _apply_gpu_optimizations(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply GPU-specific optimizations to data."""
@@ -231,90 +189,6 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
             'optimization_success_rate': 0.0
         }
     
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        import time
-        start_time = time.time()
-        
-        # Use VectorBT Rolling Optimizer for enhanced performance
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            try:
-                results = {}
-                for i, operation in enumerate(operations):
-                    window = windows[i] if i < len(windows) else windows[0]
-                    column = columns[i] if columns and i < len(columns) else 'close'
-                    
-                    if column in data.columns:
-                        # Enhanced VectorBT operations with additional parameters
-                        if operation == 'mean':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_mean(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'std':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_std(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'var':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_var(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'min':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_min(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'max':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_max(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'sum':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_sum(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'quantile':
-                            q = 0.5  # Default median
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_quantile(
-                                data[column], window, q=q, min_periods=1
-                            )
-                        elif operation == 'skew':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_skew(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'kurt':
-                            results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_kurt(
-                                data[column], window, min_periods=1
-                            )
-                        elif operation == 'corr':
-                            # For correlation, use with another column or time index
-                            other_column = 'volume' if 'volume' in data.columns else data.columns[0]
-                            if other_column != column:
-                                results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_corr(
-                                    data[column], data[other_column], window, min_periods=1
-                                )
-                        elif operation == 'cov':
-                            # For covariance, use with another column
-                            other_column = 'volume' if 'volume' in data.columns else data.columns[0]
-                            if other_column != column:
-                                results[f"{operation}_{window}_{column}"] = self.vectorbt_optimizer.rolling_cov(
-                                    data[column], data[other_column], window, min_periods=1
-                                )
-                
-                # Update performance metrics
-                processing_time = time.time() - start_time
-                memory_usage = data.memory_usage(deep=True).sum() / (1024 * 1024)  # MB
-                self._update_performance_metrics('vectorbt', processing_time, memory_usage)
-                
-                return pd.DataFrame(results, index=data.index)
-            except Exception as e:
-                self.logger.warning(f"VectorBTRollingOptimizer rolling operations failed: {e}")
-        
-        # Fallback to parent class method
-        result = super().vectorized_rolling_operations(data, operations, windows, columns)
-        # Update performance metrics for fallback
-        processing_time = time.time() - start_time
-        memory_usage = data.memory_usage(deep=True).sum() / (1024 * 1024)  # MB
-        self._update_performance_metrics('fallback', processing_time, memory_usage)
-        return result
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:

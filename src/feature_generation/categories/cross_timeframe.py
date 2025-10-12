@@ -165,28 +165,6 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             gpu_accelerated=True
         )
 
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using Unified Vectorization Manager."""
-        if self.vectorization_manager:
-            return self.vectorization_manager.optimize_dataframe_processing(data)
-        elif hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        # Fallback to parent class method
-        return super().optimize_dataframe_processing(data)
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if self.vectorization_manager:
-            return self.vectorization_manager.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        elif hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        # Fallback to parent class method
-        return super().vectorized_rolling_operations(data, operations, windows, columns)
     
     def generate_enhanced_cross_timeframe_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate comprehensive cross-timeframe features using VectorBT optimization."""

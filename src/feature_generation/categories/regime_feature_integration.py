@@ -1018,40 +1018,6 @@ def _parallel_feature_generation(self, generators: List[Tuple[str, Any]], data: 
 
 # Analyst Features - Regime generators
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        if self.unified_optimizer:
-            return self.unified_optimizer.optimize_dataframe(data)
-        elif self.vectorbt_optimizer:
-            return self.vectorbt_optimizer._optimize_data_types(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        if self.vectorbt_optimizer:
-            result = data.copy()
-            if columns is None:
-                columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            for window in windows:
-                for col in columns:
-                    if col in data.columns:
-                        for operation in operations:
-                            if operation == 'mean':
-                                result[f'{col}_rolling_mean_{window}'] = self.vectorbt_optimizer.rolling_mean(data[col], window)
-                            elif operation == 'std':
-                                result[f'{col}_rolling_std_{window}'] = self.vectorbt_optimizer.rolling_std(data[col], window)
-                            elif operation == 'var':
-                                result[f'{col}_rolling_var_{window}'] = self.vectorbt_optimizer.rolling_var(data[col], window)
-                            elif operation == 'min':
-                                result[f'{col}_rolling_min_{window}'] = self.vectorbt_optimizer.rolling_min(data[col], window)
-                            elif operation == 'max':
-                                result[f'{col}_rolling_max_{window}'] = self.vectorbt_optimizer.rolling_max(data[col], window)
-                            elif operation == 'sum':
-                                result[f'{col}_rolling_sum_{window}'] = self.vectorbt_optimizer.rolling_sum(data[col], window)
-            return result
-        return data
 
 class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability trending feature."""

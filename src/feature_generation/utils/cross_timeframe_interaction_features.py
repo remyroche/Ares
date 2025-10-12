@@ -793,8 +793,8 @@ class CrossTimeframeFeatureGenerator:
             return features
 
         try:
-            # Multi-timeframe momentum convergence/divergence
-            timeframes = [5, 10, 20, 50]
+            # Multi-timeframe momentum convergence/divergence (15m-based timeframes)
+            timeframes = [15, 30, 60, 120]  # 15m, 30m, 1h, 2h
             momentum_series = {}
             
             for tf in timeframes:
@@ -845,8 +845,8 @@ class CrossTimeframeFeatureGenerator:
             return features
 
         try:
-            # Multi-timeframe volatility analysis
-            timeframes = [5, 10, 20, 50]
+            # Multi-timeframe volatility analysis (15m-based timeframes)
+            timeframes = [15, 30, 60, 120]  # 15m, 30m, 1h, 2h
             volatility_series = {}
             
             for tf in timeframes:
@@ -947,40 +947,162 @@ class CrossTimeframeFeatureGenerator:
             return features
 
         try:
-            # RSI-MACD interaction
+            # RSI-MACD interactions (multiple types)
             rsi_14 = self._calculate_rsi_vectorized(close, 14)
+            rsi_21 = self._calculate_rsi_vectorized(close, 21)
             macd_line = self._calculate_macd_vectorized(close, 12, 26)
+            macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+            macd_histogram = macd_line - macd_signal
             
             if rsi_14 is not None and macd_line is not None:
-                # RSI-MACD divergence
+                # RSI-MACD divergence (difference)
                 rsi_macd_divergence = rsi_14 - macd_line
                 if self._is_valid_feature(rsi_macd_divergence):
                     features['rsi_macd_divergence'] = rsi_macd_divergence.rename('rsi_macd_divergence')
                 
-                # RSI-MACD momentum
+                # RSI-MACD momentum (product)
                 rsi_macd_momentum = rsi_14 * macd_line
                 if self._is_valid_feature(rsi_macd_momentum):
                     features['rsi_macd_momentum'] = rsi_macd_momentum.rename('rsi_macd_momentum')
+                
+                # RSI-MACD ratio
+                rsi_macd_ratio = rsi_14 / (macd_line + 1e-08)
+                if self._is_valid_feature(rsi_macd_ratio):
+                    features['rsi_macd_ratio'] = rsi_macd_ratio.rename('rsi_macd_ratio')
+                
+                # RSI-MACD correlation (rolling)
+                if VECTORBT_AVAILABLE:
+                    rsi_macd_corr = rolling_corr(rsi_14, macd_line, window=20)
+                else:
+                    rsi_macd_corr = rsi_14.rolling(window=20).corr(macd_line)
+                if self._is_valid_feature(rsi_macd_corr):
+                    features['rsi_macd_correlation'] = rsi_macd_corr.rename('rsi_macd_correlation')
+                
+                # RSI-MACD signal interaction
+                rsi_macd_signal_interaction = rsi_14 * macd_signal
+                if self._is_valid_feature(rsi_macd_signal_interaction):
+                    features['rsi_macd_signal_interaction'] = rsi_macd_signal_interaction.rename('rsi_macd_signal_interaction')
+                
+                # RSI-MACD histogram interaction
+                rsi_macd_histogram_interaction = rsi_14 * macd_histogram
+                if self._is_valid_feature(rsi_macd_histogram_interaction):
+                    features['rsi_macd_histogram_interaction'] = rsi_macd_histogram_interaction.rename('rsi_macd_histogram_interaction')
+                
+                # RSI-MACD normalized divergence
+                rsi_macd_normalized = (rsi_14 - 50) * (macd_line - macd_line.rolling(50).mean())
+                if self._is_valid_feature(rsi_macd_normalized):
+                    features['rsi_macd_normalized'] = rsi_macd_normalized.rename('rsi_macd_normalized')
             
-            # Bollinger Bands squeeze detection
-            bb_window = 20
-            bb_std = 2.0
+            # Multi-period RSI-MACD interactions
+            if rsi_21 is not None and macd_line is not None:
+                # RSI21-MACD interaction
+                rsi21_macd_interaction = rsi_21 * macd_line
+                if self._is_valid_feature(rsi21_macd_interaction):
+                    features['rsi21_macd_interaction'] = rsi21_macd_interaction.rename('rsi21_macd_interaction')
+                
+                # RSI14-RSI21-MACD interaction
+                rsi_diff_macd = (rsi_14 - rsi_21) * macd_line
+                if self._is_valid_feature(rsi_diff_macd):
+                    features['rsi_diff_macd_interaction'] = rsi_diff_macd.rename('rsi_diff_macd_interaction')
             
-            if VECTORBT_AVAILABLE:
-                sma = rolling_mean(close, window=bb_window)
-                std_dev = rolling_std(close, window=bb_window)
-            else:
-                sma = close.rolling(window=bb_window).mean()
-                std_dev = close.rolling(window=bb_window).std()
+            # Bollinger Bands interactions (multiple types)
+            bb_windows = [15, 20, 30]  # Multiple BB periods
+            bb_stds = [1.5, 2.0, 2.5]  # Multiple standard deviations
             
-            upper_band = sma + (std_dev * bb_std)
-            lower_band = sma - (std_dev * bb_std)
-            bb_width = upper_band - lower_band
+            for bb_window in bb_windows:
+                for bb_std in bb_stds:
+                    if VECTORBT_AVAILABLE:
+                        sma = rolling_mean(close, window=bb_window)
+                        std_dev = rolling_std(close, window=bb_window)
+                    else:
+                        sma = close.rolling(window=bb_window).mean()
+                        std_dev = close.rolling(window=bb_window).std()
+                    
+                    upper_band = sma + (std_dev * bb_std)
+                    lower_band = sma - (std_dev * bb_std)
+                    bb_width = upper_band - lower_band
+                    bb_position = (close - lower_band) / (bb_width + 1e-08)
+                    
+                    # BB squeeze detection (low volatility)
+                    bb_squeeze = bb_width < bb_width.rolling(window=20).mean() * 0.8
+                    if self._is_valid_feature(bb_squeeze):
+                        features[f'bb_squeeze_{bb_window}_{bb_std}'] = bb_squeeze.astype(float).rename(f'bb_squeeze_{bb_window}_{bb_std}')
+                    
+                    # BB position (where price sits in bands)
+                    if self._is_valid_feature(bb_position):
+                        features[f'bb_position_{bb_window}_{bb_std}'] = bb_position.rename(f'bb_position_{bb_window}_{bb_std}')
+                    
+                    # BB width (volatility measure)
+                    if self._is_valid_feature(bb_width):
+                        features[f'bb_width_{bb_window}_{bb_std}'] = bb_width.rename(f'bb_width_{bb_window}_{bb_std}')
+                    
+                    # BB distance from middle band
+                    bb_distance = close - sma
+                    if self._is_valid_feature(bb_distance):
+                        features[f'bb_distance_{bb_window}_{bb_std}'] = bb_distance.rename(f'bb_distance_{bb_window}_{bb_std}')
+                    
+                    # BB normalized distance
+                    bb_normalized = bb_distance / (std_dev + 1e-08)
+                    if self._is_valid_feature(bb_normalized):
+                        features[f'bb_normalized_{bb_window}_{bb_std}'] = bb_normalized.rename(f'bb_normalized_{bb_window}_{bb_std}')
+                    
+                    # BB breakout detection
+                    bb_breakout_upper = close > upper_band
+                    bb_breakout_lower = close < lower_band
+                    if self._is_valid_feature(bb_breakout_upper):
+                        features[f'bb_breakout_upper_{bb_window}_{bb_std}'] = bb_breakout_upper.astype(float).rename(f'bb_breakout_upper_{bb_window}_{bb_std}')
+                    if self._is_valid_feature(bb_breakout_lower):
+                        features[f'bb_breakout_lower_{bb_window}_{bb_std}'] = bb_breakout_lower.astype(float).rename(f'bb_breakout_lower_{bb_window}_{bb_std}')
             
-            # Squeeze detection (low volatility)
-            bb_squeeze = bb_width < bb_width.rolling(window=20).mean() * 0.8
-            if self._is_valid_feature(bb_squeeze):
-                features['bollinger_squeeze'] = bb_squeeze.astype(float).rename('bollinger_squeeze')
+            # Cross-BB interactions
+            if len(bb_windows) >= 2:
+                # BB width ratio between different periods
+                bb_width_15 = features.get('bb_width_15_2.0')
+                bb_width_30 = features.get('bb_width_30_2.0')
+                if bb_width_15 is not None and bb_width_30 is not None:
+                    bb_width_ratio = bb_width_15 / (bb_width_30 + 1e-08)
+                    if self._is_valid_feature(bb_width_ratio):
+                        features['bb_width_ratio_15_30'] = bb_width_ratio.rename('bb_width_ratio_15_30')
+                
+                # BB position difference between periods
+                bb_pos_15 = features.get('bb_position_15_2.0')
+                bb_pos_30 = features.get('bb_position_30_2.0')
+                if bb_pos_15 is not None and bb_pos_30 is not None:
+                    bb_pos_diff = bb_pos_15 - bb_pos_30
+                    if self._is_valid_feature(bb_pos_diff):
+                        features['bb_position_diff_15_30'] = bb_pos_diff.rename('bb_position_diff_15_30')
+            
+            # BB-MACD interactions
+            if macd_line is not None:
+                bb_pos_20 = features.get('bb_position_20_2.0')
+                if bb_pos_20 is not None:
+                    # BB position * MACD
+                    bb_macd_interaction = bb_pos_20 * macd_line
+                    if self._is_valid_feature(bb_macd_interaction):
+                        features['bb_position_macd_interaction'] = bb_macd_interaction.rename('bb_position_macd_interaction')
+                    
+                    # BB squeeze * MACD
+                    bb_squeeze_20 = features.get('bb_squeeze_20_2.0')
+                    if bb_squeeze_20 is not None:
+                        bb_squeeze_macd = bb_squeeze_20 * macd_line
+                        if self._is_valid_feature(bb_squeeze_macd):
+                            features['bb_squeeze_macd_interaction'] = bb_squeeze_macd.rename('bb_squeeze_macd_interaction')
+            
+            # BB-RSI interactions
+            if rsi_14 is not None:
+                bb_pos_20 = features.get('bb_position_20_2.0')
+                if bb_pos_20 is not None:
+                    # BB position * RSI
+                    bb_rsi_interaction = bb_pos_20 * rsi_14
+                    if self._is_valid_feature(bb_rsi_interaction):
+                        features['bb_position_rsi_interaction'] = bb_rsi_interaction.rename('bb_position_rsi_interaction')
+                    
+                    # BB squeeze * RSI
+                    bb_squeeze_20 = features.get('bb_squeeze_20_2.0')
+                    if bb_squeeze_20 is not None:
+                        bb_squeeze_rsi = bb_squeeze_20 * rsi_14
+                        if self._is_valid_feature(bb_squeeze_rsi):
+                            features['bb_squeeze_rsi_interaction'] = bb_squeeze_rsi.rename('bb_squeeze_rsi_interaction')
             
         except Exception as e:
             self.logger.warning(f"Advanced technical interactions failed: {e}")
@@ -996,8 +1118,8 @@ class CrossTimeframeFeatureGenerator:
             return features
 
         try:
-            # Multi-timeframe trend alignment
-            timeframes = [5, 10, 20, 50]
+            # Multi-timeframe trend alignment (15m-based timeframes)
+            timeframes = [15, 30, 60, 120]  # 15m, 30m, 1h, 2h
             trend_indicators = {}
             
             for tf in timeframes:

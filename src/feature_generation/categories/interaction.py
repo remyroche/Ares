@@ -401,8 +401,8 @@ class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
         close = data['close']
         
         try:
-            # Multi-timeframe momentum analysis
-            timeframes = [5, 10, 20, 50]
+            # Multi-timeframe momentum analysis (15m-based timeframes)
+            timeframes = [15, 30, 60, 120]  # 15m, 30m, 1h, 2h
             momentum_series = {}
             
             for tf in timeframes:
@@ -454,8 +454,8 @@ class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
         close = data['close']
         
         try:
-            # Multi-timeframe volatility analysis
-            timeframes = [5, 10, 20, 50]
+            # Multi-timeframe volatility analysis (15m-based timeframes)
+            timeframes = [15, 30, 60, 120]  # 15m, 30m, 1h, 2h
             volatility_series = {}
             
             for tf in timeframes:

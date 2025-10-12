@@ -31,12 +31,12 @@ from .ml_candle_pattern_indicators import MLIndicatorGenerator, IndicatorType, M
 
 # ML common imports
 try:
-    from ...utils.ml_common.models.model_factory import ModelFactory, ModelType as MLModelType
-    from ...utils.ml_common.models.model_training import EnhancedModelTrainer
-    from ...utils.ml_common.evaluation.unified_evaluator import evaluate_model
-    from ...utils.ml_common.confidence_metrics import calculate_confidence_metrics
-    from ...utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
-    from ...utils.ml_common.ensembles.ensemble_manager import EnsembleManager
+    from ....utils.ml_common.models.model_factory import ModelFactory, ModelType as MLModelType
+    from ....utils.ml_common.models.model_training import EnhancedModelTrainer
+    from ....utils.ml_common.evaluation.unified_evaluator import evaluate_model
+    from ....utils.ml_common.confidence_metrics import calculate_confidence_metrics
+    from ....utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+    from ....utils.ml_common.ensembles.ensemble_manager import EnsembleManager
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False

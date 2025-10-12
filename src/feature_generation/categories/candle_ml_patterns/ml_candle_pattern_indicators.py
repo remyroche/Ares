@@ -66,14 +66,14 @@ except ImportError:
     VECTORBT_AVAILABLE = False
 
 # Existing candlestick pattern generator
-from .candlestick_pattern import CandlestickPatternFeatureGenerator
+from ..candlestick_pattern import CandlestickPatternFeatureGenerator
 
 # ML common utilities
 try:
-    from ...utils.ml_common.models.model_factory import ModelFactory, ModelType
-    from ...utils.ml_common.models.model_training import EnhancedModelTrainer
-    from ...utils.ml_common.evaluation.unified_evaluator import evaluate_model
-    from ...utils.ml_common.confidence_metrics import calculate_confidence_metrics
+    from ....utils.ml_common.models.model_factory import ModelFactory, ModelType
+    from ....utils.ml_common.models.model_training import EnhancedModelTrainer
+    from ....utils.ml_common.evaluation.unified_evaluator import evaluate_model
+    from ....utils.ml_common.confidence_metrics import calculate_confidence_metrics
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False

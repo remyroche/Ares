@@ -11,7 +11,7 @@ from typing import Tuple, Optional, Union, List, Dict, Any
 from dataclasses import dataclass
 import gc
 
-from .error_handling import safe_operation, DataValidationError
+from ..error_handling.error_handler import safe_operation, DataValidationError
 
 
 @dataclass
@@ -304,11 +304,10 @@ def batch_process_dataframe(
             result = processor_func(batch_df, *args, **kwargs)
             results.append(result)
         except Exception as e:
-            # Log error but continue with other batches
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Batch processing failed for rows {start_idx}-{end_idx}: {e}")
-            results.append(None)
+            # Fast fail on batch processing errors
+            from src.utils.tprint import tprint_error
+            tprint_error(f"❌ Batch processing failed for rows {start_idx}-{end_idx}: {e}")
+            raise  # Fast fail instead of silent continuation
         
         # Force garbage collection after each batch
         gc.collect()

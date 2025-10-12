@@ -23,7 +23,7 @@ from .tprint_utils import (
     TPRINT_AVAILABLE
 )
 
-from .error_handling import DataValidationError, OptimizationError
+from ..error_handling.error_handler import DataValidationError, OptimizationError
 from .nan_handling import SafeNaNHandler
 
 

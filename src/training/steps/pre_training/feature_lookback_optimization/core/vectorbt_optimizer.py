@@ -55,7 +55,7 @@ except ImportError:
 
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
-from .utils.error_handling import safe_operation, get_error_handler
+from ..error_handling.error_handler import safe_operation, get_error_handler
 from .vectorbt_correlation import VectorBTCorrelationCalculator, VectorBTCorrelationConfig
 from .vectorbt_scoring import VectorBTScoringSystem, ScoringMethod, VectorBTScoringConfig
 from .vectorbt_feature_generation import VectorBTFeatureGenerator, FeatureType, VectorBTFeatureConfig

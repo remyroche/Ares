@@ -5,7 +5,7 @@ This module provides comprehensive feature lookback optimization capabilities
 with robust validation, detailed reporting, and performance monitoring.
 
 Main Components:
-- FeatureLookbackOptimizationComponent: Main component (legacy)
+- FeatureLookbackOptimizationComponent: Main component
 - Modular components in submodules for better architecture
 """
 

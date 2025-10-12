@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-from .constants import get_validation_constants, get_error_handling_constants
-from .error_handling import safe_operation, DataValidationError
+from ..constants import VALIDATION_CONSTANTS, QUALITY_CONSTANTS
+from ..error_handling.error_handler import safe_operation, DataValidationError
 
 
 class ValidationLevel(Enum):
@@ -49,8 +49,8 @@ class DataValidator:
         """
         self.validation_level = validation_level
         self.logger = logger or logging.getLogger(__name__)
-        self.constants = get_validation_constants()
-        self.error_constants = get_error_handling_constants()
+        self.constants = VALIDATION_CONSTANTS
+        self.error_constants = None  # Using fast failing, no error constants needed
     
     @safe_operation("data validation", default_value=ValidationResult(False, 0.0, [], [], [], {}))
     def validate_dataframe(self, 

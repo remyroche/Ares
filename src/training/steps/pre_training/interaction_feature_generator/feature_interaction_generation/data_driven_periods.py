@@ -21,9 +21,7 @@ import pandas as pd
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
 import logging
-from scipy import stats
 from scipy.signal import find_peaks
-import warnings
 import time
 from contextlib import contextmanager
 
@@ -528,50 +526,83 @@ class DataDrivenPeriodSelector:
     
     def _detect_frequency(self, data: pd.DataFrame) -> str:
         """Detect the frequency of the data."""
+        tprint_debug("🔍 Detecting data frequency...")
         if not isinstance(data.index, pd.DatetimeIndex):
+            tprint_debug("⚠️ Non-datetime index, returning 'unknown'")
             return 'unknown'
         
         if len(data) < 2:
+            tprint_debug("⚠️ Insufficient data, returning 'unknown'")
             return 'unknown'
         
         # Calculate time differences
         time_diffs = data.index.to_series().diff().dropna()
         median_diff = time_diffs.median()
         
+        tprint_debug(f"📊 Median time difference: {median_diff}")
+        
         # Convert to minutes
         if median_diff < pd.Timedelta(minutes=1):
-            return 'sub-minute'
+            frequency = 'sub-minute'
         elif median_diff < pd.Timedelta(minutes=5):
-            return '1m'
+            frequency = '1m'
         elif median_diff < pd.Timedelta(minutes=10):
-            return '5m'
+            frequency = '5m'
         elif median_diff < pd.Timedelta(minutes=20):
-            return '15m'
+            frequency = '15m'
         elif median_diff < pd.Timedelta(minutes=90):
-            return '60m'
+            frequency = '60m'
         elif median_diff < pd.Timedelta(hours=2):
-            return '4h'
+            frequency = '4h'
         elif median_diff < pd.Timedelta(hours=6):
-            return '1d'
+            frequency = '1d'
         else:
-            return 'weekly'
+            frequency = 'weekly'
+        
+        tprint_debug(f"✅ Detected frequency: {frequency}")
+        return frequency
     
     def _get_timeframe_minutes(self, data: pd.DataFrame) -> int:
         """Get timeframe in minutes."""
+        tprint_debug("🔍 Getting timeframe from DataFrame...")
         if not isinstance(data.index, pd.DatetimeIndex):
+            tprint_debug("⚠️ Non-datetime index, using default 15 minutes")
             return 15  # Default
         
         if len(data) < 2:
+            tprint_debug("⚠️ Insufficient data, using default 15 minutes")
             return 15
         
         time_diffs = data.index.to_series().diff().dropna()
         median_diff = time_diffs.median()
+        timeframe_minutes = int(median_diff.total_seconds() / 60)
         
-        return int(median_diff.total_seconds() / 60)
+        tprint_debug(f"✅ Detected timeframe: {timeframe_minutes} minutes")
+        return timeframe_minutes
+    
+    def _get_timeframe_minutes_from_series(self, series: pd.Series) -> int:
+        """Get timeframe in minutes from a pandas Series with datetime index."""
+        tprint_debug("🔍 Getting timeframe from Series...")
+        if not isinstance(series.index, pd.DatetimeIndex):
+            tprint_debug("⚠️ Non-datetime index, using default 15 minutes")
+            return 15  # Default
+        
+        if len(series) < 2:
+            tprint_debug("⚠️ Insufficient data, using default 15 minutes")
+            return 15
+        
+        time_diffs = series.index.to_series().diff().dropna()
+        median_diff = time_diffs.median()
+        timeframe_minutes = int(median_diff.total_seconds() / 60)
+        
+        tprint_debug(f"✅ Detected timeframe from series: {timeframe_minutes} minutes")
+        return timeframe_minutes
     
     def _get_base_periods_from_timeframe(self, timeframe_minutes: int, 
                                        target_timeframe: Optional[str] = None) -> List[int]:
         """Get base periods based on timeframe."""
+        tprint_debug(f"🔍 Getting base periods for timeframe: {timeframe_minutes}min, target: {target_timeframe}")
+        
         if target_timeframe:
             # Parse target timeframe
             if target_timeframe.endswith('m'):
@@ -582,8 +613,11 @@ class DataDrivenPeriodSelector:
                 target_minutes = int(target_timeframe[:-1]) * 24 * 60
             else:
                 target_minutes = 15  # Default
+                tprint_debug("⚠️ Unknown target timeframe format, using default 15 minutes")
         else:
             target_minutes = timeframe_minutes
+        
+        tprint_debug(f"📊 Target minutes: {target_minutes}, Current timeframe: {timeframe_minutes}")
         
         # Calculate periods based on target timeframe
         # Use multiples that make sense for the target timeframe
@@ -594,30 +628,39 @@ class DataDrivenPeriodSelector:
             period = multiplier * (target_minutes // timeframe_minutes)
             if self.min_period <= period <= self.max_period:
                 base_periods.append(period)
+                tprint_debug(f"✅ Added short-term period: {period} (multiplier: {multiplier})")
         
         # Medium-term periods (20-50x current timeframe)
         for multiplier in [20, 30, 50]:
             period = multiplier * (target_minutes // timeframe_minutes)
             if self.min_period <= period <= self.max_period:
                 base_periods.append(period)
+                tprint_debug(f"✅ Added medium-term period: {period} (multiplier: {multiplier})")
         
         # Long-term periods (100x+ current timeframe)
         for multiplier in [100, 200]:
             period = multiplier * (target_minutes // timeframe_minutes)
             if self.min_period <= period <= self.max_period:
                 base_periods.append(period)
+                tprint_debug(f"✅ Added long-term period: {period} (multiplier: {multiplier})")
         
+        tprint_debug(f"✅ Generated {len(base_periods)} base periods: {base_periods}")
         return base_periods
     
     def _detect_market_cycles(self, data: pd.DataFrame, 
                             characteristics: Dict[str, Any]) -> List[int]:
         """Detect market cycles using spectral analysis."""
+        tprint_debug("🔍 Detecting market cycles using spectral analysis...")
+        
         if 'close' not in data.columns or len(data) < 50:
+            tprint_debug("⚠️ Insufficient data for cycle detection (need 'close' column and >=50 points)")
             return []
         
         try:
             prices = data['close'].values
             returns = np.diff(np.log(prices))
+            
+            tprint_debug(f"📊 Analyzing {len(returns)} return observations")
             
             # Use FFT to detect cycles
             fft = np.fft.fft(returns)
@@ -627,6 +670,8 @@ class DataDrivenPeriodSelector:
             power_spectrum = np.abs(fft) ** 2
             significant_freqs = freqs[power_spectrum > np.percentile(power_spectrum, 90)]
             
+            tprint_debug(f"📊 Found {len(significant_freqs)} significant frequencies")
+            
             # Convert frequencies to periods
             cycle_periods = []
             for freq in significant_freqs:
@@ -634,8 +679,12 @@ class DataDrivenPeriodSelector:
                     period = int(1 / freq)
                     if self.min_period <= period <= self.max_period:
                         cycle_periods.append(period)
+                        tprint_debug(f"✅ Added cycle period: {period} (frequency: {freq:.4f})")
             
-            return cycle_periods[:5]  # Limit to top 5 cycles
+            # Limit to top 5 cycles
+            cycle_periods = cycle_periods[:5]
+            tprint_debug(f"✅ Detected {len(cycle_periods)} market cycles: {cycle_periods}")
+            return cycle_periods
             
         except Exception as e:
             tprint_debug(f"⚠️ Cycle detection failed: {e}")
@@ -646,12 +695,17 @@ class DataDrivenPeriodSelector:
     
     def _detect_seasonality(self, series: pd.Series) -> List[int]:
         """Detect seasonal patterns."""
+        tprint_debug("🔍 Detecting seasonal patterns...")
         try:
             if len(series) < 100:
+                tprint_debug("⚠️ Insufficient data for seasonality detection")
                 return []
             
+            # Get timeframe from series index directly
+            timeframe_minutes = self._get_timeframe_minutes_from_series(series)
+            
             # Look for daily, weekly patterns
-            daily_period = 24 * 60 // self._get_timeframe_minutes(pd.DataFrame(index=series.index))
+            daily_period = 24 * 60 // timeframe_minutes
             weekly_period = daily_period * 7
             
             seasonal_periods = []
@@ -659,6 +713,7 @@ class DataDrivenPeriodSelector:
                 if self.min_period <= period <= self.max_period:
                     seasonal_periods.append(period)
             
+            tprint_debug(f"✅ Found seasonal periods: {seasonal_periods}")
             return seasonal_periods
             
         except Exception as e:
@@ -668,6 +723,7 @@ class DataDrivenPeriodSelector:
     
     def _find_pattern_periods(self, pattern: pd.Series) -> List[int]:
         """Find periods in a boolean pattern."""
+        tprint_debug("🔍 Finding pattern periods...")
         try:
             # Find consecutive True values
             pattern_lengths = []
@@ -687,12 +743,22 @@ class DataDrivenPeriodSelector:
                         in_pattern = False
                         current_length = 0
             
+            # Handle case where pattern ends with True values
+            if in_pattern:
+                pattern_lengths.append(current_length)
+            
+            tprint_debug(f"📊 Found pattern lengths: {pattern_lengths}")
+            
             # Return average pattern length if it's reasonable
             if pattern_lengths:
                 avg_length = np.mean(pattern_lengths)
                 if self.min_period <= avg_length <= self.max_period:
+                    tprint_debug(f"✅ Valid average pattern length: {int(avg_length)}")
                     return [int(avg_length)]
+                else:
+                    tprint_debug(f"⚠️ Average pattern length {int(avg_length)} outside valid range [{self.min_period}, {self.max_period}]")
             
+            tprint_debug("⚠️ No valid pattern periods found")
             return []
             
         except Exception as e:
@@ -704,49 +770,67 @@ class DataDrivenPeriodSelector:
     def _filter_periods(self, periods: List[int], 
                        characteristics: Dict[str, Any]) -> List[int]:
         """Filter periods based on data characteristics."""
+        tprint_debug(f"🔍 Filtering {len(periods)} periods: {periods}")
+        
         filtered = []
+        data_length = characteristics.get('data_length', 0)
+        timeframe_minutes = characteristics.get('timeframe_minutes', 15)
+        
+        tprint_debug(f"📊 Data length: {data_length}, Timeframe: {timeframe_minutes}min")
+        tprint_debug(f"📊 Period bounds: [{self.min_period}, {self.max_period}]")
         
         for period in periods:
             # Check if period is within bounds
             if not (self.min_period <= period <= self.max_period):
+                tprint_debug(f"❌ Period {period} outside bounds [{self.min_period}, {self.max_period}]")
                 continue
             
             # Check if period is reasonable for data length
-            data_length = characteristics.get('data_length', 0)
             if period > data_length // 4:  # Don't use periods longer than 1/4 of data
+                tprint_debug(f"❌ Period {period} too long for data length {data_length} (max: {data_length // 4})")
                 continue
             
             # Check if period makes sense for timeframe
-            timeframe_minutes = characteristics.get('timeframe_minutes', 15)
             if period < 2:  # At least 2 periods
+                tprint_debug(f"❌ Period {period} too short (minimum: 2)")
                 continue
             
             filtered.append(period)
+            tprint_debug(f"✅ Period {period} passed all filters")
         
-        return sorted(list(set(filtered)))
+        result = sorted(list(set(filtered)))
+        tprint_debug(f"✅ Filtered to {len(result)} periods: {result}")
+        return result
     
     def _rank_periods(self, periods: List[int], data: pd.DataFrame, 
                      characteristics: Dict[str, Any]) -> List[int]:
         """Rank periods by their potential usefulness."""
+        tprint_debug(f"🔍 Ranking {len(periods)} periods: {periods}")
+        
         if not periods:
+            tprint_debug("⚠️ No periods to rank")
             return []
         
         try:
             scores = []
+            data_length = characteristics.get('data_length', 0)
             
             for period in periods:
                 score = 0
+                score_components = {}
                 
                 # Diversity score (prefer periods that are different from others)
                 other_periods = [p for p in periods if p != period]
                 if other_periods:
                     min_diff = min(abs(period - p) for p in other_periods)
-                    score += min_diff / max(period, 1)
+                    diversity_score = min_diff / max(period, 1)
+                    score += diversity_score
+                    score_components['diversity'] = diversity_score
                 
                 # Data coverage score (prefer periods that use more data)
-                data_length = characteristics.get('data_length', 0)
                 coverage = min(period, data_length) / data_length
                 score += coverage
+                score_components['coverage'] = coverage
                 
                 # Stability score (prefer periods that are stable across different windows)
                 if 'close' in data.columns and len(data) > period * 2:
@@ -755,14 +839,20 @@ class DataDrivenPeriodSelector:
                         rolling_vol = returns.rolling(period).std()
                         vol_stability = 1 / (rolling_vol.std() + 1e-8)
                         score += vol_stability
-                    except:
-                        pass
+                        score_components['stability'] = vol_stability
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Stability calculation failed for period {period}: {e}")
+                        score_components['stability'] = 0
                 
                 scores.append((score, period))
+                tprint_debug(f"📊 Period {period}: score={score:.3f}, components={score_components}")
             
             # Sort by score (descending)
             scores.sort(reverse=True)
-            return [period for score, period in scores]
+            ranked_periods = [period for score, period in scores]
+            
+            tprint_debug(f"✅ Ranked periods: {ranked_periods}")
+            return ranked_periods
             
         except Exception as e:
             tprint_debug(f"⚠️ Period ranking failed: {e}")
@@ -771,6 +861,8 @@ class DataDrivenPeriodSelector:
     def _categorize_periods(self, periods: List[int], 
                           characteristics: Dict[str, Any]) -> Dict[str, List[int]]:
         """Categorize periods by their characteristics."""
+        tprint_debug(f"🔍 Categorizing {len(periods)} periods: {periods}")
+        
         categories = {
             'short_term': [],
             'medium_term': [],
@@ -781,59 +873,95 @@ class DataDrivenPeriodSelector:
         }
         
         data_length = characteristics.get('data_length', 0)
+        volatility_clusters = characteristics.get('volatility_clusters', [])
+        trend_cycles = characteristics.get('trend_cycles', [])
+        
+        tprint_debug(f"📊 Data length: {data_length}")
+        tprint_debug(f"📊 Volatility clusters: {volatility_clusters}")
+        tprint_debug(f"📊 Trend cycles: {trend_cycles}")
         
         for period in periods:
             # Time-based categorization
             if period <= data_length // 20:
                 categories['short_term'].append(period)
+                tprint_debug(f"✅ Period {period} categorized as short_term")
             elif period <= data_length // 10:
                 categories['medium_term'].append(period)
+                tprint_debug(f"✅ Period {period} categorized as medium_term")
             else:
                 categories['long_term'].append(period)
+                tprint_debug(f"✅ Period {period} categorized as long_term")
             
             # Pattern-based categorization (simplified)
-            if period in characteristics.get('volatility_clusters', []):
+            if period in volatility_clusters:
                 categories['volatility_driven'].append(period)
+                tprint_debug(f"✅ Period {period} categorized as volatility_driven")
             
-            if period in characteristics.get('trend_cycles', []):
+            if period in trend_cycles:
                 categories['trend_driven'].append(period)
+                tprint_debug(f"✅ Period {period} categorized as trend_driven")
         
+        tprint_debug(f"✅ Period categorization complete: {categories}")
         return categories
     
     def _calculate_confidence_score(self, periods: List[int], 
                                   characteristics: Dict[str, Any]) -> float:
         """Calculate confidence score for the selected periods."""
+        tprint_debug(f"🔍 Calculating confidence score for {len(periods)} periods")
+        
         if not periods:
+            tprint_debug("⚠️ No periods provided, returning 0.0")
             return 0.0
         
         try:
             score = 0.0
+            score_components = {}
             
             # Data sufficiency score
             data_length = characteristics.get('data_length', 0)
             if data_length > 1000:
-                score += 0.3
+                data_score = 0.3
             elif data_length > 500:
-                score += 0.2
+                data_score = 0.2
             elif data_length > 100:
-                score += 0.1
+                data_score = 0.1
+            else:
+                data_score = 0.0
+            
+            score += data_score
+            score_components['data_sufficiency'] = data_score
+            tprint_debug(f"📊 Data sufficiency score: {data_score} (data_length: {data_length})")
             
             # Period diversity score
             if len(periods) >= 3:
-                score += 0.2
+                diversity_score = 0.2
             elif len(periods) >= 2:
-                score += 0.1
+                diversity_score = 0.1
+            else:
+                diversity_score = 0.0
+            
+            score += diversity_score
+            score_components['diversity'] = diversity_score
+            tprint_debug(f"📊 Diversity score: {diversity_score} (periods: {len(periods)})")
             
             # Analysis completeness score
             analysis_components = ['volatility_clusters', 'trend_cycles', 'volume_patterns']
             completed_analyses = sum(1 for comp in analysis_components if comp in characteristics)
-            score += (completed_analyses / len(analysis_components)) * 0.3
+            completeness_score = (completed_analyses / len(analysis_components)) * 0.3
+            score += completeness_score
+            score_components['completeness'] = completeness_score
+            tprint_debug(f"📊 Completeness score: {completeness_score} (completed: {completed_analyses}/{len(analysis_components)})")
             
             # Period reasonableness score
             reasonable_periods = sum(1 for p in periods if 2 <= p <= data_length // 4)
-            score += (reasonable_periods / len(periods)) * 0.2
+            reasonableness_score = (reasonable_periods / len(periods)) * 0.2
+            score += reasonableness_score
+            score_components['reasonableness'] = reasonableness_score
+            tprint_debug(f"📊 Reasonableness score: {reasonableness_score} (reasonable: {reasonable_periods}/{len(periods)})")
             
-            return min(score, 1.0)
+            final_score = min(score, 1.0)
+            tprint_debug(f"✅ Final confidence score: {final_score:.3f} (components: {score_components})")
+            return final_score
             
         except Exception as e:
             tprint_debug(f"⚠️ Confidence calculation failed: {e}")
@@ -841,28 +969,40 @@ class DataDrivenPeriodSelector:
     
     def _generate_cache_key(self, operation: str, data: pd.DataFrame) -> str:
         """Generate cache key for operation."""
+        tprint_debug(f"🔍 Generating cache key for operation: {operation}")
         import hashlib
         
         # Create hash of data characteristics and operation
         data_hash = hashlib.md5(str(data.shape).encode()).hexdigest()[:8]
-        return f"{operation}_{data_hash}"
+        cache_key = f"{operation}_{data_hash}"
+        tprint_debug(f"✅ Generated cache key: {cache_key}")
+        return cache_key
     
     def _get_from_cache(self, cache_key: str) -> Optional[Any]:
         """Get result from cache."""
+        tprint_debug(f"🔍 Checking cache for key: {cache_key}")
+        
         if not self._cache_enabled:
+            tprint_debug("⚠️ Cache disabled")
             return None
         
         try:
             if cache_key in self._result_cache:
+                tprint_debug(f"✅ Cache hit for key: {cache_key}")
                 return self._result_cache[cache_key]
+            else:
+                tprint_debug(f"❌ Cache miss for key: {cache_key}")
         except Exception as e:
-            tprint_debug(f"Cache retrieval failed: {e}")
+            tprint_debug(f"⚠️ Cache retrieval failed: {e}")
         
         return None
     
     def _put_in_cache(self, cache_key: str, result: Any):
         """Put result in cache."""
+        tprint_debug(f"🔍 Storing result in cache with key: {cache_key}")
+        
         if not self._cache_enabled:
+            tprint_debug("⚠️ Cache disabled, not storing")
             return
         
         try:
@@ -871,25 +1011,34 @@ class DataDrivenPeriodSelector:
                 # Remove oldest entries (simple FIFO)
                 oldest_key = next(iter(self._result_cache))
                 del self._result_cache[oldest_key]
+                tprint_debug(f"🗑️ Removed oldest cache entry: {oldest_key}")
             
             self._result_cache[cache_key] = result
+            tprint_debug(f"✅ Stored result in cache (size: {len(self._result_cache)}/{self._max_cache_size})")
             
         except Exception as e:
-            tprint_debug(f"Cache storage failed: {e}")
+            tprint_debug(f"⚠️ Cache storage failed: {e}")
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
+        tprint_debug("🔍 Gathering performance statistics...")
         stats = self.performance_stats.copy()
         
         # Add VectorBT rolling optimizer stats if available
         if self.rolling_optimizer:
+            tprint_debug("📊 Adding VectorBT rolling optimizer stats")
             rolling_stats = self.rolling_optimizer.get_performance_stats()
             stats.update(rolling_stats)
+        else:
+            tprint_debug("⚠️ VectorBT rolling optimizer not available")
         
         # Add unified vectorization manager stats if available
         if self.vectorization_manager:
+            tprint_debug("📊 Adding unified vectorization manager stats")
             vectorization_stats = self.vectorization_manager.get_performance_stats()
             stats.update(vectorization_stats)
+        else:
+            tprint_debug("⚠️ Unified vectorization manager not available")
         
         # Calculate efficiency metrics
         if stats['total_operations'] > 0:
@@ -903,16 +1052,21 @@ class DataDrivenPeriodSelector:
                 stats['cache_hit_rate'] = (stats['cache_hits'] / total_cache_ops) * 100
             else:
                 stats['cache_hit_rate'] = 0
+            
+            tprint_debug(f"📊 Performance metrics calculated: {len(stats)} total metrics")
         else:
             stats['average_operation_time'] = 0
             stats['vectorbt_usage_rate'] = 0
             stats['batch_usage_rate'] = 0
             stats['cache_hit_rate'] = 0
+            tprint_debug("⚠️ No operations recorded, using default values")
         
+        tprint_debug(f"✅ Performance stats ready: {len(stats)} metrics")
         return stats
     
     def reset_performance_stats(self):
         """Reset performance statistics."""
+        tprint_info("🔄 Resetting performance statistics...")
         self.performance_stats = {
             'total_operations': 0,
             'vectorbt_operations': 0,
@@ -926,17 +1080,28 @@ class DataDrivenPeriodSelector:
         
         # Reset component stats
         if self.rolling_optimizer:
+            tprint_debug("🔄 Resetting VectorBT rolling optimizer stats")
             self.rolling_optimizer.reset_stats()
+        else:
+            tprint_debug("⚠️ VectorBT rolling optimizer not available for reset")
         
         if self.vectorization_manager:
+            tprint_debug("🔄 Resetting unified vectorization manager stats")
             self.vectorization_manager.reset_stats()
+        else:
+            tprint_debug("⚠️ Unified vectorization manager not available for reset")
         
         # Clear cache
+        cache_size = len(self._result_cache)
         self._result_cache.clear()
+        tprint_debug(f"🗑️ Cleared cache ({cache_size} entries removed)")
+        
+        tprint_success("✅ Performance statistics reset complete")
     
     @contextmanager
     def performance_monitoring(self, operation_name: str):
         """Context manager for performance monitoring."""
+        tprint_debug(f"🔍 Starting performance monitoring for: {operation_name}")
         start_time = time.time()
         start_memory = 0  # Could add memory monitoring here
         
@@ -947,26 +1112,37 @@ class DataDrivenPeriodSelector:
             execution_time = end_time - start_time
             
             tprint_performance(f"Operation {operation_name}: {execution_time:.3f}s")
+            tprint_debug(f"✅ Performance monitoring complete for: {operation_name}")
     
     def optimize_for_large_datasets(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize data for large dataset processing."""
+        tprint_debug(f"🔍 Optimizing data for large datasets (size: {len(data)}, memory_efficient: {self.memory_efficient})")
+        
         if not self.memory_efficient or len(data) < self.chunk_size:
+            tprint_debug("⚠️ Skipping optimization (memory_efficient=False or data too small)")
             return data
         
         try:
             if self.vectorization_manager:
-                return self.vectorization_manager.optimize_dataframe(data)
+                tprint_debug("📊 Using VectorBT vectorization manager for optimization")
+                optimized_data = self.vectorization_manager.optimize_dataframe(data)
+                tprint_debug(f"✅ VectorBT optimization complete (shape: {optimized_data.shape})")
+                return optimized_data
             else:
+                tprint_debug("📊 Using basic optimization (VectorBT manager not available)")
                 # Basic optimization
                 optimized_data = data.copy()
                 
                 # Optimize data types
+                optimized_columns = 0
                 for column in optimized_data.columns:
                     if optimized_data[column].dtype == 'float64':
                         if (optimized_data[column].min() >= np.finfo(np.float32).min and 
                             optimized_data[column].max() <= np.finfo(np.float32).max):
                             optimized_data[column] = optimized_data[column].astype(np.float32)
+                            optimized_columns += 1
                 
+                tprint_debug(f"✅ Basic optimization complete (optimized {optimized_columns} columns)")
                 return optimized_data
                 
         except Exception as e:
@@ -975,27 +1151,42 @@ class DataDrivenPeriodSelector:
     
     def _get_fallback_periods(self, characteristics: Dict[str, Any]) -> PeriodAnalysisResult:
         """Get fallback periods when analysis fails."""
+        tprint_warning("⚠️ Using fallback periods due to analysis failure")
+        
         data_length = characteristics.get('data_length', 100)
         timeframe_minutes = characteristics.get('timeframe_minutes', 15)
+        
+        tprint_debug(f"📊 Fallback parameters: data_length={data_length}, timeframe={timeframe_minutes}min")
         
         # Simple fallback based on data length
         if data_length < 50:
             periods = [2, 5, 10]
+            tprint_debug("📊 Using small dataset fallback periods: [2, 5, 10]")
         elif data_length < 200:
             periods = [5, 10, 20]
+            tprint_debug("📊 Using medium dataset fallback periods: [5, 10, 20]")
         else:
             periods = [10, 20, 50]
+            tprint_debug("📊 Using large dataset fallback periods: [10, 20, 50]")
         
         # Adjust for timeframe
+        original_periods = periods.copy()
         periods = [p * (timeframe_minutes // 15) for p in periods]
         periods = [p for p in periods if self.min_period <= p <= self.max_period]
         
-        return PeriodAnalysisResult(
+        tprint_debug(f"📊 Original periods: {original_periods}")
+        tprint_debug(f"📊 Adjusted periods: {periods}")
+        tprint_debug(f"📊 Final periods after filtering: {periods}")
+        
+        result = PeriodAnalysisResult(
             optimal_periods=periods,
             period_categories={'fallback': periods},
             analysis_metadata=characteristics,
             confidence_score=0.3
         )
+        
+        tprint_warning(f"⚠️ Fallback analysis complete: {len(periods)} periods, confidence=0.3")
+        return result
 
 
 # Convenience functions
@@ -1019,6 +1210,9 @@ def get_data_driven_periods(data: pd.DataFrame,
     Returns:
         List of optimal periods
     """
+    tprint_info(f"🚀 Getting data-driven periods (data_shape: {data.shape}, target: {target_timeframe})")
+    tprint_debug(f"📊 Configuration: max_periods={max_periods}, vectorbt={enable_vectorbt}, parallel={enable_parallel}, memory_efficient={memory_efficient}")
+    
     selector = DataDrivenPeriodSelector(
         max_periods=max_periods,
         enable_vectorbt=enable_vectorbt,
@@ -1026,6 +1220,8 @@ def get_data_driven_periods(data: pd.DataFrame,
         memory_efficient=memory_efficient
     )
     result = selector.select_optimal_periods(data, target_timeframe)
+    
+    tprint_success(f"✅ Data-driven periods retrieved: {result.optimal_periods}")
     return result.optimal_periods
 
 
@@ -1049,6 +1245,9 @@ def get_data_driven_periods_with_stats(data: pd.DataFrame,
     Returns:
         Tuple of (optimal periods, performance statistics)
     """
+    tprint_info(f"🚀 Getting data-driven periods with stats (data_shape: {data.shape}, target: {target_timeframe})")
+    tprint_debug(f"📊 Configuration: max_periods={max_periods}, vectorbt={enable_vectorbt}, parallel={enable_parallel}, memory_efficient={memory_efficient}")
+    
     selector = DataDrivenPeriodSelector(
         max_periods=max_periods,
         enable_vectorbt=enable_vectorbt,
@@ -1057,6 +1256,9 @@ def get_data_driven_periods_with_stats(data: pd.DataFrame,
     )
     result = selector.select_optimal_periods(data, target_timeframe)
     stats = selector.get_performance_stats()
+    
+    tprint_success(f"✅ Data-driven periods with stats retrieved: {result.optimal_periods}")
+    tprint_debug(f"📊 Performance stats: {len(stats)} metrics collected")
     return result.optimal_periods, stats
 
 
@@ -1076,6 +1278,9 @@ def benchmark_period_selector(data: pd.DataFrame,
     Returns:
         Benchmarking results
     """
+    tprint_info(f"🚀 Starting period selector benchmark (data_shape: {data.shape}, trials: {trials})")
+    tprint_debug(f"📊 Target timeframe: {target_timeframe}, max_periods: {max_periods}")
+    
     configurations = [
         {'enable_vectorbt': False, 'enable_parallel': False, 'memory_efficient': False, 'name': 'baseline'},
         {'enable_vectorbt': True, 'enable_parallel': False, 'memory_efficient': False, 'name': 'vectorbt_only'},
@@ -1087,17 +1292,22 @@ def benchmark_period_selector(data: pd.DataFrame,
     
     for config in configurations:
         config_name = config.pop('name')
+        tprint_info(f"🔄 Benchmarking configuration: {config_name}")
+        tprint_debug(f"📊 Config: {config}")
+        
         times = []
         
         for trial in range(trials):
             try:
+                tprint_debug(f"🔄 Trial {trial + 1}/{trials} for {config_name}")
                 selector = DataDrivenPeriodSelector(max_periods=max_periods, **config)
                 start_time = time.time()
                 result = selector.select_optimal_periods(data, target_timeframe)
                 execution_time = time.time() - start_time
                 times.append(execution_time)
+                tprint_debug(f"✅ Trial {trial + 1} completed in {execution_time:.3f}s")
             except Exception as e:
-                tprint_warning(f"⚠️ Configuration {config_name} trial {trial} failed: {e}")
+                tprint_warning(f"⚠️ Configuration {config_name} trial {trial + 1} failed: {e}")
                 continue
         
         if times:
@@ -1108,6 +1318,10 @@ def benchmark_period_selector(data: pd.DataFrame,
                 'max_time': np.max(times),
                 'trials_completed': len(times)
             }
+            tprint_success(f"✅ {config_name}: {results[config_name]['avg_time']:.3f}s ± {results[config_name]['std_time']:.3f}s ({len(times)}/{trials} trials)")
+        else:
+            tprint_error(f"❌ {config_name}: All trials failed")
     
+    tprint_success(f"✅ Benchmark complete: {len(results)} configurations tested")
     return results
 

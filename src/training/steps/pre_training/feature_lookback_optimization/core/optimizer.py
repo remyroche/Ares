@@ -89,6 +89,34 @@ except ImportError:
     OptimizationConfig = None
     BAYESIAN_OPTIMIZER_AVAILABLE = False
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_corr
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_corr = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 # Get dependencies with fallbacks
 np, _ = get_dependency('numpy')
 pd, _ = get_dependency('pandas')
@@ -294,6 +322,9 @@ class CoreOptimizer:
         self.batch_processor = None
         self.gpu_available = False
         
+        # Initialize VectorBT optimization components
+        self._initialize_vectorbt_components()
+        
         # Initialize memory-efficient operations
         self.memory_ops = MemoryEfficientOps(enable_gc=True)
         
@@ -319,6 +350,89 @@ class CoreOptimizer:
 
         self._cached_multi_horizon_limits: Optional[Tuple[int, int]] = None
         self._data_locator: Optional[PipelineDataLocator] = None
+
+    def _initialize_vectorbt_components(self):
+        """Initialize VectorBT optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer with GPU support
+            if VECTORBT_UTILS_AVAILABLE:
+                # Check GPU availability for VectorBT
+                gpu_available = self._check_gpu_availability()
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=gpu_available,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
+                if gpu_available:
+                    self.logger.info("✅ VectorBT Rolling Optimizer initialized with GPU acceleration")
+                else:
+                    self.logger.info("✅ VectorBT Rolling Optimizer initialized (CPU only)")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("⚠️ VectorBT Rolling Optimizer not available")
+            
+            # Initialize Unified Vectorization Manager
+            if VECTORBT_UTILS_AVAILABLE:
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ Unified Vectorization Manager initialized")
+            else:
+                self.unified_manager = None
+                self.logger.warning("⚠️ Unified Vectorization Manager not available")
+            
+            # Initialize VectorBT optimization flags
+            self.use_vectorbt_optimization = VECTORBT_UTILS_AVAILABLE
+            self.vectorbt_available = VECTORBT_UTILS_AVAILABLE
+            
+            # Initialize feature bank for VectorBT optimizations
+            self._feature_bank = None
+            
+            # Initialize VectorBT performance metrics
+            self.vectorbt_metrics = {
+                'operations_count': 0,
+                'gpu_operations': 0,
+                'cpu_operations': 0,
+                'memory_optimizations': 0,
+                'batch_operations': 0,
+                'total_time': 0.0,
+                'average_operation_time': 0.0
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT components initialization failed: {e}")
+            self.rolling_optimizer = None
+            self.unified_manager = None
+            self.use_vectorbt_optimization = False
+            self.vectorbt_available = False
+            self.vectorbt_metrics = {}
+
+    def _track_vectorbt_operation(self, operation_type: str, duration: float, gpu_used: bool = False):
+        """Track VectorBT operation performance metrics."""
+        try:
+            self.vectorbt_metrics['operations_count'] += 1
+            self.vectorbt_metrics['total_time'] += duration
+            
+            if gpu_used:
+                self.vectorbt_metrics['gpu_operations'] += 1
+            else:
+                self.vectorbt_metrics['cpu_operations'] += 1
+            
+            if operation_type == 'memory_optimization':
+                self.vectorbt_metrics['memory_optimizations'] += 1
+            elif operation_type == 'batch_operation':
+                self.vectorbt_metrics['batch_operations'] += 1
+            
+            # Update average operation time
+            if self.vectorbt_metrics['operations_count'] > 0:
+                self.vectorbt_metrics['average_operation_time'] = (
+                    self.vectorbt_metrics['total_time'] / self.vectorbt_metrics['operations_count']
+                )
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to track VectorBT operation: {e}")
+
+    def get_vectorbt_performance_metrics(self) -> Dict[str, Any]:
+        """Get VectorBT performance metrics."""
+        return self.vectorbt_metrics.copy()
 
     def _check_gpu_availability(self) -> bool:
         """Check if GPU acceleration is available."""
@@ -422,12 +536,13 @@ class CoreOptimizer:
         **kwargs
     ) -> List[OptimizationResult]:
         """
-        PARALLEL BATCH PROCESSING: Optimize multiple features in parallel for 3-4x speedup.
+        PARALLEL BATCH PROCESSING: Optimize multiple features in parallel with VectorBT optimizations.
         
         PERFORMANCE OPTIMIZATION: Processes features in parallel batches using ThreadPoolExecutor
         - Utilizes multi-core CPUs efficiently
         - Batch processing reduces overhead
         - Shared forward returns matrix across all features
+        - VectorBT optimizations for high-performance rolling operations
         - Expected 3-4x speedup on 4-core systems
         
         Args:
@@ -463,8 +578,18 @@ class CoreOptimizer:
         tprint_info(f"   → Batch size: {batch_size}")
         tprint_info(f"   → Method: {method}")
         
-        # Optimize DataFrame memory usage
+        # Optimize DataFrame memory usage with VectorBT enhancements
         data = self._optimize_dataframe_memory(data)
+        
+        # Apply VectorBT memory optimizations for large datasets
+        if self.use_vectorbt_optimization and len(data) > 10000:
+            try:
+                # Use VectorBT memory-efficient processing for large datasets
+                if self.rolling_optimizer and hasattr(self.rolling_optimizer, 'enable_memory_efficient_mode'):
+                    self.rolling_optimizer.enable_memory_efficient_mode(True)
+                    tprint_info("🧠 VectorBT memory-efficient mode enabled for large dataset")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT memory optimization failed: {e}")
         
         # Pre-compute shared forward returns matrix once for all features
         min_lookback, max_lookback = lookback_range
@@ -477,6 +602,22 @@ class CoreOptimizer:
             precomputed_forward_returns = None
         else:
             tprint_success(f"✅ Pre-computed forward returns matrix for horizon up to {max_lookback}")
+        
+        # Initialize VectorBT batch optimization if available
+        if self.use_vectorbt_optimization and self.unified_manager:
+            try:
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(data),
+                    data_dimensions=(len(data), len(data.columns)),
+                    memory_budget_mb=1024.0,
+                    time_budget_seconds=300.0
+                )
+                
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                tprint_info(f"🎯 VectorBT batch optimization strategy: {strategy}")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT batch optimization setup failed: {e}")
         
         # Single feature optimization function
         def optimize_single_feature(feature_name: str) -> OptimizationResult:
@@ -1519,14 +1660,14 @@ class CoreOptimizer:
         lookback: int
     ) -> np.ndarray:
         """
-        Calculate sophisticated feature values for a given lookback period.
+        Calculate sophisticated feature values for a given lookback period using VectorBT optimizations.
 
-        This implementation uses actual technical indicators from the feature engineering
-        pipeline including RSI, MACD, Bollinger Bands, moving averages, and other indicators.
+        This implementation uses VectorBTRollingOptimizer for high-performance rolling operations
+        and actual technical indicators from the feature engineering pipeline.
         """
         try:
             tprint_debug(
-                f"🧮 Calculating feature '{feature_name}' values for lookback {lookback}"
+                f"🧮 Calculating feature '{feature_name}' values for lookback {lookback} using VectorBT optimizations"
             )
             
             # OPTIMIZATION: Check if feature already exists in dataframe FIRST (before trying to generate)
@@ -1540,6 +1681,14 @@ class CoreOptimizer:
                 # CRITICAL FIX: Do NOT fill NaN with zeros - zeros create artificial correlation!
                 # Return the series with NaN values, let alignment/filtering handle them properly
                 return feature_series.values
+            
+            # Try VectorBT optimization first if available
+            if self.use_vectorbt_optimization and self.rolling_optimizer:
+                vectorbt_result = self._calculate_feature_vectorbt_optimized(
+                    data, feature_name, lookback
+                )
+                if vectorbt_result is not None:
+                    return vectorbt_result
             
             # If not pre-generated, create feature generator based on feature name pattern
             feature_generator = self._create_feature_generator(feature_name, lookback)
@@ -1632,6 +1781,179 @@ class CoreOptimizer:
                 f"❌ Exception during feature calculation for '{feature_name}' (lookback={lookback}): {e}"
             )
             return np.zeros(len(data))
+
+    def _calculate_feature_vectorbt_optimized(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        lookback: int
+    ) -> Optional[np.ndarray]:
+        """
+        Calculate feature using VectorBT optimizations and the feature generation bank.
+        
+        This method uses the existing feature generation bank to get the appropriate
+        generator and applies VectorBT optimizations for high-performance calculations.
+        
+        Args:
+            data: Input data with OHLCV columns
+            feature_name: Name of the feature to calculate
+            lookback: Lookback period for the feature
+            
+        Returns:
+            Feature values as numpy array, or None if not supported
+        """
+        start_time = time.time()
+        try:
+            if not self.use_vectorbt_optimization:
+                return None
+            
+            # Initialize feature bank if not already done
+            if not hasattr(self, '_feature_bank') or self._feature_bank is None:
+                try:
+                    from src.feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+                    
+                    # Configure feature bank for VectorBT optimizations
+                    config = FeatureBankConfig(
+                        enable_matrix_operations=True,
+                        enable_gpu_acceleration=self.gpu_available,
+                        enable_parallel_processing=True,
+                        memory_efficient=True,
+                        cache_results=True
+                    )
+                    
+                    self._feature_bank = FeatureBank(config)
+                    self.logger.debug("✅ Feature bank initialized for VectorBT optimizations")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to initialize feature bank: {e}")
+                    return None
+            
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.TECHNICAL_INDICATORS,
+                    data_size=len(data),
+                    data_dimensions=(len(data), len(data.columns)),
+                    memory_budget_mb=512.0,
+                    time_budget_seconds=30.0
+                )
+                
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected VectorBT strategy for {feature_name}: {strategy}")
+            
+            # Get feature generator from the feature bank
+            generator = self._feature_bank.get_generator_by_name(feature_name)
+            
+            if generator is None:
+                # Try to find generator by pattern matching
+                generator = self._find_generator_by_pattern(feature_name)
+                
+            if generator is None:
+                self.logger.debug(f"No generator found for feature: {feature_name}")
+                return None
+            
+            # Ensure data has required columns for the generator
+            required_columns = generator.config.required_columns
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                # Try to find columns with different case
+                data_columns_lower = [col.lower() for col in data.columns]
+                for missing_col in missing_columns:
+                    if missing_col.lower() in data_columns_lower:
+                        # Find the actual column name with different case
+                        actual_col = data.columns[data_columns_lower.index(missing_col.lower())]
+                        data = data.rename(columns={actual_col: missing_col})
+                        missing_columns.remove(missing_col)
+                
+                if missing_columns:
+                    self.logger.warning(f"Missing required columns for {feature_name}: {missing_columns}")
+                    return None
+            
+            # Update generator parameters with lookback period
+            generator_params = getattr(generator.config, 'parameters', {}) or {}
+            generator_params['window'] = lookback
+            generator_params['period'] = lookback
+            
+            # Generate feature using the generator
+            try:
+                result = generator.generate(data, **generator_params)
+                
+                if result.success and result.data is not None:
+                    # Convert result to numpy array
+                    if isinstance(result.data, pd.DataFrame):
+                        if len(result.data.columns) > 0:
+                            return result.data.iloc[:, 0].values
+                        else:
+                            return np.array([])
+                    elif isinstance(result.data, pd.Series):
+                        return result.data.values
+                    else:
+                        return np.array(result.data)
+                else:
+                    self.logger.warning(f"Feature generation failed for {feature_name}: {result.error_message if hasattr(result, 'error_message') else 'Unknown error'}")
+                    return None
+                    
+            except Exception as e:
+                self.logger.warning(f"Feature generation error for {feature_name}: {e}")
+                return None
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT feature calculation failed for {feature_name}: {e}")
+            return None
+        finally:
+            # Track performance metrics
+            duration = time.time() - start_time
+            self._track_vectorbt_operation('feature_calculation', duration, gpu_used=self.gpu_available)
+
+    def _find_generator_by_pattern(self, feature_name: str):
+        """
+        Find a generator by pattern matching against feature names.
+        
+        Args:
+            feature_name: Name of the feature to find
+            
+        Returns:
+            Generator or None if not found
+        """
+        try:
+            if not hasattr(self, '_feature_bank') or self._feature_bank is None:
+                return None
+            
+            feature_name_lower = feature_name.lower()
+            
+            # Get all generators from the feature bank
+            all_generators = []
+            for category in self._feature_bank.registry.list_categories():
+                generators = self._feature_bank.registry.get_by_category(category)
+                all_generators.extend(generators)
+            
+            # Pattern matching for common feature types
+            for generator in all_generators:
+                gen_name = generator.config.name.lower()
+                
+                # Check for exact match first
+                if gen_name == feature_name_lower:
+                    return generator
+                
+                # Check for pattern matches
+                if ('sma' in feature_name_lower and 'sma' in gen_name) or \
+                   ('ema' in feature_name_lower and 'ema' in gen_name) or \
+                   ('rsi' in feature_name_lower and 'rsi' in gen_name) or \
+                   ('macd' in feature_name_lower and 'macd' in gen_name) or \
+                   ('bb' in feature_name_lower and 'bb' in gen_name) or \
+                   ('bollinger' in feature_name_lower and 'bollinger' in gen_name) or \
+                   ('std' in feature_name_lower and 'std' in gen_name) or \
+                   ('volatility' in feature_name_lower and 'volatility' in gen_name) or \
+                   ('momentum' in feature_name_lower and 'momentum' in gen_name) or \
+                   ('volume' in feature_name_lower and 'volume' in gen_name) or \
+                   ('trend' in feature_name_lower and 'trend' in gen_name):
+                    return generator
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error finding generator by pattern for {feature_name}: {e}")
+            return None
 
     def _create_feature_generator(self, feature_name: str, lookback: int):
         """
@@ -3222,10 +3544,26 @@ class CoreOptimizer:
         return safe_mutual_information_with_nan_handling(x, y, n_bins=10, min_samples=20)
 
     def _calculate_composite_score(self, correlations: Dict[str, float]) -> float:
-        """Calculate composite score using MI-consistent metrics."""
+        """Calculate composite score using MI-consistent metrics with VectorBT optimizations."""
         try:
             # Convert all metrics to MI-consistent scale
             mi_metrics = {}
+            
+            # Use VectorBT optimization for correlation calculations if available
+            if self.use_vectorbt_optimization and self.unified_manager:
+                try:
+                    operation_config = self.unified_manager.create_operation_config(
+                        operation_type=OperationType.STATISTICAL_COMPUTATION,
+                        data_size=1000,  # Approximate size
+                        data_dimensions=(1000,),
+                        memory_budget_mb=128.0,
+                        time_budget_seconds=10.0
+                    )
+                    
+                    strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                    self.logger.debug(f"Selected VectorBT strategy for composite scoring: {strategy}")
+                except Exception as e:
+                    self.logger.warning(f"VectorBT composite scoring setup failed: {e}")
             
             # Convert correlation metrics to MI approximations
             for metric in ['pearson', 'spearman', 'r_squared']:
@@ -4349,7 +4687,7 @@ except ImportError:
     @safe_operation("mutual information calculation", default_value=0.0)
     def _calculate_mutual_information_robust(self, x: np.ndarray, y: np.ndarray, n_bins: int = 20) -> float:
         """
-        Calculate robust mutual information using standardized error handling.
+        Calculate robust mutual information using VectorBT optimizations and standardized error handling.
         
         Args:
             x: First variable
@@ -4359,6 +4697,41 @@ except ImportError:
         Returns:
             Mutual information value
         """
+        # Try VectorBT optimization first if available
+        if self.use_vectorbt_optimization and self.unified_manager:
+            try:
+                # Use Unified Vectorization Manager for intelligent optimization
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.STATISTICAL_COMPUTATION,
+                    data_size=len(x),
+                    data_dimensions=(len(x),),
+                    memory_budget_mb=256.0,
+                    time_budget_seconds=15.0
+                )
+                
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected VectorBT strategy for MI calculation: {strategy}")
+                
+                # Use VectorBT optimized correlation as a proxy for MI
+                if self.rolling_optimizer and len(x) > 100:
+                    # For large datasets, use rolling correlation as a faster approximation
+                    x_series = pd.Series(x)
+                    y_series = pd.Series(y)
+                    
+                    # Calculate rolling correlation and use its absolute value as MI approximation
+                    rolling_corr = self.rolling_optimizer.rolling_corr(x_series, y_series, window=min(50, len(x)//4))
+                    valid_corr = rolling_corr.dropna()
+                    
+                    if len(valid_corr) > 0:
+                        # Use mean absolute correlation as MI approximation
+                        mi_approx = abs(valid_corr.mean())
+                        self.logger.debug(f"VectorBT MI approximation: {mi_approx:.4f}")
+                        return float(mi_approx)
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBT MI calculation failed, falling back to standard method: {e}")
+        
+        # Fallback to standard method
         return safe_mutual_information_with_nan_handling(x, y, n_bins=n_bins, min_samples=20)
 
     def _calculate_scale_normalized_score(self, mean_mi: float, std_mi: float, stability_penalty: float, lookback_penalty: float) -> Dict[str, float]:

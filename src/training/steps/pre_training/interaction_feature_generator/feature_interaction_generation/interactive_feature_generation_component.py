@@ -900,11 +900,11 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             tprint_error("❌ All data is NaN - cannot generate features")
             raise ValueError("CRITICAL: All data is NaN - cannot generate features")
         
-        # Check for excessive NaN values - more lenient threshold for financial data
+        # Check for excessive NaN values - strict threshold for data quality
         nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
-        if nan_ratio > 0.8:
-            tprint_error(f"❌ Too many NaN values: {nan_ratio:.1%} > 80%")
-            raise ValueError(f"CRITICAL: Too many NaN values: {nan_ratio:.1%} > 80%")
+        if nan_ratio > 0.01:
+            tprint_error(f"❌ Too many NaN values: {nan_ratio:.1%} > 1%")
+            raise ValueError(f"CRITICAL: Too many NaN values: {nan_ratio:.1%} > 1%")
         
         tprint_debug(f"   → NaN ratio validation passed: {nan_ratio:.1%}")
         

@@ -64,6 +64,26 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -79,6 +99,18 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager for advanced optimizations
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -348,26 +380,60 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return features
     
     def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean - VECTORIZED."""
+        """Calculate rolling mean using optimized VectorBT operations."""
         if len(data) < window:
             return np.array([])
         
-        # Vectorized approach using pandas rolling
-        data_series = pd.Series(data)
-        result = self._vectorbt_rolling_operation(data_series, "mean", window).dropna().values
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer and VECTORBT_OPTIMIZER_AVAILABLE:
+            try:
+                data_series = pd.Series(data)
+                result = self.rolling_optimizer.rolling_mean(data_series, window)
+                return result.dropna().values
+            except Exception as e:
+                tprint(f"VectorBT rolling mean failed: {e}, using fallback")
         
-        return result
+        # Fallback to VectorBT direct operations
+        if VECTORBT_AVAILABLE:
+            try:
+                data_series = pd.Series(data)
+                result = rolling_mean(data_series, window)
+                return result.dropna().values
+            except Exception as e:
+                tprint(f"VectorBT direct rolling mean failed: {e}, using pandas fallback")
+        
+        # Final fallback to pandas
+        data_series = pd.Series(data)
+        result = data_series.rolling(window=window).mean()
+        return result.dropna().values
     
     def _rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling standard deviation - VECTORIZED."""
+        """Calculate rolling standard deviation using optimized VectorBT operations."""
         if len(data) < window:
             return np.array([])
         
-        # Vectorized approach using pandas rolling
-        data_series = pd.Series(data)
-        result = self._vectorbt_rolling_operation(data_series, "std", window).dropna().values
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer and VECTORBT_OPTIMIZER_AVAILABLE:
+            try:
+                data_series = pd.Series(data)
+                result = self.rolling_optimizer.rolling_std(data_series, window)
+                return result.dropna().values
+            except Exception as e:
+                tprint(f"VectorBT rolling std failed: {e}, using fallback")
         
-        return result
+        # Fallback to VectorBT direct operations
+        if VECTORBT_AVAILABLE:
+            try:
+                data_series = pd.Series(data)
+                result = rolling_std(data_series, window)
+                return result.dropna().values
+            except Exception as e:
+                tprint(f"VectorBT direct rolling std failed: {e}, using pandas fallback")
+        
+        # Final fallback to pandas
+        data_series = pd.Series(data)
+        result = data_series.rolling(window=window).std()
+        return result.dropna().values
     
     def _calculate_volume_persistence(self, volume: np.ndarray, window: int) -> np.ndarray:
         """Calculate volume persistence using autocorrelation - OPTIMIZED VECTORIZED."""
@@ -778,28 +844,49 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        """Perform optimized VectorBT rolling operation with intelligent fallback."""
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer and VECTORBT_OPTIMIZER_AVAILABLE:
+            try:
+                if operation == 'mean':
+                    return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
+                elif operation == 'std':
+                    return self.rolling_optimizer.rolling_std(data, window, **kwargs)
+                elif operation == 'var':
+                    return self.rolling_optimizer.rolling_var(data, window, **kwargs)
+                elif operation == 'min':
+                    return self.rolling_optimizer.rolling_min(data, window, **kwargs)
+                elif operation == 'max':
+                    return self.rolling_optimizer.rolling_max(data, window, **kwargs)
+                elif operation == 'sum':
+                    return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint(f"VectorBT rolling optimizer failed: {e}, using direct VectorBT")
         
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        # Fallback to VectorBT direct operations
+        if VECTORBT_AVAILABLE:
+            try:
+                if operation == 'mean':
+                    return rolling_mean(data, window=window, **kwargs)
+                elif operation == 'std':
+                    return rolling_std(data, window=window, **kwargs)
+                elif operation == 'var':
+                    return rolling_var(data, window=window, **kwargs)
+                elif operation == 'min':
+                    return rolling_min(data, window=window, **kwargs)
+                elif operation == 'max':
+                    return rolling_max(data, window=window, **kwargs)
+                elif operation == 'sum':
+                    return rolling_sum(data, window=window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint(f"VectorBT direct operation failed: {e}, using pandas fallback")
+        
+        # Final fallback to pandas
+        return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:

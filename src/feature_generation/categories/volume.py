@@ -51,16 +51,25 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
     from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
     ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
     ROLLING_OPTIMIZER_AVAILABLE = False
     get_vectorbt_rolling_optimizer = None
     VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
 
 # Optimization utilities
 try:
@@ -78,7 +87,6 @@ from ..base_calculations import (
 logger = logging.getLogger(__name__)
 
 class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
-    """Feature generator for basic volume-based features with VectorBT optimization."""
     """Advanced feature generator for volume-based features with VectorBT optimization."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
@@ -86,16 +94,132 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
-        # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-        else:
-            self.vectorbt_optimizer = None
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager for advanced optimizations
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+            
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'unified_optimizations': 0,
+            'fallback_operations': 0,
+            'total_operations': 0,
+            'optimization_gains': []
+        }
+    
+    def _optimized_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
+                                   operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Perform optimized rolling operation using the best available optimization strategy.
+        
+        Args:
+            data: Input data (Series or DataFrame)
+            operation: Operation to perform ('mean', 'std', 'var', 'min', 'max', 'sum', 'corr', 'cov', 'apply')
+            window: Rolling window size
+            **kwargs: Additional parameters for the operation
+            
+        Returns:
+            Result of the rolling operation
+        """
+        self.performance_stats['total_operations'] += 1
+        
+        # Try Unified Vectorization Manager first for complex operations
+        if (self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE and 
+            operation in ['corr', 'cov', 'apply'] and len(data) > 1000):
+            try:
+                from ...utils.ml_common.unified_vectorization_manager import OperationConfig
+                
+                config = OperationConfig(
+                    operation_type=OperationType.TECHNICAL_INDICATORS,
+                    data_size=len(data),
+                    data_dimensions=(len(data), data.shape[1] if hasattr(data, 'shape') and len(data.shape) > 1 else 1),
+                    memory_budget_mb=1024.0,
+                    time_budget_seconds=60.0
+                )
+                
+                if operation == 'corr' and 'other' in kwargs:
+                    result = self.unified_manager.optimize_rolling_correlation(
+                        data, kwargs['other'], window, config
+                    )
+                elif operation == 'cov' and 'other' in kwargs:
+                    result = self.unified_manager.optimize_rolling_covariance(
+                        data, kwargs['other'], window, config
+                    )
+                elif operation == 'apply' and 'func' in kwargs:
+                    result = self.unified_manager.optimize_rolling_apply(
+                        data, kwargs['func'], window, config
+                    )
+                else:
+                    raise ValueError(f"Unsupported unified operation: {operation}")
+                
+                self.performance_stats['unified_optimizations'] += 1
+                return result.result
+                
+            except Exception as e:
+                logger.warning(f"Unified vectorization failed: {e}, falling back to VectorBT")
+        
+        # Fall back to VectorBT rolling optimizer
+        if self.rolling_optimizer and ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                if operation == 'mean':
+                    result = self.rolling_optimizer.rolling_mean(data, window, **kwargs)
+                elif operation == 'std':
+                    result = self.rolling_optimizer.rolling_std(data, window, **kwargs)
+                elif operation == 'var':
+                    result = self.rolling_optimizer.rolling_var(data, window, **kwargs)
+                elif operation == 'min':
+                    result = self.rolling_optimizer.rolling_min(data, window, **kwargs)
+                elif operation == 'max':
+                    result = self.rolling_optimizer.rolling_max(data, window, **kwargs)
+                elif operation == 'sum':
+                    result = self.rolling_optimizer.rolling_sum(data, window, **kwargs)
+                elif operation == 'corr' and 'other' in kwargs:
+                    result = self.rolling_optimizer.rolling_corr(data, kwargs['other'], window, **kwargs)
+                elif operation == 'cov' and 'other' in kwargs:
+                    result = self.rolling_optimizer.rolling_cov(data, kwargs['other'], window, **kwargs)
+                elif operation == 'apply' and 'func' in kwargs:
+                    result = self.rolling_optimizer.rolling_apply(data, kwargs['func'], window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported VectorBT operation: {operation}")
+                
+                self.performance_stats['vectorbt_operations'] += 1
+                return result
+                
+            except Exception as e:
+                logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
+        
+        # Final fallback to pandas
+        self.performance_stats['fallback_operations'] += 1
+        rolling_obj = data.rolling(window=window, **kwargs)
+        
+        if operation == 'mean':
+            return rolling_obj.mean()
+        elif operation == 'std':
+            return rolling_obj.std()
+        elif operation == 'var':
+            return rolling_obj.var()
+        elif operation == 'min':
+            return rolling_obj.min()
+        elif operation == 'max':
+            return rolling_obj.max()
+        elif operation == 'sum':
+            return rolling_obj.sum()
+        elif operation == 'corr' and 'other' in kwargs:
+            return rolling_obj.corr(kwargs['other'])
+        elif operation == 'cov' and 'other' in kwargs:
+            return rolling_obj.cov(kwargs['other'])
+        elif operation == 'apply' and 'func' in kwargs:
+            return rolling_obj.apply(kwargs['func'])
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -250,61 +374,38 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         
-        # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-        else:
-            self.vectorbt_optimizer = None
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager for advanced optimizations
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate Volume SMA using VectorBT optimization."""
+        """Generate Volume SMA using optimized rolling operations."""
+        if data.empty or 'volume' not in data.columns:
+            return pd.Series(dtype=float, index=data.index, name=f'volume_sma_{self.period}')
+
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         volume = data['volume']
         
-        # Use VectorBT for optimized rolling mean
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
+        # Use optimized rolling operation
+        if self.rolling_optimizer and ROLLING_OPTIMIZER_AVAILABLE:
             try:
-                return self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
+                return self.rolling_optimizer.rolling_mean(volume, window=self.period)
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
                 return volume.rolling(window=self.period).mean()
         else:
             return volume.rolling(window=self.period).mean()
-        if data.empty or 'volume' not in data.columns:
-            return pd.Series(dtype=float, index=data.index, name=f'volume_sma_{self.period}')
-
-        volume = data['volume']
-        
-        # Use VectorBT rolling optimizer if available
-        if self.rolling_optimizer:
-            try:
-                volume_sma = self.rolling_optimizer.rolling_mean(volume, window=self.period)
-                self.performance_stats['vectorbt_operations'] += 1
-                return volume_sma
-            except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
-        
-        # Fallback to VectorBT direct operations
-        if VECTORBT_AVAILABLE:
-            try:
-                volume_sma = rolling_mean(volume, window=self.period)
-                self.performance_stats['vectorbt_operations'] += 1
-                return volume_sma
-            except Exception as e:
-                self.logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
-        
-        # Final fallback to pandas
-        return volume.rolling(window=self.period).mean()
 
 # Volume Exponential Moving Average
     

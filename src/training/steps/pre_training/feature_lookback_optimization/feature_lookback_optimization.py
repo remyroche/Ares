@@ -56,6 +56,28 @@ except ImportError:
     VectorBTOptimizationConfig = None
     OptimizationStrategy = None
     create_vectorbt_optimizer = None
+
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_namespace,
@@ -262,9 +284,11 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             try:
                 self.vectorbt_optimizer = create_vectorbt_optimizer(
                     strategy=OptimizationStrategy.VECTORBT_ONLY,
-                    use_parallel_processing=True
+                    use_parallel_processing=True,
+                    use_rolling_optimizer=True,
+                    use_unified_vectorization=True
                 )
-                tprint_success("✅ VectorBT optimizer initialized successfully")
+                tprint_success("✅ VectorBT optimizer initialized with enhanced optimizations")
                 self.use_vectorbt_optimization = True
             except Exception as e:
                 tprint_warning(f"⚠️ VectorBT optimizer initialization failed: {e}")
@@ -274,11 +298,51 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             tprint_warning("⚠️ VectorBT optimizer not available - using fallback optimization")
             self.vectorbt_optimizer = None
             self.use_vectorbt_optimization = False
+        
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
 
         # Component state
         self.optimization_status = "pending"
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if VECTORBT_UTILS_AVAILABLE:
+                try:
+                    self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                        enable_gpu=False,
+                        enable_parallel=True,
+                        memory_efficient=True
+                    )
+                    tprint_success("✅ VectorBT Rolling Optimizer initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT Rolling Optimizer initialization failed: {e}")
+                    self.rolling_optimizer = None
+            else:
+                self.rolling_optimizer = None
+                tprint_warning("⚠️ VectorBT Rolling Optimizer not available")
+            
+            # Initialize Unified Vectorization Manager
+            if VECTORBT_UTILS_AVAILABLE:
+                try:
+                    self.unified_manager = get_unified_vectorization_manager()
+                    tprint_success("✅ Unified Vectorization Manager initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Unified Vectorization Manager initialization failed: {e}")
+                    self.unified_manager = None
+            else:
+                self.unified_manager = None
+                tprint_warning("⚠️ Unified Vectorization Manager not available")
+            
+            tprint_success("✅ Enhanced optimization components initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Enhanced components initialization failed: {e}")
+            # Don't raise - these are optional enhancements
 
         # Feature cache state
         self.feature_cache = FeatureCacheService(subdirectory="feature_bank")

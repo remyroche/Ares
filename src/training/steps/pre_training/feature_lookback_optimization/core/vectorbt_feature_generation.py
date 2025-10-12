@@ -37,6 +37,34 @@ except ImportError:
     BollingerBands = None
     nb = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_corr
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_corr = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from .utils.error_handling import safe_operation, get_error_handler
@@ -71,6 +99,12 @@ class VectorBTFeatureConfig:
     min_data_points: int = 20
     fill_method: str = 'forward'  # 'forward', 'backward', 'interpolate', 'drop'
     parallel_processing: bool = True
+    
+    # Enhanced optimization settings
+    use_rolling_optimizer: bool = True
+    use_unified_vectorization: bool = True
+    rolling_optimizer_config: Optional[Dict[str, Any]] = None
+    unified_vectorization_config: Optional[Dict[str, Any]] = None
 
 
 class VectorBTFeatureGenerator:
@@ -98,7 +132,10 @@ class VectorBTFeatureGenerator:
         self._cache_hits = 0
         self._cache_misses = 0
         
-        tprint_success("✅ VectorBT Feature Generator initialized")
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
+        
+        tprint_success("✅ VectorBT Feature Generator initialized with enhanced optimizations")
     
     def _configure_vectorbt(self):
         """Configure VectorBT for optimal feature generation."""
@@ -115,6 +152,37 @@ class VectorBTFeatureGenerator:
             
         except Exception as e:
             self.logger.warning(f"Could not configure VectorBT settings: {e}")
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if self.config.use_rolling_optimizer and VECTORBT_UTILS_AVAILABLE:
+                rolling_config = self.config.rolling_optimizer_config or {}
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=rolling_config.get('enable_gpu', False),
+                    enable_parallel=rolling_config.get('enable_parallel', True),
+                    memory_efficient=rolling_config.get('memory_efficient', True)
+                )
+                self.logger.debug("VectorBT Rolling Optimizer initialized for feature generation")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("VectorBT Rolling Optimizer not available for feature generation")
+            
+            # Initialize Unified Vectorization Manager
+            if self.config.use_unified_vectorization and VECTORBT_UTILS_AVAILABLE:
+                unified_config = self.config.unified_vectorization_config or {}
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.debug("Unified Vectorization Manager initialized for feature generation")
+            else:
+                self.unified_manager = None
+                self.logger.warning("Unified Vectorization Manager not available for feature generation")
+            
+            self.logger.debug("Enhanced optimization components initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced component initialization failed: {e}")
+            # Don't raise - these are optional enhancements
     
     @safe_operation
     def generate_features_vectorbt(
@@ -153,8 +221,10 @@ class VectorBTFeatureGenerator:
             
             self._cache_misses += 1
             
-            # Generate features
-            if self.config.use_parallel and len(lookback_periods) > 1:
+            # Generate features using enhanced optimization if available
+            if self.rolling_optimizer and self.unified_manager:
+                features = self._generate_features_enhanced(data, feature_name, lookback_periods, feature_type)
+            elif self.config.use_parallel and len(lookback_periods) > 1:
                 features = self._generate_features_parallel(data, feature_name, lookback_periods, feature_type)
             else:
                 features = self._generate_features_sequential(data, feature_name, lookback_periods, feature_type)
@@ -229,6 +299,368 @@ class VectorBTFeatureGenerator:
                     self.logger.warning(f"Feature generation failed for period {period}: {e}")
         
         return features
+    
+    def _generate_features_enhanced(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        lookback_periods: List[int],
+        feature_type: FeatureType
+    ) -> Dict[int, np.ndarray]:
+        """Generate features using enhanced VectorBT optimizations."""
+        try:
+            features = {}
+            
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                # Configure operation for feature generation
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.TECHNICAL_INDICATORS,
+                    data_size=len(data),
+                    data_dimensions=(len(data), len(data.columns)),
+                    memory_budget_mb=1024.0,
+                    time_budget_seconds=60.0
+                )
+                
+                # Get optimal strategy
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected feature generation strategy: {strategy}")
+            
+            # Generate features using VectorBTRollingOptimizer
+            for period in lookback_periods:
+                try:
+                    feature_values = self._generate_single_feature_enhanced(
+                        data, feature_name, period, feature_type
+                    )
+                    if feature_values is not None and len(feature_values) > 0:
+                        features[period] = feature_values
+                except Exception as e:
+                    self.logger.warning(f"Enhanced feature generation failed for period {period}: {e}")
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced feature generation failed: {e}")
+            # Fallback to parallel method
+            return self._generate_features_parallel(data, feature_name, lookback_periods, feature_type)
+    
+    def _generate_single_feature_enhanced(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        lookback_period: int,
+        feature_type: FeatureType
+    ) -> Optional[np.ndarray]:
+        """Generate a single feature using enhanced optimizations."""
+        try:
+            # Validate inputs
+            if data is None or len(data) == 0:
+                return None
+            
+            if lookback_period < self.config.min_data_points:
+                return None
+            
+            # Get price data
+            close_prices = self._get_price_data(data, 'close')
+            if close_prices is None or len(close_prices) == 0:
+                return None
+            
+            # Use VectorBTRollingOptimizer for enhanced rolling operations
+            if self.rolling_optimizer:
+                if feature_type == FeatureType.SMA:
+                    return self._generate_sma_enhanced(close_prices, lookback_period)
+                elif feature_type == FeatureType.EMA:
+                    return self._generate_ema_enhanced(close_prices, lookback_period)
+                elif feature_type == FeatureType.RSI:
+                    return self._generate_rsi_enhanced(close_prices, lookback_period)
+                elif feature_type == FeatureType.MACD:
+                    return self._generate_macd_enhanced(close_prices, lookback_period)
+                elif feature_type == FeatureType.BBANDS:
+                    return self._generate_bbands_enhanced(close_prices, lookback_period)
+                elif feature_type == FeatureType.STOCH:
+                    return self._generate_stoch_enhanced(data, lookback_period)
+                elif feature_type == FeatureType.ADX:
+                    return self._generate_adx_enhanced(data, lookback_period)
+                elif feature_type == FeatureType.CCI:
+                    return self._generate_cci_enhanced(data, lookback_period)
+                elif feature_type == FeatureType.ATR:
+                    return self._generate_atr_enhanced(data, lookback_period)
+                elif feature_type == FeatureType.BOLLINGER:
+                    return self._generate_bollinger_enhanced(close_prices, lookback_period)
+                else:  # CUSTOM
+                    return self._generate_custom_feature_enhanced(data, feature_name, lookback_period)
+            
+            # Fallback to standard method
+            return self._generate_single_feature(data, feature_name, lookback_period, feature_type)
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced single feature generation failed: {e}")
+            return None
+    
+    def _generate_sma_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate SMA using VectorBTRollingOptimizer."""
+        try:
+            return self.rolling_optimizer.rolling_mean(
+                pd.Series(prices), window
+            ).values
+        except Exception as e:
+            self.logger.warning(f"Enhanced SMA generation failed: {e}")
+            return np.array([])
+    
+    def _generate_ema_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate EMA using VectorBTRollingOptimizer."""
+        try:
+            # EMA calculation using rolling operations
+            alpha = 2.0 / (window + 1)
+            ema_values = np.zeros_like(prices)
+            ema_values[0] = prices[0]
+            
+            for i in range(1, len(prices)):
+                ema_values[i] = alpha * prices[i] + (1 - alpha) * ema_values[i-1]
+            
+            return ema_values
+        except Exception as e:
+            self.logger.warning(f"Enhanced EMA generation failed: {e}")
+            return np.array([])
+    
+    def _generate_rsi_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate RSI using VectorBTRollingOptimizer."""
+        try:
+            price_changes = np.diff(prices)
+            gains = np.where(price_changes > 0, price_changes, 0)
+            losses = np.where(price_changes < 0, -price_changes, 0)
+            
+            # Use rolling operations for gains and losses
+            avg_gains = self.rolling_optimizer.rolling_mean(
+                pd.Series(gains), window
+            ).values
+            avg_losses = self.rolling_optimizer.rolling_mean(
+                pd.Series(losses), window
+            ).values
+            
+            # Calculate RSI
+            rs = avg_gains / (avg_losses + 1e-10)
+            rsi = 100 - (100 / (1 + rs))
+            
+            # Pad with NaN for the first window-1 values
+            padded_rsi = np.full(len(prices), np.nan)
+            padded_rsi[window:] = rsi[window-1:]
+            
+            return padded_rsi
+        except Exception as e:
+            self.logger.warning(f"Enhanced RSI generation failed: {e}")
+            return np.array([])
+    
+    def _generate_macd_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate MACD using VectorBTRollingOptimizer."""
+        try:
+            fast_window = window
+            slow_window = window * 2
+            signal_window = window // 2
+            
+            # Calculate EMAs
+            fast_ema = self._generate_ema_enhanced(prices, fast_window)
+            slow_ema = self._generate_ema_enhanced(prices, slow_window)
+            
+            # Calculate MACD line
+            macd_line = fast_ema - slow_ema
+            
+            # Calculate signal line
+            signal_line = self._generate_ema_enhanced(macd_line, signal_window)
+            
+            # Calculate MACD histogram
+            macd_histogram = macd_line - signal_line
+            
+            return macd_histogram
+        except Exception as e:
+            self.logger.warning(f"Enhanced MACD generation failed: {e}")
+            return np.array([])
+    
+    def _generate_bbands_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate Bollinger Bands using VectorBTRollingOptimizer."""
+        try:
+            # Calculate SMA
+            sma = self.rolling_optimizer.rolling_mean(
+                pd.Series(prices), window
+            ).values
+            
+            # Calculate standard deviation
+            std = self.rolling_optimizer.rolling_std(
+                pd.Series(prices), window
+            ).values
+            
+            # Calculate Bollinger Bands
+            upper_band = sma + (2 * std)
+            lower_band = sma - (2 * std)
+            
+            # Return the width (upper - lower) / middle
+            width = (upper_band - lower_band) / (sma + 1e-10)
+            
+            return width
+        except Exception as e:
+            self.logger.warning(f"Enhanced Bollinger Bands generation failed: {e}")
+            return np.array([])
+    
+    def _generate_stoch_enhanced(self, data: pd.DataFrame, window: int) -> np.ndarray:
+        """Generate Stochastic Oscillator using VectorBTRollingOptimizer."""
+        try:
+            high = self._get_price_data(data, 'high')
+            low = self._get_price_data(data, 'low')
+            close = self._get_price_data(data, 'close')
+            
+            if high is None or low is None or close is None:
+                return np.array([])
+            
+            # Calculate %K
+            lowest_low = self.rolling_optimizer.rolling_min(
+                pd.Series(low), window
+            ).values
+            highest_high = self.rolling_optimizer.rolling_max(
+                pd.Series(high), window
+            ).values
+            
+            k_percent = 100 * (close - lowest_low) / (highest_high - lowest_low + 1e-10)
+            
+            return k_percent
+        except Exception as e:
+            self.logger.warning(f"Enhanced Stochastic generation failed: {e}")
+            return np.array([])
+    
+    def _generate_adx_enhanced(self, data: pd.DataFrame, window: int) -> np.ndarray:
+        """Generate ADX using VectorBTRollingOptimizer."""
+        try:
+            high = self._get_price_data(data, 'high')
+            low = self._get_price_data(data, 'low')
+            close = self._get_price_data(data, 'close')
+            
+            if high is None or low is None or close is None:
+                return np.array([])
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = np.abs(high - np.roll(close, 1))
+            tr3 = np.abs(low - np.roll(close, 1))
+            
+            true_range = np.maximum(tr1, np.maximum(tr2, tr3))
+            
+            # Calculate ATR
+            atr = self.rolling_optimizer.rolling_mean(
+                pd.Series(true_range), window
+            ).values
+            
+            return atr
+        except Exception as e:
+            self.logger.warning(f"Enhanced ADX generation failed: {e}")
+            return np.array([])
+    
+    def _generate_cci_enhanced(self, data: pd.DataFrame, window: int) -> np.ndarray:
+        """Generate CCI using VectorBTRollingOptimizer."""
+        try:
+            high = self._get_price_data(data, 'high')
+            low = self._get_price_data(data, 'low')
+            close = self._get_price_data(data, 'close')
+            
+            if high is None or low is None or close is None:
+                return np.array([])
+            
+            # Calculate Typical Price
+            typical_price = (high + low + close) / 3
+            
+            # Calculate SMA of typical price
+            sma_tp = self.rolling_optimizer.rolling_mean(
+                pd.Series(typical_price), window
+            ).values
+            
+            # Calculate Mean Deviation
+            mean_dev = self.rolling_optimizer.rolling_mean(
+                pd.Series(np.abs(typical_price - sma_tp)), window
+            ).values
+            
+            # Calculate CCI
+            cci = (typical_price - sma_tp) / (0.015 * mean_dev + 1e-10)
+            
+            return cci
+        except Exception as e:
+            self.logger.warning(f"Enhanced CCI generation failed: {e}")
+            return np.array([])
+    
+    def _generate_atr_enhanced(self, data: pd.DataFrame, window: int) -> np.ndarray:
+        """Generate ATR using VectorBTRollingOptimizer."""
+        try:
+            high = self._get_price_data(data, 'high')
+            low = self._get_price_data(data, 'low')
+            close = self._get_price_data(data, 'close')
+            
+            if high is None or low is None or close is None:
+                return np.array([])
+            
+            # Calculate True Range
+            tr1 = high - low
+            tr2 = np.abs(high - np.roll(close, 1))
+            tr3 = np.abs(low - np.roll(close, 1))
+            
+            true_range = np.maximum(tr1, np.maximum(tr2, tr3))
+            
+            # Calculate ATR using rolling mean
+            atr = self.rolling_optimizer.rolling_mean(
+                pd.Series(true_range), window
+            ).values
+            
+            return atr
+        except Exception as e:
+            self.logger.warning(f"Enhanced ATR generation failed: {e}")
+            return np.array([])
+    
+    def _generate_bollinger_enhanced(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Generate Bollinger Bands width using VectorBTRollingOptimizer."""
+        try:
+            # Calculate SMA
+            sma = self.rolling_optimizer.rolling_mean(
+                pd.Series(prices), window
+            ).values
+            
+            # Calculate standard deviation
+            std = self.rolling_optimizer.rolling_std(
+                pd.Series(prices), window
+            ).values
+            
+            # Calculate Bollinger Bands width
+            upper_band = sma + (2 * std)
+            lower_band = sma - (2 * std)
+            width = (upper_band - lower_band) / (sma + 1e-10)
+            
+            return width
+        except Exception as e:
+            self.logger.warning(f"Enhanced Bollinger width generation failed: {e}")
+            return np.array([])
+    
+    def _generate_custom_feature_enhanced(self, data: pd.DataFrame, feature_name: str, window: int) -> np.ndarray:
+        """Generate custom feature using enhanced optimizations."""
+        try:
+            close = self._get_price_data(data, 'close')
+            if close is None:
+                return np.array([])
+            
+            # Use VectorBTRollingOptimizer for custom features
+            if 'price_change' in feature_name.lower():
+                price_changes = np.diff(close)
+                return self.rolling_optimizer.rolling_mean(
+                    pd.Series(price_changes), window
+                ).values
+            elif 'volatility' in feature_name.lower():
+                returns = np.diff(close) / close[:-1]
+                return self.rolling_optimizer.rolling_std(
+                    pd.Series(returns), window
+                ).values
+            else:
+                # Default to SMA for unknown features
+                return self.rolling_optimizer.rolling_mean(
+                    pd.Series(close), window
+                ).values
+                
+        except Exception as e:
+            self.logger.warning(f"Enhanced custom feature generation failed: {e}")
+            return np.array([])
     
     def _generate_features_sequential(
         self,
@@ -493,13 +925,17 @@ class VectorBTFeatureGenerator:
 def create_vectorbt_feature_generator(
     use_parallel: bool = True,
     max_workers: int = 4,
-    cache_features: bool = True
+    cache_features: bool = True,
+    use_rolling_optimizer: bool = True,
+    use_unified_vectorization: bool = True
 ) -> VectorBTFeatureGenerator:
     """Create a VectorBT feature generator with specified configuration."""
     config = VectorBTFeatureConfig(
         use_parallel=use_parallel,
         max_workers=max_workers,
-        cache_features=cache_features
+        cache_features=cache_features,
+        use_rolling_optimizer=use_rolling_optimizer,
+        use_unified_vectorization=use_unified_vectorization
     )
     return VectorBTFeatureGenerator(config)
 

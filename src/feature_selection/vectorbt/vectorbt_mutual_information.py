@@ -183,7 +183,7 @@ class VectorBTMutualInformation:
         return result
     
     def _compute_mutual_information_parallel(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
-        """Compute mutual information using VectorBT parallel processing."""
+        """Enhanced VectorBT parallel mutual information computation with better optimization."""
         try:
             from sklearn.feature_selection import mutual_info_regression
             
@@ -191,10 +191,34 @@ class VectorBTMutualInformation:
             df = vbt.PandasDataFrame(X)
             target_series = vbt.PandasSeries(y)
             
-            # Use VectorBT's parallel apply for chunked computation
+            # Use VectorBT's enhanced parallel processing
             chunk_size = min(self.config.chunk_size, X.shape[1])
             
-            # VectorBT parallel processing
+            # Enhanced VectorBT parallel processing with memory optimization
+            if hasattr(df, 'vbt') and self.config.enable_vectorbt_parallel:
+                try:
+                    # Use VectorBT's optimized parallel apply with memory management
+                    mi_scores = df.vbt.parallel_apply(
+                        lambda chunk: mutual_info_regression(chunk, y, random_state=42),
+                        chunk_size=chunk_size,
+                        n_jobs=self.config.max_workers or -1,
+                        memory_efficient=True,
+                        progress_bar=self.config.log_performance
+                    )
+                    
+                    # Use VectorBT's optimized result assembly
+                    if hasattr(mi_scores, 'vbt'):
+                        mi_scores = mi_scores.vbt.flatten()
+                    else:
+                        mi_scores = np.concatenate(mi_scores.values)
+                    
+                    tprint_debug(f"📊 VectorBT enhanced parallel processing completed for {X.shape[1]} features")
+                    return mi_scores
+                    
+                except Exception as vbt_e:
+                    self.logger.debug(f"Enhanced VectorBT parallel processing failed: {vbt_e}")
+            
+            # Fallback to standard VectorBT parallel processing
             mi_scores = df.vbt.parallel_apply(
                 lambda chunk: mutual_info_regression(chunk, y, random_state=42),
                 chunk_size=chunk_size,
@@ -209,19 +233,47 @@ class VectorBTMutualInformation:
             
         except Exception as e:
             self.logger.warning(f"VectorBT parallel mutual information computation failed: {e}")
-            # Fallback to chunked processing
+            # Enhanced fallback to chunked processing with VectorBT optimizations
             chunk_size = min(self.config.chunk_size, X.shape[1])
             mi_scores = np.zeros(X.shape[1])
             
-            for i in range(0, X.shape[1], chunk_size):
-                end_idx = min(i + chunk_size, X.shape[1])
-                chunk_X = X[:, i:end_idx]
-                
-                # Compute mutual information for chunk
-                chunk_scores = mutual_info_regression(chunk_X, y, random_state=42)
-                mi_scores[i:end_idx] = chunk_scores
-                
-                tprint_debug(f"📊 Processed features {i}-{end_idx-1}")
+            # Use VectorBT for chunked processing if available
+            if hasattr(vbt, 'PandasDataFrame'):
+                try:
+                    df = vbt.PandasDataFrame(X)
+                    for i in range(0, X.shape[1], chunk_size):
+                        end_idx = min(i + chunk_size, X.shape[1])
+                        chunk_df = df.iloc[:, i:end_idx]
+                        
+                        # Use VectorBT for chunk processing
+                        if hasattr(chunk_df, 'vbt'):
+                            chunk_scores = chunk_df.vbt.apply(
+                                lambda col: mutual_info_regression(col.values.reshape(-1, 1), y, random_state=42)[0],
+                                axis=0
+                            )
+                        else:
+                            chunk_scores = mutual_info_regression(chunk_df.values, y, random_state=42)
+                        
+                        mi_scores[i:end_idx] = chunk_scores
+                        tprint_debug(f"📊 Processed features {i}-{end_idx-1} with VectorBT")
+                        
+                except Exception as vbt_fallback_e:
+                    self.logger.debug(f"VectorBT fallback failed: {vbt_fallback_e}")
+                    # Standard fallback
+                    for i in range(0, X.shape[1], chunk_size):
+                        end_idx = min(i + chunk_size, X.shape[1])
+                        chunk_X = X[:, i:end_idx]
+                        chunk_scores = mutual_info_regression(chunk_X, y, random_state=42)
+                        mi_scores[i:end_idx] = chunk_scores
+                        tprint_debug(f"📊 Processed features {i}-{end_idx-1}")
+            else:
+                # Standard fallback
+                for i in range(0, X.shape[1], chunk_size):
+                    end_idx = min(i + chunk_size, X.shape[1])
+                    chunk_X = X[:, i:end_idx]
+                    chunk_scores = mutual_info_regression(chunk_X, y, random_state=42)
+                    mi_scores[i:end_idx] = chunk_scores
+                    tprint_debug(f"📊 Processed features {i}-{end_idx-1}")
             
             return mi_scores
     

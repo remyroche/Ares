@@ -260,28 +260,19 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
     def _generate_with_unified_manager(self, volume: pd.Series, data: pd.DataFrame) -> pd.Series:
         """Generate volume features using Unified Vectorization Manager."""
         try:
-            # Configure operation for volume feature generation
-            operation_config = {
-                'operation_type': OperationType.TECHNICAL_INDICATORS,
-                'data_size': len(volume),
-                'data_dimensions': (len(volume),),
-                'memory_budget_mb': 512.0,
-                'time_budget_seconds': 60.0,
-                'precision_requirement': 'medium'
-            }
-            
-            # Use unified manager for rolling mean calculation
-            result = self.unified_manager.optimize_operation(
-                lambda: self.rolling_optimizer.rolling_mean(volume, window=20),
-                operation_config
-            )
+            # Use the unified manager's rolling operation method for better optimization
+            volume_sma = self.unified_manager.rolling_operation(volume, 'mean', window=20)
             
             self.performance_stats['unified_manager_operations'] += 1
-            return result.result
+            return volume_sma
             
         except Exception as e:
             logger.warning(f"Unified manager volume generation failed: {e}")
-            raise
+            # Fallback to VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                return self.rolling_optimizer.rolling_mean(volume, window=20)
+            else:
+                return volume.rolling(window=20).mean()
     
     def generate_batch_volume_features(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -307,7 +298,8 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         # Use Unified Vectorization Manager for batch processing if available
         if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                return self._generate_batch_with_unified_manager(data, feature_configs)
+                # Use the unified manager's batch processing method
+                return self.unified_manager.batch_process_features(data, feature_configs)
             except Exception as e:
                 logger.warning(f"Unified manager batch processing failed: {e}, using VectorBT fallback")
                 self.performance_stats['pandas_fallbacks'] += 1

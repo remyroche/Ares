@@ -221,28 +221,34 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
     
     def _generate_with_unified_manager(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using UnifiedVectorizationManager."""
-        # Create operation configuration
-        config = OperationConfig(
-            operation_type=OperationType.VECTORBT_TECHNICAL_ANALYSIS,
-            data_size=len(data),
-            data_dimensions=(len(data), len(data.columns)),
-            memory_budget_mb=1024.0,
-            time_budget_seconds=30.0,
-            precision_requirement="high"
-        )
-        
-        # Execute with unified manager
-        result = self.unified_manager.optimize_operation(
-            operation_type=OperationType.VECTORBT_TECHNICAL_ANALYSIS,
-            data=data,
-            config=config,
-            **kwargs
-        )
-        
-        # Update memory usage
-        self.performance_stats['memory_usage_mb'] = result.memory_used_mb
-        
-        return result.result
+        try:
+            # Use the unified manager's rolling operation for oscillator calculation
+            close_prices = data['close']
+            
+            # Calculate oscillator using optimized rolling mean
+            rolling_mean = self.unified_manager.rolling_operation(close_prices, 'mean', window=14)
+            oscillator = rolling_mean - close_prices
+            
+            # Update memory usage
+            if hasattr(self.unified_manager, 'get_performance_stats'):
+                stats = self.unified_manager.get_performance_stats()
+                self.performance_stats['memory_usage_mb'] = stats.get('memory_used_mb', 0)
+            
+            return oscillator.rename('oscillator_unified')
+            
+        except Exception as e:
+            self.logger.warning(f"Unified Vectorization Manager oscillator calculation failed: {e}")
+            # Fallback to VectorBT rolling optimizer
+            if self.vectorbt_optimizer:
+                try:
+                    rolling_mean = self.vectorbt_optimizer.rolling_mean(close_prices, window=14)
+                    oscillator = rolling_mean - close_prices
+                    return oscillator.rename('oscillator_vectorbt_fallback')
+                except Exception as e2:
+                    self.logger.warning(f"VectorBT fallback failed: {e2}")
+                    return self._generate_with_pandas_fallback(data, **kwargs)
+            else:
+                return self._generate_with_pandas_fallback(data, **kwargs)
     
     def _generate_with_pandas_fallback(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using pandas fallback."""
@@ -272,6 +278,119 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             'average_time_per_calculation': 0.0,
             'memory_usage_mb': 0.0
         }
+    
+    def generate_optimized_oscillator_features(self, data: pd.DataFrame, 
+                                             feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple oscillator features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated oscillator features
+        """
+        if self.unified_manager and self._should_use_unified_manager(data['close']):
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using VectorBT fallback")
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+        elif self.vectorbt_optimizer and self._should_use_vectorbt(data['close']):
+            try:
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"VectorBT batch processing failed: {e}, using pandas fallback")
+                return self._generate_batch_with_pandas(data, feature_configs)
+        else:
+            return self._generate_batch_with_pandas(data, feature_configs)
+    
+    def _generate_batch_with_vectorbt(self, data: pd.DataFrame, 
+                                    feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using VectorBT rolling optimizer."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'oscillator')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'oscillator':
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window=window)
+                        results[feature_name] = rolling_mean - series_data
+                
+                elif feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        if operation == 'mean':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_mean(series_data, window=window)
+                        elif operation == 'std':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_std(series_data, window=window)
+                        elif operation == 'min':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_min(series_data, window=window)
+                        elif operation == 'max':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_max(series_data, window=window)
+                
+            except Exception as e:
+                self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _generate_batch_with_pandas(self, data: pd.DataFrame, 
+                                  feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using pandas fallback."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'oscillator')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'oscillator':
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        rolling_mean = series_data.rolling(window=window).mean()
+                        results[feature_name] = rolling_mean - series_data
+                
+                elif feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        rolling_obj = series_data.rolling(window=window)
+                        if operation == 'mean':
+                            results[feature_name] = rolling_obj.mean()
+                        elif operation == 'std':
+                            results[feature_name] = rolling_obj.std()
+                        elif operation == 'min':
+                            results[feature_name] = rolling_obj.min()
+                        elif operation == 'max':
+                            results[feature_name] = rolling_obj.max()
+                
+            except Exception as e:
+                self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of oscillator feature generators."""

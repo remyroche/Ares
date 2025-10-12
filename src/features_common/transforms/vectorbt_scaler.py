@@ -28,6 +28,19 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
+# Import VectorBT optimization modules
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    warnings.warn("VectorBT optimization modules not available. Using basic VectorBT functions.")
+
 from .base_scaler import BaseScaler
 
 logger = logging.getLogger(__name__)
@@ -42,7 +55,8 @@ class VectorBTScaler(BaseScaler):
     """
     
     def __init__(self, method: str = 'zscore', enable_gpu: bool = False, 
-                 enable_batch: bool = True, memory_efficient: bool = True, **kwargs):
+                 enable_batch: bool = True, memory_efficient: bool = True,
+                 use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
         """
         Initialize VectorBT scaler with enhanced optimization.
         
@@ -51,9 +65,12 @@ class VectorBTScaler(BaseScaler):
             enable_gpu: Enable GPU acceleration if available
             enable_batch: Enable batch processing optimization
             memory_efficient: Enable memory optimization
+            use_optimizer: Whether to use VectorBTRollingOptimizer
+            use_unified_manager: Whether to use UnifiedVectorizationManager
             **kwargs: Additional parameters for the scaling method
         """
-        super().__init__(use_vectorbt=True, enable_gpu=enable_gpu)
+        super().__init__(use_vectorbt=True, enable_gpu=enable_gpu, 
+                        use_optimizer=use_optimizer, use_unified_manager=use_unified_manager)
         self.method = method
         self.kwargs = kwargs
         self.scaling_params = {}
@@ -61,14 +78,12 @@ class VectorBTScaler(BaseScaler):
         self.memory_efficient = memory_efficient
         
         # Enhanced performance tracking
-        self.performance_stats = {
-            'vectorbt_operations': 0,
+        self.performance_stats.update({
             'gpu_operations': 0,
             'batch_operations': 0,
-            'memory_optimizations': 0,
             'adaptive_scaling_decisions': 0,
-            'total_operations': 0
-        }
+            'unified_manager_operations': 0
+        })
         
         if not VECTORBT_AVAILABLE:
             logger.warning("VectorBT not available, using fallback scaler")
@@ -99,13 +114,18 @@ class VectorBTScaler(BaseScaler):
         
         if VECTORBT_AVAILABLE:
             try:
-                # Use enhanced VectorBT scaling
-                result = self._apply_enhanced_vectorbt_scaling(clean_data)
+                # Use UnifiedVectorizationManager if available
+                if self.use_unified_manager and self.vectorization_manager is not None:
+                    result = self._apply_unified_vectorization_scaling(clean_data)
+                    self.performance_stats['unified_manager_operations'] += 1
+                else:
+                    # Use enhanced VectorBT scaling
+                    result = self._apply_enhanced_vectorbt_scaling(clean_data)
+                    self.performance_stats['vectorbt_operations'] += 1
                 
                 # Align result with original index
                 result = result.reindex(data.index)
                 self.fitted = True
-                self.performance_stats['vectorbt_operations'] += 1
                 self._log_success(f"✅ [VectorBTScaler] Fitted {self.method} scaler successfully")
                 
                 # Validate output
@@ -225,6 +245,57 @@ class VectorBTScaler(BaseScaler):
         
         return result
     
+    def _apply_unified_vectorization_scaling(self, data: pd.Series) -> pd.Series:
+        """Apply scaling using UnifiedVectorizationManager for optimal performance."""
+        try:
+            # Use the unified vectorization manager for scaling
+            result = self.vectorization_manager.scale_data(data, method=self.method, **self.kwargs)
+            
+            # Store scaling parameters for transform method
+            self._store_scaling_parameters_from_data(data)
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"UnifiedVectorizationManager scaling failed: {e}, using enhanced VectorBT")
+            return self._apply_enhanced_vectorbt_scaling(data)
+    
+    def _store_scaling_parameters_from_data(self, data: pd.Series) -> None:
+        """Store scaling parameters from the data for transform method."""
+        if self.method == 'zscore':
+            self.scaling_params = {
+                'mean': data.mean(),
+                'std': data.std()
+            }
+        elif self.method == 'minmax':
+            self.scaling_params = {
+                'min': data.min(),
+                'max': data.max()
+            }
+        elif self.method == 'robust':
+            median = data.median()
+            mad = (data - median).abs().median()
+            self.scaling_params = {
+                'median': median,
+                'mad': mad
+            }
+        elif self.method == 'robust_zscore':
+            median = data.median()
+            mad = (data - median).abs().median()
+            self.scaling_params = {
+                'median': median,
+                'mad': mad,
+                'consistency_factor': 1.4826
+            }
+        elif self.method == 'quantile_robust':
+            q25, q75 = data.quantile([0.25, 0.75])
+            self.scaling_params = {
+                'q25': q25,
+                'q75': q75,
+                'iqr': q75 - q25
+            }
+        # Add other methods as needed
+    
     def _calculate_adaptive_winsorize_limits(self, data: pd.Series) -> Tuple[float, float]:
         """Calculate adaptive winsorization limits based on data distribution."""
         # Use IQR-based limits for better outlier detection
@@ -270,30 +341,14 @@ class VectorBTScaler(BaseScaler):
         
         if VECTORBT_AVAILABLE and self.fitted:
             try:
-                # Use VectorBT scaling with fitted parameters
-                if self.method == 'zscore':
-                    mean = self.scaling_params['mean']
-                    std = self.scaling_params['std']
-                    result = (data - mean) / std
-                elif self.method == 'minmax':
-                    min_val = self.scaling_params['min']
-                    max_val = self.scaling_params['max']
-                    result = (data - min_val) / (max_val - min_val)
-                elif self.method == 'robust':
-                    median = self.scaling_params['median']
-                    mad = self.scaling_params['mad']
-                    result = (data - median) / mad
-                elif self.method == 'quantile':
-                    # For quantile scaling, we need to use the fitted quantiles
-                    result = quantile(data, **self.kwargs)
-                elif self.method == 'winsorize':
-                    result = winsorize(data, **self.kwargs)
-                elif self.method == 'rank':
-                    result = rank(data, **self.kwargs)
-                elif self.method == 'clip':
-                    result = clip(data, **self.kwargs)
+                # Use UnifiedVectorizationManager if available
+                if self.use_unified_manager and self.vectorization_manager is not None:
+                    result = self._transform_with_unified_manager(data)
+                    self.performance_stats['unified_manager_operations'] += 1
                 else:
-                    raise ValueError(f"Unsupported scaling method: {self.method}")
+                    # Use VectorBT scaling with fitted parameters
+                    result = self._transform_with_vectorbt(data)
+                    self.performance_stats['vectorbt_operations'] += 1
                 
                 # Validate output
                 self._check_output_validity(result, "transformed data")
@@ -305,6 +360,43 @@ class VectorBTScaler(BaseScaler):
                 return self._fallback_transform(data)
         else:
             return self._fallback_transform(data)
+    
+    def _transform_with_unified_manager(self, data: pd.Series) -> pd.Series:
+        """Transform using UnifiedVectorizationManager."""
+        try:
+            # Use the unified vectorization manager for transform
+            return self.vectorization_manager.scale_data(data, method=self.method, **self.kwargs)
+        except Exception as e:
+            logger.warning(f"UnifiedVectorizationManager transform failed: {e}, using VectorBT")
+            return self._transform_with_vectorbt(data)
+    
+    def _transform_with_vectorbt(self, data: pd.Series) -> pd.Series:
+        """Transform using basic VectorBT functions."""
+        if self.method == 'zscore':
+            mean = self.scaling_params['mean']
+            std = self.scaling_params['std']
+            result = (data - mean) / std
+        elif self.method == 'minmax':
+            min_val = self.scaling_params['min']
+            max_val = self.scaling_params['max']
+            result = (data - min_val) / (max_val - min_val)
+        elif self.method == 'robust':
+            median = self.scaling_params['median']
+            mad = self.scaling_params['mad']
+            result = (data - median) / mad
+        elif self.method == 'quantile':
+            # For quantile scaling, we need to use the fitted quantiles
+            result = quantile(data, **self.kwargs)
+        elif self.method == 'winsorize':
+            result = winsorize(data, **self.kwargs)
+        elif self.method == 'rank':
+            result = rank(data, **self.kwargs)
+        elif self.method == 'clip':
+            result = clip(data, **self.kwargs)
+        else:
+            raise ValueError(f"Unsupported scaling method: {self.method}")
+        
+        return result
     
     def _fallback_fit_transform(self, data: pd.Series) -> pd.Series:
         """Fallback fit_transform using standard methods."""
@@ -404,7 +496,8 @@ class VectorBTBatchScaler:
     """
     
     def __init__(self, method: str = 'zscore', enable_gpu: bool = False, 
-                 memory_efficient: bool = True, enable_parallel: bool = True, **kwargs):
+                 memory_efficient: bool = True, enable_parallel: bool = True,
+                 use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
         """
         Initialize VectorBT batch scaler with enhanced optimization.
         
@@ -413,6 +506,8 @@ class VectorBTBatchScaler:
             enable_gpu: Enable GPU acceleration if available
             memory_efficient: Enable memory optimization
             enable_parallel: Enable parallel processing
+            use_optimizer: Whether to use VectorBTRollingOptimizer
+            use_unified_manager: Whether to use UnifiedVectorizationManager
             **kwargs: Additional parameters
         """
         self.method = method
@@ -421,10 +516,29 @@ class VectorBTBatchScaler:
         self.enable_gpu = enable_gpu and CUPY_AVAILABLE
         self.memory_efficient = memory_efficient
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
+        self.use_optimizer = use_optimizer and VECTORBT_OPTIMIZER_AVAILABLE
+        self.use_unified_manager = use_unified_manager and VECTORBT_OPTIMIZER_AVAILABLE
+        
+        # Initialize optimization components
+        if self.use_optimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.enable_gpu,
+                enable_parallel=self.enable_parallel,
+                memory_efficient=self.memory_efficient
+            )
+        else:
+            self.rolling_optimizer = None
+        
+        if self.use_unified_manager:
+            self.vectorization_manager = get_unified_vectorization_manager()
+        else:
+            self.vectorization_manager = None
         
         # Enhanced performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
+            'optimizer_operations': 0,
+            'unified_manager_operations': 0,
             'gpu_operations': 0,
             'batch_operations': 0,
             'memory_optimizations': 0,
@@ -452,13 +566,18 @@ class VectorBTBatchScaler:
             self.performance_stats['gpu_operations'] += 1
         
         try:
-            # Use enhanced VectorBT batch scaling
-            result = self._apply_enhanced_vectorbt_batch_scaling(data)
+            # Use UnifiedVectorizationManager if available
+            if self.use_unified_manager and self.vectorization_manager is not None:
+                result = self._apply_unified_batch_scaling(data)
+                self.performance_stats['unified_manager_operations'] += 1
+            else:
+                # Use enhanced VectorBT batch scaling
+                result = self._apply_enhanced_vectorbt_batch_scaling(data)
+                self.performance_stats['vectorbt_operations'] += 1
             
             # Store scaling parameters for each column
             self._store_scaling_parameters(data)
             
-            self.performance_stats['vectorbt_operations'] += 1
             self.performance_stats['batch_operations'] += 1
             
             return result
@@ -511,6 +630,16 @@ class VectorBTBatchScaler:
             return (data - q25) / (q75 - q25 + 1e-8)
         else:
             raise ValueError(f"Unsupported scaling method: {self.method}")
+    
+    def _apply_unified_batch_scaling(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply batch scaling using UnifiedVectorizationManager for optimal performance."""
+        try:
+            # Use the unified vectorization manager for batch scaling
+            result = self.vectorization_manager.scale_data(data, method=self.method, **self.kwargs)
+            return result
+        except Exception as e:
+            logger.warning(f"UnifiedVectorizationManager batch scaling failed: {e}, using enhanced VectorBT")
+            return self._apply_enhanced_vectorbt_batch_scaling(data)
     
     def _store_scaling_parameters(self, data: pd.DataFrame) -> None:
         """Store scaling parameters for each column."""

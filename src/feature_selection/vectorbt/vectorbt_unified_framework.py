@@ -162,41 +162,29 @@ class VectorBTUnifiedFramework:
     
     def _select_method_automatically(self, X: np.ndarray, y: np.ndarray, 
                                    k: int) -> FeatureSelectionMethod:
-        """Enhanced automatic method selection using VectorBT analytics."""
+        """Enhanced automatic method selection using advanced VectorBT analytics."""
         try:
             n_samples, n_features = X.shape
             
             # Use VectorBT to analyze data characteristics
             df = vbt.PandasDataFrame(X)
             
-            # Analyze data sparsity
-            sparsity = df.vbt.isna().sum().sum() / (n_samples * n_features) if hasattr(df, 'vbt') else 0.0
+            # Enhanced VectorBT analytics
+            analytics = self._analyze_data_characteristics_vectorbt(df, X, y)
             
-            # Analyze data correlation structure
-            corr_structure = 0.0
-            if hasattr(df, 'vbt') and n_features > 1:
-                try:
-                    corr_structure = df.vbt.rolling_corr(window=min(100, n_samples)).vbt.mean().mean()
-                except:
-                    corr_structure = 0.0
-            
-            # Analyze data variance
-            variance_ratio = 0.0
-            if hasattr(df, 'vbt'):
-                try:
-                    variance_ratio = df.vbt.rolling_std(window=min(100, n_samples)).vbt.mean().std()
-                except:
-                    variance_ratio = 0.0
-            
-            # Enhanced decision tree based on VectorBT analytics
-            if n_features <= 50 and sparsity < 0.1:
+            # Advanced decision tree based on comprehensive VectorBT analytics
+            if analytics['n_features'] <= 50 and analytics['sparsity'] < 0.1 and analytics['correlation_structure'] < 0.3:
                 return FeatureSelectionMethod.COMPREHENSIVE
-            elif n_features <= 200 and corr_structure < 0.3:
+            elif analytics['n_features'] <= 200 and analytics['correlation_structure'] < 0.4 and analytics['variance_ratio'] > 0.3:
                 return FeatureSelectionMethod.MRMR
-            elif n_features <= 1000 and variance_ratio > 0.5:
+            elif analytics['n_features'] <= 1000 and analytics['variance_ratio'] > 0.5 and analytics['stability_score'] > 0.6:
                 return FeatureSelectionMethod.STABILITY_SELECTION
-            elif sparsity > 0.5:
+            elif analytics['sparsity'] > 0.5 or analytics['correlation_structure'] > 0.7:
                 return FeatureSelectionMethod.LASSO
+            elif analytics['n_features'] > 1000 and analytics['memory_usage'] > 1000:  # MB
+                return FeatureSelectionMethod.ELASTICNET
+            elif analytics['correlation_structure'] > 0.6:
+                return FeatureSelectionMethod.CORRELATION
             else:
                 return FeatureSelectionMethod.ELASTICNET
             
@@ -212,6 +200,93 @@ class VectorBTUnifiedFramework:
                 return FeatureSelectionMethod.STABILITY_SELECTION
             else:
                 return FeatureSelectionMethod.ELASTICNET
+    
+    def _analyze_data_characteristics_vectorbt(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
+        """Analyze data characteristics using advanced VectorBT operations."""
+        try:
+            n_samples, n_features = X.shape
+            
+            # Basic characteristics
+            analytics = {
+                'n_samples': n_samples,
+                'n_features': n_features,
+                'sparsity': 0.0,
+                'correlation_structure': 0.0,
+                'variance_ratio': 0.0,
+                'stability_score': 0.0,
+                'memory_usage': X.nbytes / (1024 * 1024),  # MB
+                'data_type': 'numeric'
+            }
+            
+            if hasattr(df, 'vbt'):
+                try:
+                    # Analyze data sparsity using VectorBT
+                    analytics['sparsity'] = df.vbt.isna().sum().sum() / (n_samples * n_features)
+                    
+                    # Analyze correlation structure using VectorBT rolling operations
+                    if n_features > 1:
+                        try:
+                            corr_rolling = df.vbt.rolling_corr(
+                                window=min(100, n_samples),
+                                min_periods=1,
+                                pairwise=True
+                            )
+                            analytics['correlation_structure'] = corr_rolling.vbt.mean().vbt.mean()
+                        except:
+                            analytics['correlation_structure'] = 0.0
+                    
+                    # Analyze variance using VectorBT rolling operations
+                    try:
+                        variance_rolling = df.vbt.rolling_std(
+                            window=min(100, n_samples),
+                            min_periods=1
+                        )
+                        analytics['variance_ratio'] = variance_rolling.vbt.mean().vbt.std()
+                    except:
+                        analytics['variance_ratio'] = 0.0
+                    
+                    # Analyze stability using VectorBT bootstrap sampling
+                    try:
+                        if n_samples > 100:
+                            bootstrap_samples = min(10, n_samples // 10)
+                            stability_scores = []
+                            
+                            for _ in range(bootstrap_samples):
+                                bootstrap_idx = np.random.choice(n_samples, size=n_samples, replace=True)
+                                X_bootstrap = X[bootstrap_idx]
+                                y_bootstrap = y[bootstrap_idx]
+                                
+                                # Quick stability check using variance
+                                feature_vars = np.var(X_bootstrap, axis=0)
+                                stability_scores.append(np.mean(feature_vars))
+                            
+                            analytics['stability_score'] = np.mean(stability_scores) / np.var(feature_vars) if np.var(feature_vars) > 0 else 0.0
+                        else:
+                            analytics['stability_score'] = 0.5
+                    except:
+                        analytics['stability_score'] = 0.5
+                    
+                    tprint_debug(f"📊 VectorBT analytics: sparsity={analytics['sparsity']:.3f}, "
+                               f"corr_structure={analytics['correlation_structure']:.3f}, "
+                               f"variance_ratio={analytics['variance_ratio']:.3f}")
+                    
+                except Exception as vbt_e:
+                    self.logger.debug(f"VectorBT analytics failed: {vbt_e}")
+            
+            return analytics
+            
+        except Exception as e:
+            self.logger.warning(f"Data characteristics analysis failed: {e}")
+            return {
+                'n_samples': X.shape[0],
+                'n_features': X.shape[1],
+                'sparsity': 0.0,
+                'correlation_structure': 0.0,
+                'variance_ratio': 0.0,
+                'stability_score': 0.5,
+                'memory_usage': X.nbytes / (1024 * 1024),
+                'data_type': 'numeric'
+            }
     
     def select_features(self, X: np.ndarray, y: np.ndarray, 
                        method: Union[str, FeatureSelectionMethod] = 'auto',

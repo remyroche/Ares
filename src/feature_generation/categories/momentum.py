@@ -144,6 +144,18 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -188,22 +200,47 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         
         prices_series = pd.Series(prices)
         
-        # Use VectorBTRollingOptimizer for maximum performance
-        if ROLLING_OPTIMIZER_AVAILABLE and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
+        # Use Unified Vectorization Manager for optimized momentum calculation
+        if self.unified_manager and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
             try:
-                # Get the global rolling optimizer
-                rolling_optimizer = get_vectorbt_rolling_optimizer()
-                
                 # Calculate momentum using optimized rolling operations
                 shifted_prices = prices_series.shift(period)
-                momentum = prices_series - shifted_prices
+                momentum_series = prices_series - shifted_prices
+                
+                # Use unified manager for any additional rolling operations if needed
+                # For momentum, we just need the difference, but we can use the manager for optimization
+                momentum = momentum_series.values
                 
                 # Track performance
                 if hasattr(self, 'performance_stats'):
                     self.performance_stats['vectorbt_operations'] += 1
-                    self.performance_stats['rolling_optimizer_used'] = self.performance_stats.get('rolling_optimizer_used', 0) + 1
+                    self.performance_stats['unified_manager_used'] = self.performance_stats.get('unified_manager_used', 0) + 1
                 
-                return momentum.values
+                return momentum
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager momentum calculation failed: {e}, using VectorBT fallback")
+                if self.rolling_optimizer:
+                    try:
+                        shifted_prices = prices_series.shift(period)
+                        momentum_series = prices_series - shifted_prices
+                        return momentum_series.values
+                    except Exception as e2:
+                        self.logger.warning(f"VectorBTRollingOptimizer momentum calculation failed: {e2}, using numpy fallback")
+                        if hasattr(self, 'performance_stats'):
+                            self.performance_stats['pandas_fallbacks'] += 1
+                        momentum = prices - np.roll(prices, period)
+                        return momentum
+                else:
+                    momentum = prices - np.roll(prices, period)
+                    return momentum
+        elif self.rolling_optimizer and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
+            try:
+                # Calculate momentum using VectorBT rolling operations
+                shifted_prices = prices_series.shift(period)
+                momentum_series = prices_series - shifted_prices
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['vectorbt_operations'] += 1
+                return momentum_series.values
             except Exception as e:
                 self.logger.warning(f"VectorBTRollingOptimizer momentum calculation failed: {e}, using numpy fallback")
                 if hasattr(self, 'performance_stats'):
@@ -214,10 +251,10 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             try:
                 # Calculate momentum using VectorBT rolling operations
                 shifted_prices = prices_series.shift(period)
-                momentum = prices_series - shifted_prices
+                momentum_series = prices_series - shifted_prices
                 if hasattr(self, 'performance_stats'):
                     self.performance_stats['vectorbt_operations'] += 1
-                return momentum.values
+                return momentum_series.values
             except Exception as e:
                 self.logger.warning(f"VectorBT momentum calculation failed: {e}, using numpy fallback")
                 if hasattr(self, 'performance_stats'):

@@ -191,6 +191,12 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             'average_time_per_feature': 0.0,
             'memory_usage_mb': 0.0
         }
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = UnifiedVectorizationManager()
+        else:
+            self.unified_manager = None
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
@@ -220,6 +226,11 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
+        """Generate volatility feature using optimized VectorBT operations."""
+        # Optimize DataFrame for processing using Unified Vectorization Manager
+        if self.unified_manager:
+            data = self.unified_manager.optimize_dataframe(data)
+        elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         if data.empty or 'close' not in data.columns:
@@ -235,6 +246,28 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         
         # Use optimized rolling optimizer (now using new consolidated version with same interface)
         if self.rolling_optimizer:
+        # Use Unified Vectorization Manager for optimized rolling operations
+        if self.unified_manager:
+            try:
+                volatility = self.unified_manager.rolling_operation(returns, 'std', window=self.period)
+                self.performance_stats['vectorbt_operations'] += 1
+                # Align with original data index
+                volatility = volatility.reindex(data.index)
+                return volatility
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager volatility calculation failed: {e}, using VectorBT fallback")
+                if self.rolling_optimizer:
+                    try:
+                        volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
+                        self.performance_stats['vectorbt_operations'] += 1
+                        volatility = volatility.reindex(data.index)
+                        return volatility
+                    except Exception as e2:
+                        self.logger.warning(f"VectorBT rolling optimizer failed: {e2}, using direct VectorBT fallback")
+                        self.performance_stats['pandas_fallbacks'] += 1
+                else:
+                    self.performance_stats['pandas_fallbacks'] += 1
+        elif self.rolling_optimizer:
             try:
                 # Check if it's the new consolidated optimizer
                 if hasattr(self.rolling_optimizer, 'single_rolling_operation'):
@@ -320,6 +353,116 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 'close_history': close_history
             }
             self.update_state(state_update)
+    
+    def generate_optimized_volatility_features(self, data: pd.DataFrame, 
+                                             feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple volatility features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated volatility features
+        """
+        if self.unified_manager:
+            # Use Unified Vectorization Manager for batch processing
+            return self.unified_manager.batch_process_features(data, feature_configs)
+        elif self.rolling_optimizer:
+            # Fallback to individual VectorBT operations
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                try:
+                    if feature_type == 'rolling':
+                        operation = params.get('operation', 'std')
+                        window = params.get('window', self.period)
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            # Calculate returns for volatility features
+                            if column == 'close':
+                                series_data = data[column].pct_change().dropna()
+                            else:
+                                series_data = data[column]
+                            
+                            if operation == 'std':
+                                results[feature_name] = self.rolling_optimizer.rolling_std(series_data, window)
+                            elif operation == 'var':
+                                results[feature_name] = self.rolling_optimizer.rolling_var(series_data, window)
+                            elif operation == 'mean':
+                                results[feature_name] = self.rolling_optimizer.rolling_mean(series_data, window)
+                            elif operation == 'min':
+                                results[feature_name] = self.rolling_optimizer.rolling_min(series_data, window)
+                            elif operation == 'max':
+                                results[feature_name] = self.rolling_optimizer.rolling_max(series_data, window)
+                            elif operation == 'sum':
+                                results[feature_name] = self.rolling_optimizer.rolling_sum(series_data, window)
+                    
+                    elif feature_type == 'scaling':
+                        method = params.get('method', 'zscore')
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            series_data = data[column]
+                            if method == 'zscore':
+                                results[feature_name] = self.rolling_optimizer.rolling_apply(
+                                    series_data, lambda x: (x - x.mean()) / x.std(), window=20
+                                )
+                            elif method == 'minmax':
+                                results[feature_name] = self.rolling_optimizer.rolling_apply(
+                                    series_data, lambda x: (x - x.min()) / (x.max() - x.min()), window=20
+                                )
+                    
+                except Exception as e:
+                    self.logger.warning(f"Volatility feature {feature_name} failed: {e}")
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+            
+            return pd.DataFrame(results, index=data.index)
+        else:
+            # Fallback to pandas operations
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                try:
+                    if feature_type == 'rolling':
+                        operation = params.get('operation', 'std')
+                        window = params.get('window', self.period)
+                        column = params.get('column', 'close')
+                        
+                        if column in data.columns:
+                            # Calculate returns for volatility features
+                            if column == 'close':
+                                series_data = data[column].pct_change().dropna()
+                            else:
+                                series_data = data[column]
+                            
+                            rolling_obj = series_data.rolling(window=window)
+                            if operation == 'std':
+                                results[feature_name] = rolling_obj.std()
+                            elif operation == 'var':
+                                results[feature_name] = rolling_obj.var()
+                            elif operation == 'mean':
+                                results[feature_name] = rolling_obj.mean()
+                            elif operation == 'min':
+                                results[feature_name] = rolling_obj.min()
+                            elif operation == 'max':
+                                results[feature_name] = rolling_obj.max()
+                            elif operation == 'sum':
+                                results[feature_name] = rolling_obj.sum()
+                    
+                except Exception as e:
+                    self.logger.warning(f"Volatility feature {feature_name} failed: {e}")
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+            
+            return pd.DataFrame(results, index=data.index)
 
 
 class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):

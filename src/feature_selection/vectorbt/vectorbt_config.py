@@ -37,6 +37,10 @@ class VectorBTFeatureSelectionConfig:
     vectorbt_rolling_window: int = 1000
     vectorbt_chunk_overlap: int = 100
     
+    # Missing field definitions
+    chunk_overlap: int = 100
+    enable_vectorbt_financial: bool = True
+    
     # Financial data specific optimizations
     enable_vectorbt_financial: bool = True
     vectorbt_freq_inference: bool = True

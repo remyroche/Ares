@@ -79,6 +79,16 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         # Initialize unified vectorization manager
         self.vectorization_manager = get_unified_vectorization_manager() if OPTIMIZATION_AVAILABLE else None
         self.rolling_optimizer = get_vectorbt_rolling_optimizer() if OPTIMIZATION_AVAILABLE else None
+        
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0,
+            'batch_operations': 0,
+            'total_operations': 0,
+            'total_time': 0.0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -1034,3 +1044,168 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+    
+    def generate_optimized_microstructure_features(self, data: pd.DataFrame, 
+                                                 feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple microstructure features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated microstructure features
+        """
+        if self.vectorization_manager:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                return self.vectorization_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using VectorBT fallback")
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+        elif self.rolling_optimizer:
+            try:
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"VectorBT batch processing failed: {e}, using pandas fallback")
+                return self._generate_batch_with_pandas(data, feature_configs)
+        else:
+            return self._generate_batch_with_pandas(data, feature_configs)
+    
+    def _generate_batch_with_vectorbt(self, data: pd.DataFrame, 
+                                    feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using VectorBT rolling optimizer."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'microstructure')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'microstructure':
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        
+                        # Calculate microstructure features using VectorBT
+                        if feature_name == 'spread_volatility':
+                            # Calculate rolling volatility of price changes
+                            price_changes = series_data.pct_change()
+                            results[feature_name] = self.rolling_optimizer.rolling_std(price_changes, window=window)
+                        
+                        elif feature_name == 'trade_intensity':
+                            # Calculate rolling mean of volume
+                            if 'volume' in data.columns:
+                                volume_data = data['volume']
+                                results[feature_name] = self.rolling_optimizer.rolling_mean(volume_data, window=window)
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        
+                        elif feature_name == 'price_efficiency':
+                            # Calculate rolling correlation between price and volume
+                            if 'volume' in data.columns:
+                                volume_data = data['volume']
+                                results[feature_name] = self.rolling_optimizer.rolling_corr(series_data, volume_data, window=window)
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        
+                        else:
+                            # Default to rolling mean
+                            results[feature_name] = self.rolling_optimizer.rolling_mean(series_data, window=window)
+                
+                elif feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        if operation == 'mean':
+                            results[feature_name] = self.rolling_optimizer.rolling_mean(series_data, window=window)
+                        elif operation == 'std':
+                            results[feature_name] = self.rolling_optimizer.rolling_std(series_data, window=window)
+                        elif operation == 'min':
+                            results[feature_name] = self.rolling_optimizer.rolling_min(series_data, window=window)
+                        elif operation == 'max':
+                            results[feature_name] = self.rolling_optimizer.rolling_max(series_data, window=window)
+                        elif operation == 'sum':
+                            results[feature_name] = self.rolling_optimizer.rolling_sum(series_data, window=window)
+                
+            except Exception as e:
+                self.logger.warning(f"Microstructure feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _generate_batch_with_pandas(self, data: pd.DataFrame, 
+                                  feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using pandas fallback."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'microstructure')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'microstructure':
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        
+                        # Calculate microstructure features using pandas
+                        if feature_name == 'spread_volatility':
+                            # Calculate rolling volatility of price changes
+                            price_changes = series_data.pct_change()
+                            results[feature_name] = price_changes.rolling(window=window).std()
+                        
+                        elif feature_name == 'trade_intensity':
+                            # Calculate rolling mean of volume
+                            if 'volume' in data.columns:
+                                volume_data = data['volume']
+                                results[feature_name] = volume_data.rolling(window=window).mean()
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        
+                        elif feature_name == 'price_efficiency':
+                            # Calculate rolling correlation between price and volume
+                            if 'volume' in data.columns:
+                                volume_data = data['volume']
+                                results[feature_name] = series_data.rolling(window=window).corr(volume_data)
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        
+                        else:
+                            # Default to rolling mean
+                            results[feature_name] = series_data.rolling(window=window).mean()
+                
+                elif feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        rolling_obj = series_data.rolling(window=window)
+                        if operation == 'mean':
+                            results[feature_name] = rolling_obj.mean()
+                        elif operation == 'std':
+                            results[feature_name] = rolling_obj.std()
+                        elif operation == 'min':
+                            results[feature_name] = rolling_obj.min()
+                        elif operation == 'max':
+                            results[feature_name] = rolling_obj.max()
+                        elif operation == 'sum':
+                            results[feature_name] = rolling_obj.sum()
+                
+            except Exception as e:
+                self.logger.warning(f"Microstructure feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)

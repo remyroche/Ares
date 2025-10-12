@@ -1445,6 +1445,10 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
+
+def get_memory_usage() -> float:
+    """Get current memory usage in bytes."""
+    try:
         return psutil.Process().memory_info().rss
     except ImportError:
         logger.warning("⚠️ psutil not available for memory monitoring")

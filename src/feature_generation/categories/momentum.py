@@ -76,11 +76,28 @@ try:
         get_vectorbt_rolling_optimizer,
         optimized_rolling_mean,
         optimized_rolling_std,
-        optimized_rolling_apply
+        optimized_rolling_var,
+        optimized_rolling_min,
+        optimized_rolling_max,
+        optimized_rolling_sum,
+        optimized_rolling_apply,
+        optimized_rolling_corr,
+        optimized_rolling_cov
     )
     ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     ROLLING_OPTIMIZER_AVAILABLE = False
+
+# Import Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager,
+        OperationType,
+        optimize_financial_operation
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -152,17 +169,26 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         
         prices_series = pd.Series(prices)
         
-        # Use optimized rolling operations for momentum calculation
+        # Use VectorBTRollingOptimizer for maximum performance
         if ROLLING_OPTIMIZER_AVAILABLE and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
             try:
+                # Get the global rolling optimizer
+                rolling_optimizer = get_vectorbt_rolling_optimizer()
+                
                 # Calculate momentum using optimized rolling operations
                 shifted_prices = prices_series.shift(period)
                 momentum = prices_series - shifted_prices
-                self.performance_stats['vectorbt_operations'] += 1
+                
+                # Track performance
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['vectorbt_operations'] += 1
+                    self.performance_stats['rolling_optimizer_used'] = self.performance_stats.get('rolling_optimizer_used', 0) + 1
+                
                 return momentum.values
             except Exception as e:
-                self.logger.warning(f"Optimized momentum calculation failed: {e}, using numpy fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                self.logger.warning(f"VectorBTRollingOptimizer momentum calculation failed: {e}, using numpy fallback")
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['pandas_fallbacks'] += 1
                 momentum = prices - np.roll(prices, period)
                 return momentum
         elif VECTORBT_AVAILABLE and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
@@ -170,11 +196,13 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 # Calculate momentum using VectorBT rolling operations
                 shifted_prices = prices_series.shift(period)
                 momentum = prices_series - shifted_prices
-                self.performance_stats['vectorbt_operations'] += 1
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['vectorbt_operations'] += 1
                 return momentum.values
             except Exception as e:
                 self.logger.warning(f"VectorBT momentum calculation failed: {e}, using numpy fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['pandas_fallbacks'] += 1
                 momentum = prices - np.roll(prices, period)
                 return momentum
         else:
@@ -368,8 +396,26 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
             
-            # Use VectorBT for optimized rolling mean
-            if VECTORBT_AVAILABLE and len(close) > 100:
+            # Use VectorBTRollingOptimizer for maximum performance
+            if ROLLING_OPTIMIZER_AVAILABLE and len(close) > 100:
+                try:
+                    # Get the global rolling optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    avg_gain = rolling_optimizer.rolling_mean(gain, window=self.period)
+                    avg_loss = rolling_optimizer.rolling_mean(loss, window=self.period)
+                    
+                    # Track performance
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['rolling_optimizer_used'] = self.performance_stats.get('rolling_optimizer_used', 0) + 2
+                except Exception as e:
+                    logger.warning(f"VectorBTRollingOptimizer RSI calculation failed: {e}, using VectorBT fallback")
+                    if VECTORBT_AVAILABLE:
+                        avg_gain = rolling_mean(gain, window=self.period)
+                        avg_loss = rolling_mean(loss, window=self.period)
+                    else:
+                        avg_gain = gain.rolling(window=self.period).mean()
+                        avg_loss = loss.rolling(window=self.period).mean()
+            elif VECTORBT_AVAILABLE and len(close) > 100:
                 try:
                     avg_gain = rolling_mean(gain, window=self.period)
                     avg_loss = rolling_mean(loss, window=self.period)
@@ -518,8 +564,26 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Traditional Stochastic calculation using VectorBT optimization
-            if VECTORBT_AVAILABLE and len(close) > 100:
+            # Traditional Stochastic calculation using VectorBTRollingOptimizer
+            if ROLLING_OPTIMIZER_AVAILABLE and len(close) > 100:
+                try:
+                    # Get the global rolling optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    lowest_low = rolling_optimizer.rolling_min(low, window=self.k_period)
+                    highest_high = rolling_optimizer.rolling_max(high, window=self.k_period)
+                    
+                    # Track performance
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['rolling_optimizer_used'] = self.performance_stats.get('rolling_optimizer_used', 0) + 2
+                except Exception as e:
+                    logger.warning(f"VectorBTRollingOptimizer Stochastic calculation failed: {e}, using VectorBT fallback")
+                    if VECTORBT_AVAILABLE:
+                        lowest_low = rolling_min(low, window=self.k_period)
+                        highest_high = rolling_max(high, window=self.k_period)
+                    else:
+                        lowest_low = low.rolling(window=self.k_period).min()
+                        highest_high = high.rolling(window=self.k_period).max()
+            elif VECTORBT_AVAILABLE and len(close) > 100:
                 try:
                     lowest_low = rolling_min(low, window=self.k_period)
                     highest_high = rolling_max(high, window=self.k_period)
@@ -597,8 +661,26 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Williams %R calculation using VectorBT optimization
-            if VECTORBT_AVAILABLE and len(close) > 100:
+            # Williams %R calculation using VectorBTRollingOptimizer
+            if ROLLING_OPTIMIZER_AVAILABLE and len(close) > 100:
+                try:
+                    # Get the global rolling optimizer
+                    rolling_optimizer = get_vectorbt_rolling_optimizer()
+                    highest_high = rolling_optimizer.rolling_max(high, window=self.period)
+                    lowest_low = rolling_optimizer.rolling_min(low, window=self.period)
+                    
+                    # Track performance
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['rolling_optimizer_used'] = self.performance_stats.get('rolling_optimizer_used', 0) + 2
+                except Exception as e:
+                    logger.warning(f"VectorBTRollingOptimizer Williams %R calculation failed: {e}, using VectorBT fallback")
+                    if VECTORBT_AVAILABLE:
+                        highest_high = rolling_max(high, window=self.period)
+                        lowest_low = rolling_min(low, window=self.period)
+                    else:
+                        highest_high = high.rolling(window=self.period).max()
+                        lowest_low = low.rolling(window=self.period).min()
+            elif VECTORBT_AVAILABLE and len(close) > 100:
                 try:
                     highest_high = rolling_max(high, window=self.period)
                     lowest_low = rolling_min(low, window=self.period)
@@ -1239,6 +1321,207 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
         return volume_momentum
 
 
+class UnifiedMomentumFeatureGenerator(VectorizedFeatureGenerator):
+    """Unified momentum feature generator using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize optimization components
+        self.rolling_optimizer = get_vectorbt_rolling_optimizer() if ROLLING_OPTIMIZER_AVAILABLE else None
+        self.unified_manager = get_unified_vectorization_manager() if UNIFIED_VECTORIZATION_AVAILABLE else None
+        
+        # Performance tracking
+        self.performance_stats = {
+            'unified_operations': 0,
+            'rolling_optimizer_operations': 0,
+            'vectorbt_operations': 0,
+            'total_operations': 0
+        }
+    
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="unified_momentum_features",
+            category=FeatureCategory.MOMENTUM,
+            description="Unified momentum features using VectorBTRollingOptimizer and UnifiedVectorizationManager",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={
+                "rsi_periods": [14, 21],
+                "macd_fast": [12],
+                "macd_slow": [26],
+                "stochastic_periods": [14],
+                "momentum_windows": [10, 20]
+            },
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate comprehensive momentum features using unified optimization."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='unified_momentum')
+        
+        # Use UnifiedVectorizationManager for comprehensive momentum analysis
+        if self.unified_manager and len(data) > 1000:
+            try:
+                # Prepare data for unified optimization
+                operation_data = {
+                    'close': data['close'],
+                    'high': data.get('high'),
+                    'low': data.get('low'),
+                    'volume': data.get('volume')
+                }
+                
+                # Use unified manager for momentum analysis
+                result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    operation_data,
+                    **kwargs
+                )
+                
+                # Extract momentum features from result
+                if hasattr(result, 'result') and isinstance(result.result, dict):
+                    momentum_features = result.result.get('momentum_features', {})
+                    if momentum_features:
+                        # Combine multiple momentum indicators
+                        combined_momentum = self._combine_momentum_indicators(momentum_features)
+                        self.performance_stats['unified_operations'] += 1
+                        return combined_momentum
+                
+                # Fallback to individual calculations
+                return self._calculate_individual_momentum_features(data)
+                
+            except Exception as e:
+                logger.warning(f"Unified momentum calculation failed: {e}, using individual calculations")
+                return self._calculate_individual_momentum_features(data)
+        else:
+            # Use individual calculations with VectorBTRollingOptimizer
+            return self._calculate_individual_momentum_features(data)
+    
+    def _calculate_individual_momentum_features(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate individual momentum features using VectorBTRollingOptimizer."""
+        close = data['close']
+        
+        # Calculate multiple momentum indicators
+        momentum_features = {}
+        
+        # RSI
+        if self.rolling_optimizer and len(close) > 100:
+            try:
+                delta = close.diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
+                
+                avg_gain = self.rolling_optimizer.rolling_mean(gain, window=14)
+                avg_loss = self.rolling_optimizer.rolling_mean(loss, window=14)
+                rs = avg_gain / avg_loss.replace(0, 1)
+                rsi = 100 - (100 / (1 + rs))
+                momentum_features['rsi'] = rsi
+                self.performance_stats['rolling_optimizer_operations'] += 2
+            except Exception as e:
+                logger.warning(f"RSI calculation failed: {e}")
+        
+        # MACD
+        if self.rolling_optimizer and len(close) > 100:
+            try:
+                ema_fast = close.ewm(span=12).mean()
+                ema_slow = close.ewm(span=26).mean()
+                macd = ema_fast - ema_slow
+                momentum_features['macd'] = macd
+                self.performance_stats['rolling_optimizer_operations'] += 1
+            except Exception as e:
+                logger.warning(f"MACD calculation failed: {e}")
+        
+        # Momentum
+        if self.rolling_optimizer and len(close) > 100:
+            try:
+                momentum = close - close.shift(20)
+                momentum_features['momentum'] = momentum
+                self.performance_stats['rolling_optimizer_operations'] += 1
+            except Exception as e:
+                logger.warning(f"Momentum calculation failed: {e}")
+        
+        # Stochastic (if high/low available)
+        if 'high' in data.columns and 'low' in data.columns and self.rolling_optimizer:
+            try:
+                high = data['high']
+                low = data['low']
+                
+                lowest_low = self.rolling_optimizer.rolling_min(low, window=14)
+                highest_high = self.rolling_optimizer.rolling_max(high, window=14)
+                stoch = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+                momentum_features['stochastic'] = stoch
+                self.performance_stats['rolling_optimizer_operations'] += 2
+            except Exception as e:
+                logger.warning(f"Stochastic calculation failed: {e}")
+        
+        # Combine features
+        if momentum_features:
+            combined_momentum = self._combine_momentum_indicators(momentum_features)
+        else:
+            # Fallback to simple momentum
+            combined_momentum = close - close.shift(20)
+        
+        self.performance_stats['total_operations'] += 1
+        return combined_momentum
+    
+    def _combine_momentum_indicators(self, momentum_features: Dict[str, pd.Series]) -> pd.Series:
+        """Combine multiple momentum indicators into a single score."""
+        if not momentum_features:
+            return pd.Series(dtype=float)
+        
+        # Normalize each indicator to 0-1 range
+        normalized_features = {}
+        for name, series in momentum_features.items():
+            if series.notna().any():
+                # Min-max normalization
+                min_val = series.min()
+                max_val = series.max()
+                if max_val != min_val:
+                    normalized_features[name] = (series - min_val) / (max_val - min_val)
+                else:
+                    normalized_features[name] = pd.Series(0.5, index=series.index)
+        
+        if not normalized_features:
+            return pd.Series(dtype=float)
+        
+        # Weighted combination (equal weights for now)
+        weights = {
+            'rsi': 0.3,
+            'macd': 0.25,
+            'momentum': 0.25,
+            'stochastic': 0.2
+        }
+        
+        combined = pd.Series(0.0, index=list(normalized_features.values())[0].index)
+        total_weight = 0.0
+        
+        for name, series in normalized_features.items():
+            weight = weights.get(name, 0.1)
+            combined += series * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            combined = combined / total_weight
+        
+        return combined
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        stats = self.performance_stats.copy()
+        if stats['total_operations'] > 0:
+            stats['unified_usage_rate'] = stats['unified_operations'] / stats['total_operations']
+            stats['rolling_optimizer_usage_rate'] = stats['rolling_optimizer_operations'] / stats['total_operations']
+        return stats
+
+
 class VectorBTMomentumFeatureGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized momentum feature generator with comprehensive indicators."""
     
@@ -1247,6 +1530,12 @@ class VectorBTMomentumFeatureGenerator(VectorBTFeatureGenerator):
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
+        
+        # Initialize Unified Vectorization Manager for advanced optimizations
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     @classmethod
     def _create_default_config(cls, period: int = 14) -> FeatureConfig:
@@ -1492,6 +1781,10 @@ class VectorBTStochasticGenerator(VectorBTFeatureGenerator):
 def create_default_momentum_generators() -> List[FeatureGenerator]:
     """Create default momentum generators including legacy and entropy features."""
     generators = []
+    
+    # Add unified momentum generator (highest priority)
+    if UNIFIED_VECTORIZATION_AVAILABLE and ROLLING_OPTIMIZER_AVAILABLE:
+        generators.append(UnifiedMomentumFeatureGenerator())
     
     if VECTORBT_AVAILABLE:
         # VectorBT-optimized generators

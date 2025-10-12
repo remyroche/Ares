@@ -45,6 +45,25 @@ from src.training.steps.pre_training.validation.data_contracts import (
 from .import_manager import get_import_manager
 from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
 
+# Import VectorBT optimizations
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
+        optimized_rolling_quantile, optimized_rolling_apply,
+        optimized_rolling_corr, optimized_rolling_cov
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager,
+        OperationType, OptimizationStrategy, optimize_financial_operation
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+    tprint_success("✅ VectorBT optimizations imported successfully")
+except ImportError as e:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    tprint_warning(f"⚠️ VectorBT optimizations not available: {e}")
+
 # Initialize import manager
 import_manager = get_import_manager()
 
@@ -233,6 +252,15 @@ class InteractiveFeatureGenerationConfig:
     market_data_batch_size: Optional[int] = None
     market_data_window_days: Optional[int] = None
 
+    # VectorBT optimization settings
+    enable_vectorbt_optimizations: bool = True
+    vectorbt_use_gpu: bool = True
+    vectorbt_chunk_size: int = 50000
+    vectorbt_memory_limit_gb: float = 8.0
+    vectorbt_enable_parallel: bool = True
+    vectorbt_rolling_window_threshold: int = 1000  # Use VectorBT for windows >= this size
+    vectorbt_correlation_threshold: int = 500  # Use VectorBT for correlation with >= this data points
+
 
 @dataclass
 class InteractiveFeatureGenerationResult:
@@ -282,10 +310,14 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         # Initialize the optimized orchestrator
         self._initialize_orchestrator()
 
+        # Initialize VectorBT optimizations
+        self._initialize_vectorbt_optimizations()
+
         tprint_success("🚀 Interactive Feature Generation Component initialized")
         tprint_info(f"📊 Symbol: {self.config.symbol}, Exchange: {self.config.exchange}")
         tprint_info(f"⏰ Timeframe: {self.config.timeframe}")
         tprint_info(f"🔧 Matrix ops: {MATRIX_OPS_AVAILABLE}, ML common: {ML_COMMON_AVAILABLE}")
+        tprint_info(f"🚀 VectorBT optimizations: {'✅' if VECTORBT_OPTIMIZATIONS_AVAILABLE else '❌'}")
 
     @staticmethod
     def _coerce_tuple(value: Optional[Any], default: Tuple[int, int]) -> Tuple[int, int]:
@@ -354,6 +386,14 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             maintain_backward_compatibility=bool(params.get('maintain_backward_compatibility', InteractiveFeatureGenerationConfig.maintain_backward_compatibility)),
             market_data_batch_size=params.get('market_data_batch_size', InteractiveFeatureGenerationConfig.market_data_batch_size),
             market_data_window_days=params.get('market_data_window_days', InteractiveFeatureGenerationConfig.market_data_window_days),
+            # VectorBT optimization settings
+            enable_vectorbt_optimizations=bool(params.get('enable_vectorbt_optimizations', InteractiveFeatureGenerationConfig.enable_vectorbt_optimizations)),
+            vectorbt_use_gpu=bool(params.get('vectorbt_use_gpu', InteractiveFeatureGenerationConfig.vectorbt_use_gpu)),
+            vectorbt_chunk_size=int(params.get('vectorbt_chunk_size', InteractiveFeatureGenerationConfig.vectorbt_chunk_size)),
+            vectorbt_memory_limit_gb=float(params.get('vectorbt_memory_limit_gb', InteractiveFeatureGenerationConfig.vectorbt_memory_limit_gb)),
+            vectorbt_enable_parallel=bool(params.get('vectorbt_enable_parallel', InteractiveFeatureGenerationConfig.vectorbt_enable_parallel)),
+            vectorbt_rolling_window_threshold=int(params.get('vectorbt_rolling_window_threshold', InteractiveFeatureGenerationConfig.vectorbt_rolling_window_threshold)),
+            vectorbt_correlation_threshold=int(params.get('vectorbt_correlation_threshold', InteractiveFeatureGenerationConfig.vectorbt_correlation_threshold)),
         )
 
     def _initialize_orchestrator(self):
@@ -407,6 +447,43 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
 
         self.orchestrator = EnhancedOptimizedInteractionOrchestrator(orchestrator_config)
         tprint_debug("✅ Optimized interaction orchestrator initialized")
+    
+    def _initialize_vectorbt_optimizations(self):
+        """Initialize VectorBT optimization components."""
+        if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            tprint_warning("⚠️ VectorBT optimizations not available, using fallback methods")
+            self.vectorbt_rolling_optimizer = None
+            self.unified_vectorization_manager = None
+            return
+
+        tprint_debug("🔧 Initializing VectorBT optimizations...")
+
+        try:
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self._interactive_config.vectorbt_use_gpu,
+                enable_parallel=self._interactive_config.vectorbt_enable_parallel
+            )
+            tprint_success("✅ VectorBT rolling optimizer initialized")
+
+            # Initialize unified vectorization manager
+            self.unified_vectorization_manager = get_unified_vectorization_manager()
+            tprint_success("✅ Unified vectorization manager initialized")
+
+            # Configure VectorBT settings
+            if hasattr(self.vectorbt_rolling_optimizer, 'chunk_size'):
+                self.vectorbt_rolling_optimizer.chunk_size = self._interactive_config.vectorbt_chunk_size
+            
+            tprint_info(f"🚀 VectorBT optimizations configured:")
+            tprint_info(f"   → GPU acceleration: {'✅' if self._interactive_config.vectorbt_use_gpu else '❌'}")
+            tprint_info(f"   → Parallel processing: {'✅' if self._interactive_config.vectorbt_enable_parallel else '❌'}")
+            tprint_info(f"   → Chunk size: {self._interactive_config.vectorbt_chunk_size:,}")
+            tprint_info(f"   → Memory limit: {self._interactive_config.vectorbt_memory_limit_gb:.1f} GB")
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize VectorBT optimizations: {e}")
+            self.vectorbt_rolling_optimizer = None
+            self.unified_vectorization_manager = None
     
     async def execute(self,
                      training_input: Dict[str, Any],

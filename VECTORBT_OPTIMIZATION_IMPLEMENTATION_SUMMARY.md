@@ -5,12 +5,14 @@ This document summarizes the comprehensive VectorBT optimizations implemented in
 
 ## Implemented Optimizations
 
-### 1. VectorBTRollingOptimizer Integration ✅
+### 1. VectorBTRollingOptimizer Integration with Feature Bank ✅
 - **Location**: `src/training/steps/pre_training/feature_lookback_optimization/core/optimizer.py`
 - **Changes**:
   - Added VectorBT Rolling Optimizer initialization in `_initialize_vectorbt_components()`
-  - Created `_calculate_feature_vectorbt_optimized()` method for high-performance rolling operations
-  - Supports SMA, EMA, RSI, Bollinger Bands, MACD, and other technical indicators
+  - Created `_calculate_feature_vectorbt_optimized()` method that uses the feature generation bank
+  - Integrated with existing feature generators from `src/feature_generation/core/feature_bank.py`
+  - Added `_find_generator_by_pattern()` method for intelligent feature generator discovery
+  - Supports all feature categories: SMA, EMA, RSI, Bollinger Bands, MACD, momentum, volume, volatility, etc.
   - Automatic fallback to standard methods when VectorBT is unavailable
 
 ### 2. UnifiedVectorizationManager Integration ✅
@@ -75,6 +77,13 @@ This document summarizes the comprehensive VectorBT optimizations implemented in
   - Added `get_vectorbt_performance_metrics()` method for metrics retrieval
 
 ## Key Features
+
+### Feature Bank Integration
+- **Centralized Feature Management**: Uses the existing feature generation bank (`src/feature_generation/core/feature_bank.py`) instead of implementing new calculations
+- **Comprehensive Feature Support**: Access to all feature categories including returns, momentum, volume, volatility, trend, oscillator, support/resistance, etc.
+- **Intelligent Generator Discovery**: Pattern matching system to find appropriate generators for feature names
+- **Consistent API**: Maintains compatibility with existing feature generation system
+- **VectorBT Optimizations**: Applies VectorBT optimizations to existing feature generators for enhanced performance
 
 ### Intelligent Optimization Strategy Selection
 - The UnifiedVectorizationManager automatically selects the optimal strategy based on:

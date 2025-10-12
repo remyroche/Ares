@@ -383,6 +383,9 @@ class CoreOptimizer:
             self.use_vectorbt_optimization = VECTORBT_UTILS_AVAILABLE
             self.vectorbt_available = VECTORBT_UTILS_AVAILABLE
             
+            # Initialize feature bank for VectorBT optimizations
+            self._feature_bank = None
+            
             # Initialize VectorBT performance metrics
             self.vectorbt_metrics = {
                 'operations_count': 0,
@@ -1786,7 +1789,10 @@ class CoreOptimizer:
         lookback: int
     ) -> Optional[np.ndarray]:
         """
-        Calculate feature using VectorBT optimizations for high-performance rolling operations.
+        Calculate feature using VectorBT optimizations and the feature generation bank.
+        
+        This method uses the existing feature generation bank to get the appropriate
+        generator and applies VectorBT optimizations for high-performance calculations.
         
         Args:
             data: Input data with OHLCV columns
@@ -1798,15 +1804,28 @@ class CoreOptimizer:
         """
         start_time = time.time()
         try:
-            if not self.use_vectorbt_optimization or not self.rolling_optimizer:
+            if not self.use_vectorbt_optimization:
                 return None
             
-            # Get price data
-            close_prices = data.get('close', data.get('Close', None))
-            if close_prices is None:
-                return None
-            
-            close_series = pd.Series(close_prices)
+            # Initialize feature bank if not already done
+            if not hasattr(self, '_feature_bank') or self._feature_bank is None:
+                try:
+                    from src.feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+                    
+                    # Configure feature bank for VectorBT optimizations
+                    config = FeatureBankConfig(
+                        enable_matrix_operations=True,
+                        enable_gpu_acceleration=self.gpu_available,
+                        enable_parallel_processing=True,
+                        memory_efficient=True,
+                        cache_results=True
+                    )
+                    
+                    self._feature_bank = FeatureBank(config)
+                    self.logger.debug("✅ Feature bank initialized for VectorBT optimizations")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to initialize feature bank: {e}")
+                    return None
             
             # Use Unified Vectorization Manager for intelligent optimization
             if self.unified_manager:
@@ -1821,70 +1840,62 @@ class CoreOptimizer:
                 strategy = self.unified_manager.select_optimization_strategy(operation_config)
                 self.logger.debug(f"Selected VectorBT strategy for {feature_name}: {strategy}")
             
-            # Calculate feature based on name pattern using VectorBT optimizations
-            feature_name_lower = feature_name.lower()
+            # Get feature generator from the feature bank
+            generator = self._feature_bank.get_generator_by_name(feature_name)
             
-            if 'sma' in feature_name_lower or 'simple' in feature_name_lower:
-                return self.rolling_optimizer.rolling_mean(close_series, lookback).values
-            elif 'ema' in feature_name_lower or 'exponential' in feature_name_lower:
-                # EMA calculation using VectorBT rolling operations
-                alpha = 2.0 / (lookback + 1)
-                ema_values = np.zeros_like(close_series.values)
-                ema_values[0] = close_series.values[0]
+            if generator is None:
+                # Try to find generator by pattern matching
+                generator = self._find_generator_by_pattern(feature_name)
                 
-                for i in range(1, len(close_series)):
-                    ema_values[i] = alpha * close_series.values[i] + (1 - alpha) * ema_values[i-1]
+            if generator is None:
+                self.logger.debug(f"No generator found for feature: {feature_name}")
+                return None
+            
+            # Ensure data has required columns for the generator
+            required_columns = generator.config.required_columns
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                # Try to find columns with different case
+                data_columns_lower = [col.lower() for col in data.columns]
+                for missing_col in missing_columns:
+                    if missing_col.lower() in data_columns_lower:
+                        # Find the actual column name with different case
+                        actual_col = data.columns[data_columns_lower.index(missing_col.lower())]
+                        data = data.rename(columns={actual_col: missing_col})
+                        missing_columns.remove(missing_col)
                 
-                return ema_values
-            elif 'std' in feature_name_lower or 'volatility' in feature_name_lower:
-                return self.rolling_optimizer.rolling_std(close_series, lookback).values
-            elif 'rsi' in feature_name_lower:
-                # RSI calculation using VectorBT rolling operations
-                price_changes = close_series.diff()
-                gains = price_changes.where(price_changes > 0, 0)
-                losses = -price_changes.where(price_changes < 0, 0)
+                if missing_columns:
+                    self.logger.warning(f"Missing required columns for {feature_name}: {missing_columns}")
+                    return None
+            
+            # Update generator parameters with lookback period
+            generator_params = getattr(generator.config, 'parameters', {}) or {}
+            generator_params['window'] = lookback
+            generator_params['period'] = lookback
+            
+            # Generate feature using the generator
+            try:
+                result = generator.generate(data, **generator_params)
                 
-                avg_gains = self.rolling_optimizer.rolling_mean(gains, lookback)
-                avg_losses = self.rolling_optimizer.rolling_mean(losses, lookback)
-                
-                rs = avg_gains / (avg_losses + 1e-10)
-                rsi = 100 - (100 / (1 + rs))
-                
-                return rsi.values
-            elif 'bb' in feature_name_lower or 'bollinger' in feature_name_lower:
-                # Bollinger Bands calculation using VectorBT rolling operations
-                sma = self.rolling_optimizer.rolling_mean(close_series, lookback)
-                std = self.rolling_optimizer.rolling_std(close_series, lookback)
-                
-                upper_band = sma + (2 * std)
-                lower_band = sma - (2 * std)
-                
-                # Return the width (upper - lower) / middle
-                width = (upper_band - lower_band) / (sma + 1e-10)
-                return width.values
-            elif 'macd' in feature_name_lower:
-                # MACD calculation using VectorBT rolling operations
-                fast_window = lookback
-                slow_window = lookback * 2
-                signal_window = lookback // 2
-                
-                # Calculate EMAs
-                fast_ema = pd.Series(close_series).ewm(span=fast_window).mean()
-                slow_ema = pd.Series(close_series).ewm(span=slow_window).mean()
-                
-                # Calculate MACD line
-                macd_line = fast_ema - slow_ema
-                
-                # Calculate signal line
-                signal_line = macd_line.ewm(span=signal_window).mean()
-                
-                # Calculate MACD histogram
-                macd_histogram = macd_line - signal_line
-                
-                return macd_histogram.values
-            else:
-                # Default to rolling mean for unknown features
-                return self.rolling_optimizer.rolling_mean(close_series, lookback).values
+                if result.success and result.data is not None:
+                    # Convert result to numpy array
+                    if isinstance(result.data, pd.DataFrame):
+                        if len(result.data.columns) > 0:
+                            return result.data.iloc[:, 0].values
+                        else:
+                            return np.array([])
+                    elif isinstance(result.data, pd.Series):
+                        return result.data.values
+                    else:
+                        return np.array(result.data)
+                else:
+                    self.logger.warning(f"Feature generation failed for {feature_name}: {result.error_message if hasattr(result, 'error_message') else 'Unknown error'}")
+                    return None
+                    
+            except Exception as e:
+                self.logger.warning(f"Feature generation error for {feature_name}: {e}")
+                return None
                 
         except Exception as e:
             self.logger.warning(f"VectorBT feature calculation failed for {feature_name}: {e}")
@@ -1892,7 +1903,57 @@ class CoreOptimizer:
         finally:
             # Track performance metrics
             duration = time.time() - start_time
-            self._track_vectorbt_operation('feature_calculation', duration, gpu_used=False)
+            self._track_vectorbt_operation('feature_calculation', duration, gpu_used=self.gpu_available)
+
+    def _find_generator_by_pattern(self, feature_name: str):
+        """
+        Find a generator by pattern matching against feature names.
+        
+        Args:
+            feature_name: Name of the feature to find
+            
+        Returns:
+            Generator or None if not found
+        """
+        try:
+            if not hasattr(self, '_feature_bank') or self._feature_bank is None:
+                return None
+            
+            feature_name_lower = feature_name.lower()
+            
+            # Get all generators from the feature bank
+            all_generators = []
+            for category in self._feature_bank.registry.list_categories():
+                generators = self._feature_bank.registry.get_by_category(category)
+                all_generators.extend(generators)
+            
+            # Pattern matching for common feature types
+            for generator in all_generators:
+                gen_name = generator.config.name.lower()
+                
+                # Check for exact match first
+                if gen_name == feature_name_lower:
+                    return generator
+                
+                # Check for pattern matches
+                if ('sma' in feature_name_lower and 'sma' in gen_name) or \
+                   ('ema' in feature_name_lower and 'ema' in gen_name) or \
+                   ('rsi' in feature_name_lower and 'rsi' in gen_name) or \
+                   ('macd' in feature_name_lower and 'macd' in gen_name) or \
+                   ('bb' in feature_name_lower and 'bb' in gen_name) or \
+                   ('bollinger' in feature_name_lower and 'bollinger' in gen_name) or \
+                   ('std' in feature_name_lower and 'std' in gen_name) or \
+                   ('volatility' in feature_name_lower and 'volatility' in gen_name) or \
+                   ('momentum' in feature_name_lower and 'momentum' in gen_name) or \
+                   ('volume' in feature_name_lower and 'volume' in gen_name) or \
+                   ('trend' in feature_name_lower and 'trend' in gen_name):
+                    return generator
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error finding generator by pattern for {feature_name}: {e}")
+            return None
 
     def _create_feature_generator(self, feature_name: str, lookback: int):
         """

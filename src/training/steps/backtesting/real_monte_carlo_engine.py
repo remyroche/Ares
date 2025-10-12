@@ -33,6 +33,10 @@ from src.utils.matrix_operations.unified_operations import get_unified_matrix_op
 from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
 from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
 
+# VectorBT optimization utilities
+from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+
 # ML utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
@@ -258,6 +262,39 @@ class RealMonteCarloEngine:
             self.matrix_processor = None
             self.batch_processor = None
         
+        # Initialize VectorBT optimization utilities
+        try:
+            # Create VectorBT configuration
+            vectorbt_config = VectorizationConfig(
+                enable_vectorbt=True,
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                max_memory_gb=8.0,
+                chunk_size=config.chunk_size_mb * 1024,  # Convert MB to KB
+                enable_monitoring=True,
+                enable_profiling=False,
+                batch_size=10000,
+                enable_batch_processing=True,
+                rolling_optimization_threshold=1000,
+                enable_rolling_optimization=True
+            )
+            
+            self.vectorization_manager = get_unified_vectorization_manager(vectorbt_config)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                chunk_size=config.chunk_size_mb * 1024,
+                fast_fail=True,
+                enable_logging=True
+            )
+            tprint("✅ VectorBT optimization utilities initialized", "success")
+        except Exception as e:
+            tprint(f"⚠️  VectorBT optimization unavailable: {e}", "warning")
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+        
         # Initialize CV and validation utilities
         if config.enable_cv_validation:
             self.cv_validator = TimeSeriesSplitValidator(
@@ -296,6 +333,20 @@ class RealMonteCarloEngine:
         self.simulation_results = []
         self.risk_metrics = {}
         self.simulation_paths = []  # Store individual simulation paths
+        
+        # Performance monitoring
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'matrix_operations': 0,
+            'standard_operations': 0,
+            'total_simulations': 0,
+            'total_time': 0.0,
+            'memory_optimizations': 0,
+            'gpu_operations': 0,
+            'parallel_operations': 0,
+            'errors': 0,
+            'fallbacks': 0
+        }
         
         # Configuration summary
         tprint(f"📊 Monte Carlo Configuration:", "info")
@@ -486,10 +537,37 @@ class RealMonteCarloEngine:
     
     async def _run_bootstrap_optimized(self, returns: pd.Series, portfolio_value: float, 
                                     n_simulations: int, horizon: int, sample_size: int) -> List[float]:
-        """Optimized bootstrap simulation using matrix operations."""
+        """Optimized bootstrap simulation using VectorBT and matrix operations."""
         try:
-            # Use matrix operations for efficient sampling
-            if self.matrix_ops:
+            # Use VectorBT rolling optimizer if available for enhanced performance
+            if self.rolling_optimizer and self.vectorization_manager:
+                tprint("🎯 Using VectorBT-optimized bootstrap simulation", "info")
+                
+                # Convert returns to DataFrame for VectorBT processing
+                returns_df = pd.DataFrame({'returns': returns})
+                
+                # Use VectorBT for efficient sampling and calculations
+                # Generate random indices for bootstrap sampling
+                random_indices = np.random.randint(0, len(returns), size=(n_simulations, horizon))
+                
+                # Sample returns using VectorBT-optimized operations
+                sampled_returns = returns.values[random_indices]
+                
+                # Use VectorBT rolling operations for portfolio value calculations
+                # Calculate cumulative returns using VectorBT rolling sum
+                cumulative_returns = self.rolling_optimizer.rolling_sum(
+                    pd.DataFrame(sampled_returns), window=horizon
+                ).iloc[:, -1]  # Get the final cumulative return
+                
+                # Calculate portfolio values
+                portfolio_values = portfolio_value * (1 + cumulative_returns.values)
+                
+                return portfolio_values.tolist()
+                
+            # Fallback to matrix operations
+            elif self.matrix_ops:
+                tprint("🎯 Using matrix operations for bootstrap simulation", "info")
+                
                 # Generate random indices for bootstrap sampling
                 random_indices = np.random.randint(0, len(returns), size=(n_simulations, horizon))
                 
@@ -505,7 +583,9 @@ class RealMonteCarloEngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Optimized bootstrap simulation failed: {e}")
-            raise
+            tprint(f"❌ VectorBT bootstrap simulation failed: {e}", "error")
+            # Fallback to standard implementation
+            return await self._run_bootstrap_standard(returns, portfolio_value, n_simulations, horizon, sample_size)
     
     async def _run_bootstrap_standard(self, returns: pd.Series, portfolio_value: float,
                                     n_simulations: int, horizon: int, sample_size: int) -> List[float]:
@@ -606,7 +686,7 @@ class RealMonteCarloEngine:
     def _calculate_comprehensive_metrics(self, simulation_results: List[float], 
                                         initial_value: float,
                                         original_returns: np.ndarray) -> MonteCarloMetrics:
-        """Calculate comprehensive risk and performance metrics with validation."""
+        """Calculate comprehensive risk and performance metrics with VectorBT optimization."""
         try:
             if not simulation_results:
                 tprint("⚠️  No simulation results to calculate metrics", "warning")
@@ -628,20 +708,63 @@ class RealMonteCarloEngine:
             if len(returns) == 0:
                 return MonteCarloMetrics()
             
-            # Basic statistics with validation
-            mean_return = float(np.mean(returns))
-            std_return = float(np.std(returns))
-            min_return = float(np.min(returns))
-            max_return = float(np.max(returns))
+            # Use VectorBT rolling optimizer for enhanced statistical calculations
+            if self.rolling_optimizer and self.vectorization_manager:
+                tprint("🎯 Using VectorBT-optimized metrics calculation", "info")
+                
+                # Convert returns to pandas Series for VectorBT processing
+                returns_series = pd.Series(returns)
+                
+                # Use VectorBT for rolling statistics
+                try:
+                    # Calculate rolling statistics using VectorBT
+                    rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=min(20, len(returns)))
+                    rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=min(20, len(returns)))
+                    rolling_min = self.rolling_optimizer.rolling_min(returns_series, window=min(20, len(returns)))
+                    rolling_max = self.rolling_optimizer.rolling_max(returns_series, window=min(20, len(returns)))
+                    
+                    # Use VectorBT for quantile calculations (VaR)
+                    var_confidence = validate_probability(self.config.var_confidence)
+                    var_value = self.rolling_optimizer.rolling_quantile(
+                        returns_series, window=len(returns), q=var_confidence
+                    ).iloc[-1]  # Get the final quantile value
+                    
+                    # Calculate rolling skewness and kurtosis for tail risk analysis
+                    rolling_skew = self.rolling_optimizer.rolling_skew(returns_series, window=min(50, len(returns)))
+                    rolling_kurt = self.rolling_optimizer.rolling_kurt(returns_series, window=min(50, len(returns)))
+                    
+                    # Use the last values from rolling calculations
+                    mean_return = float(rolling_mean.iloc[-1]) if not rolling_mean.empty else float(np.mean(returns))
+                    std_return = float(rolling_std.iloc[-1]) if not rolling_std.empty else float(np.std(returns))
+                    min_return = float(rolling_min.iloc[-1]) if not rolling_min.empty else float(np.min(returns))
+                    max_return = float(rolling_max.iloc[-1]) if not rolling_max.empty else float(np.max(returns))
+                    
+                    tprint("✅ VectorBT metrics calculation completed", "success")
+                    
+                except Exception as e:
+                    tprint(f"⚠️  VectorBT metrics calculation failed, using standard methods: {e}", "warning")
+                    # Fallback to standard calculations
+                    mean_return = float(np.mean(returns))
+                    std_return = float(np.std(returns))
+                    min_return = float(np.min(returns))
+                    max_return = float(np.max(returns))
+                    var_confidence = validate_probability(self.config.var_confidence)
+                    var_value = float(np.percentile(returns, var_confidence * 100))
+            else:
+                # Standard calculations
+                mean_return = float(np.mean(returns))
+                std_return = float(np.std(returns))
+                min_return = float(np.min(returns))
+                max_return = float(np.max(returns))
+                var_confidence = validate_probability(self.config.var_confidence)
+                var_value = float(np.percentile(returns, var_confidence * 100))
+            
+            # Additional statistics
             median_return = float(np.median(returns))
             
             # Validate statistics
             mean_return = validate_finite(mean_return, default=0.0)
             std_return = validate_positive(std_return, default=0.01)
-            
-            # Value at Risk (VaR) with validation
-            var_confidence = validate_probability(self.config.var_confidence)
-            var_value = float(np.percentile(returns, var_confidence * 100))
             var_value = validate_finite(var_value, default=0.0)
             
             # Expected Shortfall (Conditional VaR)
@@ -784,6 +907,49 @@ class RealMonteCarloEngine:
             tprint(f"❌ Stress testing failed: {e}", "error")
             raise
     
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics including VectorBT usage."""
+        try:
+            stats = self.performance_stats.copy()
+            
+            # Add VectorBT-specific stats if available
+            if self.rolling_optimizer:
+                rolling_stats = self.rolling_optimizer.get_performance_stats()
+                stats.update({
+                    'vectorbt_rolling_operations': rolling_stats.get('vectorbt_operations', 0),
+                    'vectorbt_gpu_operations': rolling_stats.get('gpu_operations', 0),
+                    'vectorbt_memory_optimizations': rolling_stats.get('memory_optimizations', 0),
+                    'vectorbt_errors': rolling_stats.get('errors', 0),
+                    'vectorbt_avg_time_per_operation': rolling_stats.get('avg_time_per_operation', 0.0)
+                })
+            
+            if self.vectorization_manager:
+                vectorization_stats = self.vectorization_manager.get_performance_stats()
+                stats.update({
+                    'unified_vectorization_operations': vectorization_stats.get('total_operations', 0),
+                    'unified_vectorization_time': vectorization_stats.get('total_time', 0.0),
+                    'unified_vectorization_memory_savings': vectorization_stats.get('memory_savings', 0.0),
+                    'unified_vectorization_cache_hit_rate': vectorization_stats.get('cache_hit_rate', 0.0)
+                })
+            
+            # Calculate efficiency metrics
+            if stats['total_simulations'] > 0:
+                stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_simulations']
+                stats['matrix_usage_rate'] = stats['matrix_operations'] / stats['total_simulations']
+                stats['standard_usage_rate'] = stats['standard_operations'] / stats['total_simulations']
+                stats['avg_time_per_simulation'] = stats['total_time'] / stats['total_simulations']
+            else:
+                stats['vectorbt_usage_rate'] = 0.0
+                stats['matrix_usage_rate'] = 0.0
+                stats['standard_usage_rate'] = 0.0
+                stats['avg_time_per_simulation'] = 0.0
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get performance stats: {e}")
+            return self.performance_stats.copy()
+    
     def generate_report(self) -> Dict[str, Any]:
         """Generate comprehensive Monte Carlo report with validated metrics."""
         try:
@@ -821,6 +987,11 @@ class RealMonteCarloEngine:
                     'gpu_enabled': self.gpu_accelerator is not None,
                     'memory_optimized': self.m1_memory_optimizer is not None,
                     'parallel_workers': self.config.max_workers if self.config.enable_parallel_processing else 1
+                },
+                'vectorbt_performance': {
+                    'vectorbt_enabled': self.rolling_optimizer is not None,
+                    'unified_vectorization_enabled': self.vectorization_manager is not None,
+                    'performance_stats': self.get_performance_stats()
                 }
             }
             
@@ -836,6 +1007,15 @@ class RealMonteCarloEngine:
             tprint(f"   Std: ${report['simulation_summary']['std_result']:,.2f}", "info")
             tprint(f"   Valid simulations: {report['simulation_summary']['valid_simulations']:,} / "
                   f"{report['simulation_summary']['total_simulations']:,}", "info")
+            
+            # Display VectorBT performance stats
+            perf_stats = report['vectorbt_performance']['performance_stats']
+            if perf_stats['vectorbt_operations'] > 0:
+                tprint("🎯 VectorBT Performance:", "info")
+                tprint(f"   VectorBT operations: {perf_stats['vectorbt_operations']:,}", "info")
+                tprint(f"   VectorBT usage rate: {perf_stats['vectorbt_usage_rate']:.1%}", "info")
+                tprint(f"   GPU operations: {perf_stats.get('vectorbt_gpu_operations', 0):,}", "info")
+                tprint(f"   Memory optimizations: {perf_stats.get('vectorbt_memory_optimizations', 0):,}", "info")
             
             return report
             

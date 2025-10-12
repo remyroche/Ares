@@ -285,7 +285,7 @@ src/research/clusters/
 ├── regime_clusterer.py                     # Enhanced with statistical validation
 ├── feature_importance.py                   # Economic significance focus
 ├── validation_metrics.py                   # Integrated with economic validation
-├── integration_layer.py                    # HMM timing strategies
+├── integration_layer.py                    # Clustering integration strategies
 ├── visualization.py                        # Publication-quality visualizations
 │
 ├── economic_metrics.py                     # ✅ 9 enhanced economic metrics

@@ -3,11 +3,11 @@ Tactician Ensemble Training Step - Enhanced for 1m Timeframe with Full Model and
 
 This step handles all-regime ensemble training of Tactician models using common dependencies.
 The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
-plus TAS models with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
+plus TAS models with all previous model inputs (regime data, Analyst) to create the final meta-learner for timing decisions.
 
 Enhanced Features:
 - 1m base timeframe with cross-timeframe features (50+ features)
-- HMM + Analyst outputs integration for comprehensive context
+- Regime data + Analyst outputs integration for comprehensive context
 - LightGBM + Ridge + ElasticNet + RandomForest base models with TAS models
 - TAS models per-regime for enhanced timing signal generation
 - All-regime training but only on Analyst green light periods
@@ -248,14 +248,14 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     
     Enhanced Features:
     - 1m base timeframe with cross-timeframe features (50+ features)
-    - HMM + Analyst outputs integration for comprehensive context
+    - Regime data + Analyst outputs integration for comprehensive context
     - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
     - All-regime training but only on Analyst green light periods
     - Runs every 30 seconds for live trading
     - Decides WHEN we trade based on expected 0.3% price change (micro movements)
     
     The Tactician Ensemble operates on 1m timeframe and combines individual tactician models
-    with all previous model inputs (HMM, Analyst) to create the final meta-learner for timing decisions.
+    with all previous model inputs (regime data, Analyst) to create the final meta-learner for timing decisions.
     """
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
@@ -552,13 +552,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]] = None,
-        hmm_states: Optional[np.ndarray] = None,
+        regime_states: Optional[np.ndarray] = None,
         base_tactician_models: Optional[Dict[str, Any]] = None,
         tactician_training_metrics: Optional[Dict[str, Any]] = None,
         analyst_models: Optional[Dict[str, Any]] = None,
         analyst_ensembles: Optional[Dict[str, Any]] = None,
         analyst_ensemble_metrics: Optional[Dict[str, Any]] = None,
-        hmm_data: Optional[Dict[str, Any]] = None,
+        regime_data: Optional[Dict[str, Any]] = None,
         analyst_green_light_periods: Optional[np.ndarray] = None,
         confidence_scores: Optional[np.ndarray] = None,
         timestamps: Optional[np.ndarray] = None,
@@ -570,7 +570,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
 
         Enhanced Features:
         - 1m base timeframe with cross-timeframe features (50+ features)
-        - HMM + Analyst outputs + all model predictions integration
+        - Regime data + Analyst outputs + all model predictions integration
         - Enhanced filtering: confidence > 0.5 + 45 min after confidence drops
         - XGBoost + RandomForest + CatBoost + Elastic Net + NAS base models with LightGBM meta-learner
         - All-regime training with realistic trading condition simulation
@@ -581,13 +581,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             y: Target values (tactician outputs - timing decisions for 0.3% micro price movements)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
-            hmm_states: HMM cluster/regime states
+            regime_states: Regime cluster/regime states
             base_tactician_models: Individual tactician models to ensemble
             tactician_training_metrics: Performance metrics of base tactician models
             analyst_models: Individual analyst models
             analyst_ensembles: Analyst ensemble models
             analyst_ensemble_metrics: Performance metrics of analyst ensembles
-            hmm_data: HMM regime data and features
+            regime_data: Regime data and features
             analyst_green_light_periods: Boolean array indicating when Analyst gives green light (legacy)
             confidence_scores: Analyst confidence scores for enhanced filtering
             timestamps: Timestamps for time-based ride window filtering
@@ -655,9 +655,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             
             # Step 4: Feature enhancement with full model integration
             self._start_step("Full Model Integration")
-            X_enhanced = self._combine_all_model_inputs(
-                X_filtered, analyst_models, analyst_ensembles, hmm_data, feature_names
-            )
+                X_enhanced = self._combine_all_model_inputs(
+                    X_filtered, analyst_models, analyst_ensembles, regime_data, feature_names
+                )
             enhancement_metrics = {
                 'original_features': X_filtered.shape[1],
                 'enhanced_features': X_enhanced.shape[1],
@@ -680,7 +680,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                         y=y_filtered,
                         regime_labels=regime_labels_filtered,
                         feature_names=feature_names,
-                        hmm_states=hmm_states,
+                        regime_states=regime_states,
                         is_classification=False,  # Tactician ensemble models are typically regression
                         symbol=None,  # Can be passed as kwargs
                         exchange=None,
@@ -714,7 +714,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self._start_step("Meta-learner Enhancement")
             results = self._add_meta_learner_metadata(
                 results, base_tactician_models, tactician_training_metrics,
-                analyst_models, analyst_ensembles, analyst_ensemble_metrics, hmm_data
+                analyst_models, analyst_ensembles, analyst_ensemble_metrics, regime_data
             )
             self._complete_step(True)
             
@@ -1145,16 +1145,16 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         }
     
     
-    def _extract_hmm_features(self, X: np.ndarray, hmm_data: Optional[Dict[str, Any]]) -> Tuple[Optional[np.ndarray], int]:
+    def _extract_regime_features(self, X: np.ndarray, regime_data: Optional[Dict[str, Any]]) -> Tuple[Optional[np.ndarray], int]:
         """
-        Extract HMM features safely with validation.
+        Extract regime features safely with validation.
         
         Args:
             X: Base features for shape validation
-            hmm_data: HMM regime data dictionary
+            regime_data: Regime data dictionary
             
         Returns:
-            Tuple of (hmm_features, features_count)
+            Tuple of (regime_features, features_count)
         """
         try:
             from src.utils.math_validation import validate_finite

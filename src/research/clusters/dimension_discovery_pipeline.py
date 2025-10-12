@@ -8,7 +8,7 @@ This orchestrator implements the end-to-end workflow requested:
   3) Aggregate across targets: feature × dynamic matrix (unique/SHAP),
      synergy edges, redundancy matrix
   4) Derive dimensions via clustering/factorization and compute dimension scores
-  5) Provide dimension scores suitable for downstream regime clustering/HMM
+  5) Provide dimension scores suitable for downstream regime clustering
 
 Notes:
   - This is a research pipeline; hyperparameters and performance tradeoffs are

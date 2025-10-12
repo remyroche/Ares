@@ -6,12 +6,13 @@ across feature_generation and feature_engineering_roadmap systems with
 native VectorBT optimization for maximum performance.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
-import pandas as pd
-import numpy as np
 import logging
 import warnings
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
+
+import numpy as np
+import pandas as pd
 
 # VectorBT imports for native optimization
 try:
@@ -64,6 +65,15 @@ try:
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
+
+# Check if VectorBT scaler is available
+try:
+    from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
+    VECTORBT_SCALER_AVAILABLE = True
+except ImportError:
+    VECTORBT_SCALER_AVAILABLE = False
+    VectorBTScaler = None
+    VectorBTBatchScaler = None
     
 try:
     from src.utils.math_validation import (
@@ -403,19 +413,31 @@ class BaseScaler(ABC):
         Returns:
             Result of division with safe handling
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseScaler] Performing safe division with denominator={denominator}", color="blue")
+        
         if MATH_VALIDATION_AVAILABLE:
             # Use math_validation's safe_divide
-            return pd.Series(
+            result = pd.Series(
                 safe_divide(numerator.values, denominator, default=default),
                 index=numerator.index
             )
         else:
             # Fallback implementation
             if denominator == 0 or np.isnan(denominator) or np.isinf(denominator):
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [BaseScaler] Invalid denominator ({denominator}), using default value", color="yellow")
                 return pd.Series(default, index=numerator.index)
             result = numerator / denominator
             result = result.replace([np.inf, -np.inf], default).fillna(default)
-            return result
+        
+        # Validate result
+        if result.isna().any():
+            if TPRINT_AVAILABLE:
+                tprint(f"⚠️  [BaseScaler] NaN values detected in division result, filling with default", color="yellow")
+            result = result.fillna(default)
+        
+        return result
     
     def _check_output_validity(self, data: pd.Series, name: str = "output") -> None:
         """

@@ -1,14 +1,14 @@
 """
-Advanced Feature Engineering for Production HMM Pipeline
+Advanced Feature Engineering for Production Clustering Pipeline
 
 This module implements multi-horizon, leakage-safe feature engineering
-specifically designed to enhance advanced Markov models (MSM + HSMM)
+specifically designed to enhance advanced clustering models
 within a production walk-forward validation framework.
 
 Key Features:
 1. Multi-scale feature generation (5, 20, 60 bar horizons)
-2. Structural break detection features (for MSM)
-3. Duration persistence features (for HSMM)
+2. Structural break detection features
+3. Duration persistence features
 4. Leakage-safe rolling statistics
 5. Theme-based feature organization
 6. Production-ready feature filtering
@@ -159,17 +159,17 @@ class LeakageSafeRollingStats:
         ).corr(data2)
 
 
-class AdvancedMarkovFeatureEngine:
+class AdvancedClusteringFeatureEngine:
     """
-    Advanced feature engineering engine for production HMM pipeline.
+    Advanced feature engineering engine for production clustering pipeline.
     
     Generates multi-horizon features with specific enhancements for
-    Markov-Switching Models and Hidden Semi-Markov Models.
+    advanced clustering models and regime detection.
     """
     
     def __init__(self, config: Optional[AdvancedFeatureConfig] = None):
         self.config = config or AdvancedFeatureConfig()
-        self.logger = system_logger.getChild('AdvancedMarkovFeatureEngine')
+        self.logger = system_logger.getChild('AdvancedClusteringFeatureEngine')
         
         # Initialize components
         self.rolling_stats = LeakageSafeRollingStats(

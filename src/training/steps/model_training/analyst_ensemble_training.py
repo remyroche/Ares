@@ -1,5 +1,5 @@
 """
-Analyst Ensemble Training Step - Enhanced for 5m Timeframe with HMM and NAS Integration
+Analyst Ensemble Training Step - Enhanced for 5m Timeframe with NAS Integration
 
 This step handles per-regime ensemble training of Analyst models using common dependencies.
 The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
@@ -21,7 +21,7 @@ Meta-learner:
 
 Enhanced Features:
 - 5m base timeframe with cross-timeframe features (300+ features)
-- HMM regime outputs integration for comprehensive context
+- Regime outputs integration for comprehensive context
 - TCN + LightGBM + Ridge + ElasticNet + RandomForest base models
 - NAS models per-regime for enhanced trading signal generation
 - Per-regime training for regime-specific optimization
@@ -117,7 +117,7 @@ logger = system_logger.getChild('AnalystEnsembleTraining')
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     """
-    Enhanced Analyst Ensemble Training Step for 5m timeframe with HMM integration.
+    Enhanced Analyst Ensemble Training Step for 5m timeframe with regime integration.
     
     Analyst Models Structure:
     Base Models:
@@ -130,7 +130,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     Features:
     - 5m base timeframe with cross-timeframe features (300+ features)
-    - HMM regime outputs integration for comprehensive context
+    - Regime outputs integration for comprehensive context
     - TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
     - Per-regime training for regime-specific optimization
     - Runs every 2 minutes for live trading
@@ -147,7 +147,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     
     def __init__(self, config: Optional[EnsembleTrainingConfig] = None, enable_vectorization: bool = True):
         """
-        Initialize Analyst ensemble training step for 5m timeframe with HMM integration.
+        Initialize Analyst ensemble training step for 5m timeframe with regime integration.
 
         Args:
             config: Per-regime training configuration
@@ -835,17 +835,17 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]] = None,
-        hmm_states: Optional[np.ndarray] = None,
+        regime_states: Optional[np.ndarray] = None,
         base_analyst_models: Optional[Dict[str, Any]] = None,
         analyst_training_metrics: Optional[Dict[str, Any]] = None,
-        hmm_data: Optional[Dict[str, Any]] = None
+        regime_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute Analyst ensemble training step for 5m timeframe with HMM integration.
+        Execute Analyst ensemble training step for 5m timeframe with regime integration.
         
         Features:
         - 5m base timeframe with cross-timeframe features (300+ features)
-        - HMM regime outputs integration for comprehensive context
+        - Regime outputs integration for comprehensive context
         - TCN + CatBoost + LightGBM base models with Elastic Net meta-learner
         - Per-regime training for regime-specific optimization
         - Decides IF we trade and emits green light for Tactician
@@ -855,10 +855,10 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             y: Target values (analyst outputs - trade decision signals)
             regime_labels: Regime labels for each sample
             feature_names: Names of input features
-            hmm_states: HMM cluster/regime states
+            regime_states: Regime cluster/regime states
             base_analyst_models: Individual analyst models to ensemble
             analyst_training_metrics: Performance metrics of base models
-            hmm_data: HMM regime data and features for integration
+            regime_data: Regime data and features for integration
             
         Returns:
             Dictionary containing training results and metadata
@@ -904,14 +904,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 self._setup_hardware_optimizations(X_clean, y_clean, regimes_clean, execution_stats)
                 execution_stats['steps_completed'] += 1
             
-            # Step 3: HMM integration if available
-            if hmm_data is not None:
-                with tprint_timer("Step 3: HMM integration"):
-                    X_enhanced = self._integrate_hmm_features(X_clean, hmm_data, execution_stats)
+            # Step 3: Regime integration if available
+            if regime_data is not None:
+                with tprint_timer("Step 3: Regime integration"):
+                    X_enhanced = self._integrate_regime_features(X_clean, regime_data, execution_stats)
                     execution_stats['steps_completed'] += 1
             else:
                 X_enhanced = X_clean
-                tprint_info("⏭️ Step 3: Skipping HMM integration (no data provided)")
+                tprint_info("⏭️ Step 3: Skipping regime integration (no data provided)")
             
             # Step 4: Execute training with parent class
             with tprint_timer("Step 4: Ensemble training"):
@@ -920,7 +920,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     y=y_clean,
                     regime_labels=regimes_clean,
                     feature_names=feature_names,
-                    hmm_states=hmm_states,
+                    regime_states=regime_states,
                     is_classification=False,
                     base_models=base_analyst_models,
                     timeframe=self.config.timeframe
@@ -966,10 +966,10 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray],
+        regime_states: Optional[np.ndarray],
         base_analyst_models: Optional[Dict[str, Any]],
         analyst_training_metrics: Optional[Dict[str, Any]],
-        hmm_data: Optional[Dict[str, Any]]
+        regime_data: Optional[Dict[str, Any]]
     ) -> None:
         """Pre-execution validation with comprehensive checks."""
         try:
@@ -987,9 +987,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             if feature_names is not None and len(feature_names) != X.shape[1]:
                 tprint_warning(f"⚠️ Feature names length ({len(feature_names)}) doesn't match feature count ({X.shape[1]})")
             
-            # Validate HMM states
-            if hmm_states is not None and len(hmm_states) != len(regime_labels):
-                tprint_warning(f"⚠️ HMM states length ({len(hmm_states)}) doesn't match regime labels length ({len(regime_labels)})")
+            # Validate regime states
+            if regime_states is not None and len(regime_states) != len(regime_labels):
+                tprint_warning(f"⚠️ Regime states length ({len(regime_states)}) doesn't match regime labels length ({len(regime_labels)})")
             
             # Validate base models
             if base_analyst_models is not None:
@@ -1003,16 +1003,16 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 if not isinstance(analyst_training_metrics, dict):
                     tprint_warning("⚠️ Analyst training metrics must be a dictionary")
             
-            # Validate HMM data
-            if hmm_data is not None:
-                if not isinstance(hmm_data, dict):
-                    tprint_warning("⚠️ HMM data must be a dictionary")
+            # Validate regime data
+            if regime_data is not None:
+                if not isinstance(regime_data, dict):
+                    tprint_warning("⚠️ Regime data must be a dictionary")
                 else:
-                    # Check for required HMM components
-                    required_hmm_keys = ['regime_states', 'regime_probabilities', 'regime_confidence']
-                    for key in required_hmm_keys:
-                        if key not in hmm_data:
-                            tprint_warning(f"⚠️ HMM data missing key: {key}")
+                    # Check for required regime components
+                    required_regime_keys = ['regime_states', 'regime_probabilities', 'regime_confidence']
+                    for key in required_regime_keys:
+                        if key not in regime_data:
+                            tprint_warning(f"⚠️ Regime data missing key: {key}")
             
             tprint_success("✅ Pre-execution validation completed")
             
@@ -1057,34 +1057,34 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         
         tprint_success("✅ Hardware optimizations setup completed")
     
-    def _integrate_hmm_features(
+    def _integrate_regime_features(
         self,
         X: np.ndarray,
-        hmm_data: Optional[Dict[str, Any]],
+        regime_data: Optional[Dict[str, Any]],
         execution_stats: Dict[str, Any]
     ) -> np.ndarray:
-        """Integrate HMM features with base features for enhanced context."""
+        """Integrate regime features with base features for enhanced context."""
         try:
-            tprint_info("🔄 Integrating HMM features with base features")
+            tprint_info("🔄 Integrating regime features with base features")
             
-            if hmm_data is None:
-                tprint_warning("⚠️ No HMM data provided, using base features only")
+            if regime_data is None:
+                tprint_warning("⚠️ No regime data provided, using base features only")
                 return X
             
-            # Extract HMM features
-            hmm_features = []
+            # Extract regime features
+            regime_features = []
             feature_count = X.shape[1]
             
             # Add regime probabilities
-            if 'regime_probabilities' in hmm_data:
+            if 'regime_probabilities' in regime_data:
                 try:
-                    regime_probs_data = hmm_data['regime_probabilities']
+                    regime_probs_data = regime_data['regime_probabilities']
                     if not isinstance(regime_probs_data, (list, np.ndarray)):
                         tprint_warning("⚠️ Regime probabilities must be list or numpy array")
                     else:
                         regime_probs = np.array(regime_probs_data, dtype=np.float64)
                         if regime_probs.shape[0] == X.shape[0]:
-                            hmm_features.append(regime_probs)
+                            regime_features.append(regime_probs)
                             feature_count += regime_probs.shape[1]
                             tprint_success(f"✅ Added {regime_probs.shape[1]} regime probability features")
                         else:
@@ -1093,16 +1093,16 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint_warning(f"⚠️ Failed to process regime probabilities: {e}")
             
             # Add regime confidence
-            if 'regime_confidence' in hmm_data:
+            if 'regime_confidence' in regime_data:
                 try:
-                    regime_conf_data = hmm_data['regime_confidence']
+                    regime_conf_data = regime_data['regime_confidence']
                     if not isinstance(regime_conf_data, (list, np.ndarray)):
                         tprint_warning("⚠️ Regime confidence must be list or numpy array")
                     else:
                         regime_conf = np.array(regime_conf_data, dtype=np.float64)
                         if len(regime_conf) == X.shape[0]:
                             regime_conf = regime_conf.reshape(-1, 1)
-                            hmm_features.append(regime_conf)
+                            regime_features.append(regime_conf)
                             feature_count += 1
                             tprint_success("✅ Added regime confidence feature")
                         else:
@@ -1111,9 +1111,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint_warning(f"⚠️ Failed to process regime confidence: {e}")
             
             # Add regime states as one-hot encoded features
-            if 'regime_states' in hmm_data:
+            if 'regime_states' in regime_data:
                 try:
-                    regime_states_data = hmm_data['regime_states']
+                    regime_states_data = regime_data['regime_states']
                     if not isinstance(regime_states_data, (list, np.ndarray)):
                         tprint_warning("⚠️ Regime states must be list or numpy array")
                     else:
@@ -1128,7 +1128,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                                 # One-hot encode regime states
                                 n_regimes = len(unique_regimes)
                                 regime_onehot = np.eye(n_regimes)[regime_int_mapped]
-                                hmm_features.append(regime_onehot)
+                                regime_features.append(regime_onehot)
                                 feature_count += n_regimes
                                 tprint_success(f"✅ Added {n_regimes} regime state features (one-hot encoded)")
                             except Exception as e:
@@ -1137,7 +1137,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                                 unique_regimes = list(set(regime_states))
                                 for i, regime in enumerate(unique_regimes):
                                     regime_binary = (regime_states == regime).astype(float).reshape(-1, 1)
-                                    hmm_features.append(regime_binary)
+                                    regime_features.append(regime_binary)
                                     feature_count += 1
                                 tprint_success(f"✅ Added {len(unique_regimes)} regime state features (binary encoded)")
                         else:
@@ -1146,22 +1146,22 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint_warning(f"⚠️ Failed to process regime states: {e}")
             
             # Combine features
-            if hmm_features:
-                X_enhanced = np.column_stack([X] + hmm_features)
-                actual_hmm_features = X_enhanced.shape[1] - X.shape[1]
-                tprint_success(f"✅ Enhanced features: {X.shape[1]} base + {actual_hmm_features} HMM = {X_enhanced.shape[1]} total")
+            if regime_features:
+                X_enhanced = np.column_stack([X] + regime_features)
+                actual_regime_features = X_enhanced.shape[1] - X.shape[1]
+                tprint_success(f"✅ Enhanced features: {X.shape[1]} base + {actual_regime_features} regime = {X_enhanced.shape[1]} total")
                 
                 # Update execution stats with actual feature counts
-                execution_stats['hmm_features_added'] = actual_hmm_features
+                execution_stats['regime_features_added'] = actual_regime_features
                 execution_stats['total_features'] = X_enhanced.shape[1]
                 
                 return X_enhanced
             else:
-                tprint_warning("⚠️ No valid HMM features found, using base features only")
+                tprint_warning("⚠️ No valid regime features found, using base features only")
                 return X
                 
         except Exception as e:
-            tprint_error(f"❌ HMM feature integration failed: {e}")
+            tprint_error(f"❌ Regime feature integration failed: {e}")
             tprint_warning("⚠️ Returning base features due to integration failure")
             return X
     
@@ -1304,7 +1304,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray],
+        regime_states: Optional[np.ndarray],
         base_analyst_models: Dict[str, Any],
         execution_stats: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -1317,7 +1317,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             y=y,
             regime_labels=regime_labels,
             feature_names=feature_names,
-            hmm_states=hmm_states,
+            regime_states=regime_states,
             is_classification=False,  # Analyst ensemble models are typically regression
             base_models=base_analyst_models,
             symbol=None,  # Can be passed as kwargs
@@ -1589,7 +1589,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         y: np.ndarray,
         regime_labels: np.ndarray,
         feature_names: Optional[List[str]],
-        hmm_states: Optional[np.ndarray],
+        regime_states: Optional[np.ndarray],
         base_analyst_models: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
@@ -1600,7 +1600,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             y: Target values
             regime_labels: Regime labels
             feature_names: Feature names
-            hmm_states: HMM states
+            regime_states: Regime states
             base_analyst_models: Base models
             
         Returns:
@@ -1614,7 +1614,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             y=y,
             regime_labels=regime_labels,
             feature_names=feature_names,
-            hmm_states=hmm_states,
+            regime_states=regime_states,
             is_classification=False,  # Analyst ensemble models are typically regression
             base_models=base_analyst_models,
             symbol=None,  # Can be passed as kwargs
@@ -2425,9 +2425,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 meta_features['regime_persistence'] = (df['composite_cluster_id'] == df['composite_cluster_id'].shift(1)).rolling(20).mean()
                 meta_features['regime_transition'] = (df['composite_cluster_id'] != df['composite_cluster_id'].shift(1)).rolling(10).sum()
             
-            # Add HMM integration features if available
-            hmm_features = ['hmm_state', 'hmm_transition_prob', 'hmm_confidence']
-            for feature in hmm_features:
+            # Add regime integration features if available
+            regime_features = ['regime_state', 'regime_transition_prob', 'regime_confidence']
+            for feature in regime_features:
                 if feature in df.columns:
                     meta_features[f'{feature}_momentum'] = df[feature].pct_change(10)
                     meta_features[f'{feature}_stability'] = df[feature].rolling(20).std()
@@ -2608,13 +2608,13 @@ def execute_analyst_ensemble_training(
     regime_labels: np.ndarray,
     config: Optional[EnsembleTrainingConfig] = None,
     feature_names: Optional[List[str]] = None,
-    hmm_states: Optional[np.ndarray] = None,
+    regime_states: Optional[np.ndarray] = None,
     base_analyst_models: Optional[Dict[str, Any]] = None,
     analyst_training_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """Execute Analyst ensemble training step."""
     step = create_analyst_ensemble_training_step(config)
-    return step.execute(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics)
+    return step.execute(X, y, regime_labels, feature_names, regime_states, base_analyst_models, analyst_training_metrics)
 
 
 # Example usage
@@ -2693,7 +2693,7 @@ if __name__ == "__main__":
     # Example of how the actual training would be called:
     tprint_info("💡 EXAMPLE USAGE:")
     tprint_info("# results = training_step.execute(")
-    tprint_info("#     X, y, regime_labels, feature_names, hmm_states,")
+    tprint_info("#     X, y, regime_labels, feature_names, regime_states,")
     tprint_info("#     base_analyst_models, analyst_training_metrics")
     tprint_info("# )")
     

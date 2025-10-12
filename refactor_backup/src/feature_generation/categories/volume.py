@@ -139,9 +139,9 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                 return volume_sma
             except Exception as e:
                 self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
-                return self._optimized_rolling_operation(volume, "mean", 20)
+                return volume.rolling(window=20).mean()
         else:
-            return self._optimized_rolling_operation(volume, "mean", 20)
+            return volume.rolling(window=20).mean()
         # Use VectorBT rolling optimizer if available
         if self.rolling_optimizer:
             try:
@@ -164,7 +164,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Final fallback to pandas
-        return self._optimized_rolling_operation(volume, "mean", 20)
+        return volume.rolling(window=20).mean()
 
 # Volume Simple Moving Average
     
@@ -217,17 +217,17 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return self._optimized_rolling_operation(data, "mean", window)
+            return data.rolling(window=window).mean()
         elif operation == 'std':
-            return self._optimized_rolling_operation(data, "std", window)
+            return data.rolling(window=window).std()
         elif operation == 'var':
-            return self._optimized_rolling_operation(data, "var", window)
+            return data.rolling(window=window).var()
         elif operation == 'min':
-            return self._optimized_rolling_operation(data, "min", window)
+            return data.rolling(window=window).min()
         elif operation == 'max':
-            return self._optimized_rolling_operation(data, "max", window)
+            return data.rolling(window=window).max()
         elif operation == 'sum':
-            return self._optimized_rolling_operation(data, "sum", window)
+            return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -367,10 +367,6 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         
         # Use VectorBT for volume EMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
-            return self._optimized_rolling_operation(volume, "mean", self.period)
-        else:
-            return self._optimized_rolling_operation(volume, "mean", self.period)
-        
         if data.empty or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ema_{self.period}')
 
@@ -459,15 +455,6 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
             try:
                 avg_volume = self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
-            except Exception as e:
-                # Fallback to pandas
-                avg_volume = volume.rolling(window=self.period).mean()
-                return volume / avg_volume.replace(0, 1)
-        else:
-            # Fallback to pandas
-            avg_volume = volume.rolling(window=self.period).mean()
-            return volume / avg_volume.replace(0, 1)
-        
         if data.empty or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ratio_{self.period}')
 
@@ -2216,10 +2203,6 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
                     return 0.0
                 try:
                     from scipy.stats import linregress
-# Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
-from ..core.feature_bank import get_global_feature_bank
                     slope, _, _, _, _ = linregress(range(len(x)), x.values)
                     return slope
                 except:
@@ -2574,72 +2557,4 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
                         elasticity[i] = correlation
         
         return pd.Series(elasticity, index=data.index)
-
-
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
-                                   window: int, **kwargs) -> pd.Series:
-        """Perform rolling operation using centralized VectorBTRollingOptimizer."""
-        if not hasattr(self, 'rolling_optimizer'):
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        
-        try:
-            if operation == 'mean':
-                return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
-            elif operation == 'std':
-                return self.rolling_optimizer.rolling_std(data, window, **kwargs)
-            elif operation == 'var':
-                return self.rolling_optimizer.rolling_var(data, window, **kwargs)
-            elif operation == 'min':
-                return self.rolling_optimizer.rolling_min(data, window, **kwargs)
-            elif operation == 'max':
-                return self.rolling_optimizer.rolling_max(data, window, **kwargs)
-            elif operation == 'sum':
-                return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT rolling operation failed: {e}, using fallback")
-            return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        rolling_obj = data.rolling(window=window, **kwargs)
-        
-        if operation == 'mean':
-            return rolling_obj.mean()
-        elif operation == 'std':
-            return rolling_obj.std()
-        elif operation == 'var':
-            return rolling_obj.var()
-        elif operation == 'min':
-            return rolling_obj.min()
-        elif operation == 'max':
-            return rolling_obj.max()
-        elif operation == 'sum':
-            return rolling_obj.sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
-        try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
-        except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
-    
-    def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Fallback normalization using pandas/numpy."""
-        if method == 'zscore':
-            return (data - data.mean()) / data.std()
-        elif method == 'minmax':
-            return (data - data.min()) / (data.max() - data.min())
-        elif method == 'robust':
-            median = data.median()
-            mad = (data - median).abs().median()
-            return (data - median) / mad
-        else:
-            return data
 

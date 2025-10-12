@@ -6,6 +6,7 @@ using PatchTST and TFT encoders for generating latent vectors that
 summarize recent market dynamics for use in tree-based models.
 
 Features implemented:
+    pass
 - PatchTST self-supervised learning
 - TFT encoder representations
 - Autoencoder-based embeddings
@@ -145,6 +146,7 @@ class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
     
     def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
                                     windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+                                        pass
         """Perform vectorized rolling operations with hardware optimization."""
         if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
             return self.vectorization_optimizer.vectorized_rolling_operations(
@@ -152,6 +154,8 @@ class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
             )
         return data
 
+            except Exception as e:
+                pass
 class TFTEncoderRepresentationGenerator(FeatureGenerator):
     """Generator for TFT (Temporal Fusion Transformer) encoder representations."""
 
@@ -323,21 +327,6 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
 
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
 class AutoencoderRepresentationGenerator(FeatureGenerator):
     """Generator for autoencoder-based representation learning."""
 
@@ -436,6 +425,8 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         try:
             from sklearn.decomposition import PCA
 
+            except Exception as e:
+                pass
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -495,21 +486,6 @@ except ImportError:
 
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
 class ContrastiveLearningGenerator(FeatureGenerator):
     """Generator for contrastive learning representations."""
 
@@ -606,6 +582,7 @@ class ContrastiveLearningGenerator(FeatureGenerator):
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
+                                      pass
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
@@ -631,6 +608,7 @@ class ContrastiveLearningGenerator(FeatureGenerator):
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:
+                                     pass
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
             return data.rolling(window=window).mean()
@@ -646,3 +624,6 @@ class ContrastiveLearningGenerator(FeatureGenerator):
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+
+            except Exception as e:
+                pass

@@ -6,6 +6,7 @@ It discovers failure contexts and generates gated twin features and exception in
 to improve model performance in challenging market conditions.
 
 Key Components:
+    pass
 1. Failure Context Discovery - Data-driven detection of when features fail
 2. Negative Learning Features - Gated twins and exception interactions
 3. Model Constraints - Monotone constraints and sample weights
@@ -383,6 +384,8 @@ class FailureContextDetector:
             return 0.0, 1.0
 
 
+            except Exception as e:
+                pass
 class NegativeLearningFeatureGenerator:
     """
     Generates negative learning features based on detected failure contexts.
@@ -898,6 +901,7 @@ class NegativeLearningFeatureGenerator:
                 # Check if we can use float32 for memory efficiency
                 if (series.min() >= np.finfo(np.float32).min and 
                     series.max() <= np.finfo(np.float32).max):
+                        pass
                     series = series.astype(np.float32)
             
             # Apply VectorBT winsorization for outlier handling
@@ -923,6 +927,7 @@ class NegativeLearningFeatureGenerator:
         Select top N most impactful gate features using sophisticated criteria.
         
         Implements:
+            pass
         - Acceptance thresholds (IC uplift, stability, correlation)
         - Adaptive cap by diminishing returns
         - Diversity penalty (submodular flavor)
@@ -1270,6 +1275,8 @@ class NegativeLearningFeatureGenerator:
         except Exception as e:
             from src.utils.tprint import tprint_warning
 
+                except Exception as e:
+                    pass
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -1456,6 +1463,8 @@ except ImportError:
             return pd.DataFrame(index=features_df.index)
 
 
+            except Exception as e:
+                pass
 class NegativeLearningValidator:
     """
     Validates negative learning features using bucketed performance and SHAP analysis.
@@ -1614,6 +1623,8 @@ class NegativeLearningValidator:
         return stability_results
 
 
+            except Exception as e:
+                pass
 class NegativeLearningPlugin:
     """
     Main plugin class that orchestrates the entire negative learning pipeline.
@@ -1831,6 +1842,7 @@ class NegativeLearningPlugin:
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
+                                      pass
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
@@ -1856,6 +1868,7 @@ class NegativeLearningPlugin:
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:
+                                     pass
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
             return data.rolling(window=window).mean()
@@ -1871,3 +1884,6 @@ class NegativeLearningPlugin:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+
+                except Exception as e:
+                    pass

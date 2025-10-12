@@ -2,6 +2,7 @@
 
 Legacy features are traditional technical indicators that have been used in 
 financial analysis for decades. These include classic indicators like:
+    pass
 - Traditional RSI implementations
 - Classic MACD calculations
 - Original Bollinger Bands formulations
@@ -150,6 +151,8 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         return self._calculate_sma_vectorized(series, window).values
 
 
+            except Exception as e:
+                pass
 class LegacyEMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 21):
         config = FeatureConfig(
@@ -206,6 +209,8 @@ class LegacyEMAGenerator(VectorizedFeatureGenerator):
     
 
 
+            except Exception as e:
+                pass
 class LegacyATRGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
@@ -271,6 +276,8 @@ class LegacyATRGenerator(VectorizedFeatureGenerator):
     
 
 
+            except Exception as e:
+                pass
 # LegacyStochasticGenerator removed - use VectorBTStochasticGenerator from momentum.py instead
 
 
@@ -336,6 +343,8 @@ class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
     
 
 
+            except Exception as e:
+                pass
 class LegacyOBVGenerator(VectorizedFeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
@@ -398,6 +407,8 @@ class LegacyOBVGenerator(VectorizedFeatureGenerator):
         return obv_cumsum.rename('legacy_obv')
     
 
+            except Exception as e:
+                pass
 def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     """
     Create default legacy feature generators with VectorBT optimization.
@@ -442,6 +453,7 @@ def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
 def generate_legacy_features_batch_optimized(data: pd.DataFrame, 
                                            generators: List[VectorizedFeatureGenerator] = None,
                                            use_unified_manager: bool = True) -> pd.DataFrame:
+                                               pass
     """
     Generate legacy features in batch with VectorBT optimization.
     
@@ -468,6 +480,7 @@ def generate_legacy_features_batch_optimized(data: pd.DataFrame,
 
 def _generate_legacy_features_unified(data: pd.DataFrame, 
                                     generators: List[VectorizedFeatureGenerator]) -> pd.DataFrame:
+                                        pass
     """Generate legacy features using UnifiedVectorizationManager for optimal batch processing."""
     try:
         unified_manager = get_unified_vectorization_manager()
@@ -493,8 +506,11 @@ def _generate_legacy_features_unified(data: pd.DataFrame,
         return _generate_legacy_features_vectorbt(data, generators)
 
 
+        except Exception as e:
+            pass
 def _generate_legacy_features_vectorbt(data: pd.DataFrame, 
                                      generators: List[VectorizedFeatureGenerator]) -> pd.DataFrame:
+                                         pass
     """Generate legacy features using VectorBTRollingOptimizer for batch processing."""
     results = {}
     
@@ -516,12 +532,15 @@ def _generate_legacy_features_vectorbt(data: pd.DataFrame,
     return pd.DataFrame(results, index=data.index)
 
 
+            except Exception as e:
+                pass
 # Add optimization methods to all legacy generators
 def add_optimization_methods_to_legacy_generators():
     """Add optimization methods to all legacy generator classes."""
     
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
                                    window: int, **kwargs) -> pd.Series:
+                                       pass
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
         if not hasattr(self, 'rolling_optimizer'):
             self.rolling_optimizer = get_vectorbt_rolling_optimizer()
@@ -562,6 +581,7 @@ def add_optimization_methods_to_legacy_generators():
     
     def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
+                                      pass
         """Fallback rolling operation using pandas."""
         rolling_obj = data.rolling(window=window, **kwargs)
         
@@ -611,6 +631,8 @@ def add_optimization_methods_to_legacy_generators():
         cls._normalize_feature = _normalize_feature
         cls._fallback_normalize = _fallback_normalize
 
+            except Exception as e:
+                pass
 # Initialize optimization methods
 add_optimization_methods_to_legacy_generators()
 
@@ -665,8 +687,11 @@ def get_legacy_features_performance_summary() -> Dict[str, Any]:
     return summary
 
 
+        except Exception as e:
+            pass
 def benchmark_legacy_features_performance(data: pd.DataFrame, 
                                         sample_size: int = 1000) -> Dict[str, Any]:
+                                            pass
     """
     Benchmark legacy features performance with VectorBT optimization.
     
@@ -732,3 +757,6 @@ def benchmark_legacy_features_performance(data: pd.DataFrame,
         }
     
     return benchmark_results
+
+            except Exception as e:
+                pass

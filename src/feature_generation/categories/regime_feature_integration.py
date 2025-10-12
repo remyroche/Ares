@@ -6,6 +6,7 @@ NAS-TAS clustering. Provides a unified interface for regime classification
 features while excluding trading-relevant features.
 
 Key Features:
+    pass
 - Unified regime feature generation
 - Trading feature exclusion
 - Regime-focused feature selection
@@ -106,21 +107,6 @@ class RegimeFeatureConfig:
             self.min_temporal_stability = quality_thresholds.get("min_temporal_stability", 0.1)
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """Unified regime feature generator that excludes trading features."""
     
@@ -402,6 +388,8 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         # Use CPU count for optimal parallelization
         import os
 
+                except Exception as e:
+                    pass
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -1020,43 +1008,10 @@ except ImportError:
 
         return summary
 
+                except Exception as e:
+                    pass
 # Analyst Features - Regime generators
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        if self.unified_optimizer:
-            return self.unified_optimizer.optimize_dataframe(data)
-        elif self.vectorbt_optimizer:
-            return self.vectorbt_optimizer._optimize_data_types(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        if self.vectorbt_optimizer:
-            result = data.copy()
-            if columns is None:
-                columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            for window in windows:
-                for col in columns:
-                    if col in data.columns:
-                        for operation in operations:
-                            if operation == 'mean':
-                                result[f'{col}_rolling_mean_{window}'] = self.vectorbt_optimizer.rolling_mean(data[col], window)
-                            elif operation == 'std':
-                                result[f'{col}_rolling_std_{window}'] = self.vectorbt_optimizer.rolling_std(data[col], window)
-                            elif operation == 'var':
-                                result[f'{col}_rolling_var_{window}'] = self.vectorbt_optimizer.rolling_var(data[col], window)
-                            elif operation == 'min':
-                                result[f'{col}_rolling_min_{window}'] = self.vectorbt_optimizer.rolling_min(data[col], window)
-                            elif operation == 'max':
-                                result[f'{col}_rolling_max_{window}'] = self.vectorbt_optimizer.rolling_max(data[col], window)
-                            elif operation == 'sum':
-                                result[f'{col}_rolling_sum_{window}'] = self.vectorbt_optimizer.rolling_sum(data[col], window)
-            return result
-        return data
-
 class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability trending feature."""
 
@@ -1090,17 +1045,6 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
         return prob_trending_series
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        # This class doesn't need complex optimization, just return data
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        # This class doesn't need complex rolling operations, just return data
-        return data
-
 class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability choppy feature."""
 
@@ -1134,17 +1078,6 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
         return prob_choppy_series
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        # This class doesn't need complex optimization, just return data
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        # This class doesn't need complex rolling operations, just return data
-        return data
-
 class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
     """Generator for regime stability feature."""
 
@@ -1186,6 +1119,7 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame, 
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+                               pass
     """
     Generate regime-focused features for clustering.
     

@@ -5,6 +5,7 @@ This module provides comprehensive normalization and stationarity features
 for making market data more learnable and interpretable.
 
 Features implemented:
+    pass
 - Rolling z-score normalization
 - Volatility scaling
 - Regime normalization
@@ -607,6 +608,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     features[f"detrended_{column}_{window}"] = detrended.fillna(0).values
 
         return featuresclass RollingZScoreGenerator(FeatureGenerator):
+            pass
     """Generator for rolling z-score normalization features with VectorBT optimization."""
 
     def __init__(self, window: int = 50, column: str = "close"):
@@ -666,6 +668,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         rolling_std = values.rolling(window=self.window).std()
         zscore_result = (values - rolling_mean) / rolling_std
         return zscore_result.fillna(0)class VolatilityScalingGenerator(FeatureGenerator):
+            pass
     """Generator for volatility scaling features with VectorBT optimization."""
 
     def __init__(self, window: int = 20, column: str = "close"):
@@ -719,6 +722,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
             scaled = price_changes / rolling_vol
 
         return scaled.fillna(0)class CrossSectionalNormalizer(FeatureGenerator):
+            pass
     """Generator for cross-sectional normalization features."""
 
     def __init__(self, group_by: str = "price", method: str = "rank"):
@@ -851,6 +855,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         except Exception as e:
             logger.warning(f"Cleanup error: {e}")
 
+                except Exception as e:
+                    pass
 # ============================================================================
 # BaseScaler-based Normalizers
 # These classes provide consistent interface with feature_engineering_roadmap
@@ -938,64 +944,6 @@ class RobustScaler(BaseScaler):
         self.median = None
         self.mad = None
     
-    def fit_transform(self, data: pd.Series) -> pd.Series:
-        """Fit median/MAD and transform data with enhanced logging and validation."""
-        self._log_info(f"🔧 [RobustScaler] Fitting on {len(data)} samples")
-        
-        # Validate input
-        self._validate_numeric_input(data, "input data")
-        
-        clean_data = data.dropna()
-        
-        if len(clean_data) == 0:
-            self._log_warning("⚠️  No valid data to fit, using defaults")
-            self.median = 0.0
-            self.mad = 1.0
-        else:
-            self.median = float(clean_data.median())
-            deviations = np.abs(clean_data - self.median)
-            self.mad = float(deviations.median())
-            
-            if self.mad == 0 or np.isnan(self.mad):
-                self._log_warning("⚠️  Zero MAD detected, using 1.0")
-                self.mad = 1.0
-        
-        self.fitted = True
-        self._log_success(f"✅ [RobustScaler] Fitted: median={self.median:.4f}, mad={self.mad:.4f}")
-        
-        transformed = self.transform(data)
-        
-        # Validate output
-        self._check_output_validity(transformed, "transformed data")
-        
-        return transformed
-    
-    def transform(self, data: pd.Series) -> pd.Series:
-        """Transform data using fitted median/MAD with safe division."""
-        self._validate_fitted()
-        
-        if self.median is None or self.mad is None:
-            raise ValueError("Scaler state is invalid")
-        
-        # 1.4826 factor for consistency with standard deviation
-        # Use safe division to prevent inf/nan
-        return self._safe_divide(data - self.median, 1.4826 * self.mad, default=0.0)
-    
-    def get_state(self) -> Dict[str, Any]:
-        """Get state for persistence."""
-        return {
-            'median': self.median,
-            'mad': self.mad,
-            'fitted': self.fitted
-        }
-    
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """Restore state from persistence."""
-        self.median = state.get('median')
-        self.mad = state.get('mad')
-        self.fitted = state.get('fitted', False)
-
-
 class MinMaxScaler(BaseScaler):
     """
     Min-max scaler that scales data to [0, 1] range.
@@ -1008,130 +956,3 @@ class MinMaxScaler(BaseScaler):
         self.min_val = None
         self.max_val = None
     
-    def fit_transform(self, data: pd.Series) -> pd.Series:
-        """Fit min/max and transform data with enhanced logging and validation."""
-        self._log_info(f"🔧 [MinMaxScaler] Fitting on {len(data)} samples")
-        
-        # Validate input
-        self._validate_numeric_input(data, "input data")
-        
-        clean_data = data.dropna()
-        
-        if len(clean_data) == 0:
-            self._log_warning("⚠️  No valid data to fit, using defaults")
-            self.min_val = 0.0
-            self.max_val = 1.0
-        else:
-            self.min_val = float(clean_data.min())
-            self.max_val = float(clean_data.max())
-            
-            if self.min_val == self.max_val:
-                self._log_warning("⚠️  Min equals max, adjusting range")
-                self.max_val = self.min_val + 1.0
-        
-        self.fitted = True
-        self._log_success(f"✅ [MinMaxScaler] Fitted: min={self.min_val:.4f}, max={self.max_val:.4f}")
-        
-        transformed = self.transform(data)
-        
-        # Validate output
-        self._check_output_validity(transformed, "transformed data")
-        
-        return transformed
-    
-    def transform(self, data: pd.Series) -> pd.Series:
-        """Transform data using fitted min/max with safe division."""
-        self._validate_fitted()
-        
-        if self.min_val is None or self.max_val is None:
-            raise ValueError("Scaler state is invalid")
-        
-        # Use safe division to prevent inf/nan
-        return self._safe_divide(data - self.min_val, self.max_val - self.min_val, default=0.0)
-    
-    def get_state(self) -> Dict[str, Any]:
-        """Get state for persistence."""
-        return {
-            'min_val': self.min_val,
-            'max_val': self.max_val,
-            'fitted': self.fitted
-        }
-    
-    def set_state(self, state: Dict[str, Any]) -> None:
-        """Restore state from persistence."""
-        self.min_val = state.get('min_val')
-        self.max_val = state.get('max_val')
-        self.fitted = state.get('fitted', False)
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform optimized VectorBT rolling operation with fallback to pandas."""
-        # Use VectorBTRollingOptimizer if available
-        if self.rolling_optimizer is not None:
-            try:
-                if operation == 'mean':
-                    return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
-                elif operation == 'std':
-                    return self.rolling_optimizer.rolling_std(data, window, **kwargs)
-                elif operation == 'var':
-                    return self.rolling_optimizer.rolling_var(data, window, **kwargs)
-                elif operation == 'min':
-                    return self.rolling_optimizer.rolling_min(data, window, **kwargs)
-                elif operation == 'max':
-                    return self.rolling_optimizer.rolling_max(data, window, **kwargs)
-                elif operation == 'sum':
-                    return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
-                elif operation == 'quantile':
-                    q = kwargs.get('q', 0.5)
-                    return self.rolling_optimizer.rolling_quantile(data, window, q=q, **kwargs)
-                else:
-                    raise ValueError(f"Unsupported operation: {operation}")
-            except Exception as e:
-                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
-        
-        # Fallback to basic VectorBT or pandas
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return self._calculate_sma_vectorized(data, window)
-        elif operation == 'std':
-            return self._calculate_rolling_std_vectorized(data, window)
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return self._calculate_rolling_min_vectorized(data, window)
-        elif operation == 'max':
-            return self._calculate_rolling_max_vectorized(data, window)
-        elif operation == 'sum':
-            return self._calculate_rolling_sum_vectorized(data, window)
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

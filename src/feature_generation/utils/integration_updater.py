@@ -175,14 +175,6 @@ except ImportError:
             return self.vectorization_optimizer.optimize_dataframe_processing(data)
         return data
     
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        \"\"\"Perform vectorized rolling operations with hardware optimization.\"\"\"
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 """
         
         # Add helper methods to the last class in the file

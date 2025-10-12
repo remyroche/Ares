@@ -1384,233 +1384,470 @@ class DataDrivenInteractionGenerator:
                            interactions: List[InteractionResult],
                            targets: Optional[pd.Series]) -> List[InteractionResult]:
         """Filter interactions based on quality criteria."""
+        tprint("🔍 Starting interaction filtering...")
         filtered = []
         
         for interaction in interactions:
             # Check utility threshold
-            if interaction.utility_score < self.utility_threshold:
+            if interaction.utility_score < self.config.utility_threshold:
+                tprint(f"⏹️ Filtered out {interaction.feature_name}: utility {interaction.utility_score:.3f} < {self.config.utility_threshold}")
                 continue
             
             # Check for valid values
             if interaction.feature_series.isna().all():
+                tprint(f"⏹️ Filtered out {interaction.feature_name}: all NaN values")
                 continue
             
             # Check for infinite values
             if np.isinf(interaction.feature_series).any():
+                tprint(f"⏹️ Filtered out {interaction.feature_name}: contains infinite values")
                 continue
             
             # Check for constant values
             if interaction.feature_series.nunique() <= 1:
+                tprint(f"⏹️ Filtered out {interaction.feature_name}: constant values")
                 continue
             
             filtered.append(interaction)
+            tprint(f"✅ Kept {interaction.feature_name}: utility {interaction.utility_score:.3f}")
         
+        tprint(f"✅ Filtering completed: {len(filtered)}/{len(interactions)} interactions kept")
         return filtered
     
     def _rank_interactions(self, 
                          interactions: List[InteractionResult],
                          targets: Optional[pd.Series]) -> List[InteractionResult]:
         """Rank interactions by utility score."""
-        return sorted(interactions, key=lambda x: x.utility_score, reverse=True)
+        tprint(f"📊 Ranking {len(interactions)} interactions by utility score...")
+        try:
+            ranked = sorted(interactions, key=lambda x: x.utility_score, reverse=True)
+            if ranked:
+                tprint(f"✅ Ranking completed: best utility={ranked[0].utility_score:.3f}, worst utility={ranked[-1].utility_score:.3f}")
+            else:
+                tprint("⚠️ No interactions to rank")
+            return ranked
+        except Exception as e:
+            tprint(f"❌ ERROR: Ranking failed: {e}")
+            return interactions
     
     # Interaction type implementations
     def _product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Product interaction."""
-        return feat1 * feat2
+        tprint(f"✖️ Computing product interaction between {feat1.name} and {feat2.name}")
+        try:
+            result = feat1 * feat2
+            tprint(f"✅ Product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Ratio interaction."""
-        return feat1 / (feat2 + 1e-08)
+        tprint(f"➗ Computing ratio interaction between {feat1.name} and {feat2.name}")
+        try:
+            result = feat1 / (feat2 + 1e-08)
+            tprint(f"✅ Ratio interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Ratio interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _difference_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Difference interaction."""
-        return feat1 - feat2
+        tprint(f"➖ Computing difference interaction between {feat1.name} and {feat2.name}")
+        try:
+            result = feat1 - feat2
+            tprint(f"✅ Difference interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Difference interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Sum interaction."""
-        return feat1 + feat2
+        tprint(f"➕ Computing sum interaction between {feat1.name} and {feat2.name}")
+        try:
+            result = feat1 + feat2
+            tprint(f"✅ Sum interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Sum interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _correlation_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Correlation interaction using VectorBT rolling optimizer."""
+        tprint(f"🔗 Computing correlation interaction between {feat1.name} and {feat2.name}")
         window = 20
-        if self.vectorization_manager:
-            return self.vectorization_manager.rolling_operation(
-                feat1, 'corr', window, other=feat2
-            )
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            return rolling_corr(feat1, feat2, window=window)
-        else:
-            return feat1.rolling(window=window).corr(feat2)
+        
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for correlation")
+                result = self.vectorization_manager.rolling_operation(
+                    feat1, 'corr', window, other=feat2
+                )
+                tprint(f"✅ Vectorization manager correlation completed: {len(result)} values")
+                return result
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for correlation")
+                result = rolling_corr(feat1, feat2, window=window)
+                tprint(f"✅ VectorBT correlation completed: {len(result)} values")
+                return result
+            else:
+                tprint("🔄 Using pandas fallback for correlation")
+                result = feat1.rolling(window=window).corr(feat2)
+                tprint(f"✅ Pandas correlation completed: {len(result)} values")
+                return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Correlation interaction failed: {e}")
+            # Return NaN series with same index
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _covariance_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Covariance interaction using VectorBT rolling optimizer."""
+        tprint(f"📊 Computing covariance interaction between {feat1.name} and {feat2.name}")
         window = 20
-        if self.vectorization_manager:
-            return self.vectorization_manager.rolling_operation(
-                feat1, 'cov', window, other=feat2
-            )
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            return rolling_cov(feat1, feat2, window=window)
-        else:
-            return feat1.rolling(window=window).cov(feat2)
+        
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for covariance")
+                result = self.vectorization_manager.rolling_operation(
+                    feat1, 'cov', window, other=feat2
+                )
+                tprint(f"✅ Vectorization manager covariance completed: {len(result)} values")
+                return result
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for covariance")
+                result = rolling_cov(feat1, feat2, window=window)
+                tprint(f"✅ VectorBT covariance completed: {len(result)} values")
+                return result
+            else:
+                tprint("🔄 Using pandas fallback for covariance")
+                result = feat1.rolling(window=window).cov(feat2)
+                tprint(f"✅ Pandas covariance completed: {len(result)} values")
+                return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Covariance interaction failed: {e}")
+            # Return NaN series with same index
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _zscore_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Z-score product interaction using VectorBT scaling."""
-        if self.vectorization_manager:
-            z1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            z2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            z1 = zscore(feat1)
-            z2 = zscore(feat2)
-        else:
-            z1 = (feat1 - feat1.mean()) / feat1.std()
-            z2 = (feat2 - feat2.mean()) / feat2.std()
+        tprint(f"📏 Computing z-score product interaction between {feat1.name} and {feat2.name}")
         
-        return z1 * z2
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for z-score scaling")
+                z1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                z2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager z-score scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for z-score scaling")
+                z1 = zscore(feat1)
+                z2 = zscore(feat2)
+                tprint("✅ VectorBT z-score scaling completed")
+            else:
+                tprint("🔄 Using manual z-score scaling")
+                z1 = (feat1 - feat1.mean()) / feat1.std()
+                z2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual z-score scaling completed")
+            
+            result = z1 * z2
+            tprint(f"✅ Z-score product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Z-score product interaction failed: {e}")
+            # Return NaN series with same index
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _rank_correlation_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Rank correlation interaction using VectorBT operations."""
+        tprint(f"📈 Computing rank correlation interaction between {feat1.name} and {feat2.name}")
         window = 20
-        if self.vectorization_manager:
-            rank1 = self.vectorization_manager.scale_data(feat1, method='rank')
-            rank2 = self.vectorization_manager.scale_data(feat2, method='rank')
-            return self.vectorization_manager.rolling_operation(
-                rank1, 'corr', window, other=rank2
-            )
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            rank1 = rank(feat1)
-            rank2 = rank(feat2)
-            return rolling_corr(rank1, rank2, window=window)
-        else:
-            rank1 = feat1.rank()
-            rank2 = feat2.rank()
-            return rank1.rolling(window=window).corr(rank2)
+        
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for rank correlation")
+                rank1 = self.vectorization_manager.scale_data(feat1, method='rank')
+                rank2 = self.vectorization_manager.scale_data(feat2, method='rank')
+                result = self.vectorization_manager.rolling_operation(
+                    rank1, 'corr', window, other=rank2
+                )
+                tprint("✅ Vectorization manager rank correlation completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for rank correlation")
+                rank1 = rank(feat1)
+                rank2 = rank(feat2)
+                result = rolling_corr(rank1, rank2, window=window)
+                tprint("✅ VectorBT rank correlation completed")
+            else:
+                tprint("🔄 Using pandas fallback for rank correlation")
+                rank1 = feat1.rank()
+                rank2 = feat2.rank()
+                result = rank1.rolling(window=window).corr(rank2)
+                tprint("✅ Pandas rank correlation completed")
+            
+            tprint(f"✅ Rank correlation interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Rank correlation interaction failed: {e}")
+            # Return NaN series with same index
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _quadratic_interaction(self, feat: pd.Series) -> pd.Series:
         """Quadratic interaction."""
-        return feat ** 2
+        tprint(f"📐 Computing quadratic interaction for {feat.name}")
+        try:
+            result = feat ** 2
+            tprint(f"✅ Quadratic interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Quadratic interaction failed: {e}")
+            return pd.Series(index=feat.index, dtype=float)
     
     
     def _skewness_interaction(self, feat: pd.Series) -> pd.Series:
         """Skewness interaction using VectorBT rolling optimizer."""
+        tprint(f"📊 Computing skewness interaction for {feat.name}")
         window = 20
-        if self.vectorization_manager:
-            return self.vectorization_manager.rolling_operation(feat, 'skew', window)
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            return rolling_skew(feat, window=window)
-        else:
-            return feat.rolling(window=window).skew()
+        
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for skewness")
+                result = self.vectorization_manager.rolling_operation(feat, 'skew', window)
+                tprint("✅ Vectorization manager skewness completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for skewness")
+                result = rolling_skew(feat, window=window)
+                tprint("✅ VectorBT skewness completed")
+            else:
+                tprint("🔄 Using pandas fallback for skewness")
+                result = feat.rolling(window=window).skew()
+                tprint("✅ Pandas skewness completed")
+            
+            tprint(f"✅ Skewness interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Skewness interaction failed: {e}")
+            return pd.Series(index=feat.index, dtype=float)
     
     def _kurtosis_interaction(self, feat: pd.Series) -> pd.Series:
         """Kurtosis interaction using VectorBT rolling optimizer."""
+        tprint(f"📈 Computing kurtosis interaction for {feat.name}")
         window = 20
-        if self.vectorization_manager:
-            return self.vectorization_manager.rolling_operation(feat, 'kurt', window)
-        elif self.enable_vectorbt and VECTORBT_AVAILABLE:
-            return rolling_kurt(feat, window=window)
-        else:
-            return feat.rolling(window=window).kurt()
+        
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for kurtosis")
+                result = self.vectorization_manager.rolling_operation(feat, 'kurt', window)
+                tprint("✅ Vectorization manager kurtosis completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for kurtosis")
+                result = rolling_kurt(feat, window=window)
+                tprint("✅ VectorBT kurtosis completed")
+            else:
+                tprint("🔄 Using pandas fallback for kurtosis")
+                result = feat.rolling(window=window).kurt()
+                tprint("✅ Pandas kurtosis completed")
+            
+            tprint(f"✅ Kurtosis interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Kurtosis interaction failed: {e}")
+            return pd.Series(index=feat.index, dtype=float)
     
     def _momentum_divergence_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Momentum divergence interaction."""
-        momentum1 = feat1.pct_change()
-        momentum2 = feat2.pct_change()
-        return momentum1 - momentum2
+        tprint(f"📉 Computing momentum divergence interaction between {feat1.name} and {feat2.name}")
+        try:
+            momentum1 = feat1.pct_change()
+            momentum2 = feat2.pct_change()
+            result = momentum1 - momentum2
+            tprint(f"✅ Momentum divergence interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Momentum divergence interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _momentum_convergence_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Momentum convergence interaction."""
-        momentum1 = feat1.pct_change()
-        momentum2 = feat2.pct_change()
-        return momentum1 * momentum2
+        tprint(f"📈 Computing momentum convergence interaction between {feat1.name} and {feat2.name}")
+        try:
+            momentum1 = feat1.pct_change()
+            momentum2 = feat2.pct_change()
+            result = momentum1 * momentum2
+            tprint(f"✅ Momentum convergence interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Momentum convergence interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     # Scaled/Normalized interaction implementations
     def _scaled_sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Sum of scaled/normalized features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        return scaled1 + scaled2
+        tprint(f"📊 Computing scaled sum interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for scaled sum")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for scaled sum")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for scaled sum")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            result = scaled1 + scaled2
+            tprint(f"✅ Scaled sum interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Scaled sum interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _scaled_difference_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Difference of scaled/normalized features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        return scaled1 - scaled2
+        tprint(f"📊 Computing scaled difference interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for scaled difference")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for scaled difference")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for scaled difference")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            result = scaled1 - scaled2
+            tprint(f"✅ Scaled difference interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Scaled difference interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Product of scaled/normalized features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        return scaled1 * scaled2
+        tprint(f"📊 Computing scaled product interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for scaled product")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for scaled product")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for scaled product")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            result = scaled1 * scaled2
+            tprint(f"✅ Scaled product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Scaled product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _scaled_ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Ratio of scaled/normalized features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        return scaled1 / (scaled2 + 1e-08)
+        tprint(f"📊 Computing scaled ratio interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for scaled ratio")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for scaled ratio")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for scaled ratio")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            result = scaled1 / (scaled2 + 1e-08)
+            tprint(f"✅ Scaled ratio interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Scaled ratio interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _log_scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of scaled product features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        product = scaled1 * scaled2
-        # Add small constant to avoid log(0)
-        return np.log(np.abs(product) + 1e-08)
+        tprint(f"📊 Computing log scaled product interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for log scaled product")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for log scaled product")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for log scaled product")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            product = scaled1 * scaled2
+            # Add small constant to avoid log(0)
+            result = np.log(np.abs(product) + 1e-08)
+            tprint(f"✅ Log scaled product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log scaled product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _log_scaled_sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of scaled sum features using VectorBT scaling."""
-        if self.vectorization_manager:
-            scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
-            scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
-        elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
-            scaled1 = zscore(feat1)
-            scaled2 = zscore(feat2)
-        else:
-            scaled1 = (feat1 - feat1.mean()) / feat1.std()
-            scaled2 = (feat2 - feat2.mean()) / feat2.std()
-        
-        sum_val = scaled1 + scaled2
-        # Add small constant to avoid log(0)
-        return np.log(np.abs(sum_val) + 1e-08)
+        tprint(f"📊 Computing log scaled sum interaction between {feat1.name} and {feat2.name}")
+        try:
+            if self.vectorization_manager:
+                tprint("🔄 Using vectorization manager for log scaled sum")
+                scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                tprint("✅ Vectorization manager scaling completed")
+            elif self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+                tprint("🔄 Using VectorBT for log scaled sum")
+                scaled1 = zscore(feat1)
+                scaled2 = zscore(feat2)
+                tprint("✅ VectorBT scaling completed")
+            else:
+                tprint("🔄 Using manual scaling for log scaled sum")
+                scaled1 = (feat1 - feat1.mean()) / feat1.std()
+                scaled2 = (feat2 - feat2.mean()) / feat2.std()
+                tprint("✅ Manual scaling completed")
+            
+            sum_val = scaled1 + scaled2
+            # Add small constant to avoid log(0)
+            result = np.log(np.abs(sum_val) + 1e-08)
+            tprint(f"✅ Log scaled sum interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log scaled sum interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _minmax_scaled_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Product of min-max scaled features using VectorBT scaling."""
@@ -1653,98 +1890,168 @@ class DataDrivenInteractionGenerator:
     # Log multiplication interaction implementations
     def _log_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of product of features."""
-        product = feat1 * feat2
-        # Add small constant to avoid log(0) and handle negative values
-        return np.log(np.abs(product) + 1e-08)
+        tprint(f"📊 Computing log product interaction between {feat1.name} and {feat2.name}")
+        try:
+            product = feat1 * feat2
+            # Add small constant to avoid log(0) and handle negative values
+            result = np.log(np.abs(product) + 1e-08)
+            tprint(f"✅ Log product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _log_ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of ratio of features."""
-        ratio = feat1 / (feat2 + 1e-08)
-        # Add small constant to avoid log(0) and handle negative values
-        return np.log(np.abs(ratio) + 1e-08)
+        tprint(f"📊 Computing log ratio interaction between {feat1.name} and {feat2.name}")
+        try:
+            ratio = feat1 / (feat2 + 1e-08)
+            # Add small constant to avoid log(0) and handle negative values
+            result = np.log(np.abs(ratio) + 1e-08)
+            tprint(f"✅ Log ratio interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log ratio interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _log_abs_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of absolute product of features."""
-        abs_product = np.abs(feat1 * feat2)
-        # Add small constant to avoid log(0)
-        return np.log(abs_product + 1e-08)
+        tprint(f"📊 Computing log abs product interaction between {feat1.name} and {feat2.name}")
+        try:
+            abs_product = np.abs(feat1 * feat2)
+            # Add small constant to avoid log(0)
+            result = np.log(abs_product + 1e-08)
+            tprint(f"✅ Log abs product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log abs product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     def _log_sqrt_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
         """Log of square root of product of features."""
-        product = feat1 * feat2
-        # Ensure non-negative for square root
-        sqrt_product = np.sqrt(np.abs(product))
-        # Add small constant to avoid log(0)
-        return np.log(sqrt_product + 1e-08)
+        tprint(f"📊 Computing log sqrt product interaction between {feat1.name} and {feat2.name}")
+        try:
+            product = feat1 * feat2
+            # Ensure non-negative for square root
+            sqrt_product = np.sqrt(np.abs(product))
+            # Add small constant to avoid log(0)
+            result = np.log(sqrt_product + 1e-08)
+            tprint(f"✅ Log sqrt product interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log sqrt product interaction failed: {e}")
+            return pd.Series(index=feat1.index, dtype=float)
     
     # Cache management methods
     def _generate_cache_key(self, feature_combo: Tuple[str, ...], interaction_type: str) -> str:
         """Generate cache key for operation."""
-        import hashlib
-        combo_str = '_'.join(sorted(feature_combo))
-        return hashlib.md5(f"{interaction_type}_{combo_str}".encode()).hexdigest()[:16]
+        tprint(f"🔑 Generating cache key for {interaction_type} with {feature_combo}")
+        try:
+            import hashlib
+            combo_str = '_'.join(sorted(feature_combo))
+            key = hashlib.md5(f"{interaction_type}_{combo_str}".encode()).hexdigest()[:16]
+            tprint(f"✅ Cache key generated: {key}")
+            return key
+        except Exception as e:
+            tprint(f"❌ ERROR: Cache key generation failed: {e}")
+            return f"{interaction_type}_{'_'.join(feature_combo)}"
     
     def _get_from_cache(self, cache_key: str) -> Optional[InteractionResult]:
         """Get result from cache."""
+        tprint(f"🔍 Checking cache for key: {cache_key}")
         if not self._cache_enabled:
+            tprint("⚠️ Cache disabled, returning None")
             return None
-        return self._result_cache.get(cache_key)
+        result = self._result_cache.get(cache_key)
+        if result:
+            tprint(f"✅ Cache hit for key: {cache_key}")
+        else:
+            tprint(f"❌ Cache miss for key: {cache_key}")
+        return result
     
     def _put_in_cache(self, cache_key: str, result: InteractionResult):
         """Put result in cache."""
+        tprint(f"💾 Storing result in cache with key: {cache_key}")
         if not self._cache_enabled:
+            tprint("⚠️ Cache disabled, not storing")
             return
         
-        # Limit cache size
-        if len(self._result_cache) >= self.config.cache_size:
-            # Remove oldest entries (simple FIFO)
-            oldest_key = next(iter(self._result_cache))
-            del self._result_cache[oldest_key]
-        
-        self._result_cache[cache_key] = result
+        try:
+            # Limit cache size
+            if len(self._result_cache) >= self.config.cache_size:
+                # Remove oldest entries (simple FIFO)
+                oldest_key = next(iter(self._result_cache))
+                del self._result_cache[oldest_key]
+                tprint(f"🗑️ Removed oldest cache entry: {oldest_key}")
+            
+            self._result_cache[cache_key] = result
+            tprint(f"✅ Result stored in cache: {len(self._result_cache)} entries")
+        except Exception as e:
+            tprint(f"❌ ERROR: Cache storage failed: {e}")
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
-        stats = self.performance_stats.copy()
-        
-        # Add VectorBT utilities stats
-        if self.rolling_optimizer:
-            rolling_stats = self.rolling_optimizer.get_performance_stats()
-            stats.update(rolling_stats)
-        
-        if self.vectorization_manager:
-            vectorization_stats = self.vectorization_manager.get_performance_stats()
-            stats.update(vectorization_stats)
-        
-        stats.update({
-            'cache_hit_rate': (stats['cached_operations'] / max(stats['total_interactions_generated'], 1)) * 100,
-            'average_processing_time_per_interaction': (
-                stats['total_processing_time'] / max(stats['total_interactions_generated'], 1)
-            )
-        })
-        
-        return stats
+        tprint("📊 Collecting performance statistics...")
+        try:
+            stats = self.performance_stats.copy()
+            
+            # Add VectorBT utilities stats
+            if self.rolling_optimizer:
+                tprint("🔄 Collecting rolling optimizer stats")
+                rolling_stats = self.rolling_optimizer.get_performance_stats()
+                stats.update(rolling_stats)
+                tprint("✅ Rolling optimizer stats collected")
+            
+            if self.vectorization_manager:
+                tprint("🔄 Collecting vectorization manager stats")
+                vectorization_stats = self.vectorization_manager.get_performance_stats()
+                stats.update(vectorization_stats)
+                tprint("✅ Vectorization manager stats collected")
+            
+            stats.update({
+                'cache_hit_rate': (stats['cached_operations'] / max(stats['total_interactions_generated'], 1)) * 100,
+                'average_processing_time_per_interaction': (
+                    stats['total_processing_time'] / max(stats['total_interactions_generated'], 1)
+                )
+            })
+            
+            tprint(f"✅ Performance stats collected: {len(stats)} metrics")
+            return stats
+        except Exception as e:
+            tprint(f"❌ ERROR: Performance stats collection failed: {e}")
+            return self.performance_stats.copy()
     
     def reset_stats(self):
         """Reset all performance statistics."""
-        self.performance_stats = {
-            'total_interactions_generated': 0,
-            'vectorbt_operations': 0,
-            'pandas_fallbacks': 0,
-            'gpu_operations': 0,
-            'batch_operations': 0,
-            'cached_operations': 0,
-            'memory_optimizations': 0,
-            'total_processing_time': 0.0,
-            'average_utility_score': 0.0,
-            'memory_savings': 0.0
-        }
-        
-        if self.rolling_optimizer:
-            self.rolling_optimizer.reset_stats()
-        if self.vectorization_manager:
-            self.vectorization_manager.reset_stats()
-        self._result_cache.clear()
+        tprint("🔄 Resetting performance statistics...")
+        try:
+            self.performance_stats = {
+                'total_interactions_generated': 0,
+                'vectorbt_operations': 0,
+                'pandas_fallbacks': 0,
+                'gpu_operations': 0,
+                'batch_operations': 0,
+                'cached_operations': 0,
+                'memory_optimizations': 0,
+                'total_processing_time': 0.0,
+                'average_utility_score': 0.0,
+                'memory_savings': 0.0
+            }
+            
+            if self.rolling_optimizer:
+                tprint("🔄 Resetting rolling optimizer stats")
+                self.rolling_optimizer.reset_stats()
+                tprint("✅ Rolling optimizer stats reset")
+            
+            if self.vectorization_manager:
+                tprint("🔄 Resetting vectorization manager stats")
+                self.vectorization_manager.reset_stats()
+                tprint("✅ Vectorization manager stats reset")
+            
+            self._result_cache.clear()
+            tprint("✅ All performance statistics reset")
+        except Exception as e:
+            tprint(f"❌ ERROR: Stats reset failed: {e}")
 
 
 class InteractionBatchProcessor(BatchProcessor):
@@ -1752,18 +2059,25 @@ class InteractionBatchProcessor(BatchProcessor):
     
     def __init__(self, interaction_type: InteractionType, features: pd.DataFrame, 
                  targets: Optional[pd.Series], vectorization_manager: Optional[UnifiedVectorizationManager]):
+        tprint(f"🔄 Initializing InteractionBatchProcessor for {interaction_type.name}")
         self.interaction_type = interaction_type
         self.features = features
         self.targets = targets
         self.vectorization_manager = vectorization_manager
+        tprint(f"✅ InteractionBatchProcessor initialized: {len(features.columns)} features")
     
     def process_batch(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """Process a batch of feature combinations."""
+        tprint(f"🔄 Processing batch with {interaction_type.name}")
         combinations = kwargs.get('combinations', [])
         results = []
         
-        for combo in combinations:
+        tprint(f"📊 Processing {len(combinations)} combinations")
+        
+        for i, combo in enumerate(combinations):
             try:
+                tprint(f"🔧 Processing combination {i+1}/{len(combinations)}: {combo}")
+                
                 # Extract feature data
                 feature_data = [self.features[feat] for feat in combo]
                 
@@ -1794,26 +2108,41 @@ class InteractionBatchProcessor(BatchProcessor):
                             'memory_usage': result_series.memory_usage(deep=True) / (1024 * 1024),
                             'optimization_method': 'batch'
                         })
+                        tprint(f"✅ Added result: {feature_name} (utility: {utility_score:.3f})")
+                    else:
+                        tprint(f"⏹️ Skipped {combo}: utility {utility_score:.3f} < 0.1")
+                else:
+                    tprint(f"⏹️ Skipped {combo}: empty result")
             except Exception as e:
+                tprint(f"❌ Batch processing failed for {combo}: {e}")
                 logger.warning(f"Batch processing failed for {combo}: {e}")
                 continue
         
+        tprint(f"✅ Batch processing completed: {len(results)} results")
         return pd.DataFrame(results) if results else pd.DataFrame()
     
     def _calculate_utility_score(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
         """Calculate utility score for a feature."""
+        tprint(f"📊 Calculating utility score for series with {len(series)} values")
         try:
             if targets is None:
-                return float(series.var())
+                score = float(series.var())
+                tprint(f"✅ Variance-based utility score: {score:.3f}")
+                return score
             
             correlation = series.corr(targets)
             if pd.isna(correlation):
+                tprint("⚠️ NaN correlation, returning 0.0")
                 return 0.0
             
-            return abs(correlation)
-        except:
+            score = abs(correlation)
+            tprint(f"✅ Correlation-based utility score: {score:.3f}")
+            return score
+        except Exception as e:
+            tprint(f"❌ Utility score calculation failed: {e}")
             return 0.0
     
     def get_required_columns(self) -> List[str]:
         """Get required columns for processing."""
+        tprint(f"📋 Getting required columns: {len(self.features.columns)} features")
         return list(self.features.columns)

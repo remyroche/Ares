@@ -16,6 +16,7 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -510,6 +511,10 @@ class FractionalDifferentiationPipeline:
         """Perform KPSS test for stationarity."""
         try:
             from statsmodels.tsa.stattools import kpss
+            return kpss(data, regression='c', nlags='auto')
+        except ImportError:
+            # Fallback if statsmodels not available
+            return None
 
 # VectorBT imports for native optimization
 try:
@@ -544,25 +549,30 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            # Remove NaN values
-            clean_series = series[~np.isnan(series)]
-            
-            if len(clean_series) < 10:
-                return 0.0
-            
-            # Perform KPSS test
-            result = kpss(clean_series, regression='c')
-            p_value = result[1]
-            
-            return p_value
-            
-        except ImportError:
-            self.logger.warning("⚠️ statsmodels not available, using mock KPSS test")
-            return np.random.uniform(0.05, 0.1)
-        except Exception as e:
-            self.logger.warning(f"⚠️ KPSS test failed: {e}")
+
+def _kpss_test_fallback(series: np.ndarray) -> float:
+    """Fallback KPSS test implementation."""
+    try:
+        from statsmodels.tsa.stattools import kpss
+        
+        # Remove NaN values
+        clean_series = series[~np.isnan(series)]
+        
+        if len(clean_series) < 10:
             return 0.0
+        
+        # Perform KPSS test
+        result = kpss(clean_series, regression='c')
+        p_value = result[1]
+        
+        return p_value
+        
+    except ImportError:
+        # Fallback if statsmodels not available
+        return 0.0
+    except Exception as e:
+        # Fallback for any other error
+        return 0.0
     
     def _variance_ratio_test(self, series: np.ndarray) -> float:
         """Calculate variance ratio for stationarity testing."""

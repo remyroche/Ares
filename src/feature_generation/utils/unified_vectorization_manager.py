@@ -24,6 +24,25 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import warnings
 
+# Enhanced logging with tprint
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint_success, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback functions for when tprint is not available
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
+    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
+
 # VectorBT imports
 try:
     import vectorbt as vbt
@@ -66,10 +85,60 @@ except ImportError:
     cp = None
 
 # Import our optimization modules
-from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-from ..core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig
+try:
+    from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+except ImportError:
+    # Fallback for direct import
+    from vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+
+try:
+    from ..core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig
+except ImportError:
+    # Fallback for direct import
+    VectorBTBatchProcessor = None
+    BatchProcessingConfig = None
 
 logger = logging.getLogger(__name__)
+
+# Enhanced error handling with fast failing
+class UnifiedVectorizationError(Exception):
+    """Custom exception for unified vectorization errors with detailed context."""
+    def __init__(self, message: str, operation: str = None, data_shape: tuple = None, 
+                 config: str = None, original_error: Exception = None):
+        self.operation = operation
+        self.data_shape = data_shape
+        self.config = config
+        self.original_error = original_error
+        
+        # Build detailed error message
+        context_parts = []
+        if operation:
+            context_parts.append(f"Operation: {operation}")
+        if data_shape:
+            context_parts.append(f"Data shape: {data_shape}")
+        if config:
+            context_parts.append(f"Config: {config}")
+        
+        context_str = ", ".join(context_parts)
+        full_message = f"{message}"
+        if context_str:
+            full_message += f" (Context: {context_str})"
+        if original_error:
+            full_message += f" (Original: {str(original_error)})"
+            
+        super().__init__(full_message)
+
+class VectorizationValidationError(Exception):
+    """Custom exception for vectorization validation errors."""
+    def __init__(self, message: str, validation_type: str = None, value: Any = None):
+        self.validation_type = validation_type
+        self.value = value
+        full_message = f"{message}"
+        if validation_type:
+            full_message += f" (Validation: {validation_type})"
+        if value is not None:
+            full_message += f" (Value: {value})"
+        super().__init__(full_message)
 
 
 @dataclass
@@ -120,36 +189,73 @@ class UnifiedVectorizationManager:
     - Parallel processing
     """
     
-    def __init__(self, config: Optional[VectorizationConfig] = None):
+    def __init__(self, config: Optional[VectorizationConfig] = None, 
+                 fast_fail: bool = True, enable_logging: bool = True):
         """
-        Initialize unified vectorization manager.
+        Initialize unified vectorization manager with enhanced logging and fast failing.
         
         Args:
             config: Vectorization configuration
+            fast_fail: Enable fast failing instead of silent fallbacks
+            enable_logging: Enable comprehensive logging with tprint
         """
+        tprint_info("🚀 Initializing UnifiedVectorizationManager with enhanced logging and fast failing")
+        
         self.config = config or VectorizationConfig()
+        self.fast_fail = fast_fail
+        self.enable_logging = enable_logging
         
-        # Initialize components
-        self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-            enable_gpu=self.config.enable_gpu,
-            enable_parallel=self.config.enable_parallel,
-            memory_efficient=self.config.memory_efficient,
-            chunk_size=self.config.chunk_size
-        )
+        # Validate configuration
+        self._validate_config(self.config)
         
-        # Initialize batch processor
-        batch_config = BatchProcessingConfig(
-            batch_size=self.config.batch_size,
-            enable_gpu=self.config.enable_gpu,
-            enable_parallel=self.config.enable_parallel,
-            max_memory_gb=self.config.max_memory_gb,
-            chunk_size=self.config.chunk_size,
-            enable_memory_optimization=self.config.memory_efficient,
-            enable_progress_tracking=self.config.enable_monitoring
-        )
-        self.batch_processor = VectorBTBatchProcessor(batch_config)
+        # Initialize components with error handling
+        tprint_info("🔧 Initializing vectorization components")
+        try:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.config.enable_gpu,
+                enable_parallel=self.config.enable_parallel,
+                memory_efficient=self.config.memory_efficient,
+                chunk_size=self.config.chunk_size,
+                fast_fail=self.fast_fail,
+                enable_logging=self.enable_logging
+            )
+            tprint_success("✅ Rolling optimizer initialized")
+        except Exception as e:
+            error_msg = f"Failed to initialize rolling optimizer: {e}"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise UnifiedVectorizationError(error_msg, operation="initialization", original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, continuing without rolling optimizer")
+                self.rolling_optimizer = None
         
-        # Performance tracking
+        # Initialize batch processor with error handling
+        if VectorBTBatchProcessor is not None and BatchProcessingConfig is not None:
+            try:
+                batch_config = BatchProcessingConfig(
+                    batch_size=self.config.batch_size,
+                    enable_gpu=self.config.enable_gpu,
+                    enable_parallel=self.config.enable_parallel,
+                    max_memory_gb=self.config.max_memory_gb,
+                    chunk_size=self.config.chunk_size,
+                    enable_memory_optimization=self.config.memory_efficient,
+                    enable_progress_tracking=self.config.enable_monitoring
+                )
+                self.batch_processor = VectorBTBatchProcessor(batch_config)
+                tprint_success("✅ Batch processor initialized")
+            except Exception as e:
+                error_msg = f"Failed to initialize batch processor: {e}"
+                tprint_error(f"❌ {error_msg}")
+                if self.fast_fail:
+                    raise UnifiedVectorizationError(error_msg, operation="initialization", original_error=e)
+                else:
+                    tprint_warning("⚠️ Fast fail disabled, continuing without batch processor")
+                    self.batch_processor = None
+        else:
+            tprint_warning("⚠️ VectorBTBatchProcessor not available, continuing without batch processor")
+            self.batch_processor = None
+        
+        # Enhanced performance tracking with error tracking
         self.performance_stats = {
             'total_operations': 0,
             'vectorbt_operations': 0,
@@ -162,7 +268,10 @@ class UnifiedVectorizationManager:
             'total_time': 0.0,
             'memory_savings': 0.0,
             'cache_hits': 0,
-            'cache_misses': 0
+            'cache_misses': 0,
+            'errors': 0,
+            'fast_failures': 0,
+            'validation_errors': 0
         }
         
         # Cache for computed results
@@ -170,15 +279,13 @@ class UnifiedVectorizationManager:
         self._cache_enabled = True
         self._max_cache_size = 1000
         
-        logger.info(f"UnifiedVectorizationManager initialized: "
-                   f"VectorBT={self.config.enable_vectorbt}, "
-                   f"GPU={self.config.enable_gpu}, "
-                   f"Memory={self.config.memory_efficient}")
+        tprint_success(f"✅ UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}, FastFail={self.fast_fail}")
+        logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
     
     def rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
                          operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
-        Perform optimized rolling operation.
+        Perform optimized rolling operation with enhanced logging and validation.
         
         Args:
             data: Input data
@@ -193,17 +300,36 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['rolling_operations'] += 1
         
+        tprint_debug(f"🔄 Starting rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, operation, window)
+        
         # Check cache first
         if self._cache_enabled:
             cache_key = self._generate_cache_key(data, operation, window, **kwargs)
             cached_result = self._get_from_cache(cache_key)
             if cached_result is not None:
                 self.performance_stats['cache_hits'] += 1
+                tprint_debug("💾 Cache hit for rolling operation")
                 return cached_result
             self.performance_stats['cache_misses'] += 1
+            tprint_debug("💾 Cache miss for rolling operation")
+        
+        # Check if rolling optimizer is available
+        if self.rolling_optimizer is None:
+            error_msg = "Rolling optimizer not available"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise UnifiedVectorizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using pandas fallback")
+                return self._pandas_fallback_rolling(data, operation, window, **kwargs)
         
         try:
-            # Use VectorBT rolling optimizer
+            # Use VectorBT rolling optimizer with detailed logging
+            tprint_debug(f"🎯 Executing rolling {operation} with VectorBT optimizer")
+            
             if operation == 'mean':
                 result = self.rolling_optimizer.rolling_mean(data, window, **kwargs)
             elif operation == 'std':
@@ -233,7 +359,13 @@ class UnifiedVectorizationManager:
                 func = kwargs.pop('func', None)
                 result = self.rolling_optimizer.rolling_apply(data, func, window, **kwargs)
             else:
-                raise ValueError(f"Unsupported rolling operation: {operation}")
+                error_msg = f"Unsupported rolling operation: {operation}"
+                tprint_error(f"❌ {error_msg}")
+                if self.fast_fail:
+                    raise UnifiedVectorizationError(error_msg, operation=operation)
+                else:
+                    tprint_warning("⚠️ Fast fail disabled, using pandas fallback")
+                    return self._pandas_fallback_rolling(data, operation, window, **kwargs)
             
             # Update stats
             rolling_stats = self.rolling_optimizer.get_performance_stats()
@@ -247,21 +379,33 @@ class UnifiedVectorizationManager:
             # Cache result
             if self._cache_enabled:
                 self._put_in_cache(cache_key, result)
+                tprint_debug("💾 Result cached successfully")
             
+            tprint_success(f"✅ Rolling {operation} completed successfully")
             return result
             
         except Exception as e:
-            logger.warning(f"Rolling operation {operation} failed: {e}, using pandas fallback")
-            self.performance_stats['pandas_fallbacks'] += 1
-            return self._pandas_fallback_rolling(data, operation, window, **kwargs)
+            error_msg = f"Rolling operation {operation} failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            
+            if self.fast_fail:
+                self.performance_stats['fast_failures'] += 1
+                raise UnifiedVectorizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using pandas fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._pandas_fallback_rolling(data, operation, window, **kwargs)
         
         finally:
-            self.performance_stats['total_time'] += time.time() - start_time
+            execution_time = time.time() - start_time
+            self.performance_stats['total_time'] += execution_time
+            tprint_performance(f"Rolling {operation}", execution_time)
     
     def scale_data(self, data: Union[pd.Series, pd.DataFrame], 
                    method: str = 'zscore', **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
-        Scale data using VectorBT scaling functions.
+        Scale data using VectorBT scaling functions with enhanced logging and validation.
         
         Args:
             data: Input data
@@ -275,10 +419,18 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['scaling_operations'] += 1
         
+        tprint_debug(f"🔄 Starting data scaling: method={method}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_scaling_inputs(data, method)
+        
         if not VECTORBT_AVAILABLE or not self.config.enable_vectorbt:
+            tprint_warning("⚠️ VectorBT not available, using pandas fallback for scaling")
             return self._pandas_fallback_scaling(data, method, **kwargs)
         
         try:
+            tprint_debug(f"🎯 Executing {method} scaling with VectorBT")
+            
             if method == 'zscore':
                 result = zscore(data, **kwargs)
             elif method == 'minmax':
@@ -294,22 +446,39 @@ class UnifiedVectorizationManager:
             elif method == 'clip':
                 result = clip(data, **kwargs)
             else:
-                raise ValueError(f"Unsupported scaling method: {method}")
+                error_msg = f"Unsupported scaling method: {method}"
+                tprint_error(f"❌ {error_msg}")
+                if self.fast_fail:
+                    raise UnifiedVectorizationError(error_msg, operation="scaling", original_error=ValueError(error_msg))
+                else:
+                    tprint_warning("⚠️ Fast fail disabled, using pandas fallback")
+                    return self._pandas_fallback_scaling(data, method, **kwargs)
             
             self.performance_stats['vectorbt_operations'] += 1
+            tprint_success(f"✅ {method} scaling completed successfully")
             return result
             
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using pandas fallback")
-            return self._pandas_fallback_scaling(data, method, **kwargs)
+            error_msg = f"VectorBT scaling failed for {method}"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            
+            if self.fast_fail:
+                self.performance_stats['fast_failures'] += 1
+                raise UnifiedVectorizationError(error_msg, operation="scaling", data_shape=data.shape if hasattr(data, 'shape') else None, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using pandas fallback")
+                return self._pandas_fallback_scaling(data, method, **kwargs)
         
         finally:
-            self.performance_stats['total_time'] += time.time() - start_time
+            execution_time = time.time() - start_time
+            self.performance_stats['total_time'] += execution_time
+            tprint_performance(f"Scaling {method}", execution_time)
     
     def batch_process_features(self, data: pd.DataFrame, 
                              feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
-        Process multiple features in batch with optimization.
+        Process multiple features in batch with optimization and enhanced logging.
         
         Args:
             data: Input OHLCV data
@@ -322,14 +491,41 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['batch_operations'] += 1
         
+        tprint_info(f"🔄 Starting batch feature processing: {len(feature_configs)} features, data_shape={data.shape}")
+        
+        # Validate inputs
+        if not isinstance(data, pd.DataFrame):
+            error_msg = "Data must be a pandas DataFrame"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise UnifiedVectorizationError(error_msg, operation="batch_processing", data_shape=data.shape if hasattr(data, 'shape') else None)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, returning empty DataFrame")
+                return pd.DataFrame()
+        
+        if not isinstance(feature_configs, list) or len(feature_configs) == 0:
+            error_msg = "feature_configs must be a non-empty list"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise UnifiedVectorizationError(error_msg, operation="batch_processing")
+            else:
+                tprint_warning("⚠️ Fast fail disabled, returning empty DataFrame")
+                return pd.DataFrame()
+        
         try:
             # Use VectorBT batch processor
             results = {}
+            successful_features = 0
+            failed_features = 0
             
-            for config in feature_configs:
-                feature_name = config['name']
+            tprint_debug(f"🎯 Processing {len(feature_configs)} features")
+            
+            for i, config in enumerate(feature_configs):
+                feature_name = config.get('name', f'feature_{i}')
                 feature_type = config.get('type', 'rolling')
                 params = config.get('params', {})
+                
+                tprint_debug(f"🔄 Processing feature {i+1}/{len(feature_configs)}: {feature_name} ({feature_type})")
                 
                 try:
                     if feature_type == 'rolling':
@@ -337,33 +533,108 @@ class UnifiedVectorizationManager:
                         window = params.get('window', 20)
                         column = params.get('column', 'close')
                         
-                        if column in data.columns:
-                            results[feature_name] = self.rolling_operation(
-                                data[column], operation, window, **params
-                            )
+                        if column not in data.columns:
+                            error_msg = f"Column '{column}' not found in data. Available: {list(data.columns)}"
+                            tprint_error(f"❌ {error_msg}")
+                            if self.fast_fail:
+                                raise UnifiedVectorizationError(error_msg, operation="batch_processing", data_shape=data.shape)
+                            else:
+                                tprint_warning("⚠️ Fast fail disabled, skipping feature")
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                                failed_features += 1
+                                continue
+                        
+                        # Remove operation and window from params to avoid conflicts
+                        rolling_params = {k: v for k, v in params.items() if k not in ['operation', 'window', 'column']}
+                        results[feature_name] = self.rolling_operation(
+                            data[column], operation, window, **rolling_params
+                        )
+                        successful_features += 1
+                        tprint_success(f"✅ Feature {feature_name} completed successfully")
                     
                     elif feature_type == 'scaling':
                         method = params.get('method', 'zscore')
                         column = params.get('column', 'close')
                         
-                        if column in data.columns:
-                            results[feature_name] = self.scale_data(
-                                data[column], method, **params
-                            )
+                        if column not in data.columns:
+                            error_msg = f"Column '{column}' not found in data. Available: {list(data.columns)}"
+                            tprint_error(f"❌ {error_msg}")
+                            if self.fast_fail:
+                                raise UnifiedVectorizationError(error_msg, operation="batch_processing", data_shape=data.shape)
+                            else:
+                                tprint_warning("⚠️ Fast fail disabled, skipping feature")
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                                failed_features += 1
+                                continue
+                        
+                        # Remove method and column from params to avoid conflicts
+                        scaling_params = {k: v for k, v in params.items() if k not in ['method', 'column']}
+                        results[feature_name] = self.scale_data(
+                            data[column], method, **scaling_params
+                        )
+                        successful_features += 1
+                        tprint_success(f"✅ Feature {feature_name} completed successfully")
                     
                     elif feature_type == 'custom':
                         func = params.get('function')
-                        if callable(func):
-                            results[feature_name] = func(data, **params)
+                        if not callable(func):
+                            error_msg = f"Custom function for {feature_name} is not callable"
+                            tprint_error(f"❌ {error_msg}")
+                            if self.fast_fail:
+                                raise UnifiedVectorizationError(error_msg, operation="batch_processing")
+                            else:
+                                tprint_warning("⚠️ Fast fail disabled, skipping feature")
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                                failed_features += 1
+                                continue
+                        
+                        results[feature_name] = func(data, **params)
+                        successful_features += 1
+                        tprint_success(f"✅ Feature {feature_name} completed successfully")
+                    
+                    else:
+                        error_msg = f"Unsupported feature type: {feature_type}"
+                        tprint_error(f"❌ {error_msg}")
+                        if self.fast_fail:
+                            raise UnifiedVectorizationError(error_msg, operation="batch_processing")
+                        else:
+                            tprint_warning("⚠️ Fast fail disabled, skipping feature")
+                            results[feature_name] = pd.Series(np.nan, index=data.index)
+                            failed_features += 1
+                            continue
                     
                 except Exception as e:
-                    logger.warning(f"Feature {feature_name} failed: {e}")
-                    results[feature_name] = pd.Series(np.nan, index=data.index)
+                    error_msg = f"Feature {feature_name} failed: {e}"
+                    tprint_error(f"❌ {error_msg}")
+                    self.performance_stats['errors'] += 1
+                    
+                    if self.fast_fail:
+                        self.performance_stats['fast_failures'] += 1
+                        raise UnifiedVectorizationError(error_msg, operation="batch_processing", original_error=e)
+                    else:
+                        tprint_warning("⚠️ Fast fail disabled, using NaN for failed feature")
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+                        failed_features += 1
             
+            tprint_success(f"✅ Batch processing completed: {successful_features} successful, {failed_features} failed")
             return pd.DataFrame(results, index=data.index)
             
+        except Exception as e:
+            error_msg = f"Batch feature processing failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            self.performance_stats['errors'] += 1
+            
+            if self.fast_fail:
+                self.performance_stats['fast_failures'] += 1
+                raise UnifiedVectorizationError(error_msg, operation="batch_processing", data_shape=data.shape, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, returning empty DataFrame")
+                return pd.DataFrame()
+            
         finally:
-            self.performance_stats['total_time'] += time.time() - start_time
+            execution_time = time.time() - start_time
+            self.performance_stats['total_time'] += execution_time
+            tprint_performance(f"Batch processing ({len(feature_configs)} features)", execution_time)
     
     def optimize_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
         """
@@ -532,8 +803,82 @@ class UnifiedVectorizationManager:
         
         return stats
     
+    def _validate_config(self, config: VectorizationConfig):
+        """Validate configuration parameters with detailed error reporting."""
+        tprint_debug("🔍 Validating UnifiedVectorizationManager configuration")
+        
+        if not isinstance(config, VectorizationConfig):
+            raise VectorizationValidationError("Config must be a VectorizationConfig instance", "type_check", type(config))
+        
+        if not isinstance(config.enable_vectorbt, bool):
+            raise VectorizationValidationError("enable_vectorbt must be a boolean", "type_check", config.enable_vectorbt)
+        
+        if not isinstance(config.enable_gpu, bool):
+            raise VectorizationValidationError("enable_gpu must be a boolean", "type_check", config.enable_gpu)
+        
+        if not isinstance(config.memory_efficient, bool):
+            raise VectorizationValidationError("memory_efficient must be a boolean", "type_check", config.memory_efficient)
+        
+        if not isinstance(config.chunk_size, int) or config.chunk_size <= 0:
+            raise VectorizationValidationError("chunk_size must be a positive integer", "range_check", config.chunk_size)
+        
+        if not isinstance(config.batch_size, int) or config.batch_size <= 0:
+            raise VectorizationValidationError("batch_size must be a positive integer", "range_check", config.batch_size)
+        
+        if config.max_memory_gb <= 0:
+            raise VectorizationValidationError("max_memory_gb must be positive", "range_check", config.max_memory_gb)
+        
+        tprint_success("✅ Configuration validated successfully")
+    
+    def _validate_rolling_inputs(self, data: Union[pd.Series, pd.DataFrame], 
+                                operation: str, window: int):
+        """Validate rolling operation inputs with comprehensive checks."""
+        tprint_debug(f"🔍 Validating rolling inputs for {operation}")
+        
+        # Check data type
+        if not isinstance(data, (pd.Series, pd.DataFrame)):
+            raise VectorizationValidationError("Data must be a pandas Series or DataFrame", "type_check", type(data))
+        
+        # Check data is not empty
+        if len(data) == 0:
+            raise VectorizationValidationError("Data cannot be empty", "empty_check", len(data))
+        
+        # Check window size
+        if not isinstance(window, int) or window <= 0:
+            raise VectorizationValidationError("Window must be a positive integer", "range_check", window)
+        
+        if window > len(data):
+            raise VectorizationValidationError(f"Window size ({window}) cannot be larger than data length ({len(data)})", "range_check", window)
+        
+        # Check for supported operations
+        supported_operations = ['mean', 'std', 'var', 'min', 'max', 'sum', 'quantile', 'skew', 'kurt', 'corr', 'cov', 'apply']
+        if operation not in supported_operations:
+            raise VectorizationValidationError(f"Unsupported operation: {operation}. Supported: {supported_operations}", "operation_check", operation)
+        
+        tprint_success(f"✅ Rolling inputs validated for {operation}")
+    
+    def _validate_scaling_inputs(self, data: Union[pd.Series, pd.DataFrame], method: str):
+        """Validate scaling operation inputs."""
+        tprint_debug(f"🔍 Validating scaling inputs for {method}")
+        
+        # Check data type
+        if not isinstance(data, (pd.Series, pd.DataFrame)):
+            raise VectorizationValidationError("Data must be a pandas Series or DataFrame", "type_check", type(data))
+        
+        # Check data is not empty
+        if len(data) == 0:
+            raise VectorizationValidationError("Data cannot be empty", "empty_check", len(data))
+        
+        # Check for supported methods
+        supported_methods = ['zscore', 'minmax', 'robust', 'quantile', 'winsorize', 'rank', 'clip']
+        if method not in supported_methods:
+            raise VectorizationValidationError(f"Unsupported scaling method: {method}. Supported: {supported_methods}", "method_check", method)
+        
+        tprint_success(f"✅ Scaling inputs validated for {method}")
+
     def reset_stats(self):
         """Reset all performance statistics."""
+        tprint_info("🔄 Resetting UnifiedVectorizationManager performance statistics")
         self.performance_stats = {
             'total_operations': 0,
             'vectorbt_operations': 0,
@@ -546,11 +891,16 @@ class UnifiedVectorizationManager:
             'total_time': 0.0,
             'memory_savings': 0.0,
             'cache_hits': 0,
-            'cache_misses': 0
+            'cache_misses': 0,
+            'errors': 0,
+            'fast_failures': 0,
+            'validation_errors': 0
         }
         
-        self.rolling_optimizer.reset_stats()
+        if self.rolling_optimizer:
+            self.rolling_optimizer.reset_stats()
         self._result_cache.clear()
+        tprint_success("✅ Performance statistics reset")
     
     @contextmanager
     def performance_monitoring(self, operation_name: str):

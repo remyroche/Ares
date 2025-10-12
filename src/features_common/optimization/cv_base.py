@@ -56,6 +56,9 @@ class BaseCVSplitter:
             use_vectorbt_optimization: Whether to use VectorBT optimization for any rolling operations
             enable_gpu: Whether to enable GPU acceleration
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseCVSplitter] Initializing with n_folds={n_folds}, embargo_pct={embargo_pct}, use_vectorbt={use_vectorbt_optimization}", color="cyan")
+        
         self.n_folds = n_folds
         self.embargo_pct = embargo_pct
         self.min_train_size = min_train_size
@@ -64,15 +67,21 @@ class BaseCVSplitter:
         
         # Initialize VectorBT optimization components
         if self.use_vectorbt_optimization:
+            if TPRINT_AVAILABLE:
+                tprint("🔧 [BaseCVSplitter] Initializing VectorBT optimization components", color="blue")
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=self.enable_gpu,
                 enable_parallel=True,
                 memory_efficient=True
             )
             self.vectorization_manager = get_unified_vectorization_manager()
+            if TPRINT_AVAILABLE:
+                tprint("✅ [BaseCVSplitter] VectorBT optimization components initialized", color="green")
         else:
             self.rolling_optimizer = None
             self.vectorization_manager = None
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [BaseCVSplitter] VectorBT optimization disabled", color="yellow")
         
         # Performance tracking
         self.performance_stats = {
@@ -82,11 +91,21 @@ class BaseCVSplitter:
             'total_time': 0.0
         }
         
+        # Validation
         if not 0 <= embargo_pct <= 0.5:
-            raise ValueError("embargo_pct must be between 0 and 0.5")
+            error_msg = "embargo_pct must be between 0 and 0.5"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [BaseCVSplitter] {error_msg}", color="red")
+            raise ValueError(error_msg)
         
         if n_folds < 2:
-            raise ValueError("n_folds must be at least 2")
+            error_msg = "n_folds must be at least 2"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [BaseCVSplitter] {error_msg}", color="red")
+            raise ValueError(error_msg)
+        
+        if TPRINT_AVAILABLE:
+            tprint("✅ [BaseCVSplitter] Initialization completed successfully", color="green")
     
     def split_with_embargo(
         self,

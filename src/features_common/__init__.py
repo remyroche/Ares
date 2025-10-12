@@ -7,6 +7,14 @@ between the two feature systems.
 
 __version__ = "1.0.0"
 
+# Import utility functions
+try:
+    from src.utils.tprint import tprint
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+
+# Core imports
 from .transforms.base_scaler import BaseScaler, create_optimized_scaler, create_optimized_batch_scaler
 from .transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
 from .optimization.cv_base import BaseCVSplitter, PurgedCVSplitter
@@ -17,12 +25,16 @@ try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
     VECTORBT_OPTIMIZER_AVAILABLE = True
+    if TPRINT_AVAILABLE:
+        tprint("✅ [features_common] VectorBT optimization modules loaded successfully", color="green")
 except ImportError:
     VECTORBT_OPTIMIZER_AVAILABLE = False
     VectorBTRollingOptimizer = None
     get_vectorbt_rolling_optimizer = None
     UnifiedVectorizationManager = None
     get_unified_vectorization_manager = None
+    if TPRINT_AVAILABLE:
+        tprint("⚠️  [features_common] VectorBT optimization modules not available", color="yellow")
 
 __all__ = [
     'BaseScaler',
@@ -43,3 +55,6 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
         'UnifiedVectorizationManager',
         'get_unified_vectorization_manager',
     ])
+
+if TPRINT_AVAILABLE:
+    tprint(f"🔧 [features_common] Module initialized with {len(__all__)} exports", color="cyan")

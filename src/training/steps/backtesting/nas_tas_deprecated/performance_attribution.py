@@ -18,6 +18,15 @@ from enum import Enum
 import warnings
 warnings.filterwarnings('ignore')
 
+# VectorBT optimization imports
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.vectorbt_optimization_integration import get_optimization_manager
+    VECTORBT_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_AVAILABLE = False
+    print(f"Warning: VectorBT optimization tools not available: {e}")
+
 logger = logging.getLogger(__name__)
 
 
@@ -164,11 +173,50 @@ class PerformanceAttributor:
         self.bootstrap_results = {}
         self.significance_tests = {}
         
+        # Initialize VectorBT optimization
+        self._init_vectorbt_optimization()
+        
         self.logger.info("✅ Performance Attributor initialized")
         self.logger.info(f"   Attribution method: {config.attribution_method.value}")
         self.logger.info(f"   Regime attribution: {config.enable_regime_attribution}")
         self.logger.info(f"   Model attribution: {config.enable_model_attribution}")
         self.logger.info(f"   Factor attribution: {config.enable_factor_attribution}")
+    
+    def _init_vectorbt_optimization(self):
+        """Initialize VectorBT optimization tools."""
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT optimization tools not available")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
+            return
+        
+        try:
+            # Initialize VectorBT rolling optimizer
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                chunk_size=config.get('chunk_size', 1000),
+                fast_fail=True,
+                enable_logging=True
+            )
+            self.logger.info("✅ VectorBT rolling optimizer initialized")
+            
+            # Initialize VectorBT optimization manager
+            self.optimization_manager = get_optimization_manager(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                max_memory_gb=config.get('max_memory_gb', 8.0),
+                chunk_size=config.get('chunk_size', 1000),
+                enable_monitoring=True
+            )
+            self.logger.info("✅ VectorBT optimization manager initialized")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize VectorBT optimization: {e}")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
     
     def register_performance_data(self, 
                                 performance_history: List[Dict[str, Any]],
@@ -709,7 +757,13 @@ class PerformanceAttributor:
             # Volatility factor
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                volatility = returns.rolling(window=20).std()
+                
+                # Use VectorBT rolling optimizer if available
+                if self.rolling_optimizer is not None:
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=20)
+                else:
+                    volatility = returns.rolling(window=20).std()
+                
                 factor_data['volatility'] = {
                     'return_contribution': -volatility.mean() * 0.1,  # Negative relationship
                     'loading': -0.1,
@@ -719,7 +773,13 @@ class PerformanceAttributor:
             # Momentum factor
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().dropna()
-                momentum = returns.rolling(window=20).mean()
+                
+                # Use VectorBT rolling optimizer if available
+                if self.rolling_optimizer is not None:
+                    momentum = self.rolling_optimizer.rolling_mean(returns, window=20)
+                else:
+                    momentum = returns.rolling(window=20).mean()
+                
                 factor_data['momentum'] = {
                     'return_contribution': momentum.mean() * 0.05,
                     'loading': 0.05,

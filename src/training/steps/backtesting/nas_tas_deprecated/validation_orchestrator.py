@@ -37,6 +37,15 @@ except ImportError as e:
     print(f"Warning: Unified NAS/TAS tools not available: {e}")
     UNIFIED_TOOLS_AVAILABLE = False
 
+# Import VectorBT optimization tools
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.vectorbt_optimization_integration import get_optimization_manager
+    VECTORBT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: VectorBT optimization tools not available: {e}")
+    VECTORBT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -146,6 +155,9 @@ class ValidationOrchestrator:
         # Initialize unified tools first
         self._initialize_unified_tools()
         
+        # Initialize VectorBT optimization tools
+        self._initialize_vectorbt_optimization()
+        
         # Initialize components
         self._initialize_components()
         
@@ -162,6 +174,43 @@ class ValidationOrchestrator:
         self.logger.info(f"     - Attribution: {config.enable_attribution}")
         self.logger.info(f"     - Scenario testing: {config.enable_scenario_testing}")
         self.logger.info(f"   Unified tools available: {UNIFIED_TOOLS_AVAILABLE}")
+        self.logger.info(f"   VectorBT optimization available: {VECTORBT_AVAILABLE}")
+    
+    def _initialize_vectorbt_optimization(self):
+        """Initialize VectorBT optimization tools."""
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("⚠️ VectorBT optimization tools not available")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
+            return
+        
+        try:
+            # Initialize VectorBT rolling optimizer
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                chunk_size=config.get('chunk_size', 1000),
+                fast_fail=True,
+                enable_logging=True
+            )
+            self.logger.info("✅ VectorBT rolling optimizer initialized")
+            
+            # Initialize VectorBT optimization manager
+            self.optimization_manager = get_optimization_manager(
+                enable_gpu=config.get('enable_gpu', False),
+                enable_parallel=config.get('enable_parallel', True),
+                memory_efficient=True,
+                max_memory_gb=config.get('max_memory_gb', 8.0),
+                chunk_size=config.get('chunk_size', 1000),
+                enable_monitoring=True
+            )
+            self.logger.info("✅ VectorBT optimization manager initialized")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize VectorBT optimization: {e}")
+            self.rolling_optimizer = None
+            self.optimization_manager = None
     
     def _initialize_unified_tools(self):
         """Initialize unified NAS/TAS tools."""
@@ -429,31 +478,61 @@ class ValidationOrchestrator:
             # Create a copy to avoid modifying original data
             data = market_data.copy()
             
-            # Technical indicators
+            # Technical indicators - use VectorBT optimization if available
             if 'close' in data.columns:
                 # Price-based features
                 data['price_change'] = data['close'].pct_change()
-                data['price_volatility'] = data['price_change'].rolling(window=20).std()
-                data['price_momentum'] = data['close'] / data['close'].shift(20)
                 
-                # Moving averages
-                data['ma_5'] = data['close'].rolling(window=5).mean()
-                data['ma_20'] = data['close'].rolling(window=20).mean()
-                data['ma_50'] = data['close'].rolling(window=50).mean()
-                
-                # Price position
-                data['price_position_20'] = (data['close'] - data['close'].rolling(window=20).min()) / (data['close'].rolling(window=20).max() - data['close'].rolling(window=20).min())
+                if self.rolling_optimizer is not None:
+                    # Use VectorBT rolling optimizer for better performance
+                    data['price_volatility'] = self.rolling_optimizer.rolling_std(data['price_change'], window=20)
+                    data['price_momentum'] = data['close'] / data['close'].shift(20)
+                    
+                    # Moving averages
+                    data['ma_5'] = self.rolling_optimizer.rolling_mean(data['close'], window=5)
+                    data['ma_20'] = self.rolling_optimizer.rolling_mean(data['close'], window=20)
+                    data['ma_50'] = self.rolling_optimizer.rolling_mean(data['close'], window=50)
+                    
+                    # Price position using VectorBT rolling min/max
+                    rolling_min = self.rolling_optimizer.rolling_min(data['close'], window=20)
+                    rolling_max = self.rolling_optimizer.rolling_max(data['close'], window=20)
+                    data['price_position_20'] = (data['close'] - rolling_min) / (rolling_max - rolling_min)
+                else:
+                    # Fallback to pandas rolling operations
+                    data['price_volatility'] = data['price_change'].rolling(window=20).std()
+                    data['price_momentum'] = data['close'] / data['close'].shift(20)
+                    
+                    # Moving averages
+                    data['ma_5'] = data['close'].rolling(window=5).mean()
+                    data['ma_20'] = data['close'].rolling(window=20).mean()
+                    data['ma_50'] = data['close'].rolling(window=50).mean()
+                    
+                    # Price position
+                    data['price_position_20'] = (data['close'] - data['close'].rolling(window=20).min()) / (data['close'].rolling(window=20).max() - data['close'].rolling(window=20).min())
             
             if 'volume' in data.columns:
                 # Volume-based features
                 data['volume_change'] = data['volume'].pct_change()
-                data['volume_ma'] = data['volume'].rolling(window=20).mean()
+                
+                if self.rolling_optimizer is not None:
+                    # Use VectorBT rolling optimizer
+                    data['volume_ma'] = self.rolling_optimizer.rolling_mean(data['volume'], window=20)
+                else:
+                    # Fallback to pandas
+                    data['volume_ma'] = data['volume'].rolling(window=20).mean()
+                
                 data['volume_ratio'] = data['volume'] / data['volume_ma']
             
             if 'high' in data.columns and 'low' in data.columns:
                 # Range-based features
                 data['price_range'] = (data['high'] - data['low']) / data['close']
-                data['range_volatility'] = data['price_range'].rolling(window=20).std()
+                
+                if self.rolling_optimizer is not None:
+                    # Use VectorBT rolling optimizer
+                    data['range_volatility'] = self.rolling_optimizer.rolling_std(data['price_range'], window=20)
+                else:
+                    # Fallback to pandas
+                    data['range_volatility'] = data['price_range'].rolling(window=20).std()
             
             # Time-based features
             if data.index.dtype == 'datetime64[ns]':

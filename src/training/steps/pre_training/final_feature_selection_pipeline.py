@@ -62,6 +62,20 @@ except ImportError:
     vbt = None
     tprint("⚠️ VectorBT not available - falling back to numpy operations")
 
+# Import VectorBT optimization utilities
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    from src.feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+    tprint("✅ VectorBT optimization utilities available")
+except ImportError as e:
+    VECTORBT_UTILS_AVAILABLE = False
+    tprint(f"⚠️ VectorBT optimization utilities not available: {e}")
+
 # Import matrix operations and hardware utilities
 try:
     from src.utils.matrix_operations import (
@@ -143,6 +157,13 @@ class BaseFeatureSelectionConfig:
     min_features: int = 60
     max_features: int = 100
     priority_categories: List[str] = field(default_factory=lambda: ['volatility', 'structural', 'volume_regime', 'statistical'])
+
+    # VectorBT optimization settings
+    enable_vectorbt_optimization: bool = True
+    vectorbt_memory_efficient: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_enable_parallel: bool = True
+    vectorbt_enable_gpu: bool = False
 
     # Output settings
     save_models: bool = True
@@ -360,6 +381,43 @@ class MultiStageFeatureSelector:
         self.config = config or FeatureSelectionConfig()
         self.logger = get_logger("MultiStageFeatureSelector")
         self.matrix_ops = get_unified_matrix_operations()
+
+        # Initialize VectorBT optimization tools if available
+        if VECTORBT_UTILS_AVAILABLE and self.config.enable_vectorbt_optimization:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.vectorbt_enable_gpu,
+                    enable_parallel=self.config.vectorbt_enable_parallel,
+                    memory_efficient=self.config.vectorbt_memory_efficient,
+                    chunk_size=self.config.vectorbt_chunk_size
+                )
+                
+                # Initialize unified vectorization manager
+                vectorization_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=self.config.vectorbt_enable_gpu,
+                    enable_parallel=self.config.vectorbt_enable_parallel,
+                    memory_efficient=self.config.vectorbt_memory_efficient,
+                    chunk_size=self.config.vectorbt_chunk_size,
+                    enable_monitoring=True,
+                    batch_size=10000,
+                    enable_batch_processing=True
+                )
+                self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+                
+                tprint("✅ VectorBT optimization tools initialized")
+                self.vectorbt_enabled = True
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimization initialization failed: {e}")
+                self.vectorbt_optimizer = None
+                self.vectorization_manager = None
+                self.vectorbt_enabled = False
+        else:
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
+            self.vectorbt_enabled = False
+            tprint("⚠️ VectorBT optimization disabled or not available")
 
         # Initialize gate feature protection if available
         if GATE_PROTECTION_AVAILABLE:
@@ -634,6 +692,123 @@ class MultiStageFeatureSelector:
         sub = idx[order]
         
         return [names[i] for i in sub]
+
+    def _vectorbt_optimized_correlation_matrix(self, X: pd.DataFrame) -> np.ndarray:
+        """Calculate correlation matrix using VectorBT optimization."""
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            # Fallback to standard correlation
+            return X.corr().values
+        
+        try:
+            # Use VectorBT rolling correlation for optimized computation
+            correlation_result = self.vectorization_manager.rolling_operation(
+                X, 'corr', window=len(X), other=X
+            )
+            return correlation_result.values
+        except Exception as e:
+            self.logger.warning(f"VectorBT correlation failed: {e}, using fallback")
+            return X.corr().values
+
+    def _vectorbt_optimized_rolling_operations(self, X: pd.DataFrame, operation: str, window: int = 20) -> pd.DataFrame:
+        """Perform rolling operations using VectorBT optimization."""
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            # Fallback to pandas rolling
+            return getattr(X.rolling(window=window), operation)()
+        
+        try:
+            # Use VectorBT rolling optimizer
+            result = self.vectorization_manager.rolling_operation(X, operation, window)
+            return result
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling {operation} failed: {e}, using fallback")
+            return getattr(X.rolling(window=window), operation)()
+
+    def _vectorbt_optimized_scaling(self, X: pd.DataFrame, method: str = 'zscore') -> pd.DataFrame:
+        """Scale data using VectorBT optimization."""
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            # Fallback to standard scaling
+            if method == 'zscore':
+                return (X - X.mean()) / X.std()
+            elif method == 'minmax':
+                return (X - X.min()) / (X.max() - X.min())
+            else:
+                return X
+        
+        try:
+            # Use VectorBT scaling
+            result = self.vectorization_manager.scale_data(X, method)
+            return result
+        except Exception as e:
+            self.logger.warning(f"VectorBT scaling failed: {e}, using fallback")
+            if method == 'zscore':
+                return (X - X.mean()) / X.std()
+            elif method == 'minmax':
+                return (X - X.min()) / (X.max() - X.min())
+            else:
+                return X
+
+    def _vectorbt_optimized_batch_processing(self, feature_configs: List[Dict[str, Any]], data: pd.DataFrame) -> pd.DataFrame:
+        """Process multiple features in batch using VectorBT optimization."""
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            # Fallback to sequential processing
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        results[feature_name] = getattr(data[column].rolling(window=window), operation)()
+                
+                elif feature_type == 'scaling':
+                    method = params.get('method', 'zscore')
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        if method == 'zscore':
+                            results[feature_name] = (data[column] - data[column].mean()) / data[column].std()
+                        elif method == 'minmax':
+                            results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+            
+            return pd.DataFrame(results, index=data.index)
+        
+        try:
+            # Use VectorBT batch processing
+            result = self.vectorization_manager.batch_process_features(data, feature_configs)
+            return result
+        except Exception as e:
+            self.logger.warning(f"VectorBT batch processing failed: {e}, using fallback")
+            # Fallback to sequential processing
+            results = {}
+            for config in feature_configs:
+                feature_name = config['name']
+                feature_type = config.get('type', 'rolling')
+                params = config.get('params', {})
+                
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        results[feature_name] = getattr(data[column].rolling(window=window), operation)()
+                
+                elif feature_type == 'scaling':
+                    method = params.get('method', 'zscore')
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        if method == 'zscore':
+                            results[feature_name] = (data[column] - data[column].mean()) / data[column].std()
+                        elif method == 'minmax':
+                            results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+            
+            return pd.DataFrame(results, index=data.index)
 
     def _lasso_scores_fast(self, X: pd.DataFrame, y: pd.Series, rs: int, n_splits: int = 3) -> pd.Series:
         """Fast LASSO scoring with imputation."""

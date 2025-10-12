@@ -199,27 +199,45 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             use_vectorbt=True  # Enable VectorBT optimizations
         )
         
-        # Initialize VectorBT feature selector for enhanced performance
+        # Initialize VectorBT optimization tools for enhanced performance
         try:
-            from src.feature_selection.vectorbt.vectorbt_feature_selector import VectorBTFeatureSelector
-            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+                VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+            )
+            from src.feature_generation.utils.unified_vectorization_manager import (
+                UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
+            )
             
-            # Create adaptive VectorBT configuration
-            vectorbt_config = VectorBTFeatureSelectionConfig()
-            vectorbt_config.enable_financial_optimization = True
-            vectorbt_config.enable_memory_optimization = True
-            vectorbt_config.enable_parallel = True
-            vectorbt_config.max_workers = 4
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=False,  # Conservative for feature selection
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000
+            )
             
-            self.vectorbt_selector = VectorBTFeatureSelector(vectorbt_config)
+            # Initialize unified vectorization manager
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=True,
+                enable_gpu=False,
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000,
+                enable_monitoring=True,
+                batch_size=10000,
+                enable_batch_processing=True
+            )
+            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            
             self._log_success(
-                "✅ [FinalFeatureSelection] VectorBT feature selector initialized",
+                "✅ [FinalFeatureSelection] VectorBT optimization tools initialized",
                 event='final_feature_selection.vectorbt_init',
             )
         except Exception as e:
-            self.vectorbt_selector = None
+            self.vectorbt_optimizer = None
+            self.vectorization_manager = None
             self._log_warning(
-                f"⚠️ [FinalFeatureSelection] VectorBT selector not available: {e}",
+                f"⚠️ [FinalFeatureSelection] VectorBT optimization tools not available: {e}",
                 event='final_feature_selection.vectorbt_init',
             )
 
@@ -619,6 +637,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     recommendations=memory_stats['recommendations']
                 )
 
+            # Apply VectorBT optimization to input data if available
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                data = self._vectorbt_optimized_data_processing(data)
+                self._log_info(
+                    "✅ [FinalFeatureSelection] Applied VectorBT optimization to input data",
+                    event='final_feature_selection.vectorbt_optimization',
+                )
+
             # Get hardware configuration for feature selection
             # Use default config if get_optimal_config is not available
             try:
@@ -855,6 +881,16 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'hardware_config_used': hardware_config,
                     'adaptive_strategy_used': adaptive_strategy
                 }
+                
+                # Add VectorBT performance metrics if available
+                vectorbt_stats = self._get_vectorbt_performance_stats()
+                if vectorbt_stats:
+                    performance_metrics['vectorbt_performance'] = vectorbt_stats
+                    self._log_info(
+                        f"📊 [FinalFeatureSelection] VectorBT performance: {vectorbt_stats.get('total_operations', 0)} operations, "
+                        f"{vectorbt_stats.get('vectorbt_usage_rate', 0):.2%} VectorBT usage rate",
+                        event='final_feature_selection.vectorbt_performance',
+                    )
 
                 # Create base result
                 base_result = {
@@ -1425,6 +1461,52 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         tprint_info(f"   🎯 Target: {len(y)} samples")
         
         return X, y
+
+    def _vectorbt_optimized_data_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Process data using VectorBT optimization for enhanced performance."""
+        if not hasattr(self, 'vectorization_manager') or self.vectorization_manager is None:
+            # Fallback to standard processing
+            return data
+        
+        try:
+            # Use VectorBT for optimized data processing
+            # Optimize DataFrame for VectorBT processing
+            optimized_data = self.vectorization_manager.optimize_dataframe(data)
+            
+            # Apply VectorBT scaling for better numerical stability
+            numeric_columns = optimized_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) > 0:
+                numeric_data = optimized_data[numeric_columns]
+                scaled_data = self.vectorization_manager.scale_data(numeric_data, method='zscore')
+                optimized_data[numeric_columns] = scaled_data
+            
+            self._log_info(
+                f"✅ [FinalFeatureSelection] VectorBT data processing completed: {optimized_data.shape}",
+                event='final_feature_selection.vectorbt_processing',
+            )
+            
+            return optimized_data
+            
+        except Exception as e:
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] VectorBT data processing failed: {e}, using fallback",
+                event='final_feature_selection.vectorbt_processing',
+            )
+            return data
+
+    def _get_vectorbt_performance_stats(self) -> Dict[str, Any]:
+        """Get VectorBT performance statistics."""
+        if not hasattr(self, 'vectorization_manager') or self.vectorization_manager is None:
+            return {}
+        
+        try:
+            return self.vectorization_manager.get_performance_stats()
+        except Exception as e:
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT stats: {e}",
+                event='final_feature_selection.vectorbt_stats',
+            )
+            return {}
 
     def cleanup(self):
         """Clean up hardware optimization resources with aggressive cleanup."""

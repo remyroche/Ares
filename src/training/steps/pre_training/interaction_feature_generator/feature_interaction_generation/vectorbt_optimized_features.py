@@ -152,19 +152,118 @@ class VectorBTFeatureGenerator:
     
     def generate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Generate technical indicators using VectorBT optimizations.
+        Generate technical indicators using the feature bank with VectorBT optimizations.
         
         Args:
             data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
             
         Returns:
-            DataFrame with technical indicators
+            DataFrame with technical indicators from the feature bank
         """
-        tprint_info("🔧 Generating VectorBT-optimized technical indicators...")
+        tprint_info("🔧 Generating technical indicators using feature bank with VectorBT optimizations...")
         start_time = time.time()
         
         # Validate input data
         self._validate_ohlcv_data(data)
+        
+        try:
+            # Import feature bank components
+            from src.feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+            from src.feature_generation.categories import (
+                create_default_momentum_generators,
+                create_default_volatility_generators,
+                create_default_oscillator_generators,
+                create_default_trend_generators
+            )
+            
+            # Create feature bank configuration with VectorBT optimizations
+            bank_config = FeatureBankConfig(
+                enable_matrix_operations=True,
+                enable_gpu_acceleration=self.config.use_gpu,
+                enable_parallel_processing=self.config.enable_parallel,
+                memory_efficient=True,
+                chunk_size=self.config.chunk_size
+            )
+            
+            # Initialize feature bank
+            feature_bank = FeatureBank(bank_config)
+            
+            # Generate features from different categories
+            all_features = []
+            
+            # Generate momentum features (RSI, MACD, etc.)
+            if self.config.enable_rsi or self.config.enable_macd:
+                momentum_generators = create_default_momentum_generators()
+                for generator in momentum_generators:
+                    try:
+                        momentum_features = generator.generate(data)
+                        if not momentum_features.empty:
+                            all_features.append(momentum_features)
+                            tprint_debug(f"✅ Generated momentum features: {momentum_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate momentum features with {generator.__class__.__name__}: {e}")
+            
+            # Generate volatility features (Bollinger Bands, ATR, etc.)
+            if self.config.enable_bollinger:
+                volatility_generators = create_default_volatility_generators()
+                for generator in volatility_generators:
+                    try:
+                        volatility_features = generator.generate(data)
+                        if not volatility_features.empty:
+                            all_features.append(volatility_features)
+                            tprint_debug(f"✅ Generated volatility features: {volatility_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate volatility features with {generator.__class__.__name__}: {e}")
+            
+            # Generate oscillator features (Stochastic, Williams %R, etc.)
+            oscillator_generators = create_default_oscillator_generators()
+            for generator in oscillator_generators:
+                try:
+                    oscillator_features = generator.generate(data)
+                    if not oscillator_features.empty:
+                        all_features.append(oscillator_features)
+                        tprint_debug(f"✅ Generated oscillator features: {oscillator_features.shape[1]} features")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to generate oscillator features with {generator.__class__.__name__}: {e}")
+            
+            # Generate trend features (SMA, EMA, etc.)
+            if self.config.enable_sma or self.config.enable_ema:
+                trend_generators = create_default_trend_generators()
+                for generator in trend_generators:
+                    try:
+                        trend_features = generator.generate(data)
+                        if not trend_features.empty:
+                            all_features.append(trend_features)
+                            tprint_debug(f"✅ Generated trend features: {trend_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate trend features with {generator.__class__.__name__}: {e}")
+            
+            # Combine all features
+            if all_features:
+                result_df = pd.concat(all_features, axis=1)
+                # Remove duplicate columns
+                result_df = result_df.loc[:, ~result_df.columns.duplicated(keep='first')]
+                result_df = self._optimize_dataframe_dtypes(result_df)
+            else:
+                result_df = pd.DataFrame(index=data.index)
+                tprint_warning("⚠️ No technical indicators generated from feature bank")
+            
+            execution_time = time.time() - start_time
+            tprint_success(f"✅ Generated {len(result_df.columns)} technical indicators from feature bank in {execution_time:.3f}s")
+            
+            return result_df
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ Feature bank not available, falling back to direct VectorBT generation: {e}")
+            return self._generate_technical_indicators_fallback(data)
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature bank generation failed, falling back to direct VectorBT generation: {e}")
+            return self._generate_technical_indicators_fallback(data)
+    
+    def _generate_technical_indicators_fallback(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback to direct VectorBT technical indicator generation."""
+        tprint_info("🔧 Using fallback VectorBT technical indicator generation...")
+        start_time = time.time()
         
         # Convert to VectorBT format
         ohlcv_data = self._prepare_ohlcv_data(data)
@@ -183,7 +282,7 @@ class VectorBTFeatureGenerator:
             result_df = pd.DataFrame(index=data.index)
         
         execution_time = time.time() - start_time
-        tprint_success(f"✅ Generated {len(result_df.columns)} technical indicators in {execution_time:.3f}s")
+        tprint_success(f"✅ Generated {len(result_df.columns)} technical indicators (fallback) in {execution_time:.3f}s")
         
         return result_df
     
@@ -1283,6 +1382,109 @@ class VectorBTFeatureGenerator:
         quality_score = (1 - infinite_penalty) * (1 - nan_penalty) * (1 - constant_penalty) * (1 - extreme_penalty) * (1 - correlation_penalty)
         
         return max(0.0, min(1.0, quality_score))
+    
+    def _generate_additional_feature_bank_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate additional features from the feature bank."""
+        try:
+            # Import additional feature bank components
+            from src.feature_generation.categories import (
+                create_default_returns_generators,
+                create_default_volume_generators,
+                create_default_entropy_generators,
+                create_default_microstructure_generators,
+                create_default_acceleration_generators
+            )
+            
+            all_features = []
+            
+            # Generate returns features
+            try:
+                returns_generators = create_default_returns_generators()
+                for generator in returns_generators:
+                    try:
+                        returns_features = generator.generate(data)
+                        if not returns_features.empty:
+                            all_features.append(returns_features)
+                            tprint_debug(f"✅ Generated returns features: {returns_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate returns features with {generator.__class__.__name__}: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Returns generators not available: {e}")
+            
+            # Generate volume features
+            try:
+                volume_generators = create_default_volume_generators()
+                for generator in volume_generators:
+                    try:
+                        volume_features = generator.generate(data)
+                        if not volume_features.empty:
+                            all_features.append(volume_features)
+                            tprint_debug(f"✅ Generated volume features: {volume_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate volume features with {generator.__class__.__name__}: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Volume generators not available: {e}")
+            
+            # Generate entropy features
+            try:
+                entropy_generators = create_default_entropy_generators()
+                for generator in entropy_generators:
+                    try:
+                        entropy_features = generator.generate(data)
+                        if not entropy_features.empty:
+                            all_features.append(entropy_features)
+                            tprint_debug(f"✅ Generated entropy features: {entropy_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate entropy features with {generator.__class__.__name__}: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Entropy generators not available: {e}")
+            
+            # Generate microstructure features
+            try:
+                microstructure_generators = create_default_microstructure_generators()
+                for generator in microstructure_generators:
+                    try:
+                        microstructure_features = generator.generate(data)
+                        if not microstructure_features.empty:
+                            all_features.append(microstructure_features)
+                            tprint_debug(f"✅ Generated microstructure features: {microstructure_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate microstructure features with {generator.__class__.__name__}: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Microstructure generators not available: {e}")
+            
+            # Generate acceleration features
+            try:
+                acceleration_generators = create_default_acceleration_generators()
+                for generator in acceleration_generators:
+                    try:
+                        acceleration_features = generator.generate(data)
+                        if not acceleration_features.empty:
+                            all_features.append(acceleration_features)
+                            tprint_debug(f"✅ Generated acceleration features: {acceleration_features.shape[1]} features")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Failed to generate acceleration features with {generator.__class__.__name__}: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Acceleration generators not available: {e}")
+            
+            # Combine all additional features
+            if all_features:
+                result_df = pd.concat(all_features, axis=1)
+                # Remove duplicate columns
+                result_df = result_df.loc[:, ~result_df.columns.duplicated(keep='first')]
+                result_df = self._optimize_dataframe_dtypes(result_df)
+                tprint_success(f"✅ Generated {len(result_df.columns)} additional features from feature bank")
+                return result_df
+            else:
+                tprint_warning("⚠️ No additional features generated from feature bank")
+                return pd.DataFrame(index=data.index)
+                
+        except ImportError as e:
+            tprint_warning(f"⚠️ Additional feature bank generators not available: {e}")
+            return pd.DataFrame(index=data.index)
+        except Exception as e:
+            tprint_warning(f"⚠️ Additional feature bank generation failed: {e}")
+            return pd.DataFrame(index=data.index)
 
 
 # Convenience functions
@@ -1293,7 +1495,7 @@ def create_vectorbt_config(**kwargs) -> VectorBTFeatureConfig:
 
 def generate_vectorbt_features(data: pd.DataFrame, config: Optional[VectorBTFeatureConfig] = None) -> pd.DataFrame:
     """
-    Generate features using VectorBT optimizations.
+    Generate features using VectorBT optimizations and the feature bank.
     
     Args:
         data: Input OHLCV data
@@ -1305,13 +1507,16 @@ def generate_vectorbt_features(data: pd.DataFrame, config: Optional[VectorBTFeat
     generator = VectorBTFeatureGenerator(config)
     
     # Generate all types of features
-    technical_features = generator.generate_technical_indicators(data)
+    technical_features = generator.generate_technical_indicators(data)  # Uses feature bank
     rolling_features = generator.generate_rolling_features(data)
     cross_timeframe_features = generator.generate_cross_timeframe_features(data)
     interaction_features = generator.generate_interaction_features(data)
     
+    # Try to generate additional features from the feature bank
+    additional_features = generator._generate_additional_feature_bank_features(data)
+    
     # Combine all features
-    all_features = [technical_features, rolling_features, cross_timeframe_features, interaction_features]
+    all_features = [technical_features, rolling_features, cross_timeframe_features, interaction_features, additional_features]
     valid_features = [f for f in all_features if not f.empty]
     
     if valid_features:

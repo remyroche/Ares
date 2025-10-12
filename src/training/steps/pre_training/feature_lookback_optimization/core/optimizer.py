@@ -5210,6 +5210,10 @@ except ImportError:
         **kwargs
     ) -> OptimizationResult:
         """Optimize using coarse-to-refine search with optional nested CV."""
+        tprint_debug(f"🔍 Starting coarse-to-refine optimization for {feature_name}")
+        tprint_debug(f"📊 Data shape: {data.shape}, target: {target_column}")
+        tprint_debug(f"📊 Lookback range: {lookback_range}")
+        
         provided_iterator = kwargs.pop('outer_split_iterator', None)
         if provided_iterator is not None:
             outer_split_iterator = provided_iterator
@@ -5217,6 +5221,7 @@ except ImportError:
         if outer_split_iterator:
             outer_splits = list(outer_split_iterator)
             if outer_splits:
+                tprint_debug(f"🔄 Using nested CV with {len(outer_splits)} splits")
                 return self._optimize_coarse_to_refine_with_outer(
                     data,
                     feature_name,
@@ -5227,6 +5232,7 @@ except ImportError:
                     **kwargs,
                 )
 
+        tprint_debug(f"🔄 Using single-pass coarse-to-refine optimization")
         return self._coarse_to_refine_single_pass(
             data,
             feature_name,
@@ -5260,24 +5266,38 @@ except ImportError:
         Returns:
             OptimizationResult with best lookback period and score
         """
-        # tprint_debug("🧠 Entering _optimize_coarse_to_refine")  # PERFORMANCE: Reduced logging
+        tprint_debug(f"🧠 Starting coarse-to-refine single-pass optimization for {feature_name}")
+        tprint_debug(f"📊 Data shape: {data.shape}, target: {target_column}")
+        tprint_debug(f"📊 Lookback range: {lookback_range}")
+        
         try:
             min_lookback, max_lookback = lookback_range
             regularization_settings = self._normalize_regularization_settings(regularization_settings)
+            tprint_debug(f"⚙️ Regularization settings: {regularization_settings}")
+            
             # Step 1: Get shared forward returns matrix (reused across all features)
             # PERFORMANCE OPTIMIZATION: Use precomputed matrix if available to avoid redundant computation
+            tprint_debug("🔄 Computing forward returns matrix...")
             if precomputed_forward_returns is not None:
                 forward_returns = precomputed_forward_returns
+                tprint_debug("✅ Using precomputed forward returns matrix")
             else:
                 forward_returns = self._get_shared_forward_returns_matrix(data, target_column, max_horizon=max_lookback)
+                tprint_debug(f"✅ Computed forward returns matrix with {len(forward_returns)} horizons")
+            
             if not forward_returns:
+                tprint_error(f"❌ Failed to compute forward returns matrix for {feature_name}")
                 return self._create_failed_result("coarse_to_refine", 0.0, feature_name=feature_name)
 
             # Step 2: Create time-based train/validation split
+            tprint_debug("🔄 Creating time-based train/validation split...")
             train_end_idx, val_start_idx = self._create_time_split(len(data), train_ratio=0.7)
+            tprint_debug(f"📊 Train end: {train_end_idx}, Validation start: {val_start_idx}")
 
             # Step 3: Generate coarse horizons
+            tprint_debug("🔄 Generating coarse horizons...")
             coarse_horizons = self._generate_coarse_horizons(min_lookback, max_lookback)
+            tprint_debug(f"✅ Generated {len(coarse_horizons)} coarse horizons: {coarse_horizons}")
             self.logger.info(f"[{feature_name}] Generated {len(coarse_horizons)} coarse horizons: {coarse_horizons}")
 
             # Step 4: Vectorized coarse search with early termination

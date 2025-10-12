@@ -1,8 +1,8 @@
 """
-Modular Feature Lookback Optimization Component.
+Optimized Feature Lookback Optimization Component.
 
-This is the main component that uses the modular architecture with separate
-modules for validation, error handling, performance monitoring, and optimization.
+This is the main component that uses VectorBT optimizations and unified
+vectorization for high-performance feature lookback optimization.
 """
 
 import json
@@ -17,7 +17,6 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, validate_finite
 from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
-# Removed unused imports: M1GPUManager, KlinesParquetManager
 from .ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
@@ -49,12 +48,14 @@ try:
         create_vectorbt_optimizer
     )
     VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
+    tprint("✅ VectorBT optimizer imported successfully")
+except ImportError as e:
     VECTORBT_OPTIMIZER_AVAILABLE = False
     VectorBTOptimizer = None
     VectorBTOptimizationConfig = None
     OptimizationStrategy = None
     create_vectorbt_optimizer = None
+    tprint_warning(f"⚠️ VectorBT optimizer not available: {e}")
 
 # Import VectorBT Rolling Optimizer and Unified Vectorization Manager
 try:
@@ -69,7 +70,8 @@ try:
         OptimizationStrategy as UnifiedOptimizationStrategy
     )
     VECTORBT_UTILS_AVAILABLE = True
-except ImportError:
+    tprint("✅ VectorBT utils imported successfully")
+except ImportError as e:
     VECTORBT_UTILS_AVAILABLE = False
     VectorBTRollingOptimizer = None
     get_vectorbt_rolling_optimizer = None
@@ -77,6 +79,7 @@ except ImportError:
     get_unified_vectorization_manager = None
     OperationType = None
     UnifiedOptimizationStrategy = None
+    tprint_warning(f"⚠️ VectorBT utils not available: {e}")
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_namespace,
@@ -218,47 +221,62 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the feature lookback optimization component."""
-        tprint("🔧 Initializing Modular FeatureLookbackOptimizationComponent...")
+        tprint("🔧 Initializing Optimized FeatureLookbackOptimizationComponent...")
+        tprint_debug(f"📋 Component config: {config}")
+        
         super().__init__(config)
+        tprint("✅ Base component initialization complete")
 
         # Use standardized logging
+        tprint("📝 Initializing logging and utilities...")
         self.logger = get_logger('FeatureLookbackOptimization')
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
-        tprint("✅ Basic modular component initialization complete")
+        tprint_success("✅ Logging and utilities initialized")
 
         # Initialize serializers
+        tprint("💾 Initializing serializers...")
         self.json_serializer = JSONSerializer()
         self.pickle_serializer = PickleSerializer()
-        tprint("✅ Additional utility managers initialized")
+        tprint_success("✅ Serializers initialized")
 
         # Initialize matrix operations managers
         tprint("🔢 Initializing matrix operations managers...")
-        self.matrix_ops = get_unified_matrix_operations()
-        self.vectorized_core = get_vectorized_processing_core()
-        self.batch_processor = get_batch_matrix_processor()
-        tprint_success("✅ Matrix operations managers initialized")
+        try:
+            self.matrix_ops = get_unified_matrix_operations()
+            self.vectorized_core = get_vectorized_processing_core()
+            self.batch_processor = get_batch_matrix_processor()
+            tprint_success("✅ Matrix operations managers initialized")
+        except Exception as e:
+            tprint_error(f"❌ Matrix operations initialization failed: {e}")
+            raise
 
         # Initialize modular components
         tprint("🔧 Initializing modular components...")
-        self.validator = InputValidator(logger=self.logger)
-        self.error_handler = StandardizedErrorHandler(logger=self.logger, component_name="FeatureLookbackOptimization")
-        self.performance_monitor = PerformanceMonitor(component_name="FeatureLookbackOptimization")
-        self.core_optimizer = CoreOptimizer(logger=self.logger)
-        tprint("✅ Modular components initialized")
+        try:
+            self.validator = InputValidator(logger=self.logger)
+            self.error_handler = StandardizedErrorHandler(logger=self.logger, component_name="FeatureLookbackOptimization")
+            self.performance_monitor = PerformanceMonitor(component_name="FeatureLookbackOptimization")
+            self.core_optimizer = CoreOptimizer(logger=self.logger)
+            tprint_success("✅ Modular components initialized")
+        except Exception as e:
+            tprint_error(f"❌ Modular components initialization failed: {e}")
+            raise
 
         # Regularization preferences used to guide lookback selection toward
         # realistic horizons.  Tests can override these via component
         # configuration which allows deterministic assertions around the
         # penalty behaviour applied by the optimizer.
+        tprint("⚙️ Resolving regularization settings...")
         self.lookback_regularization_settings = self._resolve_regularization_settings()
+        tprint_debug(f"📊 Regularization settings: {self.lookback_regularization_settings}")
 
         # Initialize execution mode configuration
         tprint("🔧 Initializing execution mode lookback configuration...")
         try:
             from ...market_analysis.shared_utils.execution_mode_lookback_config import get_execution_mode_config
             self.execution_mode_config = get_execution_mode_config()
-            tprint("✅ Execution mode configuration initialized")
+            tprint_success("✅ Execution mode configuration initialized")
         except ImportError as e:
             # Fallback to default configuration if shared_utils not available
             tprint_warning(f"⚠️ Could not import execution mode config: {e}")
@@ -271,11 +289,15 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
         # Initialize optimized process engine
         tprint("🔧 Initializing optimized feature lookback engine...")
-        self.optimized_engine = OptimizedFeatureLookbackEngine(
-            use_hardware_accel=True,
-            cache_size=1000
-        )
-        tprint("✅ Optimized feature lookback engine initialized")
+        try:
+            self.optimized_engine = OptimizedFeatureLookbackEngine(
+                use_hardware_accel=True,
+                cache_size=1000
+            )
+            tprint_success("✅ Optimized feature lookback engine initialized")
+        except Exception as e:
+            tprint_error(f"❌ Optimized engine initialization failed: {e}")
+            raise
 
         # Initialize VectorBT optimizer for enhanced performance
         tprint("🔧 Initializing VectorBT optimizer...")
@@ -299,15 +321,19 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             self.use_vectorbt_optimization = False
         
         # Initialize enhanced optimization components
+        tprint("🚀 Initializing enhanced optimization components...")
         self._initialize_enhanced_components()
+        tprint_success("✅ Enhanced optimization components initialized")
 
         # Component state
+        tprint("📊 Initializing component state...")
         self.optimization_status = "pending"
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
     
     def _initialize_enhanced_components(self):
         """Initialize enhanced optimization components."""
+        tprint("🔧 Initializing VectorBT Rolling Optimizer...")
         try:
             # Initialize VectorBT Rolling Optimizer
             if VECTORBT_UTILS_AVAILABLE:
@@ -326,6 +352,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 tprint_warning("⚠️ VectorBT Rolling Optimizer not available")
             
             # Initialize Unified Vectorization Manager
+            tprint("🔧 Initializing Unified Vectorization Manager...")
             if VECTORBT_UTILS_AVAILABLE:
                 try:
                     self.unified_manager = get_unified_vectorization_manager()
@@ -344,6 +371,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Don't raise - these are optional enhancements
 
         # Feature cache state
+        tprint("💾 Initializing feature cache...")
         self.feature_cache = FeatureCacheService(subdirectory="feature_bank")
         self.cache_metrics = {
             'hits': 0,
@@ -354,6 +382,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self._current_cache_key: Optional[str] = None
         self._current_lookback_hash: Optional[str] = None
         self._force_cache_refresh: bool = False
+        tprint_success("✅ Feature cache initialized")
 
         # Performance monitoring (separate from PerformanceMonitor instance)
         self.performance_data = {
@@ -475,16 +504,24 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with optimization results
         """
+        tprint("🚀 Starting optimized feature lookback optimization execution...")
+        tprint_debug(f"📊 Input data type: {type(data)}")
+        tprint_debug(f"📊 Pipeline state keys: {list(pipeline_state.keys()) if hasattr(pipeline_state, 'keys') else 'N/A'}")
+        
         pipeline_state = PipelineState.ensure(pipeline_state)
+        tprint("✅ Pipeline state validated")
 
         locator = pipeline_state.get('data_locator')
         if isinstance(locator, DataLocator):
+            tprint("📍 Setting data locator in core optimizer")
             self.core_optimizer.set_data_locator(locator)
         else:
+            tprint("📍 No data locator found, setting to None")
             self.core_optimizer.set_data_locator(None)
 
         tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
+        tprint_debug(f"⏱️ Execution started at: {start_time}")
 
         validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
             'inputs': {},
@@ -529,16 +566,21 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 self.core_optimizer.set_rng(numpy_rng)
 
             # Validate inputs (skip if data is None, will load from cache)
+            tprint("🔍 Validating input data...")
             if data is not None and not (isinstance(data, pd.DataFrame) and data.empty):
+                tprint_debug(f"📊 Validating data with shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
                 is_valid, validation_summary, cleaned_data = self.validator.validate_data(
                     data,
                     required_columns=['open', 'high', 'low', 'close', 'volume']
                 )
 
                 if not is_valid:
-                    tprint("❌ Data validation failed, aborting execution")
+                    tprint_error("❌ Data validation failed, aborting execution")
                     error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                    tprint_error(f"❌ Validation error: {error_msg}")
                     raise ValueError(error_msg)
+                else:
+                    tprint_success("✅ Data validation passed")
             else:
                 # No data provided, will load from cache
                 tprint("📥 No input data provided, will load from KlinesParquetManager")
@@ -649,6 +691,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Generate features from OHLCV data BEFORE merging labels
             tprint("🏦 Generating features from market data using feature bank")
+            tprint_debug(f"📊 Market data shape: {market_data.shape}")
+            tprint_debug(f"🔄 Force refresh: {pipeline_state.get('feature_cache_force_refresh', False)}")
+            
             feature_columns = await self._generate_features_for_optimization(
                 market_data,
                 pipeline_state,
@@ -657,14 +702,19 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             
             if not feature_columns:
                 log_error("Feature generation failed - no features generated")
-                tprint("❌ No features generated from feature bank")
+                tprint_error("❌ No features generated from feature bank")
                 return self._create_failed_result()
             
             tprint_success(f"✅ Generated {len(feature_columns)} features from feature bank")
+            tprint_debug(f"📋 Feature columns: {feature_columns[:10]}...")  # Show first 10 features
 
             # Now prepare data with labels for optimization
             tprint("🧰 Preparing data for feature optimization (merging labels)")
+            tprint_debug(f"📊 Market data shape before merge: {market_data.shape}")
+            tprint_debug(f"📊 Labeling data type: {type(labeling_data)}")
+            
             optimization_data = self._prepare_data_for_optimization(market_data, labeling_data)
+            tprint_debug(f"📊 Optimization data shape after merge: {optimization_data.shape}")
 
             if optimization_data is None or optimization_data.empty:
                 log_error(f"Data preparation failed - optimization data is {'None' if optimization_data is None else 'empty'}")
@@ -2052,6 +2102,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             
             # Optimize each feature
             tprint(f"🔍 Optimizing {len(feature_columns)} features for {optimization_direction}")
+            tprint_debug(f"📊 Data shape for optimization: {data.shape}")
             feature_results = {}
 
             # Reset lag metadata before running optimization
@@ -2060,11 +2111,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Use differentiated long/short pipelines with separate optimization
             tprint_info("🎯 Selecting optimal target columns for long/short directions")
+            tprint_debug("🔍 Analyzing available target columns...")
             long_target_column = self._select_optimal_target_column(data, direction='long')
             short_target_column = self._select_optimal_target_column(data, direction='short')
 
             log_info(f"🎯 Using differentiated targets - Long: {long_target_column}, Short: {short_target_column}")
             tprint_success(f"✅ Target selection complete - Long: {long_target_column}, Short: {short_target_column}")
+            tprint_debug(f"📊 Long target data range: {data[long_target_column].min():.4f} to {data[long_target_column].max():.4f}")
+            tprint_debug(f"📊 Short target data range: {data[short_target_column].min():.4f} to {data[short_target_column].max():.4f}")
 
             # Separate optimization for long and short directions
             long_feature_results: Dict[Any, Dict[str, Any]] = {}
@@ -2091,25 +2145,36 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             cv_folds = mode_constraints.cv_folds
             
             total_features = len(feature_columns)
+            tprint_info(f"🚀 Starting optimization of {total_features} features")
+            tprint_debug(f"⚙️ Optimization settings: bayesian={use_bayesian_opt}, bootstrap={n_bootstrap}, cv_folds={cv_folds}")
+            tprint_debug(f"🎯 Directions: longs={optimize_longs}, shorts={optimize_shorts}")
+            
             for idx, feature in enumerate(feature_columns, 1):
                 try:
                     if idx % max(1, total_features // 10) == 0:  # Log every 10%
                         tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
                     
+                    tprint_debug(f"🔍 Optimizing feature {idx}/{total_features}: {feature}")
+                    
                     # Use consistent lookback range for all execution modes
                     lookback_range = (3, 100)  # Reduced from 300 to 100 for faster, more relevant periods
+                    tprint_debug(f"📊 Lookback range: {lookback_range}")
+                    
                     optimizer_kwargs: Dict[str, Any] = {}
                     if use_nested_cv:
                         optimizer_kwargs['outer_split_iterator'] = outer_splits
+                        tprint_debug(f"🔄 Using nested CV with {len(outer_splits)} splits")
                     optimizer_kwargs['regularization_settings'] = self.lookback_regularization_settings
                     
                     # OPTIMIZATION: Add mode-aware parameters
                     optimizer_kwargs['n_bootstrap_samples'] = n_bootstrap
                     optimizer_kwargs['cv_folds'] = cv_folds
                     optimizer_kwargs['use_bayesian_optimization'] = use_bayesian_opt
+                    tprint_debug(f"⚙️ Optimizer kwargs: {list(optimizer_kwargs.keys())}")
 
                     # Optimize for LONG direction (only if enabled)
                     if optimize_longs and long_target_column:  # Only if we have a target column
+                        tprint_debug(f"📈 Optimizing LONG direction for {feature}")
                         long_entry = self._optimize_feature_direction(
                             data, feature, long_target_column, 'long',
                             lookback_range, optimizer_kwargs, use_bayesian_opt,
@@ -2118,9 +2183,13 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         if long_entry:
                             feature_key = self._normalize_feature_key(feature)
                             long_feature_results[feature_key] = long_entry
+                            tprint_debug(f"✅ LONG optimization completed for {feature}")
+                        else:
+                            tprint_warning(f"⚠️ LONG optimization failed for {feature}")
 
                     # Optimize for SHORT direction (only if enabled)
                     if optimize_shorts and short_target_column:  # Only if we have a target column
+                        tprint_debug(f"📉 Optimizing SHORT direction for {feature}")
                         short_entry = self._optimize_feature_direction(
                             data, feature, short_target_column, 'short',
                             lookback_range, optimizer_kwargs, use_bayesian_opt,
@@ -2129,6 +2198,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         if short_entry:
                             feature_key = self._normalize_feature_key(feature)
                             short_feature_results[feature_key] = short_entry
+                            tprint_debug(f"✅ SHORT optimization completed for {feature}")
+                        else:
+                            tprint_warning(f"⚠️ SHORT optimization failed for {feature}")
 
                 except Exception as e:
                     tprint_error(f"❌ Feature optimization failed for {feature}: {e}")
@@ -2321,12 +2393,16 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     ) -> Optional[Dict[str, Any]]:
         """Optimize a single feature for a specific direction (long/short)."""
         tprint_info(f"🎯 Optimizing {feature} for {direction} direction using {target_column}")
+        tprint_debug(f"📊 Data shape: {data.shape}, lookback range: {lookback_range}")
+        tprint_debug(f"⚙️ Bayesian optimization: {use_bayesian_opt}, nested CV: {use_nested_cv}")
         
         try:
             # Try VectorBT optimization first if available
             if self.use_vectorbt_optimization and self.vectorbt_optimizer:
                 tprint_info(f"🚀 Using VectorBT optimization for {feature} ({direction})")
+                tprint_debug(f"🔧 VectorBT optimizer available: {self.vectorbt_optimizer is not None}")
                 try:
+                    tprint_debug(f"🔄 Calling VectorBT optimize_feature_lookback...")
                     result = self.vectorbt_optimizer.optimize_feature_lookback(
                         data,
                         feature,
@@ -2334,6 +2410,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         lookback_range=lookback_range,
                         regularization_settings=self.lookback_regularization_settings
                     )
+                    tprint_debug(f"✅ VectorBT optimization completed: period={result.best_lookback_period}, score={result.best_score:.4f}")
+                    
                     # Convert VectorBT result to expected format
                     from .core.optimizer import OptimizationResult
                     result = OptimizationResult(
@@ -2346,14 +2424,18 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         feature_name=result.feature_name,
                         metadata=result.metadata
                     )
+                    tprint_debug(f"🔄 Converted VectorBT result to OptimizationResult format")
                 except Exception as e:
                     tprint_warning(f"⚠️ VectorBT optimization failed, falling back to standard: {e}")
+                    tprint_debug(f"🔍 VectorBT error details: {str(e)}")
                     result = self._fallback_optimization(
                         data, feature, target_column, lookback_range, 
                         optimizer_kwargs, use_bayesian_opt, execution_mode
                     )
             else:
                 # Use fallback optimization
+                tprint_info(f"🔄 Using fallback optimization for {feature} ({direction})")
+                tprint_debug(f"🔧 VectorBT available: {self.use_vectorbt_optimization}, optimizer: {self.vectorbt_optimizer is not None}")
                 result = self._fallback_optimization(
                     data, feature, target_column, lookback_range, 
                     optimizer_kwargs, use_bayesian_opt, execution_mode
@@ -2408,20 +2490,33 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         execution_mode: str
     ):
         """Fallback optimization using standard methods."""
+        tprint_debug(f"🔄 Starting fallback optimization for {feature}")
+        tprint_debug(f"📊 Data shape: {data.shape}, target: {target_column}")
+        tprint_debug(f"⚙️ Bayesian: {use_bayesian_opt}, mode: {execution_mode}")
+        
         if use_bayesian_opt:
             tprint_info(f"🚀 Using Bayesian TPE optimization for {feature}")
+            tprint_debug(f"🔧 Bayesian kwargs: {list(optimizer_kwargs.keys())}")
             bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
-            return self.core_optimizer._optimize_with_bayesian_tpe(
+            n_trials = 30 if execution_mode == 'light' else 50
+            tprint_debug(f"🎯 Bayesian trials: {n_trials}")
+            
+            result = self.core_optimizer._optimize_with_bayesian_tpe(
                 data,
                 feature,
                 target_column,
                 lookback_range=lookback_range,
                 regularization_settings=self.lookback_regularization_settings,
-                n_trials=30 if execution_mode == 'light' else 50,
+                n_trials=n_trials,
                 **bayesian_kwargs
             )
+            tprint_debug(f"✅ Bayesian optimization completed for {feature}")
+            return result
         else:
-            return self.core_optimizer._optimize_coarse_to_refine(
+            tprint_info(f"🔄 Using coarse-to-refine optimization for {feature}")
+            tprint_debug(f"🔧 Coarse-to-refine kwargs: {list(optimizer_kwargs.keys())}")
+            
+            result = self.core_optimizer._optimize_coarse_to_refine(
                 data,
                 feature,
                 target_column,
@@ -2429,6 +2524,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 regularization_settings=self.lookback_regularization_settings,
                 **optimizer_kwargs,
             )
+            tprint_debug(f"✅ Coarse-to-refine optimization completed for {feature}")
+            return result
 
     def _prepare_data_for_optimization(self, data: Any, labeling_data: Optional[Dict[str, Any]]) -> pd.DataFrame:
         """Prepare and enrich market data with multi-horizon labeling targets."""

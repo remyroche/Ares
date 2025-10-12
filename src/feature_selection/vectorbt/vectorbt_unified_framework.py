@@ -232,7 +232,8 @@ class VectorBTUnifiedFramework:
                                 pairwise=True
                             )
                             analytics['correlation_structure'] = corr_rolling.vbt.mean().vbt.mean()
-                        except:
+                        except Exception as corr_e:
+                            tprint_debug(f"⚠️ Correlation analysis failed: {corr_e}")
                             analytics['correlation_structure'] = 0.0
                     
                     # Analyze variance using VectorBT rolling operations
@@ -242,31 +243,41 @@ class VectorBTUnifiedFramework:
                             min_periods=1
                         )
                         analytics['variance_ratio'] = variance_rolling.vbt.mean().vbt.std()
-                    except:
+                    except Exception as var_e:
+                        tprint_debug(f"⚠️ Variance analysis failed: {var_e}")
                         analytics['variance_ratio'] = 0.0
                     
                     # Analyze stability using VectorBT bootstrap sampling
                     try:
                         if n_samples > 100:
                             bootstrap_samples = min(10, n_samples // 10)
-                            stability_scores = []
+                            feature_importance_scores = []
                             
                             for _ in range(bootstrap_samples):
                                 bootstrap_idx = np.random.choice(n_samples, size=n_samples, replace=True)
                                 X_bootstrap = X[bootstrap_idx]
                                 y_bootstrap = y[bootstrap_idx]
                                 
-                                # Quick stability check using variance
-                                feature_vars = np.var(X_bootstrap, axis=0)
-                                stability_scores.append(np.mean(feature_vars))
+                                # Calculate feature importance using correlation with target
+                                if len(np.unique(y_bootstrap)) > 1:  # Check if target has variation
+                                    correlations = np.abs(np.corrcoef(X_bootstrap.T, y_bootstrap)[:-1, -1])
+                                    feature_importance_scores.append(correlations)
                             
-                            # Calculate stability score as coefficient of variation
-                            mean_stability = np.mean(stability_scores)
-                            std_stability = np.std(stability_scores)
-                            analytics['stability_score'] = std_stability / mean_stability if mean_stability > 0 else 0.0
+                            if feature_importance_scores:
+                                # Calculate stability as consistency of feature rankings across bootstrap samples
+                                importance_matrix = np.array(feature_importance_scores)
+                                feature_rankings = np.argsort(importance_matrix, axis=1)
+                                
+                                # Calculate ranking stability (lower is more stable)
+                                ranking_std = np.std(feature_rankings, axis=0)
+                                stability_score = 1.0 - np.mean(ranking_std) / n_features  # Normalize by number of features
+                                analytics['stability_score'] = max(0.0, min(1.0, stability_score))
+                            else:
+                                analytics['stability_score'] = 0.5
                         else:
                             analytics['stability_score'] = 0.5
-                    except:
+                    except Exception as stability_e:
+                        tprint_debug(f"⚠️ Stability analysis failed: {stability_e}")
                         analytics['stability_score'] = 0.5
                     
                     tprint_debug(f"📊 VectorBT analytics: sparsity={analytics['sparsity']:.3f}, "

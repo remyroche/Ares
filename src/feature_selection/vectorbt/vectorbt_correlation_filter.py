@@ -226,7 +226,8 @@ class VectorBTCorrelationFilter:
                     if hasattr(chunk_i, 'vbt'):
                         try:
                             chunk_corr = chunk_i.vbt.corrwith(chunk_j, axis=0)
-                        except:
+                        except Exception as vbt_corr_e:
+                            tprint_debug(f"⚠️ VectorBT correlation failed, using pandas fallback: {vbt_corr_e}")
                             chunk_corr = chunk_i.corrwith(chunk_j, axis=0)
                     else:
                         chunk_corr = chunk_i.corrwith(chunk_j, axis=0)

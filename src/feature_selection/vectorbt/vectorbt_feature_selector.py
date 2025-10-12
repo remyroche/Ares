@@ -345,8 +345,8 @@ class VectorBTFeatureSelector:
                 import os
                 try:
                     os.remove('temp_features.dat')
-                except:
-                    pass
+                except Exception as cleanup_e:
+                    tprint_debug(f"⚠️ Temp file cleanup failed: {cleanup_e}")
             
             return result
             

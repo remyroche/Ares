@@ -112,7 +112,8 @@ class ChunkedFeatureProcessor:
             else:
                 import psutil
                 return psutil.virtual_memory().percent / 100.0
-        except Exception:
+        except Exception as mem_e:
+            tprint_debug(f"⚠️ Memory check failed: {mem_e}")
             return 0.5  # Default to 50% if can't check
     
     def _optimize_memory_if_needed(self) -> bool:

@@ -491,55 +491,147 @@ class VectorBTEnsembleOptimizer:
     
     def _optimize_portfolio_weights_vectorbt(self, predictions: np.ndarray, 
                                            targets: pd.Series) -> np.ndarray:
-        """Optimize ensemble weights using VectorBT portfolio optimization."""
+        """Optimize ensemble weights using VectorBT portfolio optimization with enhanced strategies."""
         try:
+            from ..vectorbt_financial_metrics import VectorBTFinancialMetrics
+            from ..vectorbt_performance_monitor import monitor_operation
+            
             # Calculate prediction returns (errors) - treat as portfolio returns
             returns = predictions - targets.values.reshape(-1, 1)
             
-            # Use VectorBT's built-in portfolio optimization
-            if hasattr(self.vbt, 'Portfolio'):
-                # Create portfolio from returns
-                portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
-                
-                # Use VectorBT's mean-variance optimization
-                if hasattr(portfolio, 'optimize'):
-                    # Optimize portfolio weights
-                    optimized_weights = portfolio.optimize(
-                        target_return=None,  # Maximize Sharpe ratio
-                        target_volatility=None,
-                        risk_free_rate=0.02,
-                        max_weights=1.0,
-                        min_weights=0.0
+            # Remove any NaN values
+            valid_mask = ~np.isnan(returns).any(axis=1)
+            returns = returns[valid_mask]
+            predictions = predictions[valid_mask]
+            
+            if len(returns) < 10:  # Need minimum data for portfolio analysis
+                return np.ones(predictions.shape[1]) / predictions.shape[1]
+            
+            with monitor_operation(
+                "vectorbt_ensemble_portfolio_optimization",
+                metadata={'n_models': predictions.shape[1], 'n_samples': len(returns)}
+            ):
+                # Use VectorBT's built-in portfolio optimization
+                if hasattr(self.vbt, 'Portfolio'):
+                    # Create portfolio from returns
+                    portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+                    
+                    # Initialize financial metrics calculator
+                    financial_metrics = VectorBTFinancialMetrics()
+                    
+                    # Calculate comprehensive portfolio metrics
+                    portfolio_metrics = financial_metrics.calculate_comprehensive_metrics(
+                        portfolio_values=predictions,
+                        returns=returns
                     )
                     
-                    if optimized_weights is not None:
-                        return optimized_weights.values.flatten()
-                
-                # Fallback: Use equal weights with VectorBT risk adjustment
-                equal_weights = np.ones(predictions.shape[1]) / predictions.shape[1]
-                
-                # Adjust weights based on VectorBT risk metrics
-                portfolio_stats = portfolio.stats()
-                sharpe_ratios = []
-                
-                for i in range(predictions.shape[1]):
-                    single_asset_returns = returns[:, i:i+1]
-                    single_portfolio = self.vbt.Portfolio.from_returns(single_asset_returns, freq='1min')
-                    single_stats = single_portfolio.stats()
-                    sharpe_ratios.append(single_stats.get('Sharpe Ratio', 0))
-                
-                # Weight by Sharpe ratio (higher Sharpe = higher weight)
-                sharpe_ratios = np.array(sharpe_ratios)
-                if np.sum(sharpe_ratios) > 0:
-                    weights = sharpe_ratios / np.sum(sharpe_ratios)
-                else:
-                    weights = equal_weights
-                
-                return weights
+                    # Use different optimization strategies based on performance
+                    sharpe_ratio = portfolio_metrics.get('sharpe_ratio', 0)
+                    max_drawdown = abs(portfolio_metrics.get('max_drawdown', 0))
+                    volatility = portfolio_metrics.get('volatility', 0)
+                    
+                    # Try VectorBT's built-in optimization first
+                    if hasattr(portfolio, 'optimize'):
+                        try:
+                            # Optimize portfolio weights using VectorBT
+                            optimized_weights = portfolio.optimize(
+                                target_return=None,  # Maximize Sharpe ratio
+                                target_volatility=None,
+                                risk_free_rate=0.02,
+                                max_weights=1.0,
+                                min_weights=0.0
+                            )
+                            
+                            if optimized_weights is not None:
+                                weights = optimized_weights.values.flatten() if hasattr(optimized_weights, 'values') else optimized_weights
+                                if len(weights) == predictions.shape[1]:
+                                    # Validate and normalize weights
+                                    weights = np.maximum(weights, 0)
+                                    weights = weights / weights.sum() if weights.sum() > 0 else np.ones(len(weights)) / len(weights)
+                                    
+                                    # Store optimization results for analysis
+                                    self._last_portfolio_metrics = portfolio_metrics
+                                    self._last_optimization_weights = weights
+                                    
+                                    return weights
+                        except Exception as e:
+                            logger.debug(f"VectorBT built-in optimization failed: {e}")
+                    
+                    # Enhanced fallback: Use equal weights with VectorBT risk adjustment
+                    equal_weights = np.ones(predictions.shape[1]) / predictions.shape[1]
+                    
+                    # Calculate individual model performance using VectorBT
+                    sharpe_ratios = []
+                    for i in range(predictions.shape[1]):
+                        single_asset_returns = returns[:, i:i+1]
+                        single_portfolio = self.vbt.Portfolio.from_returns(single_asset_returns, freq='1min')
+                        single_stats = single_portfolio.stats()
+                        sharpe_ratios.append(single_stats.get('Sharpe Ratio', 0))
+                    
+                    # Enhanced weighting strategy based on portfolio characteristics
+                    sharpe_ratios = np.array(sharpe_ratios)
+                    
+                    if sharpe_ratio > 1.0 and max_drawdown < 0.1:
+                        # Good overall performance - use Sharpe-based weighting
+                        if np.sum(sharpe_ratios) > 0:
+                            weights = sharpe_ratios / np.sum(sharpe_ratios)
+                        else:
+                            weights = equal_weights
+                    elif volatility > 0.2:
+                        # High volatility - use risk-adjusted weighting
+                        weights = self._risk_adjusted_ensemble_weights(returns, sharpe_ratios)
+                    else:
+                        # Standard Sharpe-based weighting
+                        if np.sum(sharpe_ratios) > 0:
+                            # Normalize Sharpe ratios and apply softmax for better distribution
+                            normalized_sharpe = (sharpe_ratios - sharpe_ratios.min()) / (sharpe_ratios.max() - sharpe_ratios.min() + 1e-8)
+                            exp_sharpe = np.exp(normalized_sharpe * 2)  # Scale factor for softmax
+                            weights = exp_sharpe / np.sum(exp_sharpe)
+                        else:
+                            weights = equal_weights
+                    
+                    # Ensure weights are valid
+                    weights = np.maximum(weights, 0)
+                    weights = weights / weights.sum() if weights.sum() > 0 else equal_weights
+                    
+                    # Store optimization results for analysis
+                    self._last_portfolio_metrics = portfolio_metrics
+                    self._last_optimization_weights = weights
+                    
+                    return weights
             
             else:
                 # Fallback to simple optimization
                 return self._simple_weight_optimization(predictions, targets)
+    
+    def _risk_adjusted_ensemble_weights(self, returns: np.ndarray, sharpe_ratios: np.ndarray) -> np.ndarray:
+        """Calculate risk-adjusted ensemble weights for high volatility scenarios."""
+        n_models = returns.shape[1]
+        
+        # Calculate individual model risks (volatility)
+        model_risks = []
+        for i in range(n_models):
+            model_returns = returns[:, i]
+            if len(model_returns) > 0 and not np.isnan(model_returns).all():
+                risk = np.std(model_returns)
+                model_risks.append(risk)
+            else:
+                model_risks.append(1.0)  # High risk for invalid models
+        
+        model_risks = np.array(model_risks)
+        
+        # Combine risk and performance for weighting
+        # Lower risk and higher Sharpe = higher weight
+        risk_adjusted_scores = sharpe_ratios / (model_risks + 1e-8)
+        
+        # Normalize scores
+        if np.sum(risk_adjusted_scores) > 0:
+            weights = risk_adjusted_scores / np.sum(risk_adjusted_scores)
+        else:
+            # Fallback to equal weights
+            weights = np.ones(n_models) / n_models
+        
+        return weights
                 
         except Exception as e:
             logger.warning(f"VectorBT portfolio optimization failed: {e}, using simple optimization")

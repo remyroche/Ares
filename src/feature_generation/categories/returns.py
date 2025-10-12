@@ -168,10 +168,49 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period + 1:
             return np.full(len(prices), np.nan)
 
-        # Use VectorBT Rolling Optimizer for optimized returns calculation
-        if self.rolling_optimizer and len(prices) > 50:  # Lower threshold for VectorBT usage
+        prices_series = pd.Series(prices)
+        
+        # Use Unified Vectorization Manager for optimized returns calculation
+        if self.unified_manager and len(prices) > 50:
             try:
-                prices_series = pd.Series(prices)
+                # Use the unified manager's rolling operation for percentage change
+                if period == 1:
+                    # For single period, use direct pct_change
+                    returns = prices_series.pct_change(periods=period).values
+                else:
+                    # For multiple periods, use rolling operations
+                    returns = self.unified_manager.rolling_operation(
+                        prices_series, 
+                        'apply', 
+                        window=period,
+                        func=lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan
+                    ).values
+                
+                self.performance_stats['unified_manager_operations'] += 1
+                return returns
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager returns calculation failed: {e}, using VectorBT fallback")
+                if self.rolling_optimizer:
+                    try:
+                        if period == 1:
+                            returns = prices_series.pct_change(periods=period).values
+                        else:
+                            returns = self.rolling_optimizer.rolling_apply(
+                                prices_series, 
+                                lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan,
+                                window=period
+                            ).values
+                        self.performance_stats['rolling_optimizer_operations'] += 1
+                        return returns
+                    except Exception as e2:
+                        self.logger.warning(f"VectorBT Rolling Optimizer returns calculation failed: {e2}, using VectorBT fallback")
+                        self.performance_stats['pandas_fallbacks'] += 1
+                else:
+                    self.performance_stats['pandas_fallbacks'] += 1
+
+        # Use VectorBT Rolling Optimizer for optimized returns calculation
+        elif self.rolling_optimizer and len(prices) > 50:  # Lower threshold for VectorBT usage
+            try:
                 # Use VectorBT Rolling Optimizer for percentage change
                 if period == 1:
                     # For single period, use direct pct_change
@@ -191,9 +230,8 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 self.performance_stats['pandas_fallbacks'] += 1
 
         # Use VectorBT for optimized returns calculation
-        if VECTORBT_AVAILABLE and len(prices) > 100:  # Use VectorBT for larger datasets
+        elif VECTORBT_AVAILABLE and len(prices) > 100:  # Use VectorBT for larger datasets
             try:
-                prices_series = pd.Series(prices)
                 # VectorBT optimized pct_change
                 returns = prices_series.pct_change(periods=period).values
                 self.performance_stats['vectorbt_operations'] += 1

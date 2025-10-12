@@ -63,7 +63,9 @@ from src.utils.matrix_operations import (
     gpu_matrix_multiply,
     correlation_matrix_gpu
 )
-from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+)
 from src.training.config.data_locator import DataLocator
 
 # Import bayesian optimization utilities
@@ -83,7 +85,6 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import HPOTrialResult
 except ImportError:
     HPOTrialResult = dict  # Fallback to dict if not available
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 
 # Import budget-aware feature selection
 try:
@@ -201,41 +202,38 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         
         # Initialize VectorBT optimization tools for enhanced performance
         try:
-            from src.feature_generation.utils.vectorbt_rolling_optimizer import (
-                VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-            )
-            from src.feature_generation.utils.unified_vectorization_manager import (
-                UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
+            from ..utils.vectorbt_utils import (
+                create_vectorbt_tools, VectorBTConfig, get_vectorbt_performance_stats,
+                VECTORBT_UTILS_AVAILABLE
             )
             
-            # Initialize VectorBT rolling optimizer
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+            tprint("🚀 Initializing VectorBT optimization tools for final feature selection component")
+            vectorbt_config = VectorBTConfig(
                 enable_gpu=False,  # Conservative for feature selection
                 enable_parallel=True,
                 memory_efficient=True,
                 chunk_size=1000
             )
             
-            # Initialize unified vectorization manager
-            vectorization_config = VectorizationConfig(
-                enable_vectorbt=True,
-                enable_gpu=False,
-                enable_parallel=True,
-                memory_efficient=True,
-                chunk_size=1000,
-                enable_monitoring=True,
-                batch_size=10000,
-                enable_batch_processing=True
-            )
-            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            vectorbt_tools = create_vectorbt_tools(vectorbt_config)
+            self.vectorbt_optimizer = vectorbt_tools['optimizer']
+            self.vectorization_manager = vectorbt_tools['manager']
+            self.vectorbt_enabled = vectorbt_tools['available']
             
-            self._log_success(
-                "✅ [FinalFeatureSelection] VectorBT optimization tools initialized",
-                event='final_feature_selection.vectorbt_init',
-            )
+            if self.vectorbt_enabled:
+                self._log_success(
+                    "✅ [FinalFeatureSelection] VectorBT optimization tools initialized",
+                    event='final_feature_selection.vectorbt_init',
+                )
+            else:
+                self._log_warning(
+                    "⚠️ [FinalFeatureSelection] VectorBT optimization tools not available",
+                    event='final_feature_selection.vectorbt_init',
+                )
         except Exception as e:
             self.vectorbt_optimizer = None
             self.vectorization_manager = None
+            self.vectorbt_enabled = False
             self._log_warning(
                 f"⚠️ [FinalFeatureSelection] VectorBT optimization tools not available: {e}",
                 event='final_feature_selection.vectorbt_init',
@@ -570,6 +568,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         """
         pipeline_state = PipelineState.ensure(pipeline_state)
         log_info('🎯 Starting Final Feature Selection')
+        tprint("🚀 Starting Final Feature Selection Component")
+        tprint(f"   📊 Pipeline state type: {type(pipeline_state)}")
         self._log_info(
             '🚀 [FinalFeatureSelection] Starting execute routine',
             event='final_feature_selection.execute',
@@ -609,25 +609,39 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             return validated
 
         try:
+            tprint("🔍 Processing input data for feature selection")
             if isinstance(data, pd.DataFrame) and not data.empty:
+                tprint(f"   📊 DataFrame input: {data.shape[0]} samples, {data.shape[1]} features")
                 data = _record_validated_frame('input_data', data)
+                tprint("   ✅ DataFrame validation completed")
             elif isinstance(data, dict):
+                tprint(f"   📊 Dictionary input with {len(data)} keys")
                 _update_target_shifts(data)
                 for key in ('features', 'feature_matrix', 'data'):
                     candidate = data.get(key)
                     if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                        tprint(f"   📊 Found {key} DataFrame: {candidate.shape}")
                         data[key] = _record_validated_frame(key, candidate)
+                        tprint(f"   ✅ {key} validation completed")
+            else:
+                tprint(f"   ⚠️ Unexpected data type: {type(data)}")
 
+            tprint("🔍 Processing pipeline state data")
             for key in ('feature_matrix', 'final_feature_candidates'):
                 candidate = pipeline_state.get(key)
                 if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                    tprint(f"   📊 Found {key} in pipeline state: {candidate.shape}")
                     pipeline_state[key] = _record_validated_frame(key, candidate)
+                    tprint(f"   ✅ {key} validation completed")
 
             # Check memory pressure and apply aggressive optimizations
+            tprint("🧠 Checking memory pressure")
             memory_stats = self.monitor_memory_pressure()
             memory_pressure = memory_stats['pressure']
+            tprint(f"   📊 Memory pressure: {memory_pressure:.2f}")
             
             if memory_stats['cleanup_triggered']:
+                tprint_warning(f'🧠 Memory pressure detected ({memory_pressure:.2f}), performing aggressive cleanup')
                 log_warning(f'🧠 Memory pressure detected ({memory_pressure:.2f}), performing aggressive cleanup')
                 self._log_warning(
                     f"🧠 [FinalFeatureSelection] Memory pressure detected ({memory_pressure:.2f}); aggressive cleanup performed",
@@ -636,22 +650,31 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     cleanup_triggered=memory_stats['cleanup_triggered'],
                     recommendations=memory_stats['recommendations']
                 )
+            else:
+                tprint("   ✅ Memory pressure within normal limits")
 
             # Apply VectorBT optimization to input data if available
             if isinstance(data, pd.DataFrame) and not data.empty:
+                tprint("⚡ Applying VectorBT optimization to input data")
                 # Use memory-optimized processing for large datasets
                 if len(data) > 5000:
+                    tprint(f"   📦 Large dataset detected ({len(data)} rows), using memory-optimized processing")
                     data = self._vectorbt_memory_optimized_processing(data)
+                    tprint("   ✅ VectorBT memory-optimized processing completed")
                     self._log_info(
                         "✅ [FinalFeatureSelection] Applied VectorBT memory-optimized processing to large dataset",
                         event='final_feature_selection.vectorbt_memory_optimization',
                     )
                 else:
+                    tprint(f"   📊 Standard dataset size ({len(data)} rows), using standard VectorBT processing")
                     data = self._vectorbt_optimized_data_processing(data)
+                    tprint("   ✅ VectorBT optimization completed")
                     self._log_info(
                         "✅ [FinalFeatureSelection] Applied VectorBT optimization to input data",
                         event='final_feature_selection.vectorbt_optimization',
                     )
+            else:
+                tprint("   ⚠️ No DataFrame data available for VectorBT optimization")
 
             # Get hardware configuration for feature selection
             # Use default config if get_optimal_config is not available
@@ -1559,44 +1582,12 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
     def _get_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive VectorBT performance statistics."""
-        stats = {}
+        from ..utils.vectorbt_utils import get_vectorbt_performance_stats
         
-        # Get VectorBT rolling optimizer stats
-        if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
-            try:
-                optimizer_stats = self.vectorbt_optimizer.get_performance_stats()
-                stats.update({
-                    'vectorbt_rolling_operations': optimizer_stats.get('vectorbt_operations', 0),
-                    'pandas_fallbacks': optimizer_stats.get('pandas_fallbacks', 0),
-                    'gpu_operations': optimizer_stats.get('gpu_operations', 0),
-                    'memory_optimizations': optimizer_stats.get('memory_optimizations', 0),
-                    'chunk_operations': optimizer_stats.get('chunk_operations', 0),
-                    'avg_time_per_operation': optimizer_stats.get('avg_time_per_operation', 0.0),
-                    'vectorbt_usage_rate': optimizer_stats.get('vectorbt_usage_rate', 0.0)
-                })
-            except Exception as e:
-                self._log_warning(
-                    f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT optimizer stats: {e}",
-                    event='final_feature_selection.vectorbt_optimizer_stats',
-                )
-        
-        # Get unified vectorization manager stats
-        if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
-            try:
-                manager_stats = self.vectorization_manager.get_performance_stats()
-                stats.update({
-                    'total_operations': manager_stats.get('total_operations', 0),
-                    'strategy_usage': manager_stats.get('strategy_usage', {}),
-                    'average_speedup': manager_stats.get('average_speedup', 0.0),
-                    'total_computation_time': manager_stats.get('total_computation_time', 0.0)
-                })
-            except Exception as e:
-                self._log_warning(
-                    f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT manager stats: {e}",
-                    event='final_feature_selection.vectorbt_manager_stats',
-                )
-        
-        return stats
+        return get_vectorbt_performance_stats(
+            optimizer=getattr(self, 'vectorbt_optimizer', None),
+            manager=getattr(self, 'vectorization_manager', None)
+        )
     
     def _vectorbt_memory_optimized_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """Process data with VectorBT memory optimization."""

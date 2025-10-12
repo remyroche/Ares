@@ -40,21 +40,14 @@ from src.utils.tprint import (
     tprint_info,
     tprint_success,
     tprint_warning,
+    tprint_debug,
 )
 
-# Import VectorBT optimization utilities
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
-        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    )
-    from src.feature_generation.utils.unified_vectorization_manager import (
-        UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
-    )
-    VECTORBT_UTILS_AVAILABLE = True
-    tprint("✅ VectorBT optimization utilities available for final feature selection")
-except ImportError as e:
-    VECTORBT_UTILS_AVAILABLE = False
-    tprint(f"⚠️ VectorBT optimization utilities not available: {e}")
+# Import consolidated VectorBT utilities
+from .utils.vectorbt_utils import (
+    create_vectorbt_tools, VectorBTConfig, get_vectorbt_performance_stats,
+    VECTORBT_UTILS_AVAILABLE
+)
 from src.training.config.data_locator import DataLocator
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
@@ -222,35 +215,23 @@ class FinalFeatureSelectionStep:
 
         # Initialize VectorBT optimization tools if available
         if VECTORBT_UTILS_AVAILABLE:
-            try:
-                # Initialize VectorBT rolling optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
-                    enable_gpu=False,  # Conservative for feature selection
-                    enable_parallel=True,
-                    memory_efficient=True,
-                    chunk_size=1000
-                )
-                
-                # Initialize unified vectorization manager
-                vectorization_config = VectorizationConfig(
-                    enable_vectorbt=True,
-                    enable_gpu=False,
-                    enable_parallel=True,
-                    memory_efficient=True,
-                    chunk_size=1000,
-                    enable_monitoring=True,
-                    batch_size=10000,
-                    enable_batch_processing=True
-                )
-                self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
-                
+            tprint("🚀 Initializing VectorBT optimization tools for final feature selection")
+            vectorbt_config = VectorBTConfig(
+                enable_gpu=False,  # Conservative for feature selection
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000
+            )
+            
+            vectorbt_tools = create_vectorbt_tools(vectorbt_config)
+            self.vectorbt_optimizer = vectorbt_tools['optimizer']
+            self.vectorization_manager = vectorbt_tools['manager']
+            self.vectorbt_enabled = vectorbt_tools['available']
+            
+            if self.vectorbt_enabled:
                 tprint("✅ VectorBT optimization tools initialized for final feature selection")
-                self.vectorbt_enabled = True
-            except Exception as e:
-                tprint(f"⚠️ VectorBT optimization initialization failed: {e}")
-                self.vectorbt_optimizer = None
-                self.vectorization_manager = None
-                self.vectorbt_enabled = False
+            else:
+                tprint_warning("⚠️ VectorBT optimization tools not available")
         else:
             self.vectorbt_optimizer = None
             self.vectorization_manager = None
@@ -657,6 +638,8 @@ class FinalFeatureSelectionStep:
 
         tprint("📥 Loading feature data for final selection")
         tprint(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
+        tprint(f"   📁 Data directory: {data_dir}")
+        
         # Try different possible file locations and formats
         possible_files = [
             f"{symbol.lower()}_{timeframe}_features.parquet",
@@ -664,15 +647,20 @@ class FinalFeatureSelectionStep:
             f"{symbol.lower()}_{timeframe}_final_features.parquet",
             f"{symbol.lower()}_{timeframe}_matrix_features.parquet"
         ]
+        tprint(f"   🔍 Searching for feature files: {len(possible_files)} patterns")
 
         data_path = Path(data_dir)
+        tprint(f"   📂 Data path exists: {data_path.exists()}")
 
-        for filename in possible_files:
+        for i, filename in enumerate(possible_files):
             file_path = data_path / filename
+            tprint_debug(f"   🔍 Checking file {i+1}/{len(possible_files)}: {filename}")
             if file_path.exists():
                 self.logger.info(f"📂 Loading feature data from: {file_path}")
                 tprint_success(f"   📂 Found feature file: {file_path.name}")
+                tprint(f"   📊 File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
                 data = pd.read_parquet(file_path)
+                tprint(f"   ✅ Loaded data shape: {data.shape}")
 
                 # 🔧 INTEGRATE DATA CLEANING UTILITY
                 # Clean corrupted data before final feature selection

@@ -764,6 +764,251 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             return self._optimized_rolling_operation(data, "sum", window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+    
+    def generate_volume_indicators_batch(self, data: pd.DataFrame, 
+                                       sma_windows: List[int] = None,
+                                       ema_windows: List[int] = None,
+                                       ratio_windows: List[int] = None,
+                                       roc_windows: List[int] = None) -> pd.DataFrame:
+        """
+        Generate comprehensive volume indicators in batch.
+        
+        Args:
+            data: OHLCV data
+            sma_windows: SMA window sizes (default: [5, 10, 20, 50])
+            ema_windows: EMA window sizes (default: [12, 26])
+            ratio_windows: Volume ratio window sizes (default: [5, 10, 20])
+            roc_windows: Rate of change window sizes (default: [5, 10, 20])
+            
+        Returns:
+            DataFrame with all volume indicators
+        """
+        if sma_windows is None:
+            sma_windows = [5, 10, 20, 50]
+        if ema_windows is None:
+            ema_windows = [12, 26]
+        if ratio_windows is None:
+            ratio_windows = [5, 10, 20]
+        if roc_windows is None:
+            roc_windows = [5, 10, 20]
+        
+        feature_configs = []
+        
+        # Add volume SMA features
+        for window in sma_windows:
+            feature_configs.append({
+                'name': f'volume_sma_{window}',
+                'type': 'rolling',
+                'params': {'operation': 'mean', 'window': window, 'column': 'volume'}
+            })
+        
+        # Add volume EMA features (custom implementation)
+        for window in ema_windows:
+            feature_configs.append({
+                'name': f'volume_ema_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: df['volume'].ewm(span=w).mean(),
+                    'window': window
+                }
+            })
+        
+        # Add volume ratio features
+        for window in ratio_windows:
+            feature_configs.append({
+                'name': f'volume_ratio_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: df['volume'] / df['volume'].rolling(w).mean(),
+                    'window': window
+                }
+            })
+        
+        # Add volume ROC features
+        for window in roc_windows:
+            feature_configs.append({
+                'name': f'volume_roc_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: df['volume'].pct_change(w),
+                    'window': window
+                }
+            })
+        
+        # Process all features using UnifiedVectorizationManager
+        if self.unified_manager:
+            try:
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified manager batch processing failed: {e}, using individual processing")
+        
+        # Fallback to individual processing
+        return self._process_volume_features_individually(data, feature_configs)
+    
+    def generate_volume_correlation_features_batch(self, data: pd.DataFrame,
+                                                 windows: List[int] = None,
+                                                 price_columns: List[str] = None) -> pd.DataFrame:
+        """
+        Generate volume-price correlation features in batch.
+        
+        Args:
+            data: OHLCV data
+            windows: Correlation window sizes (default: [10, 20, 50])
+            price_columns: Price columns to correlate with volume (default: ['close', 'high', 'low'])
+            
+        Returns:
+            DataFrame with volume correlation features
+        """
+        if windows is None:
+            windows = [10, 20, 50]
+        if price_columns is None:
+            price_columns = ['close', 'high', 'low']
+        
+        feature_configs = []
+        
+        for window in windows:
+            for price_col in price_columns:
+                if price_col in data.columns:
+                    feature_configs.append({
+                        'name': f'volume_{price_col}_corr_{window}',
+                        'type': 'rolling',
+                        'params': {
+                            'operation': 'corr',
+                            'window': window,
+                            'column': 'volume',
+                            'other_column': price_col
+                        }
+                    })
+        
+        # Process using UnifiedVectorizationManager
+        if self.unified_manager:
+            try:
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified manager correlation processing failed: {e}, using individual processing")
+        
+        # Fallback to individual processing
+        return self._process_volume_features_individually(data, feature_configs)
+    
+    def generate_vwap_features_batch(self, data: pd.DataFrame,
+                                   vwap_windows: List[int] = None) -> pd.DataFrame:
+        """
+        Generate VWAP-related features in batch.
+        
+        Args:
+            data: OHLCV data
+            vwap_windows: VWAP window sizes (default: [20, 50])
+            
+        Returns:
+            DataFrame with VWAP features
+        """
+        if vwap_windows is None:
+            vwap_windows = [20, 50]
+        
+        feature_configs = []
+        
+        for window in vwap_windows:
+            # VWAP calculation
+            feature_configs.append({
+                'name': f'vwap_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: self._calculate_vwap(df, w),
+                    'window': window
+                }
+            })
+            
+            # VWAP deviation
+            feature_configs.append({
+                'name': f'vwap_deviation_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: self._calculate_vwap_deviation(df, w),
+                    'window': window
+                }
+            })
+        
+        # Process using UnifiedVectorizationManager
+        if self.unified_manager:
+            try:
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified manager VWAP processing failed: {e}, using individual processing")
+        
+        # Fallback to individual processing
+        return self._process_volume_features_individually(data, feature_configs)
+    
+    def _calculate_vwap(self, data: pd.DataFrame, window: int) -> pd.Series:
+        """Calculate VWAP for given window."""
+        high = data['high'].values
+        low = data['low'].values
+        close = data['close'].values
+        volume = data['volume'].values
+        
+        vwap = np.full(len(data), np.nan)
+        
+        for i in range(window - 1, len(data)):
+            window_high = high[i - window + 1:i + 1]
+            window_low = low[i - window + 1:i + 1]
+            window_close = close[i - window + 1:i + 1]
+            window_volume = volume[i - window + 1:i + 1]
+            
+            typical_price = (window_high + window_low + window_close) / 3
+            vwap[i] = np.sum(typical_price * window_volume) / np.sum(window_volume)
+        
+        return pd.Series(vwap, index=data.index)
+    
+    def _calculate_vwap_deviation(self, data: pd.DataFrame, window: int) -> pd.Series:
+        """Calculate VWAP deviation for given window."""
+        vwap = self._calculate_vwap(data, window)
+        return (data['close'] - vwap) / vwap
+    
+    def _process_volume_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process volume features individually as fallback."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'rolling')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'volume')
+                    other_column = params.get('other_column')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        
+                        if operation == 'corr' and other_column and other_column in data.columns:
+                            results[feature_name] = self.rolling_optimizer.rolling_corr(
+                                series_data, data[other_column], window
+                            )
+                        else:
+                            # Use VectorBTRollingOptimizer for other operations
+                            if hasattr(self.rolling_optimizer, f'rolling_{operation}'):
+                                results[feature_name] = getattr(self.rolling_optimizer, f'rolling_{operation}')(
+                                    series_data, window
+                                )
+                            else:
+                                # Fallback to pandas
+                                rolling_obj = series_data.rolling(window=window)
+                                results[feature_name] = getattr(rolling_obj, operation)()
+                
+                elif feature_type == 'custom':
+                    func = params.get('function')
+                    if callable(func):
+                        results[feature_name] = func(data)
+                    else:
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+                
+            except Exception as e:
+                self.logger.warning(f"Volume feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Simple Moving Average with VectorBT optimization."""

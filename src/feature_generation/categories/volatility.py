@@ -405,21 +405,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         if self.unified_manager:
             try:
                 # Use Unified Vectorization Manager for batch processing
-                batch_result = self.unified_manager.optimize_operation(
-                    OperationType.FEATURE_ENGINEERING,
-                    {
-                        'data': data,
-                        'feature_configs': feature_configs,
-                        'operation_type': 'volatility_batch'
-                    },
-                    OperationConfig(
-                        operation_type=OperationType.FEATURE_ENGINEERING,
-                        data_size=len(data),
-                        data_dimensions=data.shape,
-                        memory_budget_mb=1024.0
-                    )
-                )
-                return batch_result.result
+                return self.unified_manager.batch_process_features(data, feature_configs)
             except Exception as e:
                 self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
                 # Fallback to individual processing
@@ -574,6 +560,188 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 results[feature_name] = pd.Series(np.nan, index=data.index)
         
         return pd.DataFrame(results, index=data.index)
+    
+    def generate_bollinger_bands_batch(self, data: pd.DataFrame, windows: List[int] = None, 
+                                     std_devs: List[float] = None) -> pd.DataFrame:
+        """
+        Generate Bollinger Bands for multiple windows and standard deviations in batch.
+        
+        Args:
+            data: OHLCV data
+            windows: List of window sizes (default: [20, 50])
+            std_devs: List of standard deviation multipliers (default: [2.0])
+            
+        Returns:
+            DataFrame with Bollinger Bands features
+        """
+        if windows is None:
+            windows = [20, 50]
+        if std_devs is None:
+            std_devs = [2.0]
+        
+        feature_configs = []
+        
+        for window in windows:
+            for std_dev in std_devs:
+                # Middle band (SMA)
+                feature_configs.append({
+                    'name': f'bb_middle_{window}_{std_dev}',
+                    'type': 'rolling',
+                    'params': {'operation': 'mean', 'window': window, 'column': 'close'}
+                })
+                
+                # Standard deviation
+                feature_configs.append({
+                    'name': f'bb_std_{window}_{std_dev}',
+                    'type': 'rolling',
+                    'params': {'operation': 'std', 'window': window, 'column': 'close'}
+                })
+        
+        # Generate base features
+        base_features = self.generate_optimized_volatility_features(data, feature_configs)
+        
+        # Calculate Bollinger Bands
+        results = {}
+        for window in windows:
+            for std_dev in std_devs:
+                middle_key = f'bb_middle_{window}_{std_dev}'
+                std_key = f'bb_std_{window}_{std_dev}'
+                
+                if middle_key in base_features.columns and std_key in base_features.columns:
+                    middle = base_features[middle_key]
+                    std_val = base_features[std_key]
+                    
+                    # Calculate bands
+                    upper = middle + (std_val * std_dev)
+                    lower = middle - (std_val * std_dev)
+                    width = (upper - lower) / middle
+                    position = (data['close'] - lower) / (upper - lower)
+                    
+                    results[f'bb_upper_{window}_{std_dev}'] = upper
+                    results[f'bb_middle_{window}_{std_dev}'] = middle
+                    results[f'bb_lower_{window}_{std_dev}'] = lower
+                    results[f'bb_width_{window}_{std_dev}'] = width
+                    results[f'bb_position_{window}_{std_dev}'] = position
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def generate_atr_features_batch(self, data: pd.DataFrame, periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate Average True Range (ATR) features for multiple periods in batch.
+        
+        Args:
+            data: OHLCV data
+            periods: List of ATR periods (default: [14, 21])
+            
+        Returns:
+            DataFrame with ATR features
+        """
+        if periods is None:
+            periods = [14, 21]
+        
+        # Calculate True Range for all periods
+        tr = np.maximum.reduce([
+            data['high'] - data['low'],
+            np.abs(data['high'] - data['close'].shift(1)),
+            np.abs(data['low'] - data['close'].shift(1))
+        ])
+        
+        # Create feature configurations for ATR
+        feature_configs = []
+        for period in periods:
+            feature_configs.append({
+                'name': f'atr_{period}',
+                'type': 'rolling',
+                'params': {'operation': 'mean', 'window': period, 'column': 'tr'}
+            })
+        
+        # Add TR to data temporarily
+        data_with_tr = data.copy()
+        data_with_tr['tr'] = tr
+        
+        # Generate ATR features
+        atr_features = self.generate_optimized_volatility_features(data_with_tr, feature_configs)
+        
+        # Calculate additional ATR-based features
+        results = {}
+        for period in periods:
+            atr_key = f'atr_{period}'
+            if atr_key in atr_features.columns:
+                atr = atr_features[atr_key]
+                
+                # ATR percentage
+                results[f'atr_pct_{period}'] = atr / data['close']
+                
+                # ATR ratio (current vs previous)
+                results[f'atr_ratio_{period}'] = atr / atr.shift(1)
+                
+                # ATR position in range
+                results[f'atr_position_{period}'] = (data['high'] - data['low']) / atr
+        
+        # Combine ATR and additional features
+        all_features = pd.concat([atr_features, pd.DataFrame(results, index=data.index)], axis=1)
+        
+        return all_features
+    
+    def generate_volatility_indicators_batch(self, data: pd.DataFrame,
+                                           bb_windows: List[int] = None,
+                                           atr_periods: List[int] = None,
+                                           volatility_windows: List[int] = None) -> pd.DataFrame:
+        """
+        Generate comprehensive volatility indicators in batch.
+        
+        Args:
+            data: OHLCV data
+            bb_windows: Bollinger Bands windows (default: [20, 50])
+            atr_periods: ATR periods (default: [14, 21])
+            volatility_windows: Volatility calculation windows (default: [10, 20, 30])
+            
+        Returns:
+            DataFrame with all volatility indicators
+        """
+        if bb_windows is None:
+            bb_windows = [20, 50]
+        if atr_periods is None:
+            atr_periods = [14, 21]
+        if volatility_windows is None:
+            volatility_windows = [10, 20, 30]
+        
+        # Generate all volatility features
+        bb_features = self.generate_bollinger_bands_batch(data, bb_windows)
+        atr_features = self.generate_atr_features_batch(data, atr_periods)
+        
+        # Generate basic volatility features
+        volatility_configs = []
+        for window in volatility_windows:
+            volatility_configs.extend([
+                {
+                    'name': f'volatility_std_{window}',
+                    'type': 'rolling',
+                    'params': {'operation': 'std', 'window': window, 'column': 'close'}
+                },
+                {
+                    'name': f'volatility_var_{window}',
+                    'type': 'rolling',
+                    'params': {'operation': 'var', 'window': window, 'column': 'close'}
+                },
+                {
+                    'name': f'returns_volatility_{window}',
+                    'type': 'rolling',
+                    'params': {'operation': 'std', 'window': window, 'column': 'returns'}
+                }
+            ])
+        
+        # Add returns column if not present
+        data_with_returns = data.copy()
+        if 'returns' not in data_with_returns.columns:
+            data_with_returns['returns'] = data['close'].pct_change()
+        
+        volatility_features = self.generate_optimized_volatility_features(data_with_returns, volatility_configs)
+        
+        # Combine all features
+        all_features = pd.concat([bb_features, atr_features, volatility_features], axis=1)
+        
+        return all_features
 
 
 class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):

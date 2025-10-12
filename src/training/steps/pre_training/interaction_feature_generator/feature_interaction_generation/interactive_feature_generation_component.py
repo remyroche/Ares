@@ -503,6 +503,239 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             self.vectorbt_rolling_optimizer = None
             self.unified_vectorization_manager = None
     
+    def generate_features_optimized_batch(self, data: pd.DataFrame, 
+                                        feature_specs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate features using optimized batch processing with VectorBTRollingOptimizer and UnifiedVectorizationManager.
+        
+        Args:
+            data: OHLCV data
+            feature_specs: List of feature specifications
+            
+        Returns:
+            DataFrame with generated features
+        """
+        tprint_debug(f"🔄 Starting optimized batch feature generation: {len(feature_specs)} features")
+        
+        if not self.unified_vectorization_manager:
+            tprint_warning("⚠️ UnifiedVectorizationManager not available, using fallback processing")
+            return self._process_features_fallback(data, feature_specs)
+        
+        try:
+            # Convert feature specs to batch configs
+            batch_configs = self._convert_to_batch_configs(feature_specs)
+            
+            # Use UnifiedVectorizationManager for batch processing
+            tprint_debug(f"🎯 Processing {len(batch_configs)} features with UnifiedVectorizationManager")
+            results = self.unified_vectorization_manager.batch_process_features(data, batch_configs)
+            
+            tprint_success(f"✅ Batch processing completed: {results.shape[1]} features generated")
+            return results
+            
+        except Exception as e:
+            tprint_error(f"❌ Batch processing failed: {e}, using fallback")
+            return self._process_features_fallback(data, feature_specs)
+    
+    def generate_rolling_features_batch(self, data: pd.DataFrame, 
+                                      windows: List[int], 
+                                      operations: List[str],
+                                      columns: List[str] = None) -> pd.DataFrame:
+        """
+        Generate rolling features in batch using VectorBTRollingOptimizer.
+        
+        Args:
+            data: OHLCV data
+            windows: List of window sizes
+            operations: List of operations ('mean', 'std', 'var', 'min', 'max', 'sum', 'corr')
+            columns: List of columns to process (default: ['close', 'volume'])
+            
+        Returns:
+            DataFrame with rolling features
+        """
+        if columns is None:
+            columns = ['close', 'volume']
+        
+        tprint_debug(f"🔄 Generating rolling features: {len(windows)} windows, {len(operations)} operations, {len(columns)} columns")
+        
+        feature_configs = []
+        
+        for window in windows:
+            for operation in operations:
+                for column in columns:
+                    if column in data.columns:
+                        feature_configs.append({
+                            'name': f'{operation}_{column}_{window}',
+                            'type': 'rolling',
+                            'params': {
+                                'operation': operation,
+                                'window': window,
+                                'column': column
+                            }
+                        })
+        
+        return self.generate_features_optimized_batch(data, feature_configs)
+    
+    def generate_correlation_features_batch(self, data: pd.DataFrame,
+                                          windows: List[int],
+                                          column_pairs: List[Tuple[str, str]] = None) -> pd.DataFrame:
+        """
+        Generate correlation features in batch.
+        
+        Args:
+            data: OHLCV data
+            windows: List of window sizes
+            column_pairs: List of (column1, column2) pairs to correlate
+            
+        Returns:
+            DataFrame with correlation features
+        """
+        if column_pairs is None:
+            column_pairs = [('close', 'volume'), ('high', 'low'), ('close', 'high')]
+        
+        tprint_debug(f"🔄 Generating correlation features: {len(windows)} windows, {len(column_pairs)} pairs")
+        
+        feature_configs = []
+        
+        for window in windows:
+            for col1, col2 in column_pairs:
+                if col1 in data.columns and col2 in data.columns:
+                    feature_configs.append({
+                        'name': f'corr_{col1}_{col2}_{window}',
+                        'type': 'rolling',
+                        'params': {
+                            'operation': 'corr',
+                            'window': window,
+                            'column': col1,
+                            'other_column': col2
+                        }
+                    })
+        
+        return self.generate_features_optimized_batch(data, feature_configs)
+    
+    def generate_scaling_features_batch(self, data: pd.DataFrame,
+                                      methods: List[str],
+                                      columns: List[str] = None) -> pd.DataFrame:
+        """
+        Generate scaling features in batch using UnifiedVectorizationManager.
+        
+        Args:
+            data: OHLCV data
+            methods: List of scaling methods ('zscore', 'minmax', 'robust', 'quantile')
+            columns: List of columns to scale (default: ['close', 'volume'])
+            
+        Returns:
+            DataFrame with scaled features
+        """
+        if columns is None:
+            columns = ['close', 'volume']
+        
+        tprint_debug(f"🔄 Generating scaling features: {len(methods)} methods, {len(columns)} columns")
+        
+        feature_configs = []
+        
+        for method in methods:
+            for column in columns:
+                if column in data.columns:
+                    feature_configs.append({
+                        'name': f'{method}_{column}',
+                        'type': 'scaling',
+                        'params': {
+                            'method': method,
+                            'column': column
+                        }
+                    })
+        
+        return self.generate_features_optimized_batch(data, feature_configs)
+    
+    def _convert_to_batch_configs(self, feature_specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Convert feature specifications to batch processing configurations."""
+        batch_configs = []
+        
+        for spec in feature_specs:
+            feature_type = spec.get('type', 'rolling')
+            name = spec.get('name', f'feature_{len(batch_configs)}')
+            params = spec.get('params', {})
+            
+            if feature_type == 'rolling':
+                batch_configs.append({
+                    'name': name,
+                    'type': 'rolling',
+                    'params': {
+                        'operation': params.get('operation', 'mean'),
+                        'window': params.get('window', 20),
+                        'column': params.get('column', 'close')
+                    }
+                })
+            elif feature_type == 'scaling':
+                batch_configs.append({
+                    'name': name,
+                    'type': 'scaling',
+                    'params': {
+                        'method': params.get('method', 'zscore'),
+                        'column': params.get('column', 'close')
+                    }
+                })
+            elif feature_type == 'custom':
+                batch_configs.append({
+                    'name': name,
+                    'type': 'custom',
+                    'params': params
+                })
+        
+        return batch_configs
+    
+    def _process_features_fallback(self, data: pd.DataFrame, feature_specs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback processing when batch processing is not available."""
+        tprint_warning("⚠️ Using fallback feature processing")
+        
+        results = {}
+        
+        for spec in feature_specs:
+            feature_name = spec.get('name', f'feature_{len(results)}')
+            feature_type = spec.get('type', 'rolling')
+            params = spec.get('params', {})
+            
+            try:
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        if self.vectorbt_rolling_optimizer:
+                            results[feature_name] = getattr(self.vectorbt_rolling_optimizer, f'rolling_{operation}')(
+                                data[column], window
+                            )
+                        else:
+                            # Fallback to pandas
+                            rolling_obj = data[column].rolling(window=window)
+                            results[feature_name] = getattr(rolling_obj, operation)()
+                
+                elif feature_type == 'scaling':
+                    method = params.get('method', 'zscore')
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        if method == 'zscore':
+                            results[feature_name] = (data[column] - data[column].mean()) / data[column].std()
+                        elif method == 'minmax':
+                            results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+                        else:
+                            results[feature_name] = pd.Series(np.nan, index=data.index)
+                
+                elif feature_type == 'custom':
+                    func = params.get('function')
+                    if callable(func):
+                        results[feature_name] = func(data)
+                    else:
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
     async def execute(self,
                      training_input: Dict[str, Any],
                      pipeline_state: Dict[str, Any]) -> ComponentResult:

@@ -10,7 +10,7 @@ import pandas as pd
 from typing import Tuple, Optional, Union
 from dataclasses import dataclass
 
-from .error_handling import safe_operation, DataValidationError
+from ..error_handling.error_handler import safe_operation, DataValidationError
 
 
 @dataclass

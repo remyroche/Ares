@@ -1,20 +1,49 @@
 """
 Error Handling Framework for Feature Lookback Optimization.
 
-This module provides standardized error handling with graceful degradation,
-detailed logging, and recovery mechanisms.
+This module provides standardized error handling with fast failing,
+detailed logging, and utility functions for safe operations.
 """
 
 import logging
 import traceback
-from typing import Any, Optional, Dict, List
+from typing import Any, Optional, Dict, List, Callable, Type, Union
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
+import numpy as np
+import pandas as pd
 
 # Import utility modules
 from src.utils.common_utilities import CommonUtilities
 from src.utils.serialization_utils import UniversalSerializer
 from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+
+
+# Exception classes for fast failing
+class OptimizationError(Exception):
+    """Base exception for optimization-related errors."""
+    pass
+
+
+class DataValidationError(OptimizationError):
+    """Exception raised when data validation fails."""
+    pass
+
+
+class ScoringError(OptimizationError):
+    """Exception raised when scoring calculations fail."""
+    pass
+
+
+class CacheError(OptimizationError):
+    """Exception raised when cache operations fail."""
+    pass
+
+
+class MemoryError(OptimizationError):
+    """Exception raised when memory operations fail."""
+    pass
 
 
 class ErrorSeverity(Enum):
@@ -276,3 +305,279 @@ class StandardizedErrorHandler:
         """Reset error tracking statistics."""
         self.error_counts.clear()
         self.recent_errors.clear()
+
+
+# Utility functions for safe operations
+def safe_operation(
+    operation_name: str,
+    default_value: Any = None,
+    log_errors: bool = True,
+    reraise: bool = True,  # Changed to True for fast failing
+    expected_exceptions: tuple = (Exception,)
+) -> Callable:
+    """
+    Decorator for safe operation execution with standardized error handling.
+    
+    Args:
+        operation_name: Name of the operation for logging
+        default_value: Value to return on error (only if reraise=False)
+        log_errors: Whether to log errors
+        reraise: Whether to reraise exceptions (default: True for fast failing)
+        expected_exceptions: Tuple of exception types to catch
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except expected_exceptions as e:
+                if log_errors:
+                    tprint_error(f"❌ {operation_name} failed: {e}")
+                    tprint_debug(f"   → Function: {func.__name__}")
+                    tprint_debug(f"   → Args: {len(args)} positional, {len(kwargs)} keyword")
+                    tprint_debug(f"   → Traceback: {traceback.format_exc()}")
+                
+                if reraise:
+                    raise
+                
+                return default_value
+            except Exception as e:
+                if log_errors:
+                    tprint_error(f"❌ Unexpected error in {operation_name}: {e}")
+                    tprint_debug(f"   → Function: {func.__name__}")
+                    tprint_debug(f"   → Traceback: {traceback.format_exc()}")
+                
+                if reraise:
+                    raise OptimizationError(f"Unexpected error in {operation_name}: {e}") from e
+                
+                return default_value
+        
+        return wrapper
+    return decorator
+
+
+def safe_mi_calculation(
+    feature_values: np.ndarray, 
+    target_values: np.ndarray,
+    default_value: float = 0.0
+) -> float:
+    """
+    Safely calculate mutual information with standardized error handling.
+    
+    Args:
+        feature_values: Feature values array
+        target_values: Target values array
+        default_value: Default value to return on error
+        
+    Returns:
+        Mutual information score or default value
+    """
+    try:
+        # Validate inputs
+        if not isinstance(feature_values, np.ndarray) or not isinstance(target_values, np.ndarray):
+            raise DataValidationError("Inputs must be numpy arrays")
+        
+        if len(feature_values) != len(target_values):
+            raise DataValidationError("Feature and target arrays must have same length")
+        
+        if len(feature_values) < 2:
+            raise DataValidationError("Need at least 2 data points for MI calculation")
+        
+        # Remove NaN values
+        valid_mask = ~(np.isnan(feature_values) | np.isnan(target_values))
+        if not np.any(valid_mask):
+            raise DataValidationError("No valid data points after NaN removal")
+        
+        feature_clean = feature_values[valid_mask]
+        target_clean = target_values[valid_mask]
+        
+        if len(feature_clean) < 2:
+            raise DataValidationError("Insufficient valid data points")
+        
+        # Calculate mutual information
+        from sklearn.feature_selection import mutual_info_regression
+        mi_scores = mutual_info_regression(
+            feature_clean.reshape(-1, 1), 
+            target_clean,
+            random_state=42
+        )
+        
+        if len(mi_scores) == 0:
+            raise ScoringError("MI calculation returned empty result")
+        
+        mi_score = float(mi_scores[0])
+        
+        # Validate result
+        if not np.isfinite(mi_score):
+            raise ScoringError(f"MI score is not finite: {mi_score}")
+        
+        return max(0.0, mi_score)  # Ensure non-negative
+        
+    except (DataValidationError, ScoringError) as e:
+        tprint_warning(f"⚠️ Error in MI calculation: {e}")
+        if default_value is not None:
+            return default_value
+        else:
+            raise  # Fast fail
+    except Exception as e:
+        tprint_error(f"❌ Unexpected error in MI calculation: {e}")
+        raise OptimizationError(f"Unexpected error in MI calculation: {e}") from e
+
+
+def safe_correlation_calculation(
+    x: np.ndarray, 
+    y: np.ndarray,
+    default_value: float = 0.0
+) -> float:
+    """
+    Safely calculate correlation with standardized error handling.
+    
+    Args:
+        x: First array
+        y: Second array
+        default_value: Default value to return on error
+        
+    Returns:
+        Correlation coefficient or default value
+    """
+    try:
+        # Validate inputs
+        if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
+            raise DataValidationError("Inputs must be numpy arrays")
+        
+        if len(x) != len(y):
+            raise DataValidationError("Arrays must have same length")
+        
+        if len(x) < 2:
+            raise DataValidationError("Need at least 2 data points for correlation")
+        
+        # Remove NaN values
+        valid_mask = ~(np.isnan(x) | np.isnan(y))
+        if not np.any(valid_mask):
+            raise DataValidationError("No valid data points after NaN removal")
+        
+        x_clean = x[valid_mask]
+        y_clean = y[valid_mask]
+        
+        if len(x_clean) < 2:
+            raise DataValidationError("Insufficient valid data points")
+        
+        # Calculate correlation
+        correlation = np.corrcoef(x_clean, y_clean)[0, 1]
+        
+        # Validate result
+        if not np.isfinite(correlation):
+            raise ScoringError(f"Correlation is not finite: {correlation}")
+        
+        return float(correlation)
+        
+    except (DataValidationError, ScoringError) as e:
+        tprint_warning(f"⚠️ Error in correlation calculation: {e}")
+        if default_value is not None:
+            return default_value
+        else:
+            raise  # Fast fail
+    except Exception as e:
+        tprint_error(f"❌ Unexpected error in correlation calculation: {e}")
+        raise OptimizationError(f"Unexpected error in correlation calculation: {e}") from e
+
+
+def safe_dataframe_operation(
+    operation_name: str,
+    df: pd.DataFrame,
+    operation: Callable[[pd.DataFrame], Any],
+    default_value: Any = None
+) -> Any:
+    """
+    Safely perform DataFrame operations with standardized error handling.
+    
+    Args:
+        operation_name: Name of the operation for logging
+        df: DataFrame to operate on
+        operation: Function to apply to DataFrame
+        default_value: Default value to return on error
+        
+    Returns:
+        Operation result or default value
+    """
+    try:
+        # Validate DataFrame
+        if not isinstance(df, pd.DataFrame):
+            raise DataValidationError("Input must be a pandas DataFrame")
+        
+        if df.empty:
+            raise DataValidationError("DataFrame is empty")
+        
+        # Perform operation
+        result = operation(df)
+        
+        return result
+        
+    except (DataValidationError, ScoringError) as e:
+        tprint_warning(f"⚠️ Error in {operation_name}: {e}")
+        if default_value is not None:
+            return default_value
+        else:
+            raise  # Fast fail
+    except Exception as e:
+        tprint_error(f"❌ Error in {operation_name}: {e}")
+        raise OptimizationError(f"Error in {operation_name}: {e}") from e
+
+
+def safe_numpy_operation(
+    operation_name: str,
+    arrays: list,
+    operation: Callable,
+    default_value: Any = None
+) -> Any:
+    """
+    Safely perform NumPy operations with standardized error handling.
+    
+    Args:
+        operation_name: Name of the operation for logging
+        arrays: List of arrays to operate on
+        operation: Function to apply to arrays
+        default_value: Default value to return on error
+        
+    Returns:
+        Operation result or default value
+    """
+    try:
+        # Validate arrays
+        for i, arr in enumerate(arrays):
+            if not isinstance(arr, np.ndarray):
+                raise DataValidationError(f"Array {i} must be a numpy array")
+            
+            if arr.size == 0:
+                raise DataValidationError(f"Array {i} is empty")
+        
+        # Perform operation
+        result = operation(*arrays)
+        
+        # Validate result
+        if isinstance(result, np.ndarray) and not np.any(np.isfinite(result)):
+            raise ScoringError(f"Operation {operation_name} produced non-finite result")
+        
+        return result
+        
+    except (DataValidationError, ScoringError) as e:
+        tprint_warning(f"⚠️ Error in {operation_name}: {e}")
+        if default_value is not None:
+            return default_value
+        else:
+            raise  # Fast fail
+    except Exception as e:
+        tprint_error(f"❌ Error in {operation_name}: {e}")
+        raise OptimizationError(f"Error in {operation_name}: {e}") from e
+
+
+# Global error handler instance
+_global_error_handler = None
+
+
+def get_error_handler() -> 'StandardizedErrorHandler':
+    """Get the global error handler instance."""
+    global _global_error_handler
+    if _global_error_handler is None:
+        _global_error_handler = StandardizedErrorHandler()
+    return _global_error_handler

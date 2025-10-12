@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass
-from .error_handling import safe_operation, safe_mi_calculation, safe_correlation_calculation
+from ..error_handling.error_handler import safe_operation, safe_mi_calculation, safe_correlation_calculation
 
 
 @dataclass

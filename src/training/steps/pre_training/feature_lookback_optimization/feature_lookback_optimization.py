@@ -1813,7 +1813,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         possible_base_names = [
             'pre_training_analyst_profit_labeler_outcome',           # Current analyst labeler
             'pre_training_tactician_entry_labeler_outcome',          # Current tactician labeler
-            'market_analysis_analyst_profit_labeler_outcome',        # Legacy analyst format
+            'market_analysis_analyst_profit_labeler_outcome',
             'market_analysis_multi_horizon_profit_labeler_outcome',  # Original multi-horizon labeler
         ]
         

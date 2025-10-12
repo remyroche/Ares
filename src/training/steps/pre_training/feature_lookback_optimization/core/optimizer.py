@@ -22,7 +22,7 @@ from collections import defaultdict, OrderedDict
 from src.utils.common_operations import safe_dataframe_operation, validate_dataframe_columns
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, safe_correlation
-from .utils.error_handling import (
+from ..error_handling.error_handler import (
     safe_operation, safe_mi_calculation, safe_correlation_calculation,
     safe_dataframe_operation as safe_df_op, safe_numpy_operation,
     get_error_handler, OptimizationError, DataValidationError, ScoringError
@@ -35,7 +35,7 @@ from src.utils.matrix_operations import (
 )
 from .utils.memory_monitor import get_memory_monitor, monitor_memory
 from .utils.scoring_utils import get_scoring_utils, ScoringConfig
-from .utils.constants import get_constants
+# Removed duplicate constants import - using main constants file
 from .utils.data_validation import get_data_validator, validate_optimization_data, ValidationLevel
 from .utils.fast_failing_validation import (
     FastFailingValidator, validate_optimization_inputs_fast_fail,
@@ -349,18 +349,24 @@ class CoreOptimizer:
 
     def get_vectorbt_performance_metrics(self) -> Dict[str, Any]:
         """Get VectorBT performance metrics."""
+        tprint_debug("📊 Getting VectorBT performance metrics")
         return self.vectorbt_metrics.copy()
 
     def _check_gpu_availability(self) -> bool:
         """Check if GPU acceleration is available."""
+        tprint_debug("🔍 Checking GPU availability")
         try:
             if self.batch_processor and hasattr(self.batch_processor, 'gpu_available'):
-                return self.batch_processor.gpu_available
+                gpu_available = self.batch_processor.gpu_available
+                tprint_debug(f"   → GPU available via batch processor: {gpu_available}")
+                return gpu_available
             
             # Try to detect GPU availability
             try:
                 import torch
-                return torch.cuda.is_available()
+                gpu_available = torch.cuda.is_available()
+                tprint_debug(f"   → GPU available via PyTorch: {gpu_available}")
+                return gpu_available
             except ImportError:
                 pass
             
@@ -377,11 +383,12 @@ class CoreOptimizer:
 
     def set_rng(self, rng: Optional['np.random.Generator']) -> None:
         """Update the RNG used for stochastic routines."""
+        tprint_debug("🎲 Setting random number generator")
         self._rng = rng or np.random.default_rng()
 
     def set_data_locator(self, locator: Optional[PipelineDataLocator]) -> None:
         """Attach a locator used when resolving shared configuration files."""
-
+        tprint_debug("📍 Setting data locator")
         self._data_locator = locator
         self._cached_multi_horizon_limits = None
     
@@ -397,6 +404,7 @@ class CoreOptimizer:
             - hit_rate: Cache hit rate percentage
             - memory_estimate_mb: Estimated memory usage in MB
         """
+        tprint_debug("📊 Getting cache statistics")
         total_accesses = self.cache_hits + self.cache_misses
         hit_rate = (self.cache_hits / total_accesses * 100) if total_accesses > 0 else 0.0
         
@@ -418,6 +426,7 @@ class CoreOptimizer:
         Args:
             keep_recent: Number of most recently used entries to keep (0 = clear all)
         """
+        tprint_debug(f"🧹 Clearing cache (keeping {keep_recent} recent entries)")
         if keep_recent > 0 and len(self.feature_cache) > keep_recent:
             # Keep only the most recent N entries
             items_to_keep = list(self.feature_cache.items())[-keep_recent:]

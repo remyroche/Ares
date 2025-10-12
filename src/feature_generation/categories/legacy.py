@@ -18,12 +18,12 @@ import numpy as np
 from typing import List, Optional
 from ..core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
-# Import tprint for consistent logging
-try:
-    from tprint import tprint
-except ImportError:
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
+# Import centralized logging
+from ..utils.centralized_logging import tprint, log_function_execution
+from ..utils.error_handling import (
+    DataValidationError, ConfigurationError, ComputationError,
+    validate_required_columns, validate_finite_values, safe_divide, fast_fail_error
+)
 
 # Optimization utilities
 try:
@@ -104,13 +104,17 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
+    @log_function_execution(level="debug")
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        tprint(f"Generating legacy SMA feature with period {self.period}")
+        tprint(f"Generating legacy SMA feature with period {self.period}", level="debug")
         
+        # Fast fail on invalid input
         if data.empty:
-            tprint("Warning: Empty data provided for SMA calculation")
-            return pd.Series(dtype=float, index=data.index, name=f'legacy_sma_{self.period}')
+            fast_fail_error("Empty data provided for SMA calculation", DataValidationError)
         
+        # Validate required columns
+        validate_required_columns(data, ["close"])
+
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -119,10 +123,10 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized SMA calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
-            tprint(f"Using VectorBT for SMA calculation (data size: {len(close)})")
+            tprint(f"Using VectorBT for SMA calculation (data size: {len(close)})", level="debug")
             return self._calculate_sma_vectorbt(close)
         else:
-            tprint(f"Using pandas for SMA calculation (data size: {len(close)})")
+            tprint(f"Using pandas for SMA calculation (data size: {len(close)})", level="debug")
             return self._calculate_sma_pandas(close)
     
     def _calculate_sma_vectorbt(self, close: pd.Series) -> pd.Series:

@@ -18,12 +18,12 @@ import pandas as pd
 import numpy as np
 import warnings
 
-# Import tprint for consistent logging
-try:
-    from tprint import tprint
-except ImportError:
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
+# Import centralized logging and error handling
+from ..utils.centralized_logging import tprint, log_function_execution, fast_fail_error
+from ..utils.error_handling import (
+    DataValidationError, ConfigurationError, ComputationError,
+    validate_required_columns, validate_finite_values, safe_divide
+)
 
 # VectorBT imports for native optimization
 try:
@@ -49,7 +49,8 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    # VectorBT not available - will use fallback implementations
+    tprint("VectorBT not available. Install with: pip install vectorbt for optimized performance", level="warning")
 
 # Optional GPU acceleration
 try:
@@ -383,6 +384,7 @@ class FeatureGenerator(ABC):
         """
         pass
     
+    @log_function_execution(level="debug")
     def generate(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
         """
         Generate the feature with error handling and performance tracking.
@@ -394,8 +396,18 @@ class FeatureGenerator(ABC):
         Returns:
             FeatureResult with the generated feature and metadata
         """
-        tprint(f"Generating feature {self.config.name} with data shape: {data.shape}")
+        tprint(f"Generating feature {self.config.name} with data shape: {data.shape}", level="debug")
         start_time = time.time()
+
+        # Fast fail on invalid input
+        if data is None:
+            fast_fail_error("Data cannot be None", DataValidationError)
+        
+        if not isinstance(data, pd.DataFrame):
+            fast_fail_error(f"Data must be DataFrame, got {type(data)}", DataValidationError)
+        
+        if data.empty:
+            fast_fail_error("DataFrame is empty", DataValidationError)
 
         # Allow state injection through kwargs for compatibility
         external_state = kwargs.pop('state', None)
@@ -405,7 +417,7 @@ class FeatureGenerator(ABC):
         state_loaded_flag = self._state_loaded
 
         try:
-            # Validate input data
+            # Validate input data with fast fail
             self._validate_data(data)
 
             # Allow subclasses to adjust internal buffers before generation
@@ -414,6 +426,13 @@ class FeatureGenerator(ABC):
             # Generate the feature
             feature_data = self._generate_feature(data, **kwargs)
 
+            # Fast fail on invalid output
+            if feature_data is None:
+                fast_fail_error("Feature generation returned None", ComputationError)
+            
+            if not isinstance(feature_data, pd.Series):
+                fast_fail_error(f"Feature must be Series, got {type(feature_data)}", ComputationError)
+
             # Validate output
             self._validate_output(feature_data)
 
@@ -421,13 +440,14 @@ class FeatureGenerator(ABC):
             try:
                 self._finalize_state(data, feature_data)
             except Exception as state_error:
-                self.logger.debug(f"State finalization failed: {state_error}")
+                tprint(f"State finalization failed: {state_error}", level="warning")
+                # Don't fail the entire operation for state issues
 
             # Update performance stats
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=True)
 
-            tprint(f"Successfully generated {self.config.name} in {computation_time:.3f}s")
+            tprint(f"Successfully generated {self.config.name} in {computation_time:.3f}s", level="info")
             self.logger.debug(f"Successfully generated {self.config.name} in {computation_time:.3f}s")
 
             serialized_state = self._serialize_state()
@@ -447,19 +467,26 @@ class FeatureGenerator(ABC):
                 }
             )
 
+        except (DataValidationError, ConfigurationError, ComputationError) as e:
+            # Fast fail for known error types
+            computation_time = time.time() - start_time
+            self._update_performance_stats(computation_time, success=False)
+            fast_fail_error(f"Feature generation failed: {str(e)}", type(e))
+            
         except Exception as e:
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=False)
 
-            error_msg = f"Failed to generate {self.config.name}: {str(e)}"
-            tprint(f"ERROR: {error_msg}")
-            self.logger.error(error_msg)
+            error_msg = f"Unexpected error generating {self.config.name}: {str(e)}"
+            tprint(f"ERROR: {error_msg}", level="error")
+            self.logger.error(error_msg, exc_info=True)
 
             failure_metadata = {
                 'generator_class': self.__class__.__name__,
                 'input_shape': data.shape,
                 'state_loaded': state_loaded_flag,
-                'state': self._serialize_state()
+                'state': self._serialize_state(),
+                'error_type': type(e).__name__
             }
 
             return FeatureResult(
@@ -550,46 +577,61 @@ class FeatureGenerator(ABC):
     
     def _validate_data(self, data: pd.DataFrame) -> None:
         """
-        Validate input data.
+        Validate input data with fast fail error handling.
         
         Args:
             data: Input data DataFrame
             
         Raises:
-            ValueError: If data validation fails
+            DataValidationError: If data validation fails
         """
-        if data.empty:
-            raise ValueError("Input data is empty")
+        tprint(f"Validating data for {self.config.name}", level="debug")
         
-        # Check required columns
-        missing_columns = set(self.config.required_columns) - set(data.columns)
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
+        # Use centralized validation functions
+        validate_required_columns(data, self.config.required_columns)
         
         # Check for sufficient data
         if len(data) < self.config.min_lookback:
-            raise ValueError(f"Insufficient data: need at least {self.config.min_lookback} rows, got {len(data)}")
+            fast_fail_error(
+                f"Insufficient data: need at least {self.config.min_lookback} rows, got {len(data)}",
+                DataValidationError
+            )
+        
+        # Check for finite values in required columns
+        for col in self.config.required_columns:
+            if col in data.columns:
+                validate_finite_values(data[col], col)
+        
+        tprint(f"Data validation passed for {self.config.name}", level="debug")
     
     def _validate_output(self, feature_data: pd.Series) -> None:
         """
-        Validate output feature data.
+        Validate output feature data with fast fail error handling.
         
         Args:
             feature_data: Generated feature data
             
         Raises:
-            ValueError: If output validation fails
+            DataValidationError: If output validation fails
         """
+        tprint(f"Validating output for {self.config.name}", level="debug")
+        
         if feature_data.empty:
-            raise ValueError("Generated feature is empty")
+            fast_fail_error("Generated feature is empty", DataValidationError)
         
         # Check for all NaN values
         if feature_data.isna().all():
-            raise ValueError("Generated feature contains only NaN values")
+            fast_fail_error("Generated feature contains only NaN values", DataValidationError)
         
-        # Check for infinite values
-        if np.isinf(feature_data).any():
-            self.logger.warning("Generated feature contains infinite values")
+        # Check for infinite values - warn but don't fail
+        infinite_count = np.isinf(feature_data).sum()
+        if infinite_count > 0:
+            tprint(f"Warning: Generated feature contains {infinite_count} infinite values", level="warning")
+        
+        # Check for finite values
+        validate_finite_values(feature_data, f"{self.config.name}_output")
+        
+        tprint(f"Output validation passed for {self.config.name}", level="debug")
     
     def _update_performance_stats(self, computation_time: float, success: bool) -> None:
         """

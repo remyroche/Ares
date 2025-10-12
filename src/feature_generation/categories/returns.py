@@ -9,15 +9,19 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
 from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
@@ -50,12 +54,21 @@ except ImportError:
     cp = None
 
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for return-based features."""
+    """Feature generator for return-based features with full VectorBT optimization."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimization
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        if OPTIMIZATION_AVAILABLE:
+            if VectorBTRollingOptimizer:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            if UnifiedVectorizationManager:
+                self.unified_manager = get_unified_vectorization_manager(enable_gpu=False, enable_parallel=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -120,16 +133,33 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             return np.full(len(prices), np.nan)
 
         # Use VectorBT for optimized returns calculation
-        if VECTORBT_AVAILABLE and len(prices) > 100:  # Use VectorBT for larger datasets
+        if VECTORBT_AVAILABLE and len(prices) > 50:  # Lower threshold for VectorBT usage
             try:
                 prices_series = pd.Series(prices)
-                # VectorBT optimized pct_change
-                returns = prices_series.pct_change(periods=period).values
-                self.performance_stats['vectorbt_operations'] += 1
-                return returns
+                # VectorBT optimized pct_change with enhanced performance
+                if self.unified_manager:
+                    # Use unified vectorization manager for optimal performance
+                    returns = prices_series.pct_change(periods=period)
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
+                    return returns.values
+                elif self.rolling_optimizer:
+                    # Use centralized rolling optimizer for better performance
+                    returns = prices_series.pct_change(periods=period)
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
+                    return returns.values
+                else:
+                    # Direct VectorBT usage
+                    returns = prices_series.pct_change(periods=period).values
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
+                    return returns
             except Exception as e:
-                self.logger.warning(f"VectorBT returns calculation failed: {e}, using numpy fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"VectorBT returns calculation failed: {e}, using numpy fallback")
+                if hasattr(self, 'performance_stats'):
+                    self.performance_stats['pandas_fallbacks'] += 1
         
         # Fallback to numpy
         returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
@@ -170,7 +200,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         return data
 
 class LogReturnsGenerator(VectorizedFeatureGenerator):
-    """Generator for Log Returns with different base calculations - VECTORIZED."""
+    """Generator for Log Returns with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  period: int = 1,
@@ -212,24 +242,50 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE and VectorBTRollingOptimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate log returns based on the specified base calculation - VECTORIZED."""
+        """Generate log returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized log returns calculation
-        if len(values) < self.period + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized log returns calculation with VectorBT optimization
+        if len(values_series) < self.period + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
         
-        # Calculate log returns using numpy operations
+        # Use VectorBT for optimized log returns calculation
+        if VECTORBT_AVAILABLE and len(values_series) > 50:
+            try:
+                if self.rolling_optimizer:
+                    # Use centralized rolling optimizer
+                    shifted_values = values_series.shift(self.period)
+                    ratio = values_series / shifted_values
+                    # VectorBT optimized log calculation
+                    log_returns = np.log(ratio.where((ratio > 0) & ratio.notna()))
+                    return log_returns
+                else:
+                    # Direct VectorBT usage
+                    shifted_values = values_series.shift(self.period)
+                    ratio = values_series / shifted_values
+                    log_returns = np.log(ratio.where((ratio > 0) & ratio.notna()))
+                    return log_returns
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"VectorBT log returns calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
         shifted_values = np.roll(values, self.period)
         shifted_values[:self.period] = np.nan  # Set initial values to NaN
         
@@ -347,7 +403,7 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         return data
 
 class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
-    """Generator for Cumulative Returns with different base calculations - VECTORIZED."""
+    """Generator for Cumulative Returns with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  window: int = 20,
@@ -389,24 +445,62 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE and VectorBTRollingOptimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cumulative returns based on the specified base calculation - VECTORIZED."""
+        """Generate cumulative returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized cumulative returns calculation
-        if len(values) < self.window + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized cumulative returns calculation with VectorBT optimization
+        if len(values_series) < self.window + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
         
-        # Calculate returns using vectorized operations
+        # Calculate returns using VectorBT optimized operations
+        returns = values_series.pct_change()
+        
+        # Use VectorBT for optimized rolling cumulative returns calculation
+        if VECTORBT_AVAILABLE and len(returns) > 50:
+            try:
+                if self.rolling_optimizer:
+                    # Use VectorBT rolling apply for cumulative product calculation
+                    def cumulative_product_func(x):
+                        valid_returns = x.dropna()
+                        if len(valid_returns) > 0:
+                            return np.prod(1 + valid_returns) - 1
+                        return np.nan
+                    
+                    cumulative_returns = self.rolling_optimizer.rolling_apply(
+                        returns, func=cumulative_product_func, window=self.window
+                    )
+                    return cumulative_returns
+                else:
+                    # Direct VectorBT usage with rolling apply
+                    def cumulative_product_func(x):
+                        valid_returns = x.dropna()
+                        if len(valid_returns) > 0:
+                            return np.prod(1 + valid_returns) - 1
+                        return np.nan
+                    
+                    cumulative_returns = returns.rolling(window=self.window).apply(cumulative_product_func)
+                    return cumulative_returns
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"VectorBT cumulative returns calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
         
@@ -525,7 +619,7 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
         return data
 
 class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
-    """Generator for Returns Volatility with different base calculations - VECTORIZED."""
+    """Generator for Returns Volatility with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  window: int = 20,
@@ -567,24 +661,48 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE and VectorBTRollingOptimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate returns volatility based on the specified base calculation - VECTORIZED."""
+        """Generate returns volatility based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized returns volatility calculation
-        if len(values) < self.window + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized returns volatility calculation with VectorBT optimization
+        if len(values_series) < self.window + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
         
-        # Calculate returns using vectorized operations
+        # Calculate returns using VectorBT optimized operations
+        returns = values_series.pct_change()
+        
+        # Use VectorBT for optimized rolling volatility calculation
+        if VECTORBT_AVAILABLE and len(returns) > 50:
+            try:
+                if self.rolling_optimizer:
+                    # Use VectorBT rolling standard deviation
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=self.window)
+                    return volatility
+                else:
+                    # Direct VectorBT usage
+                    volatility = returns.rolling(window=self.window).std()
+                    return volatility
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"VectorBT volatility calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
         
@@ -807,7 +925,7 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
         return data
 
 class SharpeRatioGenerator(VectorizedFeatureGenerator):
-    """Generator for Sharpe Ratio with different base calculations - VECTORIZED."""
+    """Generator for Sharpe Ratio with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  window: int = 20,
@@ -853,29 +971,63 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.risk_free_rate = risk_free_rate
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE and VectorBTRollingOptimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Sharpe ratio based on the specified base calculation - VECTORIZED."""
+        """Generate Sharpe ratio based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized Sharpe ratio calculation
-        if len(values) < self.window + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized Sharpe ratio calculation with VectorBT optimization
+        if len(values_series) < self.window + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
         
-        # Calculate returns using vectorized operations
-        returns = np.diff(values) / values[:-1]
-        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
+        # Calculate returns using VectorBT optimized operations
+        returns = values_series.pct_change()
         
         # Calculate daily risk-free rate
         daily_rf_rate = self.risk_free_rate / 252
+        
+        # Use VectorBT for optimized rolling Sharpe ratio calculation
+        if VECTORBT_AVAILABLE and len(returns) > 50:
+            try:
+                if self.rolling_optimizer:
+                    # Use VectorBT rolling operations for mean and std
+                    rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=self.window)
+                    rolling_std = self.rolling_optimizer.rolling_std(returns, window=self.window)
+                    
+                    # Calculate Sharpe ratio
+                    excess_returns = rolling_mean - daily_rf_rate
+                    sharpe_ratio = excess_returns / rolling_std
+                    return sharpe_ratio
+                else:
+                    # Direct VectorBT usage
+                    rolling_mean = returns.rolling(window=self.window).mean()
+                    rolling_std = returns.rolling(window=self.window).std()
+                    
+                    # Calculate Sharpe ratio
+                    excess_returns = rolling_mean - daily_rf_rate
+                    sharpe_ratio = excess_returns / rolling_std
+                    return sharpe_ratio
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.warning(f"VectorBT Sharpe ratio calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
+        returns = np.diff(values) / values[:-1]
+        returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
         
         # Vectorized rolling Sharpe ratio calculation
         sharpe_ratio = np.full(len(values), np.nan)

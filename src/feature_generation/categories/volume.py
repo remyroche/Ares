@@ -245,8 +245,12 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                 logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        return volume.rolling(window=20).mean()
+        # Final fallback to VectorBT direct operations
+        try:
+            return rolling_mean(volume, window=20)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Simple Moving Average
     
@@ -290,7 +294,11 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             if self.rolling_optimizer:
                 return self.rolling_optimizer.rolling_mean(volume, window=20)
             else:
-                return volume.rolling(window=20).mean()
+                try:
+                    return rolling_mean(volume, window=20)
+                except Exception as e:
+                    logger.error(f"VectorBT fallback failed: {e}")
+                    raise RuntimeError("VectorBT is required for volume features")
     
     def generate_batch_volume_features(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -352,19 +360,21 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             
             try:
                 if feature_type == 'sma':
-                    result = volume.rolling(window=period).mean()
+                    result = rolling_mean(volume, window=period)
                 elif feature_type == 'ema':
-                    result = volume.ewm(span=period).mean()
+                    # Use VectorBT for EMA calculation
+                    alpha = 2 / (period + 1)
+                    result = rolling_apply(volume, window=period, func=lambda x: x.ewm(alpha=alpha, adjust=False).mean().iloc[-1])
                 elif feature_type == 'std':
-                    result = volume.rolling(window=period).std()
+                    result = rolling_std(volume, window=period)
                 elif feature_type == 'var':
-                    result = volume.rolling(window=period).var()
+                    result = rolling_var(volume, window=period)
                 elif feature_type == 'min':
-                    result = volume.rolling(window=period).min()
+                    result = rolling_min(volume, window=period)
                 elif feature_type == 'max':
-                    result = volume.rolling(window=period).max()
+                    result = rolling_max(volume, window=period)
                 elif feature_type == 'sum':
-                    result = volume.rolling(window=period).sum()
+                    result = rolling_sum(volume, window=period)
                 else:
                     logger.warning(f"Unknown feature type: {feature_type}")
                     continue
@@ -722,48 +732,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         for op in summary['recent_operations'][-5:]:  # Show last 5 operations
             logger.info(f"  {op['operation']}: {op['time']:.3f}s, {op['memory_used']:.2f}MB")
     
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return self._optimized_rolling_operation(data, "mean", window)
-        elif operation == 'std':
-            return self._optimized_rolling_operation(data, "std", window)
-        elif operation == 'var':
-            return self._optimized_rolling_operation(data, "var", window)
-        elif operation == 'min':
-            return self._optimized_rolling_operation(data, "min", window)
-        elif operation == 'max':
-            return self._optimized_rolling_operation(data, "max", window)
-        elif operation == 'sum':
-            return self._optimized_rolling_operation(data, "sum", window)
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
 
 class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Simple Moving Average with VectorBT optimization."""
@@ -842,8 +811,12 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        return volume.rolling(window=self.period).mean()
+        # Final fallback to VectorBT direct operations
+        try:
+            return rolling_mean(volume, window=self.period)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
     
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -965,14 +938,17 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Fallback to pandas EMA (VectorBT doesn't have direct EMA support)
+        # Use VectorBT rolling_apply for EMA calculation
         try:
-            volume_ema = volume.ewm(alpha=self.alpha, adjust=False).mean()
-            self.performance_stats['pandas_fallbacks'] += 1
+            def ema_func(x):
+                return x.ewm(alpha=self.alpha, adjust=False).mean().iloc[-1]
+            
+            volume_ema = rolling_apply(volume, window=self.period, func=ema_func)
+            self.performance_stats['vectorbt_operations'] += 1
             return volume_ema
         except Exception as e:
-            self.logger.warning(f"Volume EMA calculation failed: {e}")
-            return pd.Series(np.nan, index=data.index, name=f'volume_ema_{self.period}')
+            logger.error(f"All VectorBT EMA operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Ratio
     
@@ -1035,12 +1011,12 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
                 avg_volume = self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
             except Exception as e:
-                # Fallback to pandas
-                avg_volume = volume.rolling(window=self.period).mean()
+                # Fallback to VectorBT direct operations
+                avg_volume = rolling_mean(volume, window=self.period)
                 return volume / avg_volume.replace(0, 1)
         else:
-            # Fallback to pandas
-            avg_volume = volume.rolling(window=self.period).mean()
+            # Use VectorBT direct operations
+            avg_volume = rolling_mean(volume, window=self.period)
             return volume / avg_volume.replace(0, 1)
         
         if data.empty or 'volume' not in data.columns:
@@ -1070,9 +1046,13 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
                 self.logger.warning(f"VectorBT volume ratio calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        avg_volume = volume.rolling(window=self.period).mean()
-        return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+        # Final fallback to VectorBT direct operations
+        try:
+            avg_volume = rolling_mean(volume, window=self.period)
+            return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Rate of Change
     
@@ -1163,8 +1143,15 @@ class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.logger.warning(f"VectorBT volume ROC calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        return volume.pct_change(periods=self.period) * 100
+        # Final fallback to VectorBT direct operations
+        try:
+            def roc_func(x):
+                return (x.iloc[-1] / x.iloc[0] - 1) * 100 if x.iloc[0] != 0 else 0
+            
+            return rolling_apply(volume, window=self.period + 1, func=roc_func)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Standard Deviation
     
@@ -1250,8 +1237,12 @@ class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.logger.warning(f"VectorBT volume std calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        return volume.rolling(window=self.period).std()
+        # Final fallback to VectorBT direct operations
+        try:
+            return rolling_std(volume, window=self.period)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Percentile Rank
     
@@ -1321,17 +1312,15 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator, VectorBTOptimization
                 self.logger.warning(f"VectorBT volume percentile calculation failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Fallback to VectorBT direct operations
-        if VECTORBT_AVAILABLE:
-            try:
-                # VectorBT doesn't have direct rank, so we use pandas rank
-                return volume.rolling(window=self.period).rank(pct=True) * 100
-            except Exception as e:
-                self.logger.warning(f"VectorBT volume percentile calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
-        
-        # Final fallback to pandas
-        return volume.rolling(window=self.period).rank(pct=True) * 100
+        # Use VectorBT rolling_apply for percentile rank calculation
+        try:
+            def percentile_rank_func(x):
+                return x.rank(pct=True).iloc[-1] * 100
+            
+            return rolling_apply(volume, window=self.period, func=percentile_rank_func)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Trend Strength
     
@@ -1413,10 +1402,14 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 self.logger.warning(f"VectorBT volume trend strength calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        short_ma = volume.rolling(window=self.short_period).mean()
-        long_ma = volume.rolling(window=self.long_period).mean()
-        return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
+        # Final fallback to VectorBT direct operations
+        try:
+            short_ma = rolling_mean(volume, window=self.short_period)
+            long_ma = rolling_mean(volume, window=self.long_period)
+            return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Oscillator
     
@@ -1498,10 +1491,14 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimization
                 self.logger.warning(f"VectorBT volume oscillator calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        short_ma = volume.rolling(window=self.short_period).mean()
-        long_ma = volume.rolling(window=self.long_period).mean()
-        return short_ma - long_ma
+        # Final fallback to VectorBT direct operations
+        try:
+            short_ma = rolling_mean(volume, window=self.short_period)
+            long_ma = rolling_mean(volume, window=self.long_period)
+            return short_ma - long_ma
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Momentum
     
@@ -1573,17 +1570,15 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMi
                 self.logger.warning(f"VectorBT volume momentum calculation failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Fallback to VectorBT direct operations
-        if VECTORBT_AVAILABLE:
-            try:
-                # VectorBT doesn't have direct shift, so we use pandas shift
-                return volume - volume.shift(self.period)
-            except Exception as e:
-                self.logger.warning(f"VectorBT volume momentum calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
-        
-        # Final fallback to pandas
-        return volume - volume.shift(self.period)
+        # Use VectorBT rolling_apply for momentum calculation
+        try:
+            def momentum_func(x):
+                return x.iloc[-1] - x.iloc[0]
+            
+            return rolling_apply(volume, window=self.period + 1, func=momentum_func)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Weighted Average Price (VWAP)
     
@@ -1683,8 +1678,15 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
                 logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        # Final fallback to VectorBT direct operations
+        try:
+            volume_price = close * volume
+            volume_sum = rolling_sum(volume, window=self.period)
+            volume_price_sum = rolling_sum(volume_price, window=self.period)
+            return volume_price_sum / volume_sum.replace(0, 1)  # Avoid division by zero
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
     
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -1784,9 +1786,17 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator, VectorBTOptimization
                 vpt = (price_change * volume).cumsum()
                 return vpt
         else:
-            price_change = close.pct_change()
-            vpt = (price_change * volume).cumsum()
-            return vpt
+            # Use VectorBT for price change calculation
+            try:
+                def price_change_func(x):
+                    return x.pct_change().fillna(0)
+                
+                price_change = rolling_apply(close, window=2, func=price_change_func)
+                vpt = (price_change * volume).cumsum()
+                return vpt
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
 
 # Volume Accumulation/Distribution
     
@@ -1849,24 +1859,25 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator, Vector
                 
                 return mfv.cumsum()
             except Exception as e:
-                self.logger.warning(f"VectorBT volume accumulation/distribution calculation failed: {e}, using pandas fallback")
-                # Calculate Money Flow Multiplier
-                mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
-                mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
+        else:
+            # Use VectorBT for accumulation/distribution calculation
+            try:
+                # Calculate Money Flow Multiplier using VectorBT
+                def mfm_func(x):
+                    close_val, high_val, low_val = x['close'], x['high'], x['low']
+                    mfm = ((close_val - low_val) - (high_val - close_val)) / (high_val - low_val).replace(0, 1)
+                    return mfm.clip(-1, 1)  # Clamp between -1 and 1
                 
                 # Calculate Money Flow Volume
+                mfm = rolling_apply(pd.DataFrame({'close': close, 'high': high, 'low': low}), window=1, func=mfm_func)
                 mfv = mfm * volume
                 
                 return mfv.cumsum()
-        else:
-            # Calculate Money Flow Multiplier
-            mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
-            mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
-            
-            # Calculate Money Flow Volume
-            mfv = mfm * volume
-            
-            return mfv.cumsum()
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
 
 
     
@@ -1926,15 +1937,20 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator, VectorBTOptimi
                 correlation = self.vectorbt_optimizer.rolling_corr(price_returns, volume, window=self.period)
                 return correlation
             except Exception as e:
-                self.logger.warning(f"VectorBT volume-price correlation calculation failed: {e}, using pandas fallback")
-                price_returns = close.pct_change()
-                correlation = price_returns.rolling(window=self.period).corr(volume)
-                return correlation
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
         else:
-            # Rolling correlation between price returns and volume
-            price_returns = close.pct_change()
-            correlation = price_returns.rolling(window=self.period).corr(volume)
-            return correlation
+            # Use VectorBT for correlation calculation
+            try:
+                def price_returns_func(x):
+                    return x.pct_change().fillna(0)
+                
+                price_returns = rolling_apply(close, window=2, func=price_returns_func)
+                correlation = rolling_corr(price_returns, volume, window=self.period)
+                return correlation
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
         """Calculate volume-price correlation using VectorBT."""
         close = data['close']
         volume = data['volume']
@@ -1963,10 +1979,17 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator, VectorBTOptimi
                 self.logger.warning(f"VectorBT volume-price correlation calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
-        # Final fallback to pandas
-        price_returns = close.pct_change()
-        correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
-        return correlation
+        # Final fallback to VectorBT direct operations
+        try:
+            def price_returns_func(x):
+                return x.pct_change().fillna(0)
+            
+            price_returns = rolling_apply(close, window=2, func=price_returns_func)
+            correlation = rolling_corr(price_returns, volume, window=self.config.parameters["period"])
+            return correlation
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
 
     
@@ -2042,21 +2065,25 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                 
                 return enhanced_divergence
             except Exception as e:
-                self.logger.warning(f"VectorBT volume-price divergence calculation failed: {e}, using pandas fallback")
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
+        else:
+            # Use VectorBT for divergence calculation
+            try:
                 # Price momentum with regime smoothing
-                price_ma = close.rolling(window=self.period).mean()
+                price_ma = rolling_mean(close, window=self.period)
                 price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
 
                 # Volume momentum with regime smoothing
-                volume_ma = volume.rolling(window=self.period).mean()
+                volume_ma = rolling_mean(volume, window=self.period)
                 volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
 
                 # Enhanced divergence with regime persistence
                 divergence = price_momentum * volume_momentum
                 
                 # Add regime stability measure
-                price_volatility = close.rolling(window=self.period).std()
-                volume_volatility = volume.rolling(window=self.period).std()
+                price_volatility = rolling_std(close, window=self.period)
+                volume_volatility = rolling_std(volume, window=self.period)
                 
                 # Regime strength indicator (higher when both price and volume show consistent trends)
                 regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
@@ -2065,29 +2092,9 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                 enhanced_divergence = divergence * (1 + regime_strength)
                 
                 return enhanced_divergence
-        else:
-            # Price momentum with regime smoothing
-            price_ma = close.rolling(window=self.period).mean()
-            price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
-
-            # Volume momentum with regime smoothing
-            volume_ma = volume.rolling(window=self.period).mean()
-            volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
-
-            # Enhanced divergence with regime persistence
-            divergence = price_momentum * volume_momentum
-            
-            # Add regime stability measure
-            price_volatility = close.rolling(window=self.period).std()
-            volume_volatility = volume.rolling(window=self.period).std()
-            
-            # Regime strength indicator (higher when both price and volume show consistent trends)
-            regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
-            
-            # Combine divergence with regime strength for better clustering
-            enhanced_divergence = divergence * (1 + regime_strength)
-            
-            return enhanced_divergence
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
 
 
     
@@ -2156,36 +2163,28 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
 
                 return combined_osc
             except Exception as e:
-                self.logger.warning(f"VectorBT price-volume oscillator calculation failed: {e}, using pandas fallback")
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
+        else:
+            # Use VectorBT for oscillator calculation
+            try:
                 # Price oscillator
-                fast_ma = close.rolling(window=self.fast_period).mean()
-                slow_ma = close.rolling(window=self.slow_period).mean()
-                price_osc = (fast_ma - slow_ma) / slow_ma
+                fast_ma = rolling_mean(close, window=self.fast_period)
+                slow_ma = rolling_mean(close, window=self.slow_period)
+                price_osc = (fast_ma - slow_ma) / slow_ma.replace(0, 1)
 
                 # Volume oscillator
-                volume_fast_ma = volume.rolling(window=self.fast_period).mean()
-                volume_slow_ma = volume.rolling(window=self.slow_period).mean()
-                volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
+                volume_fast_ma = rolling_mean(volume, window=self.fast_period)
+                volume_slow_ma = rolling_mean(volume, window=self.slow_period)
+                volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma.replace(0, 1)
 
                 # Combined oscillator
                 combined_osc = price_osc * volume_osc
 
                 return combined_osc
-        else:
-            # Price oscillator
-            fast_ma = close.rolling(window=self.fast_period).mean()
-            slow_ma = close.rolling(window=self.slow_period).mean()
-            price_osc = (fast_ma - slow_ma) / slow_ma
-
-            # Volume oscillator
-            volume_fast_ma = volume.rolling(window=self.fast_period).mean()
-            volume_slow_ma = volume.rolling(window=self.slow_period).mean()
-            volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
-
-            # Combined oscillator
-            combined_osc = price_osc * volume_osc
-
-            return combined_osc
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
 
 
 def create_default_volume_generators() -> List[FeatureGenerator]:
@@ -2515,10 +2514,17 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
                 except Exception as e:
                     self.logger.warning(f"VectorBT Enhanced OBV calculation failed: {e}, using pandas fallback")
             
-            # Final fallback to pandas
-            smoothed_obv = obv_series.ewm(span=self.period).mean()
-            obv_trend = smoothed_obv.diff().rolling(window=self.period).mean()
-            obv_momentum = smoothed_obv - smoothed_obv.shift(self.period)
+            # Use VectorBT for OBV smoothing
+            try:
+                def ema_func(x):
+                    return x.ewm(span=self.period).mean().iloc[-1]
+                
+                smoothed_obv = rolling_apply(obv_series, window=self.period, func=ema_func)
+                obv_trend = rolling_apply(smoothed_obv.diff(), window=self.period, func=lambda x: x.mean())
+                obv_momentum = rolling_apply(smoothed_obv, window=self.period + 1, func=lambda x: x.iloc[-1] - x.iloc[0])
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
             enhanced_obv = smoothed_obv + obv_trend + obv_momentum
             
             return enhanced_obv.rename(f'vectorbt_enhanced_obv_{self.period}')
@@ -2624,12 +2630,19 @@ class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
                 except Exception as e:
                     self.logger.warning(f"VectorBT Enhanced AD Line calculation failed: {e}, using pandas fallback")
             
-            # Final fallback to pandas
-            smoothed_ad = ad_line.ewm(span=self.period).mean()
-            ad_trend = smoothed_ad.diff().rolling(window=self.period).mean()
-            ad_momentum = smoothed_ad - smoothed_ad.shift(self.period)
-            ad_volatility = smoothed_ad.rolling(window=self.period).std()
-            enhanced_ad = smoothed_ad + ad_trend + ad_momentum - ad_volatility
+            # Use VectorBT for AD line smoothing
+            try:
+                def ema_func(x):
+                    return x.ewm(span=self.period).mean().iloc[-1]
+                
+                smoothed_ad = rolling_apply(ad_line, window=self.period, func=ema_func)
+                ad_trend = rolling_apply(smoothed_ad.diff(), window=self.period, func=lambda x: x.mean())
+                ad_momentum = rolling_apply(smoothed_ad, window=self.period + 1, func=lambda x: x.iloc[-1] - x.iloc[0])
+                ad_volatility = rolling_std(smoothed_ad, window=self.period)
+                enhanced_ad = smoothed_ad + ad_trend + ad_momentum - ad_volatility
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
             
             return enhanced_ad.rename(f'vectorbt_enhanced_ad_line_{self.period}')
             
@@ -2714,10 +2727,14 @@ class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
                 except Exception as e:
                     self.logger.warning(f"VectorBT Volume-Weighted AD Line calculation failed: {e}, using pandas fallback")
             
-            # Final fallback to pandas
-            volume_sum = volume.rolling(window=self.period).sum()
-            vw_ad_sum = vw_ad_line.rolling(window=self.period).sum()
-            smoothed_vw_ad = vw_ad_sum / volume_sum
+            # Use VectorBT for volume-weighted AD line
+            try:
+                volume_sum = rolling_sum(volume, window=self.period)
+                vw_ad_sum = rolling_sum(vw_ad_line, window=self.period)
+                smoothed_vw_ad = vw_ad_sum / volume_sum.replace(0, 1)
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
             
             return smoothed_vw_ad.rename(f'vectorbt_volume_weighted_ad_line_{self.period}')
             
@@ -2818,13 +2835,21 @@ class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
                 except Exception as e:
                     self.logger.warning(f"VectorBT Smoothed OBV calculation failed: {e}, using pandas fallback")
             
-            # Final fallback to pandas
-            ema_smoothed = obv_series.ewm(span=self.period).mean()
-            sma_smoothed = obv_series.rolling(window=self.period).mean()
-            weights = np.arange(1, self.period + 1)
-            wma_smoothed = obv_series.rolling(window=self.period).apply(
-                lambda x: np.average(x, weights=weights)
-            )
+            # Use VectorBT for OBV smoothing
+            try:
+                def ema_func(x):
+                    return x.ewm(span=self.period).mean().iloc[-1]
+                
+                def wma_func(x):
+                    weights = np.arange(1, len(x) + 1)
+                    return np.average(x, weights=weights)
+                
+                ema_smoothed = rolling_apply(obv_series, window=self.period, func=ema_func)
+                sma_smoothed = rolling_mean(obv_series, window=self.period)
+                wma_smoothed = rolling_apply(obv_series, window=self.period, func=wma_func)
+            except Exception as e:
+                logger.error(f"All VectorBT operations failed: {e}")
+                raise RuntimeError("VectorBT is required for volume features")
             smoothed_obv = (ema_smoothed + sma_smoothed + wma_smoothed) / 3
             
             return smoothed_obv.rename(f'vectorbt_smoothed_obv_{self.period}')
@@ -2874,7 +2899,15 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
 
         """Generate volume pressure feature."""
         volume = data['volume']
-        price_change = data['close'].pct_change()
+        # Use VectorBT for price change calculation
+        try:
+            def price_change_func(x):
+                return x.pct_change().fillna(0)
+            
+            price_change = rolling_apply(data['close'], window=2, func=price_change_func)
+        except Exception as e:
+            logger.error(f"All VectorBT operations failed: {e}")
+            raise RuntimeError("VectorBT is required for volume features")
 
         # Use VectorBT for volume pressure calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(volume):

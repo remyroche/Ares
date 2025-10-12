@@ -72,7 +72,7 @@ except ImportError:
     MULTI_HORIZON_AVAILABLE = False
     MultiHorizonConfig = None
 from src.utils.serialization_utils import UniversalSerializer
-from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
+from ..utils.tprint_utils import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 
@@ -4067,6 +4067,23 @@ class CoreOptimizer:
         if config_path.exists():
             try:
                 import yaml  # type: ignore
+                with open(config_path, 'r') as cfg_file:
+                    config_data = yaml.safe_load(cfg_file)
+
+                mh_config = config_data.get('multi_horizon_labeling', {}) if isinstance(config_data, dict) else {}
+                horizons_cfg = mh_config.get('time_horizons', {}) if isinstance(mh_config, dict) else {}
+
+                immediate_default = int(horizons_cfg.get('immediate', immediate_default))
+                short_default = int(horizons_cfg.get('short', short_default))
+            except Exception:
+                # Use defaults if configuration parsing fails
+                pass
+
+        immediate_limit = max(1, immediate_default)
+        short_limit = max(immediate_limit, short_default)
+
+        self._cached_multi_horizon_limits = (immediate_limit, short_limit)
+        return self._cached_multi_horizon_limits
 
 # VectorBT imports for native optimization
 try:
@@ -4101,24 +4118,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-
-                with open(config_path, 'r') as cfg_file:
-                    config_data = yaml.safe_load(cfg_file)
-
-                mh_config = config_data.get('multi_horizon_labeling', {}) if isinstance(config_data, dict) else {}
-                horizons_cfg = mh_config.get('time_horizons', {}) if isinstance(mh_config, dict) else {}
-
-                immediate_default = int(horizons_cfg.get('immediate', immediate_default))
-                short_default = int(horizons_cfg.get('short', short_default))
-            except Exception:
-                # Use defaults if configuration parsing fails
-                pass
-
-        immediate_limit = max(1, immediate_default)
-        short_limit = max(immediate_limit, short_default)
-
-        self._cached_multi_horizon_limits = (immediate_limit, short_limit)
-        return self._cached_multi_horizon_limits
 
     def _build_horizon_weighted_matrix(
         self,

@@ -18,15 +18,16 @@ warnings.warn(
     stacklevel=2
 )
 
-# Import from new locations for backward compatibility
+# Import from new VectorBT-based locations for backward compatibility
 from src.feature_selection.core.framework import (
     get_feature_selection_framework,
     select_features,
-    run_comprehensive_feature_selection,
-    lasso_feature_selection,
-    cross_validated_feature_selection,
-    hierarchical_feature_selection,
-    comprehensive_feature_selection,
+    benchmark_methods,
+    get_performance_stats,
+    reset_framework,
+    # Legacy compatibility
+    get_enhanced_framework,
+    enhanced_select_features,
 )
 from src.feature_selection.methods import (
     MRMRSelector,
@@ -45,11 +46,11 @@ from src.feature_selection.dimensionality import (
 __all__ = [
     'get_feature_selection_framework',
     'select_features',
-    'run_comprehensive_feature_selection',
-    'lasso_feature_selection',
-    'cross_validated_feature_selection',
-    'hierarchical_feature_selection',
-    'comprehensive_feature_selection',
+    'benchmark_methods',
+    'get_performance_stats',
+    'reset_framework',
+    'get_enhanced_framework',
+    'enhanced_select_features',
     'MRMRSelector',
     'ElasticNetStabilitySelector',
     'RecursiveFeatureEliminator',

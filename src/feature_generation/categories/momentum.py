@@ -70,23 +70,42 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Import optimized rolling operations
+# Import optimized rolling operations - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.vectorbt_rolling_optimizer import (
-        get_vectorbt_rolling_optimizer,
-        optimized_rolling_mean,
-        optimized_rolling_std,
-        optimized_rolling_var,
-        optimized_rolling_min,
-        optimized_rolling_max,
-        optimized_rolling_sum,
-        optimized_rolling_apply,
-        optimized_rolling_corr,
-        optimized_rolling_cov
+    from ..utils.consolidated_rolling_optimizer import (
+        ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
+        get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
+        RollingOperationConfig,
+        RollingOperationType
+    )
+    from ..utils.statistical_calculations_optimizer import (
+        StatisticalCalculationsOptimizer as VectorizationOptimizer,
+        get_global_statistical_optimizer as get_vectorization_optimizer,
+        StatisticalOperationConfig,
+        StatisticalOperationType
     )
     ROLLING_OPTIMIZER_AVAILABLE = True
+    OPTIMIZATION_AVAILABLE = True
 except ImportError:
-    ROLLING_OPTIMIZER_AVAILABLE = False
+    # Fallback to legacy if new version not available
+    try:
+        from ..utils.vectorbt_rolling_optimizer import (
+            get_vectorbt_rolling_optimizer,
+            optimized_rolling_mean,
+            optimized_rolling_std,
+            optimized_rolling_var,
+            optimized_rolling_min,
+            optimized_rolling_max,
+            optimized_rolling_sum,
+            optimized_rolling_apply,
+            optimized_rolling_corr,
+            optimized_rolling_cov
+        )
+        ROLLING_OPTIMIZER_AVAILABLE = True
+        OPTIMIZATION_AVAILABLE = False
+    except ImportError:
+        ROLLING_OPTIMIZER_AVAILABLE = False
+        OPTIMIZATION_AVAILABLE = False
 
 # Import Unified Vectorization Manager
 try:

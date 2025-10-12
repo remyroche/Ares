@@ -27,6 +27,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_progress, tprint_performance, tprint_structured,
     tprint_timer, LogLevel
 )
+from src.training.steps.feature_engineering import calculate_rsi, calculate_macd
 
 logger = get_system_logger().getChild('HMMTrainingPipeline')
 
@@ -389,47 +390,45 @@ class HMMTrainingPipeline:
 
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
+        """Calculate RSI indicator using centralized system."""
         try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except (ValueError, ZeroDivisionError, IndexError) as e:
+            # Create a DataFrame with the prices for the centralized system
+            data = pd.DataFrame({'close': prices})
+            return calculate_rsi(data, period=period, price_column='close')
+        except Exception as e:
             self.logger.warning(f"RSI calculation failed: {e}")
             return pd.Series([50] * len(prices), index=prices.index)
 
     def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
-        """Calculate MACD indicator."""
+        """Calculate MACD indicator using centralized system."""
         try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except (ValueError, IndexError, TypeError) as e:
+            # Create a DataFrame with the prices for the centralized system
+            data = pd.DataFrame({'close': prices})
+            macd_data = calculate_macd(data, fast=fast, slow=slow, price_column='close')
+            return macd_data['macd']
+        except Exception as e:
             self.logger.warning(f"MACD calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 
     def _calculate_macd_signal(self, prices: pd.Series, signal: int = 9) -> pd.Series:
-        """Calculate MACD signal line."""
+        """Calculate MACD signal line using centralized system."""
         try:
-            macd = self._calculate_macd(prices)
-            signal_line = macd.ewm(span=signal).mean()
-            return signal_line
-        except (ValueError, IndexError, TypeError) as e:
+            # Create a DataFrame with the prices for the centralized system
+            data = pd.DataFrame({'close': prices})
+            macd_data = calculate_macd(data, signal=signal, price_column='close')
+            return macd_data['signal']
+        except Exception as e:
             self.logger.warning(f"MACD signal calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 
     def _calculate_macd_histogram(self, prices: pd.Series) -> pd.Series:
-        """Calculate MACD histogram."""
+        """Calculate MACD histogram using centralized system."""
         try:
-            macd = self._calculate_macd(prices)
-            signal = self._calculate_macd_signal(prices)
-            histogram = macd - signal
-            return histogram
-        except (ValueError, IndexError, TypeError) as e:
+            # Create a DataFrame with the prices for the centralized system
+            data = pd.DataFrame({'close': prices})
+            macd_data = calculate_macd(data, price_column='close')
+            return macd_data['histogram']
+        except Exception as e:
             self.logger.warning(f"MACD histogram calculation failed: {e}")
             return pd.Series([0] * len(prices), index=prices.index)
 

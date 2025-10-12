@@ -1,220 +1,166 @@
 #!/usr/bin/env python3
 """
-Simple test for VectorBT migration of Order Flow and Acceleration features.
-
-This script tests the migration without importing the full feature generation system.
+Simple test to validate VectorBT optimizations in representation_learning module.
 """
 
 import sys
 import os
-import pandas as pd
 import numpy as np
-import time
-import logging
+import pandas as pd
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def test_vectorbt_availability():
-    """Test VectorBT availability and basic functionality."""
-    logger.info("🔍 Testing VectorBT Availability...")
+def test_imports():
+    """Test that the optimized modules can be imported."""
+    print("Testing imports...")
     
     try:
-        import vectorbt as vbt
-        logger.info(f"✅ VectorBT version: {vbt.__version__}")
+        # Test VectorBT rolling optimizer import
+        from feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+        print("✅ VectorBTRollingOptimizer imported successfully")
         
-        # Test basic VectorBT functionality
-        data = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        # Test unified vectorization manager import
+        from utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
+        print("✅ UnifiedVectorizationManager imported successfully")
         
-        # Test VectorBT MA indicator
-        ma_result = vbt.indicators.basic.MA.run(data, window=3)
-        logger.info(f"✅ VectorBT MA test: {ma_result.ma.iloc[-1]}")
-        
-        # Test VectorBT RSI indicator
-        rsi_result = vbt.indicators.basic.RSI.run(data, window=5)
-        logger.info(f"✅ VectorBT RSI test: {rsi_result.rsi.iloc[-1]}")
+        # Test representation learning module import
+        from feature_generation.categories.representation_learning import (
+            PatchTSTRepresentationGenerator,
+            TFTEncoderRepresentationGenerator,
+            AutoencoderRepresentationGenerator,
+            ContrastiveLearningGenerator
+        )
+        print("✅ Representation learning generators imported successfully")
         
         return True
         
-    except ImportError:
-        logger.warning("⚠️ VectorBT not available - falling back to legacy implementations")
-        return False
-    except Exception as e:
-        logger.error(f"❌ VectorBT test failed: {e}")
+    except ImportError as e:
+        print(f"❌ Import failed: {e}")
         return False
 
-def test_vectorbt_order_flow_generators():
-    """Test VectorBT order flow generators directly."""
-    logger.info("🧪 Testing VectorBT Order Flow Generators...")
+def test_vectorbt_optimizer():
+    """Test VectorBTRollingOptimizer functionality."""
+    print("\nTesting VectorBTRollingOptimizer...")
     
     try:
-        from src.feature_generation.categories.vectorbt_order_flow import (
-            create_vectorbt_order_flow_generators,
-            VectorBTTakerBuyRatioGenerator,
-            VectorBTTakerSellRatioGenerator,
-            VectorBTMarketAggressionIndexGenerator
-        )
+        from feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
         
-        # Create sample data
-        data = pd.DataFrame({
-            'close': [100, 101, 102, 101, 103, 104, 103, 105, 106, 107],
-            'volume': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900],
-            'bid': [99.9, 100.9, 101.9, 100.9, 102.9, 103.9, 102.9, 104.9, 105.9, 106.9],
-            'ask': [100.1, 101.1, 102.1, 101.1, 103.1, 104.1, 103.1, 105.1, 106.1, 107.1],
-            'market_buys': [50, 55, 60, 65, 70, 75, 80, 85, 90, 95],
-            'market_sells': [45, 50, 55, 60, 65, 70, 75, 80, 85, 90]
-        }, index=pd.date_range('2023-01-01', periods=10, freq='1min'))
+        # Create optimizer
+        optimizer = VectorBTRollingOptimizer(enable_gpu=False, enable_parallel=True)
+        print("✅ VectorBTRollingOptimizer created successfully")
         
-        # Test individual generators
-        generators = [
-            VectorBTTakerBuyRatioGenerator(window=5),
-            VectorBTTakerSellRatioGenerator(window=5),
-            VectorBTMarketAggressionIndexGenerator(window=5)
-        ]
+        # Test with sample data
+        data = pd.Series(np.random.randn(1000))
         
-        results = {}
-        for generator in generators:
-            try:
-                feature_result = generator.generate(data)
-                results[generator.config.name] = feature_result
-                logger.info(f"✅ Generated {generator.config.name}: {len(feature_result)} values")
-            except Exception as e:
-                logger.error(f"❌ Failed to generate {generator.config.name}: {e}")
+        # Test rolling mean
+        result = optimizer.rolling_mean(data, window=20)
+        print(f"✅ Rolling mean test passed, result length: {len(result)}")
         
-        # Test batch creation
-        all_generators = create_vectorbt_order_flow_generators()
-        logger.info(f"✅ Created {len(all_generators)} VectorBT order flow generators")
-        
-        return True, len(results)
-        
-    except Exception as e:
-        logger.error(f"❌ VectorBT Order Flow test failed: {e}")
-        return False, 0
-
-def test_vectorbt_acceleration_generators():
-    """Test VectorBT acceleration generators directly."""
-    logger.info("🧪 Testing VectorBT Acceleration Generators...")
-    
-    try:
-        from src.feature_generation.categories.vectorbt_acceleration import (
-            create_vectorbt_acceleration_generators,
-            VectorBTMomentumGenerator,
-            VectorBTPriceAccelerationGenerator,
-            VectorBTPriceJerkGenerator
-        )
-        
-        # Create sample data
-        data = pd.DataFrame({
-            'close': [100, 101, 102, 101, 103, 104, 103, 105, 106, 107],
-            'volume': [1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900]
-        }, index=pd.date_range('2023-01-01', periods=10, freq='1min'))
-        
-        # Test individual generators
-        generators = [
-            VectorBTMomentumGenerator(period=5),
-            VectorBTPriceAccelerationGenerator(period=5),
-            VectorBTPriceJerkGenerator(period=5)
-        ]
-        
-        results = {}
-        for generator in generators:
-            try:
-                feature_result = generator.generate(data)
-                results[generator.config.name] = feature_result
-                logger.info(f"✅ Generated {generator.config.name}: {len(feature_result)} values")
-            except Exception as e:
-                logger.error(f"❌ Failed to generate {generator.config.name}: {e}")
-        
-        # Test batch creation
-        all_generators = create_vectorbt_acceleration_generators()
-        logger.info(f"✅ Created {len(all_generators)} VectorBT acceleration generators")
-        
-        return True, len(results)
-        
-    except Exception as e:
-        logger.error(f"❌ VectorBT Acceleration test failed: {e}")
-        return False, 0
-
-def test_performance_comparison():
-    """Compare performance between pandas and VectorBT implementations."""
-    logger.info("🚀 Testing Performance Comparison...")
-    
-    try:
-        # Create larger sample data
-        n_samples = 1000
-        data = pd.DataFrame({
-            'close': np.random.randn(n_samples).cumsum() + 100,
-            'volume': np.random.randint(1000, 10000, n_samples),
-            'bid': np.random.randn(n_samples).cumsum() + 99.5,
-            'ask': np.random.randn(n_samples).cumsum() + 100.5,
-            'market_buys': np.random.randint(0, 100, n_samples),
-            'market_sells': np.random.randint(0, 100, n_samples)
-        }, index=pd.date_range('2023-01-01', periods=n_samples, freq='1min'))
-        
-        # Test pandas rolling operations
-        start_time = time.time()
-        pandas_mean = data['close'].rolling(window=20).mean()
-        pandas_std = data['close'].rolling(window=20).std()
-        pandas_time = time.time() - start_time
-        
-        # Test VectorBT operations
-        start_time = time.time()
-        try:
-            import vectorbt as vbt
-            vbt_mean = vbt.indicators.basic.MA.run(data['close'], window=20).ma
-            vbt_std = data['close'].rolling(window=20).std()  # VectorBT doesn't have direct std
-            vbt_time = time.time() - start_time
-        except Exception as e:
-            logger.warning(f"VectorBT performance test failed: {e}")
-            vbt_time = float('inf')
-        
-        logger.info(f"⏱️ Pandas rolling operations: {pandas_time:.4f} seconds")
-        logger.info(f"⏱️ VectorBT operations: {vbt_time:.4f} seconds")
-        
-        if vbt_time < float('inf'):
-            speedup = pandas_time / vbt_time
-            logger.info(f"📈 VectorBT speedup: {speedup:.2f}x")
+        # Test rolling std
+        result = optimizer.rolling_std(data, window=20)
+        print(f"✅ Rolling std test passed, result length: {len(result)}")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ Performance comparison failed: {e}")
+        print(f"❌ VectorBTRollingOptimizer test failed: {e}")
+        return False
+
+def test_unified_manager():
+    """Test UnifiedVectorizationManager functionality."""
+    print("\nTesting UnifiedVectorizationManager...")
+    
+    try:
+        from utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, OperationType
+        
+        # Create manager
+        manager = UnifiedVectorizationManager()
+        print("✅ UnifiedVectorizationManager created successfully")
+        
+        # Test optimization stats
+        stats = manager.get_optimization_stats()
+        print(f"✅ Optimization stats retrieved: {type(stats)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ UnifiedVectorizationManager test failed: {e}")
+        return False
+
+def test_representation_generators():
+    """Test representation learning generators."""
+    print("\nTesting representation learning generators...")
+    
+    try:
+        from feature_generation.categories.representation_learning import (
+            PatchTSTRepresentationGenerator,
+            TFTEncoderRepresentationGenerator,
+            AutoencoderRepresentationGenerator,
+            ContrastiveLearningGenerator
+        )
+        
+        # Generate test data
+        data = pd.DataFrame({
+            'close': np.random.randn(1000).cumsum() + 100,
+            'volume': np.random.randint(1000, 10000, 1000)
+        })
+        data.index = pd.date_range('2020-01-01', periods=1000, freq='1min')
+        
+        # Test each generator
+        generators = [
+            PatchTSTRepresentationGenerator(patch_length=8, num_patches=4, embedding_dim=16),
+            TFTEncoderRepresentationGenerator(seq_length=20, hidden_size=16, num_heads=2),
+            AutoencoderRepresentationGenerator(encoding_dim=8, sequence_length=20),
+            ContrastiveLearningGenerator(embedding_dim=16, temperature=0.1)
+        ]
+        
+        for i, generator in enumerate(generators):
+            print(f"  Testing generator {i+1}: {generator.__class__.__name__}")
+            
+            # Check if optimizers are initialized
+            assert hasattr(generator, 'rolling_optimizer'), "Missing rolling_optimizer"
+            assert hasattr(generator, 'vectorization_manager'), "Missing vectorization_manager"
+            
+            # Test feature generation
+            features = generator.generate_features(data)
+            print(f"    ✅ Generated features with shape: {features.shape}")
+        
+        print("✅ All representation generators tested successfully")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Representation generators test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def main():
-    """Main test function."""
-    logger.info("🚀 Starting Simple VectorBT Migration Test...")
+    """Run all tests."""
+    print("Starting VectorBT optimization validation tests...\n")
     
-    # Test VectorBT availability
-    vectorbt_available = test_vectorbt_availability()
+    tests = [
+        test_imports,
+        test_vectorbt_optimizer,
+        test_unified_manager,
+        test_representation_generators
+    ]
     
-    # Test VectorBT order flow generators
-    order_flow_success, order_flow_features = test_vectorbt_order_flow_generators()
+    passed = 0
+    total = len(tests)
     
-    # Test VectorBT acceleration generators
-    acceleration_success, acceleration_features = test_vectorbt_acceleration_generators()
+    for test in tests:
+        if test():
+            passed += 1
+        print()  # Add spacing between tests
     
-    # Test performance comparison
-    performance_success = test_performance_comparison()
+    print(f"Test Results: {passed}/{total} tests passed")
     
-    # Summary
-    logger.info("\n" + "="*60)
-    logger.info("📋 SIMPLE VECTORBT MIGRATION TEST SUMMARY")
-    logger.info("="*60)
-    logger.info(f"VectorBT Available: {'✅ Yes' if vectorbt_available else '❌ No'}")
-    logger.info(f"Order Flow Features: {'✅ Success' if order_flow_success else '❌ Failed'} ({order_flow_features} features)")
-    logger.info(f"Acceleration Features: {'✅ Success' if acceleration_success else '❌ Failed'} ({acceleration_features} features)")
-    logger.info(f"Performance Test: {'✅ Success' if performance_success else '❌ Failed'}")
-    
-    if vectorbt_available and order_flow_success and acceleration_success and performance_success:
-        logger.info("🎉 All tests passed! VectorBT migration successful!")
+    if passed == total:
+        print("🎉 All VectorBT optimization tests passed!")
         return True
     else:
-        logger.error("❌ Some tests failed. Check the logs above for details.")
+        print("❌ Some tests failed. Please check the implementation.")
         return False
 
 if __name__ == "__main__":

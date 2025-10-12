@@ -87,19 +87,29 @@ logger = logging.getLogger(__name__)
 # Optional GPU acceleration
 try:
     import cupy as cp
-# Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
-from ..core.feature_bank import get_global_feature_bank
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-    LegacyRSIGenerator,
-    LegacyMACDGenerator,
-    LegacyStochasticGenerator,
-    LegacyWilliamsRGenerator
-)
+
+# Centralized utility imports
+from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from ..core.feature_bank import get_global_feature_bank
+
+# Legacy generators for backward compatibility
+try:
+    from .legacy import (
+        LegacyRSIGenerator,
+        LegacyMACDGenerator,
+        LegacyStochasticGenerator,
+        LegacyWilliamsRGenerator
+    )
+except ImportError:
+    LegacyRSIGenerator = None
+    LegacyMACDGenerator = None
+    LegacyStochasticGenerator = None
+    LegacyWilliamsRGenerator = None
 
 class MomentumFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for momentum-based features with optimization."""
@@ -217,7 +227,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentumclass AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
+            return momentum
+
+class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
     """Generator for 15-minute timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -253,7 +265,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentumclass AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
+            return momentum
+
+class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
     """Generator for 1-hour timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -278,7 +292,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         """Generate 1-hour momentum feature."""
         returns = data['close'].pct_change()
         momentum = returns.rolling(self.lookback).mean()
-        return momentumclass AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
+        return momentum
+
+class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
     """Generator for momentum alignment across timeframes."""
 
     def __init__(self, lookback: int = 20):
@@ -312,7 +328,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         alignment = ((np.sign(mom_5m) == np.sign(mom_15m)) &
                     (np.sign(mom_15m) == np.sign(mom_1h))).astype(int)
 
-        return alignmentclass RSIGenerator(VectorizedFeatureGenerator):
+        return alignment
+
+class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
 
     def __init__(self,
@@ -395,7 +413,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             rs = gain / loss.replace(0, 1)
             rsi = 100 - (100 / (1 + rs))
             
-            return rsiclass MACDGenerator(VectorizedFeatureGenerator):
+            return rsi
+
+class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
     def __init__(self,
@@ -459,7 +479,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         ema_slow = base_values.ewm(span=self.slow).mean()
         macd = ema_fast - ema_slow
         
-        return macdclass StochasticGenerator(VectorizedFeatureGenerator):
+        return macd
+
+class StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
     
     def __init__(self, 

@@ -13,6 +13,7 @@ import asyncio
 import time
 import functools
 import shutil
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
 from contextlib import contextmanager
@@ -1408,6 +1409,9 @@ def get_memory_usage() -> float:
     """
     try:
         import psutil
+        return psutil.Process().memory_info().rss
+    except ImportError:
+        return 0.0
 
 # VectorBT imports for native optimization
 try:
@@ -1442,10 +1446,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        return psutil.Process().memory_info().rss
-    except ImportError:
-        logger.warning("⚠️ psutil not available for memory monitoring")
-        return 0.0
 
 
 def validate_file_path(file_path: Union[str, Path]) -> bool:

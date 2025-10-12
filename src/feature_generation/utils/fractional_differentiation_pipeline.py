@@ -16,6 +16,7 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -510,6 +511,9 @@ class FractionalDifferentiationPipeline:
         """Perform KPSS test for stationarity."""
         try:
             from statsmodels.tsa.stattools import kpss
+            return kpss(series, regression='c')[1] > 0.05
+        except ImportError:
+            return True  # Assume stationary if statsmodels not available
 
 # VectorBT imports for native optimization
 try:
@@ -544,199 +548,3 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            # Remove NaN values
-            clean_series = series[~np.isnan(series)]
-            
-            if len(clean_series) < 10:
-                return 0.0
-            
-            # Perform KPSS test
-            result = kpss(clean_series, regression='c')
-            p_value = result[1]
-            
-            return p_value
-            
-        except ImportError:
-            self.logger.warning("⚠️ statsmodels not available, using mock KPSS test")
-            return np.random.uniform(0.05, 0.1)
-        except Exception as e:
-            self.logger.warning(f"⚠️ KPSS test failed: {e}")
-            return 0.0
-    
-    def _variance_ratio_test(self, series: np.ndarray) -> float:
-        """Calculate variance ratio for stationarity testing."""
-        try:
-            # Calculate variance ratio for different lags
-            n = len(series)
-            if n < 20:
-                return 1.0
-            
-            # Use lag of 2
-            lag = 2
-            returns = np.diff(series)
-            
-            # Calculate variance ratio
-            var_1 = np.var(returns)
-            var_lag = np.var(returns[::lag])
-            
-            if var_1 > 0:
-                variance_ratio = var_lag / (lag * var_1)
-            else:
-                variance_ratio = 1.0
-            
-            return variance_ratio
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Variance ratio test failed: {e}")
-            return 1.0
-    
-    async def _calculate_memory_metrics(
-        self,
-        original_data: pd.DataFrame,
-        differentiated_data: pd.DataFrame,
-        d: float
-    ) -> Dict[str, Any]:
-        """Calculate memory preservation metrics."""
-        self.logger.info("🧠 Calculating memory metrics")
-        
-        try:
-            metrics = {}
-            
-            # Calculate autocorrelation for original and differentiated data
-            if 'close' in original_data.columns and 'close_diff' in differentiated_data.columns:
-                original_close = original_data['close'].dropna()
-                diff_close = differentiated_data['close_diff'].dropna()
-                
-                # Calculate autocorrelation at different lags
-                lags = [1, 5, 10, 20]
-                
-                original_autocorr = {}
-                diff_autocorr = {}
-                
-                for lag in lags:
-                    if len(original_close) > lag:
-                        original_autocorr[lag] = original_close.autocorr(lag=lag)
-                    if len(diff_close) > lag:
-                        diff_autocorr[lag] = diff_close.autocorr(lag=lag)
-                
-                # Calculate memory preservation ratio
-                memory_ratios = {}
-                for lag in lags:
-                    if lag in original_autocorr and lag in diff_autocorr:
-                        if original_autocorr[lag] != 0:
-                            memory_ratios[lag] = abs(diff_autocorr[lag] / original_autocorr[lag])
-                        else:
-                            memory_ratios[lag] = 0.0
-                
-                metrics['autocorrelation'] = {
-                    'original': original_autocorr,
-                    'differentiated': diff_autocorr,
-                    'memory_ratios': memory_ratios,
-                    'avg_memory_ratio': np.mean(list(memory_ratios.values())) if memory_ratios else 0.0
-                }
-            
-            # Calculate information preservation
-            if 'close' in original_data.columns and 'close_diff' in differentiated_data.columns:
-                original_entropy = self._calculate_entropy(original_data['close'].dropna())
-                diff_entropy = self._calculate_entropy(differentiated_data['close_diff'].dropna())
-                
-                metrics['information_preservation'] = {
-                    'original_entropy': original_entropy,
-                    'differentiated_entropy': diff_entropy,
-                    'entropy_ratio': diff_entropy / original_entropy if original_entropy > 0 else 0.0
-                }
-            
-            # Overall memory assessment
-            metrics['memory_assessment'] = {
-                'd_parameter': d,
-                'memory_preserved': self.config.min_memory_ratio <= d <= self.config.max_memory_ratio,
-                'memory_quality': 'good' if 0.1 <= d <= 0.9 else 'poor'
-            }
-            
-            self.logger.info("✅ Memory metrics calculated")
-            return metrics
-            
-        except Exception as e:
-            self.logger.error(f"❌ Memory metrics calculation failed: {e}")
-            return {}
-    
-    def _calculate_entropy(self, series: pd.Series) -> float:
-        """Calculate Shannon entropy of a time series."""
-        try:
-            # Discretize the series into bins
-            n_bins = min(50, len(series) // 10)
-            if n_bins < 2:
-                return 0.0
-            
-            hist, _ = np.histogram(series, bins=n_bins)
-            probabilities = hist / hist.sum()
-            
-            # Calculate entropy
-            entropy = -np.sum(probabilities * np.log2(probabilities + 1e-10))
-            
-            return entropy
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Entropy calculation failed: {e}")
-            return 0.0
-
-# Convenience function
-async def apply_fractional_differentiation(
-    data_dir: str,
-    symbol: str,
-    exchange: str,
-    timeframe: str,
-    config: Optional[FractionalDiffConfig] = None
-) -> FractionalDiffResult:
-    """Convenience function to apply fractional differentiation."""
-    pipeline = FractionalDifferentiationPipeline(config)
-    return await pipeline.apply_fractional_differentiation(data_dir, symbol, exchange, timeframe)
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

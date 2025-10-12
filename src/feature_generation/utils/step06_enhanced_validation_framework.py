@@ -7,6 +7,7 @@ including function validation, tracking, and context management.
 
 import logging
 import time
+import warnings
 from typing import Any, Dict, List, Optional, Callable, Union
 from functools import wraps
 from enum import Enum

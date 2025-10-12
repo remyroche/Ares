@@ -6,6 +6,7 @@ This module provides enhanced matrix operations optimized for feature generation
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 

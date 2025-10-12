@@ -24,6 +24,27 @@ from ..core.feature_generator import (
     VectorizedFeatureGenerator
 )
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy
+    )
+    UNIFIED_MANAGER_AVAILABLE = True
+except ImportError:
+    UNIFIED_MANAGER_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
+
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -60,6 +81,17 @@ class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
         self.num_patches = num_patches
         self.embedding_dim = embedding_dim
         self.masking_ratio = 0.5
+        
+        # Initialize VectorBT optimizers
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager()
+        else:
+            self.vectorization_manager = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -135,6 +167,61 @@ class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
 
         return representations
 
+    def _optimized_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                    window: int, **kwargs) -> pd.Series:
+        """Centralized VectorBT operation with intelligent optimization."""
+        if self.rolling_optimizer:
+            try:
+                return self.rolling_optimizer.rolling_operation(data, operation, window, **kwargs)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using direct VectorBT")
+                return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+        else:
+            return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+    
+    def _direct_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Direct VectorBT operation with pandas fallback."""
+        if not VECTORBT_AVAILABLE or len(data) < 1000:
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -175,6 +262,17 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
         self.seq_length = seq_length
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        
+        # Initialize VectorBT optimizers
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager()
+        else:
+            self.vectorization_manager = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -200,28 +298,14 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
             return pd.Series(np.zeros(len(data)), index=data.index)
 
     def _extract_features(self, data: pd.DataFrame) -> np.ndarray:
-        """Extract features for TFT input."""
+        """Extract features for TFT input using optimized VectorBT operations."""
         features = []
 
-        # Price features
-        # Calculate price features using VectorBT
-        if VECTORBT_AVAILABLE and len(data) > 1000:
-            try:
-                close_mean_20 = rolling_mean(data["close"], window=20)
-                close_std_20 = rolling_std(data["close"], window=20)
-                close_mean_10 = rolling_mean(data["close"], window=10)
-                close_mean_30 = rolling_mean(data["close"], window=30)
-            except Exception as e:
-                logger.warning(f"VectorBT price features failed: {e}, using pandas fallback")
-                close_mean_20 = data["close"].rolling(window=20).mean()
-                close_std_20 = data["close"].rolling(window=20).std()
-                close_mean_10 = data["close"].rolling(window=10).mean()
-                close_mean_30 = data["close"].rolling(window=30).mean()
-        else:
-            close_mean_20 = data["close"].rolling(window=20).mean()
-            close_std_20 = data["close"].rolling(window=20).std()
-            close_mean_10 = data["close"].rolling(window=10).mean()
-            close_mean_30 = data["close"].rolling(window=30).mean()
+        # Price features using centralized VectorBT operations
+        close_mean_20 = self._optimized_vectorbt_operation(data["close"], "mean", 20)
+        close_std_20 = self._optimized_vectorbt_operation(data["close"], "std", 20)
+        close_mean_10 = self._optimized_vectorbt_operation(data["close"], "mean", 10)
+        close_mean_30 = self._optimized_vectorbt_operation(data["close"], "mean", 30)
         
         price_features = [
             data["close"].pct_change(),
@@ -229,25 +313,16 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
             close_mean_10 / close_mean_30 - 1,
         ]
 
-        # Volatility features
+        # Volatility features using centralized operations
         returns = data["close"].pct_change()
         volatility_features = [
-            self._vectorbt_rolling_operation(returns, "std", 20),
-            self._vectorbt_rolling_operation(returns, "std", 5) / self._vectorbt_rolling_operation(returns, "std", 20),
+            self._optimized_vectorbt_operation(returns, "std", 20),
+            self._optimized_vectorbt_operation(returns, "std", 5) / self._optimized_vectorbt_operation(returns, "std", 20),
         ]
 
         # Volume features (if available)
         if "volume" in data.columns:
-            # Calculate volume features using VectorBT
-            if VECTORBT_AVAILABLE and len(data) > 1000:
-                try:
-                    volume_mean_20 = rolling_mean(data["volume"], window=20)
-                except Exception as e:
-                    logger.warning(f"VectorBT volume features failed: {e}, using pandas fallback")
-                    volume_mean_20 = data["volume"].rolling(window=20).mean()
-            else:
-                volume_mean_20 = data["volume"].rolling(window=20).mean()
-            
+            volume_mean_20 = self._optimized_vectorbt_operation(data["volume"], "mean", 20)
             volume_features = [
                 data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
@@ -286,7 +361,7 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
         return attention_output
 
     def _temporal_fusion(self, attention_output: np.ndarray) -> np.ndarray:
-        """Apply temporal fusion to generate final representations."""
+        """Apply temporal fusion to generate final representations using optimized VectorBT operations."""
         # Simple temporal fusion - in practice would use TFT's temporal fusion decoder
 
         # Use rolling statistics as temporal representation
@@ -295,32 +370,71 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
 
         for window in window_sizes:
             if len(attention_output) >= window:
-                # Rolling mean using VectorBT
+                # Rolling mean and std using centralized VectorBT operations
                 attention_series = pd.Series(attention_output.mean(axis=1))
-                if VECTORBT_AVAILABLE and len(attention_series) > 1000:
-                    try:
-                        rolling_mean = rolling_mean(attention_series, window=window).fillna(0)
-                    except Exception:
-                        rolling_mean = attention_series.rolling(window=window).mean().fillna(0)
-                else:
-                    rolling_mean = attention_series.rolling(window=window).mean().fillna(0)
-                temporal_features.append(rolling_mean.values)
-                
-                # Rolling std using VectorBT
-                if VECTORBT_AVAILABLE and len(attention_series) > 1000:
-                    try:
-                        rolling_std = rolling_std(attention_series, window=window).fillna(0)
-                    except Exception:
-                        rolling_std = attention_series.rolling(window=window).std().fillna(0)
-                else:
-                    rolling_std = attention_series.rolling(window=window).std().fillna(0)
-                temporal_features.append(rolling_std.values)
+                rolling_mean = self._optimized_vectorbt_operation(attention_series, "mean", window).fillna(0)
+                rolling_std = self._optimized_vectorbt_operation(attention_series, "std", window).fillna(0)
+                temporal_features.extend([rolling_mean.values, rolling_std.values])
 
         if temporal_features:
             return np.column_stack(temporal_features)
         else:
             return attention_output
 
+    def _optimized_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                    window: int, **kwargs) -> pd.Series:
+        """Centralized VectorBT operation with intelligent optimization."""
+        if self.rolling_optimizer:
+            try:
+                return self.rolling_optimizer.rolling_operation(data, operation, window, **kwargs)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using direct VectorBT")
+                return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+        else:
+            return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+    
+    def _direct_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Direct VectorBT operation with pandas fallback."""
+        if not VECTORBT_AVAILABLE or len(data) < 1000:
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -359,6 +473,17 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.encoding_dim = encoding_dim
         self.sequence_length = sequence_length
+        
+        # Initialize VectorBT optimizers
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager()
+        else:
+            self.vectorization_manager = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -381,22 +506,12 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
             return pd.Series(np.zeros(len(data)), index=data.index)
 
     def _create_input_features(self, data: pd.DataFrame) -> np.ndarray:
-        """Create input features for autoencoder."""
+        """Create input features for autoencoder using optimized VectorBT operations."""
         features = []
 
-        # Technical indicators as features
-        # Calculate indicators using VectorBT
-        if VECTORBT_AVAILABLE and len(data) > 1000:
-            try:
-                close_mean_10 = rolling_mean(data["close"], window=10)
-                close_std_20 = rolling_std(data["close"], window=20)
-            except Exception as e:
-                logger.warning(f"VectorBT indicators failed: {e}, using pandas fallback")
-                close_mean_10 = data["close"].rolling(window=10).mean()
-                close_std_20 = data["close"].rolling(window=20).std()
-        else:
-            close_mean_10 = data["close"].rolling(window=10).mean()
-            close_std_20 = data["close"].rolling(window=20).std()
+        # Technical indicators as features using centralized VectorBT operations
+        close_mean_10 = self._optimized_vectorbt_operation(data["close"], "mean", 10)
+        close_std_20 = self._optimized_vectorbt_operation(data["close"], "std", 20)
         
         indicators = [
             data["close"].pct_change(),
@@ -406,16 +521,7 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         ]
 
         if "volume" in data.columns:
-            # Calculate volume features using VectorBT
-            if VECTORBT_AVAILABLE and len(data) > 1000:
-                try:
-                    volume_mean_20 = rolling_mean(data["volume"], window=20)
-                except Exception as e:
-                    logger.warning(f"VectorBT volume indicators failed: {e}, using pandas fallback")
-                    volume_mean_20 = data["volume"].rolling(window=20).mean()
-            else:
-                volume_mean_20 = data["volume"].rolling(window=20).mean()
-            
+            volume_mean_20 = self._optimized_vectorbt_operation(data["volume"], "mean", 20)
             indicators.extend([
                 data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
@@ -493,6 +599,60 @@ except ImportError:
             # Fallback to simple averaging
             return features.mean(axis=1, keepdims=True)
 
+    def _optimized_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                    window: int, **kwargs) -> pd.Series:
+        """Centralized VectorBT operation with intelligent optimization."""
+        if self.rolling_optimizer:
+            try:
+                return self.rolling_optimizer.rolling_operation(data, operation, window, **kwargs)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using direct VectorBT")
+                return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+        else:
+            return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+    
+    def _direct_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Direct VectorBT operation with pandas fallback."""
+        if not VECTORBT_AVAILABLE or len(data) < 1000:
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -531,6 +691,17 @@ class ContrastiveLearningGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.embedding_dim = embedding_dim
         self.temperature = temperature
+        
+        # Initialize VectorBT optimizers
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.vectorization_manager = UnifiedVectorizationManager()
+        else:
+            self.vectorization_manager = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -598,16 +769,23 @@ class ContrastiveLearningGenerator(FeatureGenerator):
             representations.append(contrastive_repr)
 
         return np.array(representations)
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
+
+    def _optimized_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                    window: int, **kwargs) -> pd.Series:
+        """Centralized VectorBT operation with intelligent optimization."""
+        if self.rolling_optimizer:
+            try:
+                return self.rolling_optimizer.rolling_operation(data, operation, window, **kwargs)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using direct VectorBT")
+                return self._direct_vectorbt_operation(data, operation, window, **kwargs)
+        else:
+            return self._direct_vectorbt_operation(data, operation, window, **kwargs)
     
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
+    def _direct_vectorbt_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Direct VectorBT operation with pandas fallback."""
+        if not VECTORBT_AVAILABLE or len(data) < 1000:
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
         try:

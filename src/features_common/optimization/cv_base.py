@@ -11,17 +11,12 @@ import numpy as np
 from sklearn.model_selection import TimeSeriesSplit
 import logging
 
-# Import VectorBT optimization modules
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
+# Import common utilities
+from ..utils import (
+    TPRINT_AVAILABLE, tprint,
+    VECTORBT_OPTIMIZER_AVAILABLE, VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+    UnifiedVectorizationManager, get_unified_vectorization_manager
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +122,12 @@ class BaseCVSplitter:
             >>> for train_idx, val_idx in splitter.split_with_embargo(X):
             ...     X_train, X_val = X.loc[train_idx], X.loc[val_idx]
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseCVSplitter] Starting split_with_embargo on {len(X)} samples with {self.n_folds} folds", color="cyan")
+        
         if X.empty:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [BaseCVSplitter] Empty DataFrame provided to CV splitter", color="yellow")
             logger.warning("Empty DataFrame provided to CV splitter")
             return []
         
@@ -165,8 +165,12 @@ class BaseCVSplitter:
                 )
         
         if not splits:
+            if TPRINT_AVAILABLE:
+                tprint("❌ [BaseCVSplitter] No valid splits generated - all validation sets were empty", color="red")
             logger.error("No valid splits generated - all validation sets were empty")
         else:
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [BaseCVSplitter] Generated {len(splits)} CV splits with embargo", color="green")
             logger.info(f"Generated {len(splits)} CV splits with embargo")
         
         return splits
@@ -181,6 +185,8 @@ class BaseCVSplitter:
         Returns:
             Number of splits (may be less than n_folds if embargo removes some)
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseCVSplitter] Getting number of splits: {self.n_folds}", color="cyan")
         return self.n_folds
     
     def analyze_feature_stability(self, X: pd.DataFrame, y: Optional[pd.Series] = None) -> Dict[str, Any]:
@@ -194,7 +200,12 @@ class BaseCVSplitter:
         Returns:
             Dictionary containing stability metrics
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [BaseCVSplitter] Starting feature stability analysis on {X.shape[0]}x{X.shape[1]} data", color="cyan")
+        
         if not self.use_vectorbt_optimization or self.rolling_optimizer is None:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [BaseCVSplitter] VectorBT optimization not available, using basic analysis", color="yellow")
             return self._basic_stability_analysis(X, y)
         
         try:
@@ -390,6 +401,9 @@ class PurgedCVSplitter(BaseCVSplitter):
         Returns:
             List of (purged_train_index, embargoed_val_index) tuples
         """
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [PurgedCVSplitter] Starting purged split_with_embargo on {len(X)} samples with purge_pct={self.purge_pct:.1%}", color="cyan")
+        
         # Get base splits with embargo
         base_splits = super().split_with_embargo(X, y)
         
@@ -418,6 +432,9 @@ class PurgedCVSplitter(BaseCVSplitter):
                 logger.warning(
                     f"Fold {fold_idx + 1}: Training set empty after purge, skipping"
                 )
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"✅ [PurgedCVSplitter] Generated {len(purged_splits)} purged CV splits (purge={self.purge_pct:.1%}, embargo={self.embargo_pct:.1%})", color="green")
         
         logger.info(
             f"Generated {len(purged_splits)} purged CV splits "

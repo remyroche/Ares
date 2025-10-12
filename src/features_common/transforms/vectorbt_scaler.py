@@ -14,48 +14,19 @@ Key Features:
 """
 
 import logging
-import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-# VectorBT imports
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-# Import VectorBT optimization modules
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
-    warnings.warn("VectorBT optimization modules not available. Using basic VectorBT functions.")
-
-# Import utility functions
-try:
-    from src.utils.tprint import tprint
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
+# Import common utilities
+from ..utils import (
+    TPRINT_AVAILABLE, tprint,
+    VECTORBT_AVAILABLE, vbt, scale, rank, zscore, winsorize, clip, quantile,
+    VECTORBT_OPTIMIZER_AVAILABLE, VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+    UnifiedVectorizationManager, get_unified_vectorization_manager,
+    CUPY_AVAILABLE, cp
+)
 
 from .base_scaler import BaseScaler
 

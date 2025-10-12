@@ -25,11 +25,32 @@ Usage Examples:
     selected_features = selector.get_selected_features()
 """
 
-# Core framework
-from .core import (
+# Core framework - VectorBT based
+from .core.framework import (
     get_feature_selection_framework,
     select_features,
-    run_comprehensive_feature_selection,
+    benchmark_methods,
+    get_performance_stats,
+    reset_framework,
+    # Legacy compatibility
+    get_enhanced_framework,
+    enhanced_select_features,
+)
+
+# VectorBT framework
+from .vectorbt import (
+    VectorBTUnifiedFramework,
+    create_vectorbt_unified_framework,
+    VectorBTFeatureSelector,
+    VectorBTCorrelationFilter,
+    VectorBTMutualInformation,
+    VectorBTStabilitySelection,
+    VectorBTMRMRSelector,
+    VectorBTRegularizationSelector,
+    VectorBTRFESelector,
+    VectorBTMemoryOptimizer,
+    VectorBTRollingOperations,
+    VectorBTFeatureSelectionConfig,
 )
 
 # Selection methods
@@ -156,10 +177,28 @@ from .advanced import (
 )
 
 __all__ = [
-    # Core framework
+    # Core framework - VectorBT based
     'get_feature_selection_framework',
     'select_features',
-    'run_comprehensive_feature_selection',
+    'benchmark_methods',
+    'get_performance_stats',
+    'reset_framework',
+    'get_enhanced_framework',
+    'enhanced_select_features',
+    
+    # VectorBT framework
+    'VectorBTUnifiedFramework',
+    'create_vectorbt_unified_framework',
+    'VectorBTFeatureSelector',
+    'VectorBTCorrelationFilter',
+    'VectorBTMutualInformation',
+    'VectorBTStabilitySelection',
+    'VectorBTMRMRSelector',
+    'VectorBTRegularizationSelector',
+    'VectorBTRFESelector',
+    'VectorBTMemoryOptimizer',
+    'VectorBTRollingOperations',
+    'VectorBTFeatureSelectionConfig',
     
     # Selection methods
     'MRMRSelector',

@@ -285,12 +285,15 @@ class VectorBTFeatureSelector:
             if 'dask' in self.parallel_clients:
                 import dask.array as da
                 
-                # Convert to Dask array
-                X_dask = da.from_array(X, chunks=(self.config.lazy_chunk_size, 100))
+                # Convert to Dask array with proper chunking for features
+                X_dask = da.from_array(X, chunks=(self.config.lazy_chunk_size, X.shape[1]))
                 
                 # Parallel mutual information computation
                 def compute_mi_chunk(chunk):
                     from sklearn.feature_selection import mutual_info_regression
+                    # Ensure chunk has the right shape for mutual_info_regression
+                    if chunk.ndim == 1:
+                        chunk = chunk.reshape(-1, 1)
                     return mutual_info_regression(chunk, y, random_state=42)
                 
                 # Apply function to each chunk

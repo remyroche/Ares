@@ -1,289 +1,288 @@
 """
-Central Feature Selection Bank
+VectorBT Feature Selection Core Framework
 
-This module centralizes feature selection tools and pipelines under
-`src/utils/feature_selection/` and delegates heavy-lifting to the
-training feature selection framework. It provides a stable API that
-other modules can import without depending on disparate implementations.
+This module provides the core feature selection framework using VectorBT
+for high-performance feature selection operations.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union, Tuple
-
 import numpy as np
 import pandas as pd
+from typing import Any, Dict, List, Optional, Union, Tuple
+import logging
+
+# Import VectorBT framework
+from ..vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework, create_vectorbt_unified_framework
+from ..vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
 
 # Import tprint for consistent logging
-try:
-    from tprint import tprint
-except ImportError:
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
+from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
-# Import the training framework components
-from src.training.utils.feature_selection.main_framework import (
-    FeatureSelectionFramework as _TrainingFeatureSelectionFramework,
-)
-from src.training.utils.feature_selection.selection_methods import (
-    MRMRSelector,
-    ElasticNetStabilitySelector,
-    RecursiveFeatureEliminator,
-    FeatureImportanceRanker,
-)
-from src.training.utils.feature_selection.stability_analysis import (
-    StabilityAnalyzer,
-)
+logger = logging.getLogger(__name__)
+
+# Global VectorBT framework instance
+_GLOBAL_VECTORBT_FRAMEWORK: Optional[VectorBTUnifiedFramework] = None
 
 
-_GLOBAL_FS_FRAMEWORK: Optional[_TrainingFeatureSelectionFramework] = None
-
-
-def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> _TrainingFeatureSelectionFramework:
+def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
     """
-    Get a global instance of the training FeatureSelectionFramework to be used as the core engine.
+    Get a global instance of the VectorBT feature selection framework.
+    
+    Args:
+        config: Optional configuration dictionary
+        
+    Returns:
+        VectorBTUnifiedFramework instance
     """
-    tprint("Getting feature selection framework")
-    global _GLOBAL_FS_FRAMEWORK
-    if _GLOBAL_FS_FRAMEWORK is None:
-        tprint("Initializing new feature selection framework")
-        _GLOBAL_FS_FRAMEWORK = _TrainingFeatureSelectionFramework(config)
-    return _GLOBAL_FS_FRAMEWORK
+    tprint("🚀 Getting VectorBT feature selection framework")
+    global _GLOBAL_VECTORBT_FRAMEWORK
+    
+    if _GLOBAL_VECTORBT_FRAMEWORK is None:
+        tprint("🔧 Initializing new VectorBT feature selection framework")
+        
+        # Convert dict config to VectorBT config if provided
+        vectorbt_config = None
+        if config:
+            vectorbt_config = VectorBTFeatureSelectionConfig.from_dict(config)
+        
+        _GLOBAL_VECTORBT_FRAMEWORK = create_vectorbt_unified_framework(vectorbt_config)
+        tprint_success("✅ VectorBT framework initialized successfully")
+    
+    return _GLOBAL_VECTORBT_FRAMEWORK
 
 
 def _ensure_feature_names(X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]]) -> Tuple[np.ndarray, List[str]]:
+    """Ensure feature names are available."""
+    tprint_debug("🔍 Ensuring feature names are available")
+    
     if hasattr(X, "values"):
-        X_np = X.values  # type: ignore[attr-defined]
-        names = feature_names or list(getattr(X, "columns"))  # type: ignore[attr-defined]
+        X_np = X.values
+        names = feature_names or list(getattr(X, "columns"))
     else:
         X_np = np.asarray(X)
         names = feature_names or [f"feature_{i}" for i in range(X_np.shape[1])]
+    
+    tprint_debug(f"📊 Feature matrix shape: {X_np.shape}, {len(names)} feature names")
     return X_np, names
 
 
 def select_features(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],
-    method: str = "comprehensive",
+    method: str = "auto",
     max_features: Optional[int] = None,
     is_classification: Optional[bool] = None,
     feature_names: Optional[List[str]] = None,
     framework_config: Optional[Dict[str, Any]] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     """
-    Unified select_features API. Delegates to the training framework.
-
+    Unified VectorBT feature selection API.
+    
     Args:
         X: Feature matrix (np.ndarray or pandas DataFrame)
         y: Target vector
-        method: Selection method preference (mapped to comprehensive pipeline)
-        max_features: Maximum features to aim for
-        is_classification: Optional toggle; inferred if not provided
+        method: Selection method ('auto', 'comprehensive', 'correlation', 'mrmr', etc.)
+        max_features: Maximum features to select
+        is_classification: Whether this is classification (inferred if not provided)
         feature_names: Optional list of feature names
-        framework_config: Optional configuration for the underlying framework
+        framework_config: Optional configuration for the VectorBT framework
+        **kwargs: Additional method-specific parameters
+        
+    Returns:
+        Dictionary with selection results
     """
-    tprint(f"Selecting features with method: {method}, max_features: {max_features}")
-    framework = get_feature_selection_framework(framework_config)
+    tprint(f"🚀 Starting VectorBT feature selection: method={method}, max_features={max_features}")
+    
+    try:
+        # Get VectorBT framework
+        framework = get_feature_selection_framework(framework_config)
+        
+        # Normalize inputs
+        X_np, names = _ensure_feature_names(X, feature_names)
+        y_arr = np.asarray(y)
+        
+        # Map legacy method names to VectorBT methods
+        method_mapping = {
+            "auto": "auto",
+            "comprehensive": "comprehensive", 
+            "filter": "correlation",
+            "correlation": "correlation",
+            "mutual_info": "mutual_information",
+            "mrmr": "mrmr",
+            "stability": "stability_selection",
+            "lasso": "lasso",
+            "elasticnet": "elasticnet",
+            "rfe": "rfe",
+            "adaptive": "adaptive"
+        }
+        
+        vectorbt_method = method_mapping.get(method, method)
+        tprint_debug(f"📊 Mapped method '{method}' to VectorBT method '{vectorbt_method}'")
+        
+        # Perform feature selection using VectorBT
+        result = framework.select_features(
+            X=X_np,
+            y=y_arr,
+            method=vectorbt_method,
+            k=max_features,
+            feature_names=names,
+            **kwargs
+        )
+        
+        # Convert VectorBT result to expected format
+        if result.success:
+            tprint_success(f"✅ VectorBT selection completed: {result.n_selected}/{result.n_total} features selected")
+            
+            return {
+                'success': True,
+                'selected_features': result.selected_features,
+                'selected_indices': result.selected_indices,
+                'feature_scores': result.feature_scores,
+                'n_selected': result.n_selected,
+                'n_total': result.n_total,
+                'method': result.method,
+                'execution_time': result.execution_time,
+                'performance_stats': result.performance_stats,
+                'metadata': result.metadata
+            }
+        else:
+            tprint_warning(f"⚠️ VectorBT selection failed: {result.error}")
+            return {
+                'success': False,
+                'error': result.error,
+                'selected_features': [],
+                'selected_indices': [],
+                'feature_scores': {},
+                'n_selected': 0,
+                'n_total': X_np.shape[1],
+                'method': result.method,
+                'execution_time': result.execution_time
+            }
+            
+    except Exception as e:
+        tprint_warning(f"⚠️ Feature selection failed: {e}")
+        logger.error(f"Feature selection error: {e}")
+        
+        return {
+            'success': False,
+            'error': str(e),
+            'selected_features': [],
+            'selected_indices': [],
+            'feature_scores': {},
+            'n_selected': 0,
+            'n_total': X_np.shape[1] if 'X_np' in locals() else 0,
+            'method': method,
+            'execution_time': 0.0
+        }
 
-    # Normalize inputs
-    if isinstance(X, pd.DataFrame):
-        names = feature_names or list(X.columns)
-    else:
-        X = np.asarray(X)
-        names = feature_names or [f"feature_{i}" for i in range(np.asarray(X).shape[1])]
 
-    y_arr = np.asarray(y)
-
-    # Map legacy methods to comprehensive pipeline where applicable
-    legacy_to_framework = {
-        "auto": "comprehensive",
-        "filter": "comprehensive",
-        "wrapper": "comprehensive",
-        "embedded": "comprehensive",
-        "hybrid": "comprehensive",
-        "comprehensive": "comprehensive",
-        "basic": "basic",
-        "fast": "fast",
-    }
-    method_mapped = legacy_to_framework.get(method.lower() if isinstance(method, str) else "comprehensive", "comprehensive")
-
-    # The training framework works directly with DataFrame too
-    sel_result = framework.select_features(
-        X if isinstance(X, pd.DataFrame) else pd.DataFrame(np.asarray(X), columns=names),
-        y_arr,
-        method=method_mapped,
-        max_features=max_features,
-        is_classification=True if is_classification else False,
-    )
-
-    # Ensure consistent keys
-    if "selected_features" not in sel_result and "final_selected_features" in sel_result:
-        sel_result["selected_features"] = sel_result["final_selected_features"]
-
-    sel_result.setdefault("method", method_mapped)
-    sel_result.setdefault("total_features", len(names))
-    sel_result.setdefault("selected_count", len(sel_result.get("selected_features", [])))
-    return sel_result
-
-
-def run_comprehensive_feature_selection(
+def benchmark_methods(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],
+    max_features: Optional[int] = None,
     feature_names: Optional[List[str]] = None,
-    target_features: Optional[int] = None,
-    model_type: str = "default",
-    enable_stability_analysis: bool = True,
-    enable_temporal_analysis: bool = False,
-    enable_causal_analysis: bool = False,
-    enable_pid_analysis: bool = False,
-    framework_config: Optional[Dict[str, Any]] = None,
+    framework_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Run the comprehensive feature selection pipeline provided by the training framework.
+    Benchmark all VectorBT feature selection methods.
+    
+    Args:
+        X: Feature matrix
+        y: Target vector
+        max_features: Maximum features to select
+        feature_names: Optional list of feature names
+        framework_config: Optional configuration
+        
+    Returns:
+        Dictionary with benchmark results
     """
-    framework = get_feature_selection_framework(framework_config)
-    X_np, names = _ensure_feature_names(X, feature_names)
-    y_arr = np.asarray(y)
+    tprint("🚀 Starting VectorBT method benchmarking")
+    
+    try:
+        # Get VectorBT framework
+        framework = get_feature_selection_framework(framework_config)
+        
+        # Normalize inputs
+        X_np, names = _ensure_feature_names(X, feature_names)
+        y_arr = np.asarray(y)
+        
+        # Run benchmark
+        result = framework.benchmark_methods(
+            X=X_np,
+            y=y_arr,
+            k=max_features,
+            feature_names=names
+        )
+        
+        if result['success']:
+            tprint_success(f"✅ Benchmarking completed: {result['n_successful']}/{result['n_methods_tested']} methods successful")
+        else:
+            tprint_warning(f"⚠️ Benchmarking failed: {result.get('error', 'Unknown error')}")
+        
+        return result
+        
+    except Exception as e:
+        tprint_warning(f"⚠️ Benchmarking failed: {e}")
+        logger.error(f"Benchmarking error: {e}")
+        
+        return {
+            'success': False,
+            'error': str(e),
+            'benchmark_results': {}
+        }
 
-    return framework.run_comprehensive_feature_selection(
-        X_np,
-        y_arr,
-        names,
-        target_features=target_features,
-        model_type=model_type,
-        enable_stability_analysis=enable_stability_analysis,
-        enable_temporal_analysis=enable_temporal_analysis,
-        enable_causal_analysis=enable_causal_analysis,
-        enable_pid_analysis=enable_pid_analysis,
-    )
+
+def get_performance_stats() -> Dict[str, Any]:
+    """Get performance statistics from the VectorBT framework."""
+    tprint("📊 Getting VectorBT performance statistics")
+    
+    try:
+        framework = get_feature_selection_framework()
+        stats = framework.get_performance_stats()
+        
+        tprint_performance(f"📊 VectorBT Performance: {stats['total_selections']} total selections, "
+                         f"{stats['success_rate']:.2%} success rate")
+        
+        return stats
+        
+    except Exception as e:
+        tprint_warning(f"⚠️ Failed to get performance stats: {e}")
+        logger.error(f"Performance stats error: {e}")
+        
+        return {
+            'total_selections': 0,
+            'successful_selections': 0,
+            'failed_selections': 0,
+            'success_rate': 0.0,
+            'avg_execution_time': 0.0,
+            'error': str(e)
+        }
 
 
-def lasso_feature_selection(
+def reset_framework():
+    """Reset the global framework instance."""
+    tprint("🔄 Resetting VectorBT framework")
+    global _GLOBAL_VECTORBT_FRAMEWORK
+    _GLOBAL_VECTORBT_FRAMEWORK = None
+    tprint_success("✅ Framework reset complete")
+
+
+# Legacy compatibility functions
+def get_enhanced_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
+    """Legacy compatibility function."""
+    tprint("⚠️ Using legacy get_enhanced_framework - consider using get_feature_selection_framework")
+    return get_feature_selection_framework(config)
+
+
+def enhanced_select_features(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],
-    n_features: int,
-    feature_names: Optional[List[str]] = None,
-    config: Optional[Dict[str, Any]] = None,
+    method: str = "comprehensive",
+    max_features: Optional[int] = None,
+    **kwargs
 ) -> Dict[str, Any]:
-    """
-    LASSO-based feature selection via ElasticNet with l1_ratio=1.0.
-    """
-    X_np, names = _ensure_feature_names(X, feature_names)
-    y_arr = np.asarray(y)
-
-    en_config = dict(config or {})
-    en_config.setdefault("l1_ratio_range", (1.0, 1.0))
-    selector = ElasticNetStabilitySelector(en_config)
-    result = selector.select_features(X_np, y_arr, names)
-
-    # Align response to requested n_features if needed
-    if n_features and result.get("selected_features"):
-        sel = result["selected_features"][:n_features]
-        result["selected_features"] = sel
-        result["selected_indices"] = [names.index(f) for f in sel]
-    result["method"] = "lasso"
-    return result
-
-
-def cross_validated_feature_selection(
-    X: Union[np.ndarray, pd.DataFrame],
-    y: Union[np.ndarray, pd.Series, List[float], List[int]],
-    n_features: int,
-    feature_names: Optional[List[str]] = None,
-    cv_folds: int = 5,
-    scoring: str = "accuracy",
-    config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Cross-validated feature selection using RFE with configurable CV.
-    """
-    X_np, names = _ensure_feature_names(X, feature_names)
-    y_arr = np.asarray(y)
-    rfe = RecursiveFeatureEliminator({"cv": cv_folds, "scoring": scoring, **(config or {})})
-    return rfe.select_features(X_np, y_arr, names, n_features)
-
-
-def hierarchical_feature_selection(
-    X: Union[np.ndarray, pd.DataFrame],
-    y: Union[np.ndarray, pd.Series, List[float], List[int]],
-    n_features: int,
-    feature_names: Optional[List[str]] = None,
-    config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Hierarchical selection: mRMR pre-filter followed by ElasticNet stability refinement.
-    """
-    X_np, names = _ensure_feature_names(X, feature_names)
-    y_arr = np.asarray(y)
-
-    # Step 1: mRMR pre-filter (2x target)
-    prefilter_count = min(max(n_features * 2, n_features), X_np.shape[1])
-    mrmr = MRMRSelector((config or {}).get("mrmr", {}))
-    mrmr_res = mrmr.select_features(X_np, y_arr, names, prefilter_count)
-
-    if not mrmr_res.get("success", False) or not mrmr_res.get("selected_features"):
-        # Fallback: return top n_features by feature importance
-        fir = FeatureImportanceRanker((config or {}).get("importance", {}))
-        return fir.select_features(X_np, y_arr, names, n_features)
-
-    kept_names = mrmr_res["selected_features"]
-    kept_indices = [names.index(f) for f in kept_names]
-    X_pref = X_np[:, kept_indices]
-
-    # Step 2: ElasticNet stability on prefiltered set
-    en_conf = dict((config or {}).get("elastic_net_stability", {}))
-    selector = ElasticNetStabilitySelector(en_conf)
-    en_res = selector.select_features(X_pref, y_arr, kept_names)
-
-    # Map back indices to original space
-    selected = en_res.get("selected_features", [])[:n_features]
-    selected_indices = [names.index(f) for f in selected if f in names]
-
-    return {
-        "selected_features": selected,
-        "selected_indices": selected_indices,
-        "method": "hierarchical_mrmr_elasticnet",
-        "prefilter": {
-            "mrmr_selected": kept_names,
-            "mrmr_scores": mrmr_res.get("scores", {}),
-        },
-        "stability_scores": en_res.get("stability_scores", {}),
-        "success": True,
-    }
-
-
-def comprehensive_feature_selection(
-    X: Union[np.ndarray, pd.DataFrame],
-    y: Union[np.ndarray, pd.Series, List[float], List[int]],
-    feature_names: Optional[List[str]] = None,
-    target_features: Optional[int] = None,
-    framework_config: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Alias to the comprehensive pipeline.
-    """
-    return run_comprehensive_feature_selection(
-        X,
-        y,
-        feature_names=feature_names,
-        target_features=target_features,
-        framework_config=framework_config,
-    )
-
-
-__all__ = [
-    "get_feature_selection_framework",
-    "select_features",
-    "run_comprehensive_feature_selection",
-    "lasso_feature_selection",
-    "cross_validated_feature_selection",
-    "hierarchical_feature_selection",
-    "comprehensive_feature_selection",
-    # Expose key selectors/analyzers for advanced users
-    "MRMRSelector",
-    "ElasticNetStabilitySelector",
-    "RecursiveFeatureEliminator",
-    "FeatureImportanceRanker",
-    "StabilityAnalyzer",
-]
-
+    """Legacy compatibility function."""
+    tprint("⚠️ Using legacy enhanced_select_features - consider using select_features")
+    return select_features(X, y, method, max_features, **kwargs)

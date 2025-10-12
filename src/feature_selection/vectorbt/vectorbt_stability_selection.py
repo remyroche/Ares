@@ -25,6 +25,13 @@ from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_perf
 from src.utils.math_validation import validate_numeric_array, validate_finite
 
 from .vectorbt_config import VectorBTFeatureSelectionConfig
+from .vectorbt_utils import (
+    create_vectorbt_dataframe,
+    validate_inputs,
+    time_operation,
+    track_vectorbt_performance,
+    create_performance_stats
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,67 +57,22 @@ class VectorBTStabilitySelection:
             raise ImportError("VectorBT is required but not available. Please install vectorbt.")
         
         # Performance tracking
-        self.performance_stats = {
+        self.performance_stats = create_performance_stats()
+        self.performance_stats.update({
             'total_selections': 0,
-            'vectorbt_selections': 0,
-            'total_time': 0.0,
-            'vectorbt_time': 0.0,
             'bootstrap_iterations': 0,
             'features_processed': 0
-        }
+        })
         
         tprint_success("🚀 VectorBTStabilitySelection initialized")
     
     def _time_operation(self, operation_name: str, func: callable, *args, **kwargs) -> Any:
         """Time an operation and log performance."""
-        if not self.config.enable_timing:
-            return func(*args, **kwargs)
-        
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        
-        execution_time = end_time - start_time
-        self.performance_stats['total_time'] += execution_time
-        
-        if self.config.log_performance:
-            tprint_performance(f"⏱️ {operation_name}: {execution_time:.3f}s")
-        
-        return result
+        return time_operation(operation_name, func, self.config, *args, **kwargs)
     
     def _create_vectorbt_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
-        """Create VectorBT-optimized DataFrame with advanced operations."""
-        try:
-            # Use VectorBT's optimized DataFrame creation
-            df = vbt.PandasDataFrame(X, columns=feature_names)
-            
-            # Enable VectorBT-specific optimizations
-            if self.config.enable_financial_optimization:
-                # Use proper financial time series indexing
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='1min')
-                # Enable VectorBT's financial data optimizations
-                try:
-                    df = df.vbt.freq_infer()  # Infer optimal frequency
-                    df = df.vbt.resample_apply('1D', 'last')  # Resample for efficiency
-                except Exception as freq_e:
-                    self.logger.debug(f"Frequency optimization skipped: {freq_e}")
-            
-            # Enable VectorBT's memory optimizations
-            if self.config.enable_memory_optimization:
-                try:
-                    df = df.vbt.ffill()  # Forward fill for missing values
-                except Exception as mem_e:
-                    self.logger.debug(f"Memory optimization skipped: {mem_e}")
-            
-            return df
-            
-        except Exception as e:
-            self.logger.warning(f"Enhanced DataFrame creation failed: {e}")
-            # Fallback to standard DataFrame
-            df = pd.DataFrame(X, columns=feature_names)
-            if self.config.enable_financial_optimization:
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
-            return df
+        """Create VectorBT-optimized DataFrame using shared utilities."""
+        return create_vectorbt_dataframe(X, feature_names, self.config)
     
     def _compute_feature_importance_vectorbt(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """VectorBT-optimized feature importance computation."""

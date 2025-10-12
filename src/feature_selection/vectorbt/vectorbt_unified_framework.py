@@ -260,7 +260,10 @@ class VectorBTUnifiedFramework:
                                 feature_vars = np.var(X_bootstrap, axis=0)
                                 stability_scores.append(np.mean(feature_vars))
                             
-                            analytics['stability_score'] = np.mean(stability_scores) / np.var(feature_vars) if np.var(feature_vars) > 0 else 0.0
+                            # Calculate stability score as coefficient of variation
+                            mean_stability = np.mean(stability_scores)
+                            std_stability = np.std(stability_scores)
+                            analytics['stability_score'] = std_stability / mean_stability if mean_stability > 0 else 0.0
                         else:
                             analytics['stability_score'] = 0.5
                     except:

@@ -749,6 +749,15 @@ class CrossTimeframeFeatureGenerator:
         features.update(cross_tf_interactions)
         del cross_tf_interactions  # Memory cleanup
 
+        # Data-driven interactions (if generator available)
+        if self.interaction_generator:
+            try:
+                data_driven_interactions = self.generate_data_driven_interactions(price_data, volume_data)
+                features.update(data_driven_interactions)
+                self.logger.info(f"✅ Added {len(data_driven_interactions)} data-driven interactions")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Data-driven interactions failed: {e}")
+
         valid_features = self._validate_features(features)
         self.logger.info(f"✅ Generated {len(valid_features)} advanced interaction features with memory optimization")
         
@@ -827,6 +836,19 @@ class CrossTimeframeFeatureGenerator:
             features.update(cross_tf_interactions)
         except Exception as e:
             self.logger.warning(f"Cross-timeframe interactions failed for chunk: {e}")
+
+        # Data-driven interactions (if generator available)
+        if self.interaction_generator:
+            try:
+                # Create temporary DataFrame for data-driven interactions
+                temp_data = pd.DataFrame({'close': price_components['close']})
+                if volume_data is not None and 'volume' in volume_data.columns:
+                    temp_data['volume'] = volume_data['volume']
+                
+                data_driven_interactions = self.generate_data_driven_interactions(temp_data, volume_data)
+                features.update(data_driven_interactions)
+            except Exception as e:
+                self.logger.warning(f"Data-driven interactions failed for chunk: {e}")
 
         return features
 
@@ -981,6 +1003,62 @@ class CrossTimeframeFeatureGenerator:
         features_df = features_df.dropna()
         
         return features_df
+
+    def generate_comprehensive_interaction_features(self, 
+                                                  price_data: pd.DataFrame, 
+                                                  volume_data: pd.DataFrame | None = None,
+                                                  targets: Optional[pd.Series] = None) -> Dict[str, pd.Series]:
+        """
+        Generate comprehensive interaction features including all types.
+        
+        This method combines:
+        - Cross-timeframe features (data-driven timeframes)
+        - Advanced interaction features (RSI-MACD, Bollinger Bands, etc.)
+        - Data-driven interactions (comprehensive exploration)
+        
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume data (optional)
+            targets: Target variable (optional)
+            
+        Returns:
+            Dictionary of comprehensive interaction features
+        """
+        self.logger.info("🚀 Generating comprehensive interaction features")
+        
+        all_features = {}
+        
+        # 1. Cross-timeframe features (data-driven timeframes)
+        try:
+            cross_tf_features = self.generate_cross_timeframe_features(price_data, volume_data)
+            all_features.update(cross_tf_features)
+            self.logger.info(f"✅ Added {len(cross_tf_features)} cross-timeframe features")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cross-timeframe features failed: {e}")
+        
+        # 2. Advanced interaction features
+        try:
+            advanced_features = self.generate_advanced_interaction_features(price_data, volume_data)
+            all_features.update(advanced_features)
+            self.logger.info(f"✅ Added {len(advanced_features)} advanced interaction features")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Advanced interaction features failed: {e}")
+        
+        # 3. Data-driven interactions (if generator available)
+        if self.interaction_generator:
+            try:
+                data_driven_features = self.generate_data_driven_interactions(price_data, volume_data, targets)
+                all_features.update(data_driven_features)
+                self.logger.info(f"✅ Added {len(data_driven_features)} data-driven interaction features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Data-driven interactions failed: {e}")
+        
+        # 4. Validate and filter features
+        valid_features = self._validate_features(all_features)
+        
+        self.logger.info(f"✅ Generated {len(valid_features)} comprehensive interaction features")
+        
+        return valid_features
 
     def _generate_advanced_momentum_interactions(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
         """Generate advanced momentum interaction features using VectorBT."""

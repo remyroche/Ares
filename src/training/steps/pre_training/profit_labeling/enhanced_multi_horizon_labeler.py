@@ -18,7 +18,6 @@ import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
-import asyncio
 
 # Import existing multi-horizon labeler components
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
@@ -33,7 +32,6 @@ from .enhanced_data_labels_system import (
 
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from ..settings import get_pre_training_settings
 
 
 class EnhancedMultiHorizonConfig(MultiHorizonConfig):
@@ -316,32 +314,40 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
     
     def _map_enhanced_labels_to_multi_horizon(self, enhanced_labels: pd.DataFrame) -> pd.DataFrame:
         """Map enhanced labels to multi-horizon format for compatibility."""
+        tprint_info("🔄 Mapping enhanced labels to multi-horizon format")
         try:
             mapped_df = enhanced_labels.copy()
+            tprint_info(f"📊 Processing {len(enhanced_labels)} enhanced labels with {len(enhanced_labels.columns)} columns")
             
             # Map analyst labels to immediate_opportunity
             if 'analyst_label' in enhanced_labels.columns:
                 mapped_df['immediate_opportunity'] = enhanced_labels['analyst_label']
                 mapped_df['immediate_confidence'] = enhanced_labels.get('analyst_confidence', 0.5)
+                tprint_info("✅ Mapped analyst labels to immediate_opportunity")
             
             # Map tactician labels to short_term_opportunity
             if 'tactician_label' in enhanced_labels.columns:
                 mapped_df['short_term_opportunity'] = enhanced_labels['tactician_label']
                 mapped_df['short_term_magnitude'] = enhanced_labels.get('tactician_magnitude', 1.0)
+                tprint_info("✅ Mapped tactician labels to short_term_opportunity")
             
             # Create leverage_adjusted_score from analyst confidence
             if 'analyst_confidence' in enhanced_labels.columns:
                 mapped_df['leverage_adjusted_score'] = enhanced_labels['analyst_confidence']
+                tprint_info("✅ Mapped analyst confidence to leverage_adjusted_score")
             
             # Add horizon-specific targets if not present
             if 'immediate_opportunity' not in mapped_df.columns:
                 mapped_df['immediate_opportunity'] = enhanced_labels.get('analyst_label', 0)
+                tprint_info("🔄 Added fallback immediate_opportunity from analyst_label")
             
             if 'short_term_opportunity' not in mapped_df.columns:
                 mapped_df['short_term_opportunity'] = enhanced_labels.get('tactician_label', 0)
+                tprint_info("🔄 Added fallback short_term_opportunity from tactician_label")
             
             if 'leverage_adjusted_score' not in mapped_df.columns:
                 mapped_df['leverage_adjusted_score'] = enhanced_labels.get('analyst_confidence', 0.5)
+                tprint_info("🔄 Added fallback leverage_adjusted_score from analyst_confidence")
             
             tprint_success(f"✅ Enhanced labels mapped to multi-horizon format: {len(mapped_df.columns)} columns")
             return mapped_df
@@ -541,34 +547,46 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
     
     def _generate_enhanced_recommendations(self, enhanced_metadata: Dict[str, Any]) -> List[str]:
         """Generate enhanced recommendations based on metadata."""
+        tprint_info("💡 Generating enhanced recommendations based on metadata")
         recommendations = []
         
         # Data quality recommendations
         data_quality = enhanced_metadata.get('data_quality', {})
         quality_score = data_quality.get('quality_score', 0.0)
+        tprint_info(f"📊 Data quality score: {quality_score:.3f}")
         if quality_score < 0.7:
             recommendations.append("Improve data quality - address missing values and outliers")
+            tprint_warning("⚠️ Data quality below threshold - added recommendation")
         
         # Label stability recommendations
         label_stability = enhanced_metadata.get('label_stability', {})
         stability_level = label_stability.get('stability_level', 'unknown')
+        tprint_info(f"📊 Label stability level: {stability_level}")
         if stability_level in ['warning', 'critical', 'unstable']:
             recommendations.append("Address label stability issues - check for leakage and drift")
+            tprint_warning("⚠️ Label stability issues detected - added recommendation")
         
         # Final quality recommendations
         final_quality = enhanced_metadata.get('final_quality', {})
         overall_score = final_quality.get('overall_score', 0.0)
+        tprint_info(f"📊 Overall quality score: {overall_score:.3f}")
         if overall_score < 0.6:
             recommendations.append("Overall quality needs improvement - review all components")
+            tprint_warning("⚠️ Overall quality below threshold - added recommendation")
         
         # Regime processing recommendations
         regime_processing = enhanced_metadata.get('regime_processing', {})
-        if regime_processing and regime_processing.get('n_regimes', 0) > 5:
+        n_regimes = regime_processing.get('n_regimes', 0) if regime_processing else 0
+        tprint_info(f"📊 Number of regimes: {n_regimes}")
+        if n_regimes > 5:
             recommendations.append("Consider consolidating regimes - too many regime types detected")
+            tprint_warning("⚠️ Too many regimes detected - added recommendation")
         
         if not recommendations:
             recommendations.append("Enhanced processing completed successfully - no immediate action required")
+            tprint_success("✅ No issues detected - all systems optimal")
         
+        tprint_success(f"💡 Generated {len(recommendations)} recommendations")
         return recommendations
     
     def _create_enhanced_artifacts(
@@ -635,12 +653,14 @@ def create_enhanced_multi_horizon_labeler(
     config: Optional[EnhancedMultiHorizonConfig] = None
 ) -> EnhancedMultiHorizonProfitLabeler:
     """Create enhanced multi-horizon profit labeler with specified configuration."""
+    tprint_info("🏭 Creating enhanced multi-horizon profit labeler")
     return EnhancedMultiHorizonProfitLabeler(config)
 
 
 def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfig:
     """Create trading-optimized configuration for enhanced multi-horizon labeler."""
-    return EnhancedMultiHorizonConfig(
+    tprint_info("⚙️ Creating trading-optimized multi-horizon configuration")
+    config = EnhancedMultiHorizonConfig(
         enable_enhanced_data_cleaning=True,
         enable_enhanced_stability_monitoring=True,
         enable_trading_aware_labels=True,
@@ -658,11 +678,14 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
     )
+    tprint_success("✅ Trading-optimized configuration created")
+    return config
 
 
 def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfig:
     """Create research-optimized configuration for enhanced multi-horizon labeler."""
-    return EnhancedMultiHorizonConfig(
+    tprint_info("⚙️ Creating research-optimized multi-horizon configuration")
+    config = EnhancedMultiHorizonConfig(
         enable_enhanced_data_cleaning=True,
         enable_enhanced_stability_monitoring=True,
         enable_trading_aware_labels=True,
@@ -680,6 +703,8 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()
     )
+    tprint_success("✅ Research-optimized configuration created")
+    return config
 
 
 # Backward compatibility - replace the original class

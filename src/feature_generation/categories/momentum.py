@@ -91,6 +91,9 @@ try:
 from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
 from ..core.feature_bank import get_global_feature_bank
+
+# Centralized indicators utility
+from ..utils.centralized_indicators import get_centralized_indicators
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
@@ -313,18 +316,22 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                     (np.sign(mom_15m) == np.sign(mom_1h))).astype(int)
 
         return alignmentclass RSIGenerator(VectorizedFeatureGenerator):
-    """Generator for RSI (Relative Strength Index) with different base calculations."""
+    """Generator for RSI (Relative Strength Index) using centralized utilities."""
 
     def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize RSI generator.
+        Initialize RSI generator using centralized utilities.
         
         Args:
             period: RSI period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -339,7 +346,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"rsi_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Relative Strength Index over {period} periods based on {base_calculation.value}",
+            description=f"RSI {period} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=period * 2,
             min_lookback=period,
@@ -347,71 +354,61 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             parameters={
                 'period': period,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.period = period
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate RSI using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate RSI based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            close = data['close']
-            
-            # Traditional RSI calculation using VectorBT optimization
-            delta = close.diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            
-            # Use VectorBT for optimized rolling mean
-            if VECTORBT_AVAILABLE and len(close) > 100:
-                try:
-                    avg_gain = rolling_mean(gain, window=self.period)
-                    avg_loss = rolling_mean(loss, window=self.period)
-                except Exception as e:
-                    logger.warning(f"VectorBT RSI calculation failed: {e}, using pandas fallback")
-                    avg_gain = gain.rolling(window=self.period).mean()
-                    avg_loss = loss.rolling(window=self.period).mean()
-            else:
-                avg_gain = gain.rolling(window=self.period).mean()
-                avg_loss = loss.rolling(window=self.period).mean()
-            
-            rs = avg_gain / avg_loss.replace(0, 1)
-            rsi = 100 - (100 / (1 + rs))
-            
-            return rsi
+            # Use centralized RSI calculation for price levels
+            rsi = self.indicators.calculate_rsi(data['close'], self.period)
         else:
             # For other base calculations, calculate RSI on base values
             base_values = self.base_calculator.calculate(data)
-            
-            delta = base_values.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=self.period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=self.period).mean()
-            rs = gain / loss.replace(0, 1)
-            rsi = 100 - (100 / (1 + rs))
-            
-            return rsiclass MACDGenerator(VectorizedFeatureGenerator):
-    """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
+            rsi = self.indicators.calculate_rsi(base_values, self.period)
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            rsi = self.scaler.fit_transform(rsi)
+        
+        return rsiclass MACDGenerator(VectorizedFeatureGenerator):
+    """Generator for MACD (Moving Average Convergence Divergence) using centralized utilities."""
     
     def __init__(self,
                  fast: int = 12,
                  slow: int = 26,
                  signal: int = 9,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize MACD generator.
+        Initialize MACD generator using centralized utilities.
         
         Args:
             fast: Fast EMA period
             slow: Slow EMA period
             signal: Signal line EMA period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -426,7 +423,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"macd_{fast}_{slow}_{signal}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"MACD {fast}/{slow}/{signal} based on {base_calculation.value}",
+            description=f"MACD {fast}/{slow}/{signal} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=slow * 2,
             min_lookback=slow,
@@ -436,44 +433,64 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 'slow': slow,
                 'signal': signal,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.fast = fast
         self.slow = slow
         self.signal = signal
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MACD using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate MACD based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate MACD
-        ema_fast = base_values.ewm(span=self.fast).mean()
-        ema_slow = base_values.ewm(span=self.slow).mean()
-        macd = ema_fast - ema_slow
+        # Use centralized MACD calculation
+        macd_line, signal_line, histogram = self.indicators.calculate_macd(
+            base_values, self.fast, self.slow, self.signal
+        )
         
-        return macdclass StochasticGenerator(VectorizedFeatureGenerator):
-    """Generator for Stochastic Oscillator with different base calculations."""
+        # Return MACD line (can be extended to return signal_line or histogram)
+        result = macd_line
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            result = self.scaler.fit_transform(result)
+        
+        return resultclass StochasticGenerator(VectorizedFeatureGenerator):
+    """Generator for Stochastic Oscillator using centralized utilities."""
     
     def __init__(self, 
                  k_period: int = 14, 
                  d_period: int = 3,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize Stochastic generator.
+        Initialize Stochastic generator using centralized utilities.
         
         Args:
             k_period: %K period
             d_period: %D period (smoothing)
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -490,7 +507,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"stochastic_{k_period}_{d_period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Stochastic Oscillator {k_period}/{d_period} based on {base_calculation.value}",
+            description=f"Stochastic Oscillator {k_period}/{d_period} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=k_period,
             min_lookback=k_period,
@@ -499,62 +516,68 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 'k_period': k_period,
                 'd_period': d_period,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.k_period = k_period
         self.d_period = d_period
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Stochastic Oscillator using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Stochastic Oscillator based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            # Traditional Stochastic calculation using VectorBT optimization
-            if VECTORBT_AVAILABLE and len(close) > 100:
-                try:
-                    lowest_low = rolling_min(low, window=self.k_period)
-                    highest_high = rolling_max(high, window=self.k_period)
-                except Exception as e:
-                    logger.warning(f"VectorBT Stochastic calculation failed: {e}, using pandas fallback")
-                    lowest_low = low.rolling(window=self.k_period).min()
-                    highest_high = high.rolling(window=self.k_period).max()
-            else:
-                lowest_low = low.rolling(window=self.k_period).min()
-                highest_high = high.rolling(window=self.k_period).max()
-            
-            k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
-            
-            return k_percent
+            # Use centralized Stochastic calculation for price levels
+            k_percent, d_percent = self.indicators.calculate_stochastic(
+                data['high'], data['low'], data['close'], self.k_period, self.d_period
+            )
+            result = k_percent
         else:
-            # For other base calculations, use rolling min/max on base values
+            # For other base calculations, calculate Stochastic on base values
             base_values = self.base_calculator.calculate(data)
-            
-            lowest_low = base_values.rolling(window=self.k_period).min()
-            highest_high = base_values.rolling(window=self.k_period).max()
-            k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
-            
-            return k_percentclass WilliamsRGenerator(VectorizedFeatureGenerator):
-    """Generator for Williams %R with different base calculations."""
+            # For non-price-level base calculations, we need to create synthetic high/low
+            # This is a simplified approach - in practice, you might want to handle this differently
+            synthetic_high = base_values * 1.01  # 1% higher
+            synthetic_low = base_values * 0.99   # 1% lower
+            k_percent, d_percent = self.indicators.calculate_stochastic(
+                synthetic_high, synthetic_low, base_values, self.k_period, self.d_period
+            )
+            result = k_percent
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            result = self.scaler.fit_transform(result)
+        
+        return resultclass WilliamsRGenerator(VectorizedFeatureGenerator):
+    """Generator for Williams %R using centralized utilities."""
     
     def __init__(self, 
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize Williams %R generator.
+        Initialize Williams %R generator using centralized utilities.
         
         Args:
             period: Williams %R period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -571,7 +594,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"williams_r_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Williams %R over {period} periods based on {base_calculation.value}",
+            description=f"Williams %R {period} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
@@ -579,61 +602,64 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             parameters={
                 'period': period,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.period = period
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Williams %R using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Williams %R based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            high = data['high']
-            low = data['low']
-            close = data['close']
-            
-            # Williams %R calculation using VectorBT optimization
-            if VECTORBT_AVAILABLE and len(close) > 100:
-                try:
-                    highest_high = rolling_max(high, window=self.period)
-                    lowest_low = rolling_min(low, window=self.period)
-                except Exception as e:
-                    logger.warning(f"VectorBT Williams %R calculation failed: {e}, using pandas fallback")
-                    highest_high = high.rolling(window=self.period).max()
-                    lowest_low = low.rolling(window=self.period).min()
-            else:
-                highest_high = high.rolling(window=self.period).max()
-                lowest_low = low.rolling(window=self.period).min()
-            
-            williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
-            
-            return williams_r
+            # Use centralized Williams %R calculation for price levels
+            williams_r = self.indicators.calculate_williams_r(
+                data['high'], data['low'], data['close'], self.period
+            )
         else:
-            # For other base calculations, use rolling min/max on base values
+            # For other base calculations, calculate Williams %R on base values
             base_values = self.base_calculator.calculate(data)
-            
-            highest_high = base_values.rolling(window=self.period).max()
-            lowest_low = base_values.rolling(window=self.period).min()
-            williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
-            
-            return williams_rclass MomentumOscillatorGenerator(VectorizedFeatureGenerator):
-    """Generator for Momentum Oscillator with different base calculations."""
+            # For non-price-level base calculations, we need to create synthetic high/low
+            synthetic_high = base_values * 1.01  # 1% higher
+            synthetic_low = base_values * 0.99   # 1% lower
+            williams_r = self.indicators.calculate_williams_r(
+                synthetic_high, synthetic_low, base_values, self.period
+            )
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            williams_r = self.scaler.fit_transform(williams_r)
+        
+        return williams_rclass MomentumOscillatorGenerator(VectorizedFeatureGenerator):
+    """Generator for Momentum Oscillator using centralized utilities."""
     
     def __init__(self, 
                  period: int = 10,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize Momentum Oscillator generator.
+        Initialize Momentum Oscillator generator using centralized utilities.
         
         Args:
             period: Momentum period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -648,7 +674,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"momentum_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Momentum Oscillator over {period} periods based on {base_calculation.value}",
+            description=f"Momentum Oscillator {period} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
@@ -656,38 +682,55 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             parameters={
                 'period': period,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.period = period
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Momentum Oscillator using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Momentum Oscillator based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate momentum
-        momentum = base_values - base_values.shift(self.period)
+        # Use centralized momentum calculation
+        momentum = self.indicators.calculate_momentum(base_values, self.period)
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            momentum = self.scaler.fit_transform(momentum)
         
         return momentumclass RateOfChangeGenerator(VectorizedFeatureGenerator):
-    """Generator for Rate of Change (ROC) with different base calculations."""
+    """Generator for Rate of Change (ROC) using centralized utilities."""
     
     def __init__(self, 
                  period: int = 10,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS,
+                 normalize: bool = False,
+                 normalization_method: str = 'zscore',
                  **base_kwargs):
         """
-        Initialize ROC generator.
+        Initialize ROC generator using centralized utilities.
         
         Args:
             period: ROC period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
+            normalize: Whether to normalize the output
+            normalization_method: Normalization method
             **base_kwargs: Additional parameters for base calculation
         """
         if isinstance(base_calculation, str):
@@ -702,7 +745,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         config = FeatureConfig(
             name=f"roc_{period}_{base_calculation.value}",
             category=FeatureCategory.MOMENTUM,
-            description=f"Rate of Change over {period} periods based on {base_calculation.value}",
+            description=f"Rate of Change {period} using centralized utilities based on {base_calculation.value}",
             required_columns=required_columns,
             default_lookback=period,
             min_lookback=period,
@@ -710,67 +753,39 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             parameters={
                 'period': period,
                 'base_calculation': base_calculation.value,
+                'normalize': normalize,
+                'normalization_method': normalization_method,
                 **base_kwargs
             }
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
         self.period = period
         self.base_calculation = base_calculation
+        self.normalize = normalize
+        self.normalization_method = normalization_method
+        
+        # Initialize centralized utilities
+        self.indicators = get_centralized_indicators()
+        self.scaler = create_vectorbt_scaler(method=normalization_method) if normalize else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate ROC using centralized utilities."""
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate ROC based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-
-        # Calculate ROC with math validation using safe math utilities
-        shifted_values = base_values.shift(self.period)
-
-        # Use safe percentage change calculation
-        roc_values = []
-        for i in range(len(base_values)):
-            current_val = base_values.iloc[i]
-            shifted_val = shifted_values.iloc[i]
-
-            # Use safe percentage change function
-            roc_val = safe_percentage_change(shifted_val, current_val)
-            roc_values.append(roc_val)
-
-        roc_series = pd.Series(roc_values, index=data.index, name=f'roc_{self.period}_{self.base_calculation.value}')
-
-        # Validate that all values are finite and provide detailed information
-        try:
-            validate_finite(roc_series.values, f"ROC_{self.period}_{self.base_calculation.value}")
-        except ValueError as e:
-            # Get detailed information about where the NaN/inf values are
-            non_finite_mask = ~np.isfinite(roc_series.values)
-            if np.any(non_finite_mask):
-                non_finite_indices = np.where(non_finite_mask)[0]
-                total_count = len(non_finite_indices)
-
-                # Show first few and last few problematic indices
-                if total_count <= 10:
-                    indices_str = f"indices {non_finite_indices.tolist()}"
-                else:
-                    first_5 = non_finite_indices[:5].tolist()
-                    last_5 = non_finite_indices[-5:].tolist()
-                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
-
-                # Only log once per feature globally to reduce verbosity
-                feature_key = f"ROC_{self.period}_{self.base_calculation.value}"
-                # Use class-level tracking to prevent duplicate warnings across all instances
-                if not hasattr(RateOfChangeGenerator, '_logged_warnings'):
-                    RateOfChangeGenerator._logged_warnings = set()
-                if feature_key not in RateOfChangeGenerator._logged_warnings:
-                    self.logger.warning(f"⚠️ {e} - {indices_str}")
-                    RateOfChangeGenerator._logged_warnings.add(feature_key)
-            else:
-                self.logger.warning(f"⚠️ {e}")
-
-        return roc_series
+        
+        # Use centralized ROC calculation
+        roc = self.indicators.calculate_roc(base_values, self.period)
+        
+        # Apply normalization if requested
+        if self.normalize and self.scaler:
+            roc = self.scaler.fit_transform(roc)
+        
+        return roc
 
 # NEW FEATURES - Advanced Momentum Analysis
 
@@ -1490,11 +1505,48 @@ class VectorBTStochasticGenerator(VectorBTFeatureGenerator):
             return data
 
 def create_default_momentum_generators() -> List[FeatureGenerator]:
-    """Create default momentum generators including legacy and entropy features."""
+    """Create default momentum generators using centralized utilities."""
     generators = []
     
+    # Use refactored generators with centralized utilities
+    # RSI generators with different periods
+    rsi_periods = [9, 14, 21, 25, 30]
+    for period in rsi_periods:
+        generators.append(RSIGenerator(period, normalize=True))
+        generators.append(RSIGenerator(period, normalize=False))
+    
+    # MACD generators with different configurations
+    macd_configs = [(8, 21, 5), (12, 26, 9), (5, 35, 5), (16, 34, 9)]
+    for fast, slow, signal in macd_configs:
+        generators.append(MACDGenerator(fast, slow, signal, normalize=True))
+        generators.append(MACDGenerator(fast, slow, signal, normalize=False))
+    
+    # Stochastic generators with different periods
+    stochastic_periods = [9, 14, 21]
+    for period in stochastic_periods:
+        generators.append(StochasticGenerator(period, normalize=True))
+        generators.append(StochasticGenerator(period, normalize=False))
+    
+    # Williams %R generators
+    williams_periods = [9, 14, 21]
+    for period in williams_periods:
+        generators.append(WilliamsRGenerator(period, normalize=True))
+        generators.append(WilliamsRGenerator(period, normalize=False))
+    
+    # Momentum generators
+    momentum_periods = [5, 10, 20]
+    for period in momentum_periods:
+        generators.append(MomentumOscillatorGenerator(period, normalize=True))
+        generators.append(MomentumOscillatorGenerator(period, normalize=False))
+    
+    # ROC generators
+    roc_periods = [5, 10, 20]
+    for period in roc_periods:
+        generators.append(RateOfChangeGenerator(period, normalize=True))
+        generators.append(RateOfChangeGenerator(period, normalize=False))
+    
+    # VectorBT-optimized generators (if available)
     if VECTORBT_AVAILABLE:
-        # VectorBT-optimized generators
         for period in [9, 14, 21, 30]:
             generators.append(VectorBTMomentumFeatureGenerator(period))
             generators.append(VectorBTRSIGenerator(period))
@@ -1504,42 +1556,23 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
         for fast in [8, 12, 16]:
             for slow in [21, 26, 34]:
                 generators.append(VectorBTMACDGenerator(fast, slow))
-    else:
-        # Fallback to original generators
-        # Add new momentum generators
-        generators.extend(create_momentum_generators())
-        
-        # Add legacy momentum generators
-        generators.extend([
-            LegacyRSIGenerator(14),
-            LegacyMACDGenerator(12, 26, 9),
-            LegacyStochasticGenerator(14, 3),
-        ])
-        
-        # Add entropy-based momentum generators
-        generators.extend([
-        RSIEntropyGenerator(20, 14),
-        MACDEntropyGenerator(20, 12, 26),
+    
+    # Legacy generators for backward compatibility
+    generators.extend([
+        LegacyRSIGenerator(14),
+        LegacyMACDGenerator(12, 26, 9),
+        LegacyStochasticGenerator(14, 3),
     ])
     
-    # Additional RSI periods
-    rsi_periods = [9, 21, 25]
-    for period in rsi_periods:
-        generators.append(RSIGenerator(period))
-        generators.append(LegacyRSIGenerator(period))
+    # Entropy-based momentum generators
+    try:
+        generators.extend([
+            RSIEntropyGenerator(20, 14),
+            MACDEntropyGenerator(20, 12, 26),
+        ])
+    except ImportError:
+        pass  # Entropy generators might not be available
     
-    # Additional MACD configurations
-    macd_configs = [(8, 21, 5), (5, 35, 5)]
-    for fast, slow, signal in macd_configs:
-        generators.append(MACDGenerator(fast, slow, signal))
-        generators.append(LegacyMACDGenerator(fast, slow, signal))
-    
-    # Additional Stochastic periods
-    stochastic_periods = [9, 21]
-    for period in stochastic_periods:
-        generators.append(StochasticGenerator(period))
-        generators.append(LegacyStochasticGenerator(period))
-
     # Advanced momentum indicators for regime detection
     generators.append(AdvancedMomentumGenerator(5, 20))
     generators.append(AdvancedMomentumGenerator(10, 30))

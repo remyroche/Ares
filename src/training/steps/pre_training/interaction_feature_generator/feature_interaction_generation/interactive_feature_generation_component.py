@@ -84,6 +84,7 @@ try:
     # Import matrix operations using import manager
     matrix_ops_result = import_manager.import_matrix_operations()
     MATRIX_OPS = matrix_ops_result.module
+    MATRIX_OPS_AVAILABLE = True
     tprint_success("✅ Matrix operations imported successfully")
     
     # Import ML common utilities using import manager
@@ -94,11 +95,13 @@ try:
     ML_COMMON = ml_common_result.module
     PURGED_KFOLD = purged_kfold_result.module
     FEATURE_SELECTION = feature_selection_result.module
+    ML_COMMON_AVAILABLE = True
     tprint_success("✅ ML common utilities imported successfully")
     
     # Import data utilities using import manager
     data_utils_result = import_manager.import_data_utils()
     DATA_UTILS = data_utils_result.module
+    DATA_UTILS_AVAILABLE = True
     tprint_success("✅ Data utilities imported successfully")
     
     # Import ares launcher integration
@@ -107,9 +110,17 @@ try:
     
 except ImportError as e:
     tprint_error(f"❌ Critical dependency missing: {e}")
+    # Set fallback values
+    MATRIX_OPS_AVAILABLE = False
+    ML_COMMON_AVAILABLE = False
+    DATA_UTILS_AVAILABLE = False
     raise ImportError(f"Required dependency not available: {e}")
 except Exception as e:
     tprint_error(f"❌ Unexpected error during initialization: {e}")
+    # Set fallback values
+    MATRIX_OPS_AVAILABLE = False
+    ML_COMMON_AVAILABLE = False
+    DATA_UTILS_AVAILABLE = False
     raise RuntimeError(f"Initialization failed: {e}")
 
 # Import column naming utilities
@@ -316,17 +327,21 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         tprint_success("🚀 Interactive Feature Generation Component initialized")
         tprint_info(f"📊 Symbol: {self.config.symbol}, Exchange: {self.config.exchange}")
         tprint_info(f"⏰ Timeframe: {self.config.timeframe}")
-        tprint_info(f"🔧 Matrix ops: {MATRIX_OPS_AVAILABLE}, ML common: {ML_COMMON_AVAILABLE}")
+        tprint_info(f"🔧 Matrix ops: {'✅' if MATRIX_OPS_AVAILABLE else '❌'}, ML common: {'✅' if ML_COMMON_AVAILABLE else '❌'}")
         tprint_info(f"🚀 VectorBT optimizations: {'✅' if VECTORBT_OPTIMIZATIONS_AVAILABLE else '❌'}")
 
     @staticmethod
     def _coerce_tuple(value: Optional[Any], default: Tuple[int, int]) -> Tuple[int, int]:
         """Coerce configuration values that may be provided as a tuple or list."""
-
+        tprint_debug("🔧 Coercing tuple configuration value...")
+        
         if value is None:
+            tprint_debug("   → Using default value")
             return default
         if isinstance(value, (list, tuple)) and len(value) == 2:
+            tprint_debug(f"   → Converting {value} to tuple")
             return int(value[0]), int(value[1])
+        tprint_debug("   → Invalid format, using default")
         return default
 
     def _build_interactive_config(
@@ -334,8 +349,10 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         component_config: ComponentConfig,
     ) -> InteractiveFeatureGenerationConfig:
         """Translate the generic component config into the interactive schema."""
+        tprint_debug("🔧 Building interactive configuration from component config...")
 
         params = dict(component_config.custom_params or {})
+        tprint_debug(f"   → Custom params: {len(params)} parameters")
 
         feature_budget_post = self._coerce_tuple(
             params.get('feature_budget_post'),
@@ -401,6 +418,7 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         tprint_debug("🔧 Initializing optimized interaction orchestrator...")
 
         # Convert config to enhanced orchestrator config
+        tprint_debug("   → Creating enhanced orchestrator configuration...")
         orchestrator_config = EnhancedOptimizedConfig(
             # Core settings
             enable_early_filtering=self._interactive_config.enable_early_filtering,
@@ -450,16 +468,19 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
     
     def _initialize_vectorbt_optimizations(self):
         """Initialize VectorBT optimization components."""
+        tprint_debug("🔧 Initializing VectorBT optimization components...")
+        
         if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
             tprint_warning("⚠️ VectorBT optimizations not available, using fallback methods")
             self.vectorbt_rolling_optimizer = None
             self.unified_vectorization_manager = None
             return
 
-        tprint_debug("🔧 Initializing VectorBT optimizations...")
+        tprint_debug("   → VectorBT optimizations available, initializing components...")
 
         try:
             # Initialize VectorBT rolling optimizer
+            tprint_debug("   → Initializing VectorBT rolling optimizer...")
             self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=self._interactive_config.vectorbt_use_gpu,
                 enable_parallel=self._interactive_config.vectorbt_enable_parallel
@@ -467,6 +488,7 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             tprint_success("✅ VectorBT rolling optimizer initialized")
 
             # Initialize unified vectorization manager
+            tprint_debug("   → Initializing unified vectorization manager...")
             self.unified_vectorization_manager = get_unified_vectorization_manager()
             tprint_success("✅ Unified vectorization manager initialized")
 
@@ -832,10 +854,14 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         tprint_debug("🔍 Validating inputs with comprehensive checks...")
 
         if not training_input:
+            tprint_error("❌ No training input provided")
             raise ValueError("No training input provided")
 
         if not pipeline_state:
+            tprint_error("❌ No pipeline state provided")
             raise ValueError("No pipeline state provided")
+        
+        tprint_debug("   → Basic input validation passed")
 
         # Check for required data
         data = training_input.get('data')
@@ -865,28 +891,42 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         
         # Check if data is empty
         if data.empty:
+            tprint_error("❌ Input data is empty - cannot generate features")
             raise ValueError("CRITICAL: Input data is empty - cannot generate features")
+        
+        tprint_debug(f"   → Data shape: {data.shape}")
         
         # Check data size
         if len(data) < 100:
+            tprint_error(f"❌ Insufficient data: {len(data)} < 100 rows (minimum required)")
             raise ValueError(f"CRITICAL: Insufficient data: {len(data)} < 100 rows (minimum required)")
+        
+        tprint_debug("   → Data size validation passed")
         
         # Check for all-NaN data
         if data.isnull().all().all():
+            tprint_error("❌ All data is NaN - cannot generate features")
             raise ValueError("CRITICAL: All data is NaN - cannot generate features")
         
         # Check for excessive NaN values
         nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
         if nan_ratio > 0.5:
+            tprint_error(f"❌ Too many NaN values: {nan_ratio:.1%} > 50%")
             raise ValueError(f"CRITICAL: Too many NaN values: {nan_ratio:.1%} > 50%")
+        
+        tprint_debug(f"   → NaN ratio validation passed: {nan_ratio:.1%}")
         
         # Check required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
         missing_columns = set(required_columns) - set(data.columns)
         if missing_columns:
+            tprint_error(f"❌ Missing required columns: {missing_columns}")
             raise ValueError(f"CRITICAL: Missing required columns: {missing_columns}")
         
+        tprint_debug("   → Required columns validation passed")
+        
         # Validate OHLC data integrity
+        tprint_debug("   → Validating OHLC data integrity...")
         self._validate_ohlc_integrity(data)
         
         # Check for constant features (all same values)
@@ -894,39 +934,57 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         if constant_cols.any():
             constant_col_names = data.columns[constant_cols].tolist()
             tprint_warning(f"⚠️ Found constant columns: {constant_col_names}")
+        else:
+            tprint_debug("   → No constant columns found")
         
         # Check for infinite values
         numeric_data = data.select_dtypes(include=[np.number])
         if not numeric_data.empty:
             inf_count = np.isinf(numeric_data).sum().sum()
             if inf_count > 0:
+                tprint_error(f"❌ Found {inf_count} infinite values in numeric data")
                 raise ValueError(f"CRITICAL: Found {inf_count} infinite values in numeric data")
+            else:
+                tprint_debug("   → No infinite values found")
         
-        tprint_debug("✅ Comprehensive data validation passed")
+        tprint_success("✅ Comprehensive data validation passed")
 
     def _validate_ohlc_integrity(self, data: pd.DataFrame) -> None:
         """Validate OHLC data integrity."""
+        tprint_debug("   → Checking OHLC data integrity...")
+        
         if not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            tprint_debug("   → Not OHLC data, skipping OHLC validation")
             return  # Skip if not OHLC data
         
         # Check for negative prices
         price_cols = ['open', 'high', 'low', 'close']
         for col in price_cols:
             if (data[col] <= 0).any():
+                tprint_error(f"❌ Found non-positive values in {col} column")
                 raise ValueError(f"CRITICAL: Found non-positive values in {col} column")
+        
+        tprint_debug("   → Price positivity validation passed")
         
         # Check OHLC relationships
         invalid_high = data['high'] < data[['open', 'close']].max(axis=1)
         if invalid_high.any():
+            tprint_error(f"❌ Found {invalid_high.sum()} rows where high < max(open, close)")
             raise ValueError(f"CRITICAL: Found {invalid_high.sum()} rows where high < max(open, close)")
         
         invalid_low = data['low'] > data[['open', 'close']].min(axis=1)
         if invalid_low.any():
+            tprint_error(f"❌ Found {invalid_low.sum()} rows where low > min(open, close)")
             raise ValueError(f"CRITICAL: Found {invalid_low.sum()} rows where low > min(open, close)")
+        
+        tprint_debug("   → OHLC relationship validation passed")
         
         # Check volume
         if 'volume' in data.columns and (data['volume'] < 0).any():
+            tprint_error("❌ Found negative volume values")
             raise ValueError("CRITICAL: Found negative volume values")
+        
+        tprint_debug("   → Volume validation passed")
 
     def _ensure_training_input(
         self,

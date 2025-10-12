@@ -136,6 +136,8 @@ class VectorBTOptimizedFeatureGenerator:
             DataFrame with generated rolling features
         """
         tprint_debug("🔧 Generating rolling features with VectorBT optimizations...")
+        tprint_info(f"📊 Input data shape: {data.shape}")
+        tprint_info(f"📊 Target column: {target_column if target_column else 'None'}")
         start_time = time.time()
         
         features = {}
@@ -181,15 +183,19 @@ class VectorBTOptimizedFeatureGenerator:
     
     def _generate_price_rolling_features(self, data: pd.DataFrame, window: int) -> Dict[str, pd.Series]:
         """Generate price-based rolling features."""
+        tprint_debug(f"🔧 Generating price rolling features for window {window}...")
         features = {}
         
         # Price columns
         price_cols = ['open', 'high', 'low', 'close']
+        tprint_debug(f"   → Processing price columns: {price_cols}")
         
         for col in price_cols:
             if col not in data.columns:
+                tprint_debug(f"   → Skipping {col} (not in data)")
                 continue
                 
+            tprint_debug(f"   → Processing {col}...")
             series = data[col]
             
             # Use VectorBT if available and data size is above threshold
@@ -430,6 +436,7 @@ class VectorBTOptimizedFeatureGenerator:
             DataFrame with generated interaction features
         """
         tprint_debug("🔧 Generating interaction features with VectorBT optimizations...")
+        tprint_info(f"📊 Input data shape: {data.shape}")
         start_time = time.time()
         
         features = {}
@@ -487,6 +494,7 @@ class VectorBTOptimizedFeatureGenerator:
             DataFrame with generated cross-timeframe features
         """
         tprint_debug("🔧 Generating cross-timeframe features with VectorBT optimizations...")
+        tprint_info(f"📊 Input data shape: {data.shape}")
         start_time = time.time()
         
         features = {}

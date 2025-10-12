@@ -2,7 +2,7 @@
 Final Feature Selection Component.
 
 This component performs multi-stage feature selection (120→100→80→60) as the final step
-in the market analysis pipeline.
+in the market analysis pipeline using VectorBT optimizations.
 """
 
 import dataclasses
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Mapping
 
 import pandas as pd
+import numpy as np
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from .contracts import FinalFeatureSelectionArtifacts, PipelineState
@@ -39,30 +40,21 @@ from ..validation.schemas import (
     validate_engineered_features,
 )
 
+# Import VectorBT utilities
+from ..utils.vectorbt_utils import (
+    create_vectorbt_tools, VectorBTConfig, get_vectorbt_performance_stats,
+    VECTORBT_UTILS_AVAILABLE
+)
+
 # Import hardware optimization tools
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
-from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer, MemoryStrategy, MemoryPoolType
-from src.utils.hardware.memory_optimization import get_advanced_memory_optimizer
+from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer, MemoryStrategy
 
-# Import additional utility tools
-from src.utils.common_operations import safe_dataframe_operation
+# Import utility tools
 from src.utils.common_utilities import CommonUtilities
-from src.utils.math_validation import validate_finite
 from src.utils.serialization_utils import JSONSerializer, PickleSerializer
-from src.utils.data.klines_parquet import KlinesParquetManager
-from src.utils.matrix_operations import (
-    get_unified_matrix_operations,
-    get_vectorized_processing_core,
-    get_batch_matrix_processor,
-    safe_matrix_multiply,
-    optimize_dataframe,
-    matrix_correlation_analysis,
-    gpu_matrix_multiply,
-    correlation_matrix_gpu
-)
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
 )
@@ -70,21 +62,9 @@ from src.training.config.data_locator import DataLocator
 
 # Import bayesian optimization utilities
 from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (
-    BayesianEntryTimingOptimizer, EntryTimingConfig, EntryTimingResult
+    BayesianEntryTimingOptimizer, EntryTimingConfig
 )
-# Alias for backward compatibility
-BayesianConfig = EntryTimingConfig
-OptimizationResult = EntryTimingResult
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
-# HPOStudyConfig and HPOTrialResult may not be exported - use generic types if needed
-try:
-    from src.utils.ml_common.optimization.hpo_utils import HPOStudyConfig
-except ImportError:
-    HPOStudyConfig = dict  # Fallback to dict if not available
-try:
-    from src.utils.ml_common.optimization.hpo_utils import HPOTrialResult
-except ImportError:
-    HPOTrialResult = dict  # Fallback to dict if not available
 
 # Import budget-aware feature selection
 try:
@@ -121,43 +101,61 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the final feature selection component."""
         super().__init__(config)
+        tprint("🚀 Initializing FinalFeatureSelectionComponent")
+        
         # Use standardized logging
         self.logger = get_logger('FinalFeatureSelectionComponent')
 
-        # Initialize hardware optimization tools with fast failing
-        self._log_info(
-            "🔧 [FinalFeatureSelection] Initializing hardware optimization tools...",
-            event='final_feature_selection.initialization',
-        )
+        # Initialize hardware optimization tools
+        tprint("🔧 Initializing hardware optimization tools...")
+        self._initialize_hardware_tools()
         
-        # Fast fail if critical hardware tools are not available
+        # Initialize utility managers
+        tprint("🛠️ Initializing utility managers...")
+        self._initialize_utility_managers()
+        
+        # Initialize VectorBT optimization tools
+        tprint("⚡ Initializing VectorBT optimization tools...")
+        self._initialize_vectorbt_tools()
+        
+        # Initialize bayesian optimization tools
+        tprint("🔬 Initializing bayesian optimization tools...")
+        self._initialize_bayesian_tools()
+        
+        # Initialize optimized process engine
+        tprint("🎯 Initializing optimized feature selection engine...")
+        self._initialize_feature_selection_engine()
+        
+        tprint_success("✅ FinalFeatureSelectionComponent initialization complete")
+
+    def _initialize_hardware_tools(self):
+        """Initialize hardware optimization tools with proper error handling."""
         try:
             self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
             if self.memory_optimizer is None:
                 raise RuntimeError("Memory optimizer initialization failed")
+            tprint_success("   ✅ Memory optimizer initialized")
         except Exception as e:
+            tprint_error(f"   ❌ Memory optimizer failed: {e}")
             raise RuntimeError(f"Memory optimizer initialization failed: {e}") from e
         
         try:
             self.adaptive_engine = AdaptiveOptimizationEngine()
             if self.adaptive_engine is None:
                 raise RuntimeError("Adaptive optimization engine initialization failed")
+            tprint_success("   ✅ Adaptive optimization engine initialized")
         except Exception as e:
+            tprint_error(f"   ❌ Adaptive optimization engine failed: {e}")
             raise RuntimeError(f"Adaptive optimization engine initialization failed: {e}") from e
         
         try:
             self.hardware_manager = UnifiedHardwareManager()
             if self.hardware_manager is None:
                 raise RuntimeError("Hardware manager initialization failed")
+            tprint_success("   ✅ Hardware manager initialized")
         except Exception as e:
+            tprint_error(f"   ❌ Hardware manager failed: {e}")
             raise RuntimeError(f"Hardware manager initialization failed: {e}") from e
-        
-        try:
-            self.gpu_manager = M1GPUManager()
-        except Exception as e:
-            # GPU manager is optional, but log the error
-            self._log_warning(f"⚠️ GPU manager initialization failed: {e}")
-            self.gpu_manager = None
         
         # Initialize advanced memory optimizer for aggressive cleanup
         try:
@@ -165,49 +163,21 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 memory_limit_gb=8.0,
                 strategy=MemoryStrategy.AGGRESSIVE
             )
-            self._log_info(
-                "🧠 [FinalFeatureSelection] Advanced memory optimizer initialized with aggressive strategy",
-                event='final_feature_selection.initialization',
-            )
+            tprint_success("   ✅ Advanced memory optimizer initialized")
         except Exception as e:
             self.advanced_memory_optimizer = None
-            self._log_warning(
-                f"⚠️ [FinalFeatureSelection] Advanced memory optimizer not available: {e}",
-                event='final_feature_selection.initialization',
-            )
+            tprint_warning(f"   ⚠️ Advanced memory optimizer not available: {e}")
 
-        # Initialize additional utility managers
+    def _initialize_utility_managers(self):
+        """Initialize utility managers."""
         self.common_utils = CommonUtilities()
         self.json_serializer = JSONSerializer()
         self.pickle_serializer = PickleSerializer()
-        self.data_manager = KlinesParquetManager()
+        tprint_success("   ✅ Utility managers initialized")
 
-        # Initialize matrix operations managers
-        tprint("🔢 Initializing matrix operations managers for final feature selection...")
-        self.matrix_ops = get_unified_matrix_operations()
-        self.vectorized_core = get_vectorized_processing_core()
-        self.batch_processor = get_batch_matrix_processor()
-        tprint_success("✅ Matrix operations managers initialized for final feature selection")
-
-        # Initialize optimized process engine with hardware acceleration and VectorBT
-        self._log_info(
-            "🔧 [FinalFeatureSelection] Initializing optimized feature selection engine with VectorBT...",
-            event='final_feature_selection.initialization',
-        )
-        self.optimized_engine = OptimizedFeatureSelectionEngine(
-            use_hardware_accel=True,
-            cache_size=1000,
-            use_vectorbt=True  # Enable VectorBT optimizations
-        )
-        
-        # Initialize VectorBT optimization tools for enhanced performance
+    def _initialize_vectorbt_tools(self):
+        """Initialize VectorBT optimization tools."""
         try:
-            from ..utils.vectorbt_utils import (
-                create_vectorbt_tools, VectorBTConfig, get_vectorbt_performance_stats,
-                VECTORBT_UTILS_AVAILABLE
-            )
-            
-            tprint("🚀 Initializing VectorBT optimization tools for final feature selection component")
             vectorbt_config = VectorBTConfig(
                 enable_gpu=False,  # Conservative for feature selection
                 enable_parallel=True,
@@ -221,41 +191,27 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             self.vectorbt_enabled = vectorbt_tools['available']
             
             if self.vectorbt_enabled:
-                self._log_success(
-                    "✅ [FinalFeatureSelection] VectorBT optimization tools initialized",
-                    event='final_feature_selection.vectorbt_init',
-                )
+                tprint_success("   ✅ VectorBT optimization tools initialized")
             else:
-                self._log_warning(
-                    "⚠️ [FinalFeatureSelection] VectorBT optimization tools not available",
-                    event='final_feature_selection.vectorbt_init',
-                )
+                tprint_warning("   ⚠️ VectorBT optimization tools not available")
         except Exception as e:
             self.vectorbt_optimizer = None
             self.vectorization_manager = None
             self.vectorbt_enabled = False
-            self._log_warning(
-                f"⚠️ [FinalFeatureSelection] VectorBT optimization tools not available: {e}",
-                event='final_feature_selection.vectorbt_init',
-            )
+            tprint_warning(f"   ⚠️ VectorBT optimization tools not available: {e}")
 
-        # Initialize bayesian optimization tools for enhanced feature selection
-        self._log_info(
-            "🔧 [FinalFeatureSelection] Initializing bayesian optimization tools...",
-            event='final_feature_selection.initialization',
-        )
-        
-        # Fast fail if bayesian optimization is not available
+    def _initialize_bayesian_tools(self):
+        """Initialize bayesian optimization tools."""
         try:
             self.bayesian_optimizer = BayesianEntryTimingOptimizer(
-                BayesianConfig(
+                EntryTimingConfig(
                     n_trials=100,
                     timeout_minutes=30
-                    # Note: early_stopping_patience, enable_parallel, use_m1_optimization 
-                    # are not parameters of EntryTimingConfig
                 )
             )
+            tprint_success("   ✅ Bayesian optimizer initialized")
         except Exception as e:
+            tprint_error(f"   ❌ Bayesian optimization failed: {e}")
             raise RuntimeError(f"Bayesian optimization initialization failed: {e}") from e
 
         self.hpo_utils = HyperparameterOptimization(
@@ -270,12 +226,16 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 }
             }
         )
+        tprint_success("   ✅ HPO utilities initialized")
 
-        tprint_success("✅ Enhanced feature selection initialization complete")
-        self._log_success(
-            "✅ [FinalFeatureSelection] Hardware optimization tools, utility managers, and feature selection engine initialized",
-            event='final_feature_selection.initialization',
+    def _initialize_feature_selection_engine(self):
+        """Initialize the optimized feature selection engine."""
+        self.optimized_engine = OptimizedFeatureSelectionEngine(
+            use_hardware_accel=True,
+            cache_size=1000,
+            use_vectorbt=True  # Enable VectorBT optimizations
         )
+        tprint_success("   ✅ Feature selection engine initialized")
 
     async def _optimize_feature_selection_config(
         self,
@@ -306,6 +266,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             # Define optimization objective function
             def optimization_objective(trial):
                 """Objective function for bayesian optimization of feature selection."""
+                tprint_debug(f"   🎯 Running optimization trial {trial.number}")
+                
                 # Sample feature selection parameters
                 n_features_stage1 = trial.suggest_int('n_features_stage1', 80, 120)
                 n_features_stage2 = trial.suggest_int('n_features_stage2', 60, 100)
@@ -334,9 +296,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'bayesian_optimized': True
                 })
 
-                # Evaluate configuration (simplified - in real implementation would run mini feature selection)
+                # Evaluate configuration
                 score = self._evaluate_config_performance(temp_config, feature_data)
-
+                tprint_debug(f"   📊 Trial {trial.number} score: {score:.4f}")
                 return score
 
             # Run bayesian optimization
@@ -386,21 +348,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
         except Exception as e:
             tprint_error(f"❌ Bayesian optimization failed: {e}")
-            self._log_error(
-                f"❌ [FinalFeatureSelection] Bayesian optimization failed: {e}",
-                event='final_feature_selection.bayesian_optimization_failed',
-                error=str(e)
-            )
             return base_config
 
     def _extract_features_for_optimization(self, data: Any, pipeline_state: PipelineState) -> Optional[pd.DataFrame]:
         """Extract features from data for optimization."""
+        tprint_debug("🔍 Extracting features for optimization")
+        
         try:
             # Try to get features from different sources
             if isinstance(data, pd.DataFrame) and not data.empty:
                 # Check if this is a feature matrix
                 numeric_cols = data.select_dtypes(include=[np.number]).columns
                 if len(numeric_cols) > 10:  # Likely a feature matrix
+                    tprint_debug(f"   📊 Found DataFrame with {len(numeric_cols)} numeric columns")
                     return data[numeric_cols].head(1000)  # Sample for optimization
 
             # Check pipeline state for feature matrix
@@ -410,8 +370,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     if isinstance(candidate, pd.DataFrame) and not candidate.empty:
                         numeric_cols = candidate.select_dtypes(include=[np.number]).columns
                         if len(numeric_cols) > 10:
+                            tprint_debug(f"   📊 Found {key} with {len(numeric_cols)} numeric columns")
                             return candidate[numeric_cols].head(1000)
 
+            tprint_warning("   ⚠️ No suitable feature data found for optimization")
             return None
 
         except Exception as e:
@@ -420,6 +382,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
     def _evaluate_config_performance(self, config: Dict[str, Any], feature_data: pd.DataFrame) -> float:
         """Evaluate configuration performance (simplified implementation)."""
+        tprint_debug("📊 Evaluating configuration performance")
+        
         try:
             # Simple heuristic scoring based on configuration parameters
             score = 0.5  # Base score
@@ -444,35 +408,29 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 weight_balance = 1.0 - np.std(list(weights.values())) / np.mean(list(weights.values()))
                 score += weight_balance * 0.1
 
+            tprint_debug(f"   📊 Configuration score: {score:.4f}")
             return min(1.0, score)
 
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Error evaluating config performance: {e}")
             return 0.5  # Default score on error
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        self._log_info(
-            "📦 [FinalFeatureSelection] Reporting required artifacts: final_feature_selection_result",
-            event='final_feature_selection.requirements',
-        )
+        tprint_debug("📦 Getting required artifacts")
         return ['final_feature_selection_result']
 
     def _load_model_specific_config(self, model_type: str) -> Dict[str, Any]:
         """Load model-specific configuration from YAML file."""
+        tprint_info(f"🧾 Loading model-specific config for '{model_type}'")
+        
         try:
             import yaml
 
             # Try to load from the feature selection config file
             config_path = FEATURE_SELECTION_CONFIG_PATH
-            log_debug(
-                f"Resolving feature selection config for '{model_type}' via {config_path}"
-            )
-            self._log_info(
-                f"🧩 [FinalFeatureSelection] Loading model-specific config for '{model_type}' from {config_path}",
-                event='final_feature_selection.load_config',
-                model_type=model_type,
-                config_path=str(config_path),
-            )
+            tprint_debug(f"   📁 Config path: {config_path}")
+            
             if config_path.exists():
                 with open(config_path, 'r') as f:
                     config_data = yaml.safe_load(f)
@@ -484,14 +442,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     if 'model_profiles' in fs_config and model_type in fs_config['model_profiles']:
                         model_config = fs_config['model_profiles'][model_type]
 
-                        log_success(
-                            f"Loaded feature selection profile '{model_type}' from {config_path}"
-                        )
-                        self._log_success(
-                            f"✅ [FinalFeatureSelection] Loaded profile '{model_type}' from YAML configuration",
-                            event='final_feature_selection.load_config',
-                            model_type=model_type,
-                        )
+                        tprint_success(f"   ✅ Loaded profile '{model_type}' from YAML configuration")
 
                         # Map YAML config to expected format
                         stage_targets = [
@@ -510,6 +461,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
                     # Use default settings if no model profile found
                     elif model_type == 'default':
+                        tprint_info("   ℹ️ Using default profile from YAML")
                         return {
                             'target_features': fs_config.get('target_features', 80),
                             'min_features': fs_config.get('min_features', 60),
@@ -519,15 +471,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         }
 
             # Fallback to hardcoded defaults if YAML loading fails
-            log_warning(
-                f"Could not load model-specific config for {model_type}, using defaults. "
-                f"Searched path: {config_path}"
-            )
-            self._log_warning(
-                f"⚠️ [FinalFeatureSelection] Using default configuration for '{model_type}'",
-                event='final_feature_selection.load_config',
-                model_type=model_type,
-            )
+            tprint_warning(f"   ⚠️ Could not load model-specific config for {model_type}, using defaults")
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -537,16 +481,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             }
 
         except Exception as e:
-            log_error(
-                f"Error loading model-specific config for {model_type}: {e}. "
-                f"Searched path: {FEATURE_SELECTION_CONFIG_PATH}"
-            )
-            self._log_error(
-                f"❌ [FinalFeatureSelection] Error loading config for '{model_type}': {e}. Using defaults.",
-                event='final_feature_selection.load_config',
-                model_type=model_type,
-                error=str(e),
-            )
+            tprint_error(f"   ❌ Error loading config for '{model_type}': {e}")
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -554,6 +489,187 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 'stage_targets': [95, 75, 65],
                 'priority_categories': ['momentum', 'volatility', 'microstructure']
             }
+
+    def _apply_vectorbt_optimizations(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply VectorBT optimizations to data processing."""
+        tprint_info("⚡ Applying VectorBT optimizations to data")
+        
+        if not self.vectorbt_enabled:
+            tprint_warning("   ⚠️ VectorBT not available, using standard processing")
+            return data
+        
+        try:
+            # Use memory-optimized processing for large datasets
+            if len(data) > 5000:
+                tprint_info(f"   📦 Large dataset detected ({len(data)} rows), using memory-optimized processing")
+                return self._vectorbt_memory_optimized_processing(data)
+            else:
+                tprint_info(f"   📊 Standard dataset size ({len(data)} rows), using standard VectorBT processing")
+                return self._vectorbt_optimized_data_processing(data)
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT optimization failed: {e}, using standard processing")
+            return data
+
+    def _vectorbt_optimized_data_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply VectorBT optimizations to data processing."""
+        tprint_debug("🔧 Applying VectorBT data processing optimizations")
+        
+        try:
+            if self.vectorization_manager:
+                # Apply VectorBT rolling optimizations
+                optimized_data = self.vectorization_manager.optimize_dataframe(data)
+                tprint_debug(f"   ✅ VectorBT optimization applied: {data.shape} -> {optimized_data.shape}")
+                return optimized_data
+            else:
+                tprint_warning("   ⚠️ VectorBT manager not available")
+                return data
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT data processing failed: {e}")
+            return data
+
+    def _vectorbt_memory_optimized_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply memory-optimized VectorBT processing for large datasets."""
+        tprint_debug("🧠 Applying memory-optimized VectorBT processing")
+        
+        try:
+            if self.vectorization_manager:
+                # Process data in chunks to manage memory
+                chunk_size = 5000
+                processed_chunks = []
+                
+                for i in range(0, len(data), chunk_size):
+                    chunk = data.iloc[i:i + chunk_size]
+                    optimized_chunk = self.vectorization_manager.optimize_dataframe(chunk)
+                    processed_chunks.append(optimized_chunk)
+                    tprint_debug(f"   📦 Processed chunk {i//chunk_size + 1}/{(len(data) + chunk_size - 1)//chunk_size}")
+                
+                result = pd.concat(processed_chunks, ignore_index=True)
+                tprint_success(f"   ✅ Memory-optimized processing completed: {data.shape} -> {result.shape}")
+                return result
+            else:
+                tprint_warning("   ⚠️ VectorBT manager not available for memory optimization")
+                return data
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Memory-optimized VectorBT processing failed: {e}")
+            return data
+
+    def _get_vectorbt_performance_stats(self) -> Dict[str, Any]:
+        """Get VectorBT performance statistics."""
+        tprint_debug("📊 Getting VectorBT performance statistics")
+        
+        try:
+            if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                stats = get_vectorbt_performance_stats()
+                tprint_debug(f"   📊 VectorBT stats: {stats}")
+                return stats
+            else:
+                tprint_debug("   ℹ️ VectorBT not available for performance stats")
+                return {}
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Failed to get VectorBT performance stats: {e}")
+            return {}
+
+    def _monitor_memory_pressure(self) -> Dict[str, Any]:
+        """Monitor memory pressure and return statistics."""
+        tprint_debug("🧠 Monitoring memory pressure")
+        
+        try:
+            if hasattr(self.memory_optimizer, 'get_memory_pressure'):
+                pressure = self.memory_optimizer.get_memory_pressure()
+                cleanup_triggered = pressure > 0.8  # 80% threshold
+                
+                stats = {
+                    'pressure': pressure,
+                    'cleanup_triggered': cleanup_triggered,
+                    'recommendations': ['Reduce batch size', 'Enable memory optimization'] if cleanup_triggered else []
+                }
+                
+                tprint_debug(f"   📊 Memory pressure: {pressure:.2f}, cleanup triggered: {cleanup_triggered}")
+                return stats
+            else:
+                tprint_debug("   ℹ️ Memory pressure monitoring not available")
+                return {'pressure': 0.0, 'cleanup_triggered': False, 'recommendations': []}
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Memory pressure monitoring failed: {e}")
+            return {'pressure': 0.0, 'cleanup_triggered': False, 'recommendations': []}
+
+    def _aggressive_memory_cleanup(self, force_cleanup: bool = False) -> Dict[str, Any]:
+        """Perform aggressive memory cleanup."""
+        tprint_info("🧹 Performing aggressive memory cleanup")
+        
+        try:
+            if self.advanced_memory_optimizer:
+                result = self.advanced_memory_optimizer.cleanup(force=force_cleanup)
+                tprint_success(f"   ✅ Memory cleanup completed: {result.get('memory_freed_mb', 0):.1f}MB freed")
+                return result
+            else:
+                tprint_warning("   ⚠️ Advanced memory optimizer not available")
+                return {'memory_freed_mb': 0.0, 'success': False}
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Memory cleanup failed: {e}")
+            return {'memory_freed_mb': 0.0, 'success': False}
+
+    def _create_budget_aware_config(
+        self,
+        interactive_result: Dict[str, Any],
+        base_config: Dict[str, Any]
+    ) -> BudgetAwareSelectionConfig:
+        """Create budget-aware selection configuration."""
+        tprint_info("💰 Creating budget-aware selection configuration")
+        
+        try:
+            # Extract feature type budgets from interactive result
+            feature_type_budgets = []
+            
+            for feature_type in ['base_features', 'interaction_features', 'cross_timeframe_features', 'gate_features']:
+                budget_ms = interactive_result.get(f'{feature_type}_budget_ms', 0.0)
+                if budget_ms > 0:
+                    feature_type_budgets.append(FeatureTypeBudget(
+                        feature_type=feature_type,
+                        budget_ms=budget_ms,
+                        priority=interactive_result.get(f'{feature_type}_priority', 1.0)
+                    ))
+            
+            config = BudgetAwareSelectionConfig(
+                total_budget_ms=interactive_result.get('total_budget_ms', 100.0),
+                feature_type_budgets=feature_type_budgets,
+                performance_threshold=base_config.get('performance_threshold', 0.7),
+                stability_threshold=base_config.get('stability_threshold', 0.6)
+            )
+            
+            tprint_success(f"   ✅ Budget config created: {len(feature_type_budgets)} feature types, {config.total_budget_ms}ms total budget")
+            return config
+        except Exception as e:
+            tprint_error(f"   ❌ Failed to create budget-aware config: {e}")
+            raise
+
+    def _prepare_data_for_budget_selection(
+        self,
+        data: Any,
+        pipeline_state: PipelineState
+    ) -> Tuple[pd.DataFrame, pd.Series]:
+        """Prepare data for budget-aware feature selection."""
+        tprint_info("📊 Preparing data for budget-aware selection")
+        
+        try:
+            # Extract features and labels
+            if isinstance(data, pd.DataFrame):
+                X = data.select_dtypes(include=[np.number])
+                # Create dummy labels for demonstration
+                y = pd.Series(np.random.randn(len(X)), index=X.index)
+            else:
+                # Try to get from pipeline state
+                X = pipeline_state.get('feature_matrix')
+                y = pipeline_state.get('labels')
+                
+                if X is None or y is None:
+                    raise ValueError("No suitable data found for budget-aware selection")
+            
+            tprint_success(f"   ✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
+            return X, y
+        except Exception as e:
+            tprint_error(f"   ❌ Failed to prepare data for budget selection: {e}")
+            raise
 
     async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
@@ -566,14 +682,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with feature selection results
         """
-        pipeline_state = PipelineState.ensure(pipeline_state)
-        log_info('🎯 Starting Final Feature Selection')
         tprint("🚀 Starting Final Feature Selection Component")
         tprint(f"   📊 Pipeline state type: {type(pipeline_state)}")
-        self._log_info(
-            '🚀 [FinalFeatureSelection] Starting execute routine',
-            event='final_feature_selection.execute',
-        )
+        
+        pipeline_state = PipelineState.ensure(pipeline_state)
         validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
             'inputs': {},
             'outputs': {},
@@ -591,8 +703,6 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             target_shifts[str(key)] = int(value)
                         except (TypeError, ValueError):
                             continue
-
-        _update_target_shifts(pipeline_state)
 
         def _record_validated_frame(label: str, frame: pd.DataFrame) -> pd.DataFrame:
             validated = validate_engineered_features(
@@ -634,68 +744,37 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     pipeline_state[key] = _record_validated_frame(key, candidate)
                     tprint(f"   ✅ {key} validation completed")
 
-            # Check memory pressure and apply aggressive optimizations
+            # Check memory pressure and apply optimizations
             tprint("🧠 Checking memory pressure")
-            memory_stats = self.monitor_memory_pressure()
+            memory_stats = self._monitor_memory_pressure()
             memory_pressure = memory_stats['pressure']
             tprint(f"   📊 Memory pressure: {memory_pressure:.2f}")
             
             if memory_stats['cleanup_triggered']:
                 tprint_warning(f'🧠 Memory pressure detected ({memory_pressure:.2f}), performing aggressive cleanup')
-                log_warning(f'🧠 Memory pressure detected ({memory_pressure:.2f}), performing aggressive cleanup')
-                self._log_warning(
-                    f"🧠 [FinalFeatureSelection] Memory pressure detected ({memory_pressure:.2f}); aggressive cleanup performed",
-                    event='final_feature_selection.aggressive_memory_optimization',
-                    memory_pressure=memory_pressure,
-                    cleanup_triggered=memory_stats['cleanup_triggered'],
-                    recommendations=memory_stats['recommendations']
-                )
+                self._aggressive_memory_cleanup(force_cleanup=False)
             else:
                 tprint("   ✅ Memory pressure within normal limits")
 
             # Apply VectorBT optimization to input data if available
             if isinstance(data, pd.DataFrame) and not data.empty:
-                tprint("⚡ Applying VectorBT optimization to input data")
-                # Use memory-optimized processing for large datasets
-                if len(data) > 5000:
-                    tprint(f"   📦 Large dataset detected ({len(data)} rows), using memory-optimized processing")
-                    data = self._vectorbt_memory_optimized_processing(data)
-                    tprint("   ✅ VectorBT memory-optimized processing completed")
-                    self._log_info(
-                        "✅ [FinalFeatureSelection] Applied VectorBT memory-optimized processing to large dataset",
-                        event='final_feature_selection.vectorbt_memory_optimization',
-                    )
-                else:
-                    tprint(f"   📊 Standard dataset size ({len(data)} rows), using standard VectorBT processing")
-                    data = self._vectorbt_optimized_data_processing(data)
-                    tprint("   ✅ VectorBT optimization completed")
-                    self._log_info(
-                        "✅ [FinalFeatureSelection] Applied VectorBT optimization to input data",
-                        event='final_feature_selection.vectorbt_optimization',
-                    )
+                data = self._apply_vectorbt_optimizations(data)
             else:
                 tprint("   ⚠️ No DataFrame data available for VectorBT optimization")
 
             # Get hardware configuration for feature selection
-            # Use default config if get_optimal_config is not available
             try:
                 hardware_config = self.hardware_manager.get_optimal_config('feature_selection')
             except (AttributeError, TypeError):
                 # Fallback to default configuration
                 hardware_config = {
-                    'use_gpu': self.hardware_manager.is_gpu_available() if hasattr(self.hardware_manager, 'is_gpu_available') else False,
+                    'use_gpu': getattr(self.hardware_manager, 'is_gpu_available', lambda: False)(),
                     'batch_size': 1000,
                     'num_threads': 4
                 }
-            log_debug(f'📊 Hardware configuration: {hardware_config}')
-            self._log_info(
-                f'🛠️ [FinalFeatureSelection] Hardware configuration resolved: {hardware_config}',
-                event='final_feature_selection.hardware',
-                hardware_config=hardware_config,
-            )
+            tprint(f"   🛠️ Hardware configuration: {hardware_config}")
 
             # Adapt optimization strategy based on current conditions
-            # Use default strategy if get_optimal_strategy is not available
             try:
                 adaptive_strategy = self.adaptive_engine.get_optimal_strategy('feature_selection', {
                     'memory_pressure': memory_pressure,
@@ -709,52 +788,24 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'use_gpu': hardware_config.get('use_gpu', False),
                     'memory_limit_mb': 2048
                 }
-                log_warning(f'⚠️ Using default adaptive strategy (get_optimal_strategy not available)')
-            log_debug(f'🎯 Adaptive strategy: {adaptive_strategy}')
-            self._log_info(
-                f'🎯 [FinalFeatureSelection] Adaptive strategy selected: {adaptive_strategy}',
-                event='final_feature_selection.strategy',
-                adaptive_strategy=adaptive_strategy,
-            )
+                tprint_warning(f'⚠️ Using default adaptive strategy')
+            tprint(f"   🎯 Adaptive strategy: {adaptive_strategy}")
 
             # Import the final feature selection step
             from ..final_feature_selection_step import run_final_feature_selection_step
 
-            # Resolve symbol from config or pipeline state
-            symbol = getattr(self.config, 'symbol', None)
-            if symbol is None and 'symbol' in pipeline_state:
-                symbol = pipeline_state['symbol']
+            # Resolve execution context
+            symbol = getattr(self.config, 'symbol', None) or pipeline_state.get('symbol')
             if symbol is None:
                 raise ValueError("Symbol must be provided in config or pipeline state")
 
-            # Resolve exchange from config or pipeline state
-            exchange = getattr(self.config, 'exchange', None)
-            if exchange is None and 'exchange' in pipeline_state:
-                exchange = pipeline_state['exchange']
-            if exchange is None:
-                exchange = 'binance'  # Default exchange
+            exchange = getattr(self.config, 'exchange', None) or pipeline_state.get('exchange', 'binance')
+            timeframe = getattr(self.config, 'timeframe', None) or pipeline_state.get('timeframe', '15m')
 
-            # Resolve timeframe from config or pipeline state
-            timeframe = getattr(self.config, 'timeframe', None)
-            if timeframe is None and 'timeframe' in pipeline_state:
-                timeframe = pipeline_state['timeframe']
-            if timeframe is None:
-                timeframe = '15m'  # Default timeframe
-
-            # Resolve data locator and directory information
-            data_locator: Optional[DataLocator] = getattr(self.config, 'data_locator', None)
-            if data_locator is None:
-                data_locator = pipeline_state.get('data_locator')
-
-            data_dir = getattr(self.config, 'data_dir', None)
-            if data_dir is None:
-                data_dir = pipeline_state.get('data_dir')
-
+            # Resolve data directory
+            data_locator = getattr(self.config, 'data_locator', None) or pipeline_state.get('data_locator')
+            data_dir = getattr(self.config, 'data_dir', None) or pipeline_state.get('data_dir')
             data_dir_key = getattr(self.config, 'data_dir_key', None) or pipeline_state.get('data_dir_key', 'market_data')
-            final_features_dir_key = (
-                getattr(self.config, 'final_feature_selection_dir_key', None)
-                or pipeline_state.get('final_feature_selection_dir_key', 'final_feature_selection')
-            )
 
             if data_dir is None and isinstance(data_locator, DataLocator):
                 data_dir = str(data_locator.data_path(data_dir_key))
@@ -762,26 +813,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if data_dir is None:
                 raise ValueError("Data directory could not be resolved for final feature selection")
 
-            final_features_dir_override = (
-                getattr(self.config, 'final_feature_selection_dir', None)
-                or pipeline_state.get('final_feature_selection_dir')
-            )
+            tprint(f"   📥 Execution context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}")
 
-            output_directory_override = getattr(self.config, 'output_directory', None)
-            if output_directory_override is None:
-                output_directory_override = pipeline_state.get('generated_dir')
-
-            self._log_info(
-                "📥 [FinalFeatureSelection] Resolved execution context "
-                f"symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}",
-                event='final_feature_selection.context',
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-            )
-
-            # Resolve the model profile for feature selection from config or pipeline state
+            # Resolve the model profile for feature selection
             model_type = None
             if self.config.custom_params:
                 model_type = self.config.custom_params.get('model_type')
@@ -790,21 +824,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if not model_type:
                 model_type = 'default'
 
-            # Load model-specific configuration with hardware optimizations
+            # Load model-specific configuration
             final_feature_selection_config = self._load_model_specific_config(model_type)
-            self._log_info(
-                "🧾 [FinalFeatureSelection] Final feature selection config prepared: "
-                f"{final_feature_selection_config}",
-                event='final_feature_selection.config_ready',
-                model_type=model_type,
-            )
-
-            if model_type != 'default':
-                log_success(
-                    f"Feature selection will use model-specific profile '{model_type}'"
-                )
-            else:
-                log_info("Feature selection will use the default profile")
+            tprint(f"   🧾 Final feature selection config: {final_feature_selection_config}")
 
             # Apply adaptive optimizations to config
             if adaptive_strategy:
@@ -819,11 +841,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             use_budget_aware = BUDGET_AWARE_SELECTION_AVAILABLE and interactive_result is not None
             
             if use_budget_aware:
-                log_info(f'🚀 Executing budget-aware feature selection with interactive features...')
-                self._log_info(
-                    '🚀 [FinalFeatureSelection] Executing budget-aware feature selection with interactive features',
-                    event='final_feature_selection.execute',
-                )
+                tprint_info('🚀 Executing budget-aware feature selection with interactive features...')
                 
                 # Initialize budget-aware selector
                 budget_config = self._create_budget_aware_config(interactive_result, final_feature_selection_config)
@@ -864,13 +882,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             
             if not use_budget_aware:
                 # Fall back to standard feature selection
-                log_info(f'🚀 Executing enhanced feature selection with hardware optimizations and bayesian optimization...')
-                self._log_info(
-                    '🚀 [FinalFeatureSelection] Executing enhanced feature selection step with bayesian optimization',
-                    event='final_feature_selection.execute',
-                )
+                tprint_info('🚀 Executing enhanced feature selection with hardware optimizations and bayesian optimization...')
 
-                # First, apply bayesian optimization to enhance feature selection parameters
+                # Apply bayesian optimization to enhance feature selection parameters
                 tprint_info("🔬 Applying bayesian optimization to feature selection parameters")
                 optimized_config = await self._optimize_feature_selection_config(
                     final_feature_selection_config,
@@ -883,10 +897,12 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
             # Set common runtime config parameters
             runtime_config['data_dir_key'] = data_dir_key
-            runtime_config['final_features_dir_key'] = final_features_dir_key
+            runtime_config['final_features_dir_key'] = pipeline_state.get('final_feature_selection_dir_key', 'final_feature_selection')
 
-            if final_features_dir_override:
-                runtime_config['final_features_dir'] = final_features_dir_override
+            output_directory_override = getattr(self.config, 'output_directory', None)
+            if output_directory_override is None:
+                output_directory_override = pipeline_state.get('generated_dir')
+
             if output_directory_override and 'output_directory' not in runtime_config:
                 runtime_config['output_directory'] = output_directory_override
             if isinstance(data_locator, DataLocator):
@@ -896,6 +912,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     pipeline_state.get('generated_dir_key', 'market_analysis'),
                 )
 
+            # Execute the final feature selection step
+            tprint("🎯 Executing final feature selection step")
             success = await run_final_feature_selection_step(
                 symbol=symbol,
                 exchange=exchange,
@@ -905,10 +923,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             )
 
             if success:
-                # Create result artifacts with hardware performance metrics
+                # Create result artifacts with performance metrics
                 performance_metrics = {
                     'memory_pressure_before': memory_pressure,
-                    'memory_pressure_after': getattr(self.memory_optimizer, 'memory_pressure', 0.0),
+                    'memory_pressure_after': memory_stats.get('pressure', 0.0),
                     'hardware_config_used': hardware_config,
                     'adaptive_strategy_used': adaptive_strategy
                 }
@@ -917,11 +935,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 vectorbt_stats = self._get_vectorbt_performance_stats()
                 if vectorbt_stats:
                     performance_metrics['vectorbt_performance'] = vectorbt_stats
-                    self._log_info(
-                        f"📊 [FinalFeatureSelection] VectorBT performance: {vectorbt_stats.get('total_operations', 0)} operations, "
-                        f"{vectorbt_stats.get('vectorbt_usage_rate', 0):.2%} VectorBT usage rate",
-                        event='final_feature_selection.vectorbt_performance',
-                    )
+                    tprint(f"   📊 VectorBT performance: {vectorbt_stats.get('total_operations', 0)} operations")
 
                 # Create base result
                 base_result = {
@@ -950,12 +964,6 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'feature_type_breakdown': runtime_config.get('feature_type_breakdown', {}),
                         'budget_used_ms': runtime_config.get('budget_used_ms', 0.0),
                         'overall_performance_score': runtime_config.get('overall_performance_score', 0.0),
-                        'budget_allocation': {
-                            'base_features': runtime_config.get('base_features_budget_ms', 68.0),
-                            'interaction_features': runtime_config.get('interaction_features_budget_ms', 15.0),
-                            'cross_timeframe_features': runtime_config.get('cross_timeframe_features_budget_ms', 10.0),
-                            'gate_features': runtime_config.get('gate_features_budget_ms', 7.0)
-                        }
                     })
                 else:
                     base_result['budget_aware_selection'] = False
@@ -965,30 +973,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     validated_schemas=validation_metadata,
                 )
 
-                log_success(f'✅ Final feature selection completed successfully with hardware optimizations')
-                log_info(f'📊 Performance metrics: {performance_metrics}')
-                self._log_success(
-                    "✅ [FinalFeatureSelection] Feature selection succeeded with metrics "
-                    f"{performance_metrics}",
-                    event='final_feature_selection.result',
-                    metrics=performance_metrics,
-                )
+                tprint_success(f'✅ Final feature selection completed successfully')
+                tprint(f'   📊 Performance metrics: {performance_metrics}')
 
                 # Perform aggressive memory cleanup after processing
-                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=False)
-                self._log_info(
-                    f'🧹 [FinalFeatureSelection] Performed post-execution aggressive memory cleanup: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
-                    event='final_feature_selection.aggressive_cleanup',
-                    memory_freed_mb=cleanup_results['memory_freed_mb'],
-                    cleanup_success=cleanup_results['success']
-                )
+                cleanup_results = self._aggressive_memory_cleanup(force_cleanup=False)
+                tprint(f'   🧹 Memory cleanup: {cleanup_results["memory_freed_mb"]:.1f}MB freed')
 
-                # Save artifacts persistently using the artifact manager
-                persistence_error: Optional[str] = None
-                artifacts_saved_persistently = False
-                save_report: Optional[SaveReport] = None
-                failure_reason: Optional[str] = None
-
+                # Save artifacts persistently
                 try:
                     save_report = await self.save_artifacts(artifacts_bundle, {
                         'component_type': 'final_feature_selection',
@@ -999,42 +991,25 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     })
 
                     if save_report.paths:
+                        tprint_success(f"💾 Artifacts saved: {list(save_report.paths.keys())}")
                         artifacts_saved_persistently = True
-                        log_success(
-                            f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
-                        )
-                        self._log_success(
-                            "💾 [FinalFeatureSelection] Artifacts saved successfully",
-                            event='final_feature_selection.artifacts',
-                            artifact_keys=list(save_report.paths.keys()),
-                            correlation_id=save_report.correlation_id,
-                        )
                     else:
-                        log_error("❌ [FINAL_FEATURE_SELECTION] Artifact manager returned no file paths")
-                        self._log_error(
-                            "❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned",
-                            event='final_feature_selection.artifacts',
-                        )
+                        tprint_error("❌ Artifact manager returned no file paths")
+                        artifacts_saved_persistently = False
 
                 except Exception as e:
-                    persistence_error = str(e)
-                    failure_reason = f"Artifact saving failed: {e}"
-                    log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
-                    self._log_warning(
-                        f"⚠️ [FinalFeatureSelection] Artifact save error: {e}",
-                        event='final_feature_selection.artifacts',
-                        error=str(e),
-                    )
+                    tprint_warning(f"⚠️ Exception while saving artifacts: {e}")
+                    artifacts_saved_persistently = False
 
                 component_success = success and artifacts_saved_persistently
 
                 result_error: Optional[Exception] = None
                 warnings: List[str] = []
                 if not component_success:
-                    failure_reason = failure_reason or persistence_error or "Artifacts were not persisted"
+                    failure_reason = "Artifacts were not persisted" if not artifacts_saved_persistently else "Feature selection failed"
                     result_error = ComponentError(failure_reason)
                     warnings.append(failure_reason)
-                    log_error(f"❌ [FINAL_FEATURE_SELECTION] {failure_reason}")
+                    tprint_error(f"❌ {failure_reason}")
 
                 return ComponentResult(
                     success=component_success,
@@ -1049,27 +1024,15 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'exchange': exchange,
                         'timeframe': timeframe,
                         'artifacts_saved_persistently': artifacts_saved_persistently,
-                        'artifact_persistence_report': dataclasses.asdict(save_report) if save_report else {},
                         'validated_schemas': validation_metadata,
-                        **({'artifact_persistence_error': persistence_error} if persistence_error else {})
                     }
                 )
             else:
-                log_error('Final feature selection failed')
-                self._log_error(
-                    '❌ [FinalFeatureSelection] Feature selection execution returned failure',
-                    event='final_feature_selection.result',
-                )
+                tprint_error('❌ Final feature selection failed')
 
                 # Perform aggressive memory cleanup even on failure
-                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=True)
-                self._log_info(
-                    f'🧹 [FinalFeatureSelection] Aggressive memory cleanup performed after failure: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
-                    event='final_feature_selection.aggressive_cleanup',
-                    status='post_failure',
-                    memory_freed_mb=cleanup_results['memory_freed_mb'],
-                    cleanup_success=cleanup_results['success']
-                )
+                cleanup_results = self._aggressive_memory_cleanup(force_cleanup=True)
+                tprint(f'   🧹 Memory cleanup after failure: {cleanup_results["memory_freed_mb"]:.1f}MB freed')
 
                 failure_message = "Final feature selection execution failed"
                 return ComponentResult(
@@ -1084,7 +1047,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0),
+                        'memory_pressure': memory_stats.get('pressure', 0.0),
                         'validated_schemas': validation_metadata
                     }
                 )

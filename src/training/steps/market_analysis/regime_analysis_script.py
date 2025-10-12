@@ -14,10 +14,24 @@ def main() -> int:
     parser.add_argument(
         "--data-cache", default="data_cache", help="Path to data cache directory"
     )
+    parser.add_argument(
+        "--enable-vectorbt", action="store_true", default=True,
+        help="Enable VectorBT optimization for rolling operations (default: True)"
+    )
+    parser.add_argument(
+        "--disable-vectorbt", action="store_true",
+        help="Disable VectorBT optimization (use standard pandas operations)"
+    )
     args = parser.parse_args()
 
+    # Determine VectorBT setting
+    enable_vectorbt = args.enable_vectorbt and not args.disable_vectorbt
+
     try:
-        service = RegimeAnalysisService(data_cache_path=args.data_cache)
+        service = RegimeAnalysisService(
+            data_cache_path=args.data_cache,
+            enable_vectorbt=enable_vectorbt
+        )
         service.analyze(symbol=args.symbol)
         tprint("🎉 Regime analysis completed successfully!", "SUCCESS")
     except Exception as exc:

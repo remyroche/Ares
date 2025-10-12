@@ -34,6 +34,10 @@ from src.utils.error_handler import handles_errors, safe_execution
 from src.utils.logger import system_logger
 from src.utils.async_utils import AsyncFileManager
 
+# Import VectorBT optimization utilities
+from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+
 # Local imports
 from data_downloader import BinanceDataDownloader
 from config import ASSETS, DATA_CONFIG, ANALYSIS_CONFIG
@@ -44,17 +48,19 @@ class OptimizedCryptoProcessor:
     """Enhanced cryptocurrency processor with Ares optimization utilities"""
     
     @handles_errors(default_return=None, context="OptimizedCryptoProcessor initialization")
-    def __init__(self, data_dir: str = "data", output_dir: str = "results"):
+    def __init__(self, data_dir: str = "data", output_dir: str = "results", enable_vectorbt: bool = True):
         """
-        Initialize the optimized processor with hardware acceleration
+        Initialize the optimized processor with hardware acceleration and VectorBT optimization
         
         Args:
             data_dir: Directory to store raw data
             output_dir: Directory to store analysis results
+            enable_vectorbt: Enable VectorBT optimization for rolling operations
         """
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.assets = ASSETS.copy()
+        self.enable_vectorbt = enable_vectorbt
         
         # Initialize Ares utilities
         self.logger = logger
@@ -66,6 +72,21 @@ class OptimizedCryptoProcessor:
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
+        
+        # VectorBT optimization
+        if self.enable_vectorbt:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.gpu_manager is not None,
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000
+            )
+            self.vectorization_manager = get_unified_vectorization_manager()
+            self.logger.info("✅ VectorBT optimization enabled for crypto analysis")
+        else:
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+            self.logger.info("⚠️ VectorBT optimization disabled")
         
         # File management
         self.async_file_manager = AsyncFileManager({})
@@ -254,15 +275,26 @@ class OptimizedCryptoProcessor:
         await self._save_results_async(analysis_results, summary_metrics)
         
         self.logger.info("✅ Optimized analysis completed successfully")
+        
+        # Log VectorBT performance statistics if enabled
+        if self.enable_vectorbt and self.vectorization_manager:
+            stats = self.vectorization_manager.get_performance_stats()
+            self.logger.info(f"📊 VectorBT Performance Stats:")
+            self.logger.info(f"   - Total operations: {stats.get('total_operations', 0)}")
+            self.logger.info(f"   - VectorBT usage rate: {stats.get('vectorbt_usage_rate', 0):.2%}")
+            self.logger.info(f"   - Average operation time: {stats.get('average_operation_time', 0):.3f}s")
+            self.logger.info(f"   - Memory optimizations: {stats.get('memory_optimizations', 0)}")
+        
         return {
             "success": True,
             "results": analysis_results,
             "summary": summary_metrics,
-            "data_file": str(data_file)
+            "data_file": str(data_file),
+            "vectorbt_enabled": self.enable_vectorbt
         }
     
     def _analyze_single_asset_optimized(self, symbol_data: pd.DataFrame, symbol: str) -> Dict[str, Any]:
-        """Analyze single asset with hardware optimization"""
+        """Analyze single asset with hardware optimization and VectorBT acceleration"""
         start_time = time.time()
         
         # Use safe mathematical operations from Ares utilities
@@ -275,7 +307,14 @@ class OptimizedCryptoProcessor:
             default=0.0
         )
         
-        volatility = returns.std() * np.sqrt(96) if len(returns) > 1 else 0.0
+        # Use VectorBT for volatility calculation if available
+        if self.enable_vectorbt and self.rolling_optimizer and len(returns) > 20:
+            # Calculate rolling volatility using VectorBT
+            rolling_vol = self.rolling_optimizer.rolling_std(returns, window=20)
+            volatility = rolling_vol.mean() * np.sqrt(96) if not rolling_vol.empty else 0.0
+        else:
+            # Fallback to standard calculation
+            volatility = returns.std() * np.sqrt(96) if len(returns) > 1 else 0.0
         
         # Volume analysis with correlation safety
         volume_price_corr = safe_correlation(
@@ -317,7 +356,7 @@ class OptimizedCryptoProcessor:
         }
     
     def _calculate_barriers_optimized(self, symbol_data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate triple barriers using optimized operations"""
+        """Calculate triple barriers using optimized operations with VectorBT acceleration"""
         barriers = ANALYSIS_CONFIG["barrier_levels"]
         results = {}
         
@@ -325,6 +364,21 @@ class OptimizedCryptoProcessor:
         opens = symbol_data['open'].values
         highs = symbol_data['high'].values
         lows = symbol_data['low'].values
+        
+        # Use VectorBT for rolling calculations if available
+        if self.enable_vectorbt and self.vectorization_manager and len(symbol_data) > 100:
+            # Convert to pandas Series for VectorBT operations
+            opens_series = pd.Series(opens, index=symbol_data.index)
+            highs_series = pd.Series(highs, index=symbol_data.index)
+            lows_series = pd.Series(lows, index=symbol_data.index)
+            
+            # Use VectorBT for rolling calculations
+            rolling_highs = self.vectorization_manager.rolling_operation(highs_series, 'max', window=5)
+            rolling_lows = self.vectorization_manager.rolling_operation(lows_series, 'min', window=5)
+        else:
+            # Fallback to numpy operations
+            rolling_highs = highs
+            rolling_lows = lows
         
         for barrier in barriers:
             # Vectorized profit calculations
@@ -473,7 +527,10 @@ class OptimizedCryptoProcessor:
                     "gpu_acceleration": self.gpu_manager is not None,
                     "memory_optimization": self.memory_optimizer is not None,
                     "cpu_optimization": self.cpu_optimizer is not None,
-                    "matrix_operations": self.matrix_ops is not None
+                    "matrix_operations": self.matrix_ops is not None,
+                    "vectorbt_optimization": self.enable_vectorbt,
+                    "vectorbt_rolling_optimizer": self.rolling_optimizer is not None,
+                    "unified_vectorization": self.vectorization_manager is not None
                 }
             }
             
@@ -693,6 +750,9 @@ class OptimizedCryptoProcessor:
                 "memory_optimization": self.memory_optimizer is not None,
                 "cpu_optimization": self.cpu_optimizer is not None,
                 "matrix_operations": self.matrix_ops is not None,
+                "vectorbt_optimization": self.enable_vectorbt,
+                "vectorbt_rolling_optimizer": self.rolling_optimizer is not None,
+                "unified_vectorization": self.vectorization_manager is not None,
                 "parallel_processing": True,
                 "data_validation": True,
                 "async_file_operations": True

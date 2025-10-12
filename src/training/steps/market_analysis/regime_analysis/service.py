@@ -87,6 +87,16 @@ except ImportError:
     get_m1_cpu_optimizer = lambda: None
     get_m1_gpu_manager = lambda: None
 
+# Import VectorBT optimization utilities
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = lambda **kwargs: None
+    get_unified_vectorization_manager = lambda: None
+
 try:  # pragma: no cover - fallback retained for runtime parity
     from src.utils.logging_utils import get_logger, log_warning
 except ImportError:  # pragma: no cover - ensures CLI still works without dependency
@@ -106,7 +116,7 @@ from .reporting import print_detailed_metrics, print_analysis_summary
 class RegimeAnalysisService:
     """Coordinates loading, computation, and reporting of regime metrics with enhanced monitoring and error handling."""
 
-    def __init__(self, data_cache_path: Path | str = "data_cache"):
+    def __init__(self, data_cache_path: Path | str = "data_cache", enable_vectorbt: bool = True):
         self.data_cache_path = Path(data_cache_path)
         if not self.data_cache_path.exists():
             raise FileNotFoundError(f"Data cache directory not found: {self.data_cache_path}")
@@ -118,6 +128,23 @@ class RegimeAnalysisService:
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.gpu_manager = get_m1_gpu_manager()
+        
+        # Initialize VectorBT optimization
+        self.enable_vectorbt = enable_vectorbt and VECTORBT_AVAILABLE
+        if self.enable_vectorbt:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.gpu_manager is not None,
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000
+            )
+            self.vectorization_manager = get_unified_vectorization_manager()
+            tprint_success("✅ VectorBT optimization enabled for regime analysis")
+        else:
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+            if enable_vectorbt and not VECTORBT_AVAILABLE:
+                tprint_warning("⚠️ VectorBT not available, using standard operations")
         
         # Performance monitoring
         self.performance_metrics = {
@@ -137,9 +164,13 @@ class RegimeAnalysisService:
             "service": "RegimeAnalysisService",
             "data_cache_path": str(self.data_cache_path),
             "m1_hardware_available": M1_HARDWARE_AVAILABLE,
+            "vectorbt_available": VECTORBT_AVAILABLE,
+            "vectorbt_enabled": self.enable_vectorbt,
             "memory_optimizer": self.memory_optimizer is not None,
             "cpu_optimizer": self.cpu_optimizer is not None,
-            "gpu_manager": self.gpu_manager is not None
+            "gpu_manager": self.gpu_manager is not None,
+            "rolling_optimizer": self.rolling_optimizer is not None,
+            "vectorization_manager": self.vectorization_manager is not None
         })
         tprint_success("🔍 Regime Analysis service initialized with enhanced monitoring")
 
@@ -210,6 +241,19 @@ class RegimeAnalysisService:
                 self.performance_metrics["end_time"] = time.time()
                 total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
                 
+                # Log VectorBT performance statistics if enabled
+                vectorbt_stats = {}
+                if self.enable_vectorbt and self.vectorization_manager:
+                    stats = self.vectorization_manager.get_performance_stats()
+                    vectorbt_stats = {
+                        "vectorbt_operations": stats.get('total_operations', 0),
+                        "vectorbt_usage_rate": stats.get('vectorbt_usage_rate', 0),
+                        "average_operation_time": stats.get('average_operation_time', 0),
+                        "memory_optimizations": stats.get('memory_optimizations', 0)
+                    }
+                    tprint_performance(f"📊 VectorBT Performance: {vectorbt_stats['vectorbt_operations']} operations, "
+                                     f"{vectorbt_stats['vectorbt_usage_rate']:.1%} usage rate")
+                
                 # Log final performance
                 tprint_structured({
                     "analysis_complete": datetime.now().isoformat(),
@@ -217,6 +261,8 @@ class RegimeAnalysisService:
                     "success_count": self.performance_metrics["success_count"],
                     "error_count": self.performance_metrics["error_count"],
                     "memory_usage_end": get_memory_usage() / (1024**2),
+                    "vectorbt_enabled": self.enable_vectorbt,
+                    "vectorbt_stats": vectorbt_stats,
                     "output_path": str(output_path)
                 })
 
@@ -349,7 +395,11 @@ class RegimeAnalysisService:
                 "success_count": self.performance_metrics.get("success_count", 0),
                 "error_count": self.performance_metrics.get("error_count", 0),
                 "memory_usage_mb": get_memory_usage() / (1024**2),
-                "m1_hardware_available": M1_HARDWARE_AVAILABLE
+                "m1_hardware_available": M1_HARDWARE_AVAILABLE,
+                "vectorbt_available": VECTORBT_AVAILABLE,
+                "vectorbt_enabled": self.enable_vectorbt,
+                "vectorbt_rolling_optimizer": self.rolling_optimizer is not None,
+                "unified_vectorization_manager": self.vectorization_manager is not None
             }
             
             # Use safe JSON dump

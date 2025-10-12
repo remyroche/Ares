@@ -112,6 +112,9 @@ class BaseFeatureRegistry(ABC):
         
         Returns:
             True if valid, False otherwise
+            
+        Raises:
+            RuntimeError: If validation fails with specific error details
         """
         if TPRINT_AVAILABLE:
             tprint(f"🔧 [BaseFeatureRegistry] Validating registry integrity", color="cyan")
@@ -119,12 +122,26 @@ class BaseFeatureRegistry(ABC):
         try:
             # Basic validation: check if we can list names
             names = self.list_names()
-            is_valid = isinstance(names, list)
+            if not isinstance(names, list):
+                error_msg = f"list_names() must return a list, got {type(names)}"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [BaseFeatureRegistry] {error_msg}", color="red")
+                raise RuntimeError(error_msg)
+            
+            # Check for duplicate names
+            if len(names) != len(set(names)):
+                error_msg = "Duplicate feature names found in registry"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [BaseFeatureRegistry] {error_msg}", color="red")
+                raise RuntimeError(error_msg)
+            
             if TPRINT_AVAILABLE:
-                tprint(f"✅ [BaseFeatureRegistry] Registry validation {'passed' if is_valid else 'failed'}", color="green" if is_valid else "red")
-            return is_valid
+                tprint(f"✅ [BaseFeatureRegistry] Registry validation passed with {len(names)} features", color="green")
+            return True
+            
         except Exception as e:
+            error_msg = f"Registry validation failed: {e}"
             if TPRINT_AVAILABLE:
-                tprint(f"❌ [BaseFeatureRegistry] Registry validation failed: {e}", color="red")
-            self.logger.error(f"Registry validation failed: {e}")
-            return False
+                tprint(f"❌ [BaseFeatureRegistry] {error_msg}", color="red")
+            self.logger.error(error_msg)
+            raise RuntimeError(error_msg) from e

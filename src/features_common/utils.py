@@ -9,8 +9,10 @@ across the features_common package.
 try:
     from src.utils.tprint import tprint
     TPRINT_AVAILABLE = True
+    tprint("🔧 [features_common.utils] Initializing common utilities module", color="cyan")
 except ImportError:
     TPRINT_AVAILABLE = False
+    print("⚠️  [features_common.utils] tprint not available")
 
 # Import VectorBT optimization modules
 try:
@@ -19,14 +21,14 @@ try:
     VECTORBT_OPTIMIZER_AVAILABLE = True
     if TPRINT_AVAILABLE:
         tprint("✅ [features_common.utils] VectorBT optimization modules loaded successfully", color="green")
-except ImportError:
+except ImportError as e:
     VECTORBT_OPTIMIZER_AVAILABLE = False
     VectorBTRollingOptimizer = None
     get_vectorbt_rolling_optimizer = None
     UnifiedVectorizationManager = None
     get_unified_vectorization_manager = None
     if TPRINT_AVAILABLE:
-        tprint("⚠️  [features_common.utils] VectorBT optimization modules not available", color="yellow")
+        tprint(f"⚠️  [features_common.utils] VectorBT optimization modules not available: {e}", color="yellow")
 
 # VectorBT imports
 try:
@@ -36,7 +38,7 @@ try:
     VECTORBT_AVAILABLE = True
     if TPRINT_AVAILABLE:
         tprint("✅ [features_common.utils] VectorBT loaded successfully", color="green")
-except ImportError:
+except ImportError as e:
     VECTORBT_AVAILABLE = False
     vbt = None
     rolling_mean = None
@@ -53,7 +55,7 @@ except ImportError:
     clip = None
     quantile = None
     if TPRINT_AVAILABLE:
-        tprint("⚠️  [features_common.utils] VectorBT not available", color="yellow")
+        tprint(f"⚠️  [features_common.utils] VectorBT not available: {e}", color="yellow")
 
 # Optional GPU acceleration
 try:
@@ -61,11 +63,11 @@ try:
     CUPY_AVAILABLE = True
     if TPRINT_AVAILABLE:
         tprint("✅ [features_common.utils] CuPy available for GPU acceleration", color="green")
-except ImportError:
+except ImportError as e:
     CUPY_AVAILABLE = False
     cp = None
     if TPRINT_AVAILABLE:
-        tprint("⚠️  [features_common.utils] CuPy not available for GPU acceleration", color="yellow")
+        tprint(f"⚠️  [features_common.utils] CuPy not available for GPU acceleration: {e}", color="yellow")
 
 # Math validation imports
 try:
@@ -78,10 +80,10 @@ try:
     MATH_VALIDATION_AVAILABLE = True
     if TPRINT_AVAILABLE:
         tprint("✅ [features_common.utils] Math validation utilities loaded", color="green")
-except ImportError:
+except ImportError as e:
     MATH_VALIDATION_AVAILABLE = False
     if TPRINT_AVAILABLE:
-        tprint("⚠️  [features_common.utils] Math validation utilities not available", color="yellow")
+        tprint(f"⚠️  [features_common.utils] Math validation utilities not available: {e}", color="yellow")
 
 if TPRINT_AVAILABLE:
     tprint("🔧 [features_common.utils] Common utilities module initialized", color="cyan")

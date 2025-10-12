@@ -87,14 +87,15 @@ class BaseCVSplitter:
         }
         
         # Validation
+        # Validate parameters with fast fail
         if not 0 <= embargo_pct <= 0.5:
-            error_msg = "embargo_pct must be between 0 and 0.5"
+            error_msg = f"embargo_pct must be between 0 and 0.5, got {embargo_pct}"
             if TPRINT_AVAILABLE:
                 tprint(f"❌ [BaseCVSplitter] {error_msg}", color="red")
             raise ValueError(error_msg)
         
         if n_folds < 2:
-            error_msg = "n_folds must be at least 2"
+            error_msg = f"n_folds must be at least 2, got {n_folds}"
             if TPRINT_AVAILABLE:
                 tprint(f"❌ [BaseCVSplitter] {error_msg}", color="red")
             raise ValueError(error_msg)
@@ -126,10 +127,10 @@ class BaseCVSplitter:
             tprint(f"🔧 [BaseCVSplitter] Starting split_with_embargo on {len(X)} samples with {self.n_folds} folds", color="cyan")
         
         if X.empty:
+            error_msg = "Empty DataFrame provided to CV splitter"
             if TPRINT_AVAILABLE:
-                tprint("⚠️  [BaseCVSplitter] Empty DataFrame provided to CV splitter", color="yellow")
-            logger.warning("Empty DataFrame provided to CV splitter")
-            return []
+                tprint(f"❌ [BaseCVSplitter] {error_msg}", color="red")
+            raise ValueError(error_msg)
         
         n_samples = len(X)
         embargo_size = int(n_samples * self.embargo_pct)
@@ -384,7 +385,10 @@ class PurgedCVSplitter(BaseCVSplitter):
         self.purge_pct = purge_pct
         
         if not 0 <= purge_pct <= 0.3:
-            raise ValueError("purge_pct must be between 0 and 0.3")
+            error_msg = f"purge_pct must be between 0 and 0.3, got {purge_pct}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [PurgedCVSplitter] {error_msg}", color="red")
+            raise ValueError(error_msg)
     
     def split_with_embargo(
         self,

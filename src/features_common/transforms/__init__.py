@@ -29,3 +29,5 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
 
 if TPRINT_AVAILABLE:
     tprint(f"🔧 [transforms] Module initialized with {len(__all__)} exports", color="cyan")
+else:
+    print(f"🔧 [transforms] Module initialized with {len(__all__)} exports")

@@ -65,14 +65,9 @@ def test_basic_functionality():
     # Create sample data
     data = create_sample_data(n_points=5000)
     
-    # Test with VectorBT optimizations enabled
-    print("\n🚀 Testing with VectorBT optimizations...")
-    selector = DataDrivenPeriodSelector(
-        enable_vectorbt=True,
-        enable_parallel=True,
-        memory_efficient=True,
-        max_periods=6
-    )
+    # Test with VectorBT optimizations (enabled by default)
+    print("\n🚀 Testing with VectorBT optimizations (default configuration)...")
+    selector = DataDrivenPeriodSelector(max_periods=6)
     
     start_time = time.time()
     result = selector.select_optimal_periods(data, target_timeframe="15m")
@@ -128,12 +123,8 @@ def test_memory_efficiency():
     data = create_sample_data(n_points=50000)
     print(f"📊 Original data memory usage: {data.memory_usage(deep=True).sum() / (1024**2):.1f} MB")
     
-    # Test with memory optimization
-    selector = DataDrivenPeriodSelector(
-        enable_vectorbt=True,
-        memory_efficient=True,
-        chunk_size=5000
-    )
+    # Test with memory optimization (enabled by default)
+    selector = DataDrivenPeriodSelector(chunk_size=5000)
     
     # Optimize data
     optimized_data = selector.optimize_for_large_datasets(data)
@@ -167,10 +158,7 @@ def test_convenience_functions():
     periods, stats = get_data_driven_periods_with_stats(
         data, 
         target_timeframe="15m", 
-        max_periods=5,
-        enable_vectorbt=True,
-        enable_parallel=True,
-        memory_efficient=True
+        max_periods=5
     )
     print(f"✅ Periods: {periods}")
     print(f"📊 VectorBT usage rate: {stats.get('vectorbt_usage_rate', 0):.1%}")
@@ -186,7 +174,7 @@ def test_caching():
     
     data = create_sample_data(n_points=2000)
     
-    selector = DataDrivenPeriodSelector(enable_vectorbt=True)
+    selector = DataDrivenPeriodSelector()
     
     # First run (cache miss)
     print("🔄 First run (should be cache miss)...")

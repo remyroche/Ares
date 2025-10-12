@@ -255,19 +255,91 @@ class DataDrivenPeriodSelector:
         if 'close' in data.columns:
             returns = data['close'].pct_change().dropna()
             characteristics['volatility'] = returns.std()
-            characteristics['volatility_clusters'] = self._detect_volatility_clusters(returns)
+            
+            # Use VectorBT-optimized volatility clustering
+            if self.rolling_optimizer:
+                vol_windows = [5, 10, 20, 50, 100]
+                vol_clusters = []
+                
+                for window in vol_windows:
+                    if len(returns) > window * 2:
+                        rolling_vol = self.rolling_optimizer.rolling_std(returns, window=window)
+                        self.performance_stats['vectorbt_operations'] += 1
+                        
+                        vol_threshold = rolling_vol.quantile(0.8)
+                        clusters = rolling_vol > vol_threshold
+                        cluster_lengths = self._find_pattern_periods(clusters)
+                        
+                        if cluster_lengths:
+                            avg_cluster_length = np.mean(cluster_lengths)
+                            if self.min_period <= avg_cluster_length <= self.max_period:
+                                vol_clusters.append(int(avg_cluster_length))
+                
+                characteristics['volatility_clusters'] = vol_clusters[:3]
+            else:
+                characteristics['volatility_clusters'] = []
         
         # Volume analysis
         if 'volume' in data.columns:
-            characteristics['volume_patterns'] = self._analyze_volume_patterns(data['volume'])
+            # Use VectorBT-optimized volume analysis
+            if self.rolling_optimizer:
+                vol_ma_5 = self.rolling_optimizer.rolling_mean(data['volume'], window=5)
+                vol_ma_20 = self.rolling_optimizer.rolling_mean(data['volume'], window=20)
+                self.performance_stats['vectorbt_operations'] += 2
+                
+                vol_spikes = data['volume'] > vol_ma_20 * 2
+                spike_periods = self._find_pattern_periods(vol_spikes)
+                
+                characteristics['volume_patterns'] = {
+                    'spike_periods': spike_periods,
+                    'volume_trend': []  # Simplified for individual analysis
+                }
+            else:
+                characteristics['volume_patterns'] = {}
         
         # Price trend analysis
         if 'close' in data.columns:
-            characteristics['trend_cycles'] = self._detect_trend_cycles(data['close'])
+            # Use VectorBT-optimized trend cycle detection
+            if self.rolling_optimizer:
+                sma_5 = self.rolling_optimizer.rolling_mean(data['close'], window=5)
+                sma_20 = self.rolling_optimizer.rolling_mean(data['close'], window=20)
+                self.performance_stats['vectorbt_operations'] += 2
+                
+                # Find peaks and troughs in SMA
+                peaks, _ = find_peaks(sma_20, distance=5)
+                troughs, _ = find_peaks(-sma_20, distance=5)
+                
+                cycle_lengths = []
+                all_extrema = sorted(list(peaks) + list(troughs))
+                
+                for i in range(1, len(all_extrema)):
+                    cycle_length = all_extrema[i] - all_extrema[i-1]
+                    if self.min_period <= cycle_length <= self.max_period:
+                        cycle_lengths.append(cycle_length)
+                
+                if cycle_lengths:
+                    from collections import Counter
+                    most_common = Counter(cycle_lengths).most_common(3)
+                    characteristics['trend_cycles'] = [length for length, count in most_common]
+                else:
+                    characteristics['trend_cycles'] = []
+            else:
+                characteristics['trend_cycles'] = []
+            
             characteristics['seasonality'] = self._detect_seasonality(data['close'])
         
         # Market regime analysis
-        characteristics['regime_changes'] = self._detect_regime_changes(data)
+        if 'close' in data.columns and self.rolling_optimizer:
+            returns = data['close'].pct_change().dropna()
+            volatility = self.rolling_optimizer.rolling_std(returns, window=20)
+            self.performance_stats['vectorbt_operations'] += 1
+            
+            vol_threshold = volatility.quantile(0.7)
+            regime_changes = volatility > vol_threshold
+            regime_lengths = self._find_pattern_periods(regime_changes)
+            characteristics['regime_changes'] = regime_lengths[:3]
+        else:
+            characteristics['regime_changes'] = []
         
         return characteristics
     
@@ -421,11 +493,10 @@ class DataDrivenPeriodSelector:
         # Analyze market cycles
         cycle_periods = self._detect_market_cycles(data, characteristics)
         
-        # Analyze volatility patterns
-        volatility_periods = self._analyze_volatility_periods(data, characteristics)
-        
-        # Analyze volume patterns
-        volume_periods = self._analyze_volume_periods(data, characteristics)
+        # Extract periods from characteristics (already computed by VectorBT-optimized methods)
+        volatility_periods = characteristics.get('volatility_clusters', [])
+        volume_patterns = characteristics.get('volume_patterns', {})
+        volume_periods = volume_patterns.get('spike_periods', [])
         
         # Combine and optimize periods
         all_candidate_periods = list(set(
@@ -570,95 +641,8 @@ class DataDrivenPeriodSelector:
             tprint_debug(f"⚠️ Cycle detection failed: {e}")
             return []
     
-    def _detect_volatility_clusters(self, returns: pd.Series) -> List[int]:
-        """Detect volatility clustering periods using VectorBT optimizations."""
-        try:
-            # Calculate rolling volatility using VectorBT optimizer
-            vol_windows = [5, 10, 20, 50, 100]
-            vol_clusters = []
-            
-            for window in vol_windows:
-                if len(returns) > window * 2:
-                    # Use VectorBT rolling optimizer if available
-                    if self.rolling_optimizer:
-                        rolling_vol = self.rolling_optimizer.rolling_std(returns, window=window)
-                        self.performance_stats['vectorbt_operations'] += 1
-                    else:
-                        rolling_vol = returns.rolling(window).std()
-                        self.performance_stats['pandas_fallbacks'] += 1
-                    
-                    # Find volatility clusters (high vol periods)
-                    vol_threshold = rolling_vol.quantile(0.8)
-                    clusters = rolling_vol > vol_threshold
-                    
-                    # Calculate average cluster length
-                    cluster_lengths = self._find_pattern_periods(clusters)
-                    
-                    if cluster_lengths:
-                        avg_cluster_length = np.mean(cluster_lengths)
-                        if self.min_period <= avg_cluster_length <= self.max_period:
-                            vol_clusters.append(int(avg_cluster_length))
-            
-            return vol_clusters[:3]  # Limit to top 3
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Volatility clustering failed: {e}")
-            return []
     
-    def _analyze_volume_patterns(self, volume: pd.Series) -> Dict[str, Any]:
-        """Analyze volume patterns to inform period selection."""
-        try:
-            # Calculate volume moving averages
-            vol_ma_5 = volume.rolling(5).mean()
-            vol_ma_20 = volume.rolling(20).mean()
-            
-            # Find volume spikes
-            vol_spikes = volume > vol_ma_20 * 2
-            spike_periods = self._find_pattern_periods(vol_spikes)
-            
-            return {
-                'spike_periods': spike_periods,
-                'volume_trend': self._detect_trend_cycles(volume)
-            }
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Volume analysis failed: {e}")
-            return {}
     
-    def _detect_trend_cycles(self, series: pd.Series) -> List[int]:
-        """Detect trend cycles using peak detection."""
-        try:
-            if len(series) < 20:
-                return []
-            
-            # Smooth the series
-            smoothed = series.rolling(5).mean()
-            
-            # Find peaks and troughs
-            peaks, _ = find_peaks(smoothed, distance=5)
-            troughs, _ = find_peaks(-smoothed, distance=5)
-            
-            # Calculate cycle lengths
-            cycle_lengths = []
-            all_extrema = sorted(list(peaks) + list(troughs))
-            
-            for i in range(1, len(all_extrema)):
-                cycle_length = all_extrema[i] - all_extrema[i-1]
-                if self.min_period <= cycle_length <= self.max_period:
-                    cycle_lengths.append(cycle_length)
-            
-            # Return most common cycle lengths
-            if cycle_lengths:
-                from collections import Counter
-
-                most_common = Counter(cycle_lengths).most_common(3)
-                return [length for length, count in most_common]
-            
-            return []
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Trend cycle detection failed: {e}")
-            return []
     
     def _detect_seasonality(self, series: pd.Series) -> List[int]:
         """Detect seasonal patterns."""
@@ -681,28 +665,6 @@ class DataDrivenPeriodSelector:
             tprint_debug(f"⚠️ Seasonality detection failed: {e}")
             return []
     
-    def _detect_regime_changes(self, data: pd.DataFrame) -> List[int]:
-        """Detect market regime changes."""
-        try:
-            if 'close' not in data.columns or len(data) < 50:
-                return []
-            
-            # Use volatility and trend to detect regimes
-            returns = data['close'].pct_change().dropna()
-            volatility = returns.rolling(20).std()
-            
-            # Find regime changes (high vol periods)
-            vol_threshold = volatility.quantile(0.7)
-            regime_changes = volatility > vol_threshold
-            
-            # Calculate regime lengths
-            regime_lengths = self._find_pattern_periods(regime_changes)
-            
-            return regime_lengths[:3]  # Limit to top 3
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Regime detection failed: {e}")
-            return []
     
     def _find_pattern_periods(self, pattern: pd.Series) -> List[int]:
         """Find periods in a boolean pattern."""
@@ -737,46 +699,7 @@ class DataDrivenPeriodSelector:
             tprint_debug(f"⚠️ Pattern analysis failed: {e}")
             return []
     
-    def _analyze_volatility_periods(self, data: pd.DataFrame, 
-                                  characteristics: Dict[str, Any]) -> List[int]:
-        """Analyze volatility patterns for period selection."""
-        if 'close' not in data.columns:
-            return []
-        
-        try:
-            returns = data['close'].pct_change().dropna()
-            volatility = returns.rolling(20).std()
-            
-            # Find volatility clusters
-            vol_clusters = characteristics.get('volatility_clusters', [])
-            
-            # Find volatility mean reversion periods
-            vol_ma = volatility.rolling(50).mean()
-            vol_ratio = volatility / vol_ma
-            
-            # Find periods where volatility reverts to mean
-            mean_reversion = (vol_ratio < 0.8) | (vol_ratio > 1.2)
-            reversion_periods = self._find_pattern_periods(mean_reversion)
-            
-            return vol_clusters + reversion_periods
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Volatility period analysis failed: {e}")
-            return []
     
-    def _analyze_volume_periods(self, data: pd.DataFrame, 
-                              characteristics: Dict[str, Any]) -> List[int]:
-        """Analyze volume patterns for period selection."""
-        if 'volume' not in data.columns:
-            return []
-        
-        try:
-            volume_patterns = characteristics.get('volume_patterns', {})
-            return volume_patterns.get('spike_periods', [])
-            
-        except Exception as e:
-            tprint_debug(f"⚠️ Volume period analysis failed: {e}")
-            return []
     
     def _filter_periods(self, periods: List[int], 
                        characteristics: Dict[str, Any]) -> List[int]:

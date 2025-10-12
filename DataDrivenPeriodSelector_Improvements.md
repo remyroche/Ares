@@ -130,13 +130,8 @@ benchmark_results = benchmark_period_selector(data, trials=3)
 ```python
 from data_driven_periods import DataDrivenPeriodSelector
 
-# Create selector with VectorBT optimizations
-selector = DataDrivenPeriodSelector(
-    enable_vectorbt=True,
-    enable_parallel=True,
-    memory_efficient=True,
-    max_periods=8
-)
+# Create selector with VectorBT optimizations (enabled by default)
+selector = DataDrivenPeriodSelector(max_periods=8)
 
 # Analyze data
 result = selector.select_optimal_periods(data, target_timeframe="15m")
@@ -188,14 +183,17 @@ for config, perf in results.items():
 selector = DataDrivenPeriodSelector(max_periods=8)
 result = selector.select_optimal_periods(data)
 
-# New code (backward compatible)
+# New code (VectorBT optimizations enabled by default)
+selector = DataDrivenPeriodSelector(max_periods=8)
+result = selector.select_optimal_periods(data)
+
+# Optional: Disable optimizations if needed
 selector = DataDrivenPeriodSelector(
     max_periods=8,
-    enable_vectorbt=True,  # New: Enable VectorBT optimizations
-    enable_parallel=True,  # New: Enable parallel processing
-    memory_efficient=True  # New: Enable memory optimization
+    enable_vectorbt=False,  # Disable VectorBT optimizations
+    enable_parallel=False,  # Disable parallel processing
+    memory_efficient=False  # Disable memory optimization
 )
-result = selector.select_optimal_periods(data)
 ```
 
 ### Performance Monitoring

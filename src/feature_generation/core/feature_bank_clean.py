@@ -18,7 +18,6 @@ import numpy as np
 from .feature_generator import FeatureGenerator, FeatureCategory, FeatureResult, FeatureConfig
 from .feature_registry import FeatureRegistry
 from src.utils.unified_cache import UnifiedCache
-from src.utils.tprint import tprint
 
 logger = logging.getLogger(__name__)
 
@@ -139,14 +138,15 @@ class FeatureBank:
             self.state_cache = None
         
         # Auto-register default generators
-        ttprint("🔧 Auto-registering feature generators...")
+        print("🔍 DEBUG: About to call _auto_register_generators")
         self._auto_register_generators()
+        print("🔍 DEBUG: _auto_register_generators completed")
 
         # Set as global feature bank if no global instance exists
         global _global_feature_bank
         if _global_feature_bank is None:
             _global_feature_bank = self
-            ttprint("✅ FeatureBank set as global instance")
+            print("🔍 DEBUG: FeatureBank set as global instance")
 
         self.logger.info("✅ FeatureBank initialized")
         self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
@@ -163,9 +163,10 @@ class FeatureBank:
         """
         Auto-register default feature generators from all categories.
         """
-        ttprint("🔧 Starting auto-registration of feature generators...")
+        print("🔍 DEBUG: Starting _auto_register_generators")
         try:
-            # List of categories to auto-register
+
+            # List of categories to auto-register (including all available categories)
             categories_to_register = [
                 FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLATILITY,
@@ -192,34 +193,59 @@ class FeatureBank:
 
             registered_count = 0
             total_categories = len(categories_to_register)
-            ttprint(f"🚀 Initializing {total_categories} feature categories...")
+            print(f"🔍 DEBUG: About to initialize {total_categories} feature categories")
+            self.logger.info(f"🚀 Initializing {total_categories} feature categories...")
             
             for i, category in enumerate(categories_to_register, 1):
                 try:
-                    ttprint(f"🔧 Processing category {i}/{total_categories}: {category.value}")
+                    print(f"🔍 DEBUG: Processing category {i}/{total_categories}: {category.value}")
+                    self.logger.info(f"🔧 Creating generators for {category.value}...")
                     generators = self._create_default_generators_for_category(category)
-                    ttprint(f"✅ Created {len(generators)} generators for {category.value}")
+                    print(f"🔍 DEBUG: Created {len(generators)} generators for {category.value}")
+                    self.logger.info(f"🔍 Found {len(generators)} generators for {category.value}")
                     for generator in generators:
                         self.register_generator(generator)
                         registered_count += 1
-                    ttprint(f"📊 Progress: {i}/{total_categories} categories completed")
+                    self.logger.info(f"📊 Progress: {i}/{total_categories} categories completed")
                 except Exception as e:
-                    ttprint(f"⚠️ Failed to register {category.value} generators: {e}")
+                    print(f"🔍 DEBUG: Exception in category {category.value}: {e}")
                     self.logger.warning(f"⚠️ Failed to register {category.value} generators: {e}")
+                    import traceback
+                    self.logger.warning(f"⚠️ Traceback: {traceback.format_exc()}")
 
-            ttprint(f"✅ Auto-registration completed. Registered {registered_count} generators")
+            print(f"🔍 DEBUG: Auto-registration completed. Registered {registered_count} generators")
             self.logger.info(f"✅ Auto-registered {registered_count} generators from {len(categories_to_register)} categories")
 
         except Exception as e:
-            ttprint(f"❌ Auto-registration failed: {e}")
+            print(f"🔍 DEBUG: Auto-registration failed with exception: {e}")
             self.logger.warning(f"⚠️ Auto-registration failed: {e}")
 
     def _create_default_generators_for_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
         """
         Create default generators for a given category using existing factory functions.
         """
-        ttprint(f"🔧 Creating generators for category: {category.value}")
+        print(f"🔍 DEBUG: _create_default_generators_for_category called with {category.value}")
         try:
+            # Import all the factory functions from categories
+            from ..categories import (
+                create_acceleration_generators,
+                create_interaction_generators,
+                create_cross_timeframe_generators,
+                create_entropy_generators,
+                create_default_legacy_generators,
+                create_default_time_generators
+            )
+
+            # Import enhanced generators
+            try:
+                from ..categories.enhanced_normalization import create_enhanced_normalization_generators
+                from ..categories.enhanced_cross_timeframe import create_enhanced_cross_timeframe_generators
+                from ..categories.enhanced_interaction import create_enhanced_interaction_generators
+                from ..categories.enhanced_representation_learning import create_enhanced_representation_learning_generators
+                enhanced_available = True
+            except ImportError:
+                enhanced_available = False
+
             # Map categories to their creation functions
             category_creators = {
                 FeatureCategory.MOMENTUM: self._create_momentum_generators,
@@ -230,6 +256,7 @@ class FeatureBank:
                 FeatureCategory.RETURNS: self._create_returns_generators,
                 FeatureCategory.OSCILLATOR: self._create_oscillator_generators,
                 FeatureCategory.CANDLESTICK_PATTERN: self._create_pattern_generators,
+                # FeatureCategory.HMM_REGIME: self._create_hmm_regime_generators,  # DEPRECATED
                 FeatureCategory.ENTROPY: self._create_entropy_generators,
                 FeatureCategory.ORDER_FLOW: self._create_order_flow_generators,
                 FeatureCategory.ACCELERATION: self._create_acceleration_generators,
@@ -246,47 +273,86 @@ class FeatureBank:
             }
 
             creator_func = category_creators.get(category)
+            print(f"🔍 DEBUG: Creator function for {category.value}: {creator_func}")
             if creator_func:
-                tprint(f"🔧 Creating {category.value} features...")
+                print(f"🔍 DEBUG: Calling creator function for {category.value}")
+                self.logger.info(f"🔧 Creating {category.value} features...")
                 generators = creator_func()
-                tprint(f"✅ Created {len(generators)} generators for {category.value}")
+                print(f"🔍 DEBUG: Creator function returned {len(generators)} generators")
+                self.logger.info(f"✅ Created {len(generators)} generators for {category.value}")
                 return generators
             else:
-                tprint(f"⚠️ No creator function available for category: {category.value}")
+                print(f"🔍 DEBUG: No creator function available for {category.value}")
                 self.logger.warning(f"⚠️ No creator function available for category: {category.value}")
                 return []
 
         except Exception as e:
-            tprint(f"❌ Failed to create generators for {category.value}: {e}")
+            print(f"🔍 DEBUG: Exception in _create_default_generators_for_category: {e}")
+            import traceback
+            print(f"🔍 DEBUG: Traceback: {traceback.format_exc()}")
             self.logger.warning(f"⚠️ Failed to create generators for {category.value}: {e}")
             return []
 
     def _create_momentum_generators(self) -> List[FeatureGenerator]:
         """Create momentum-specific feature generators."""
-        tprint("🔧 Creating momentum generators...")
+        print("🔍 DEBUG: _create_momentum_generators called")
         generators = []
         try:
+            # First try to create advanced momentum generators
+            print("🔍 DEBUG: Importing create_default_momentum_generators")
             from ..categories.momentum import create_default_momentum_generators
+            print("🔍 DEBUG: Calling create_default_momentum_generators")
             advanced_generators = create_default_momentum_generators()
+            print(f"🔍 DEBUG: create_default_momentum_generators returned {len(advanced_generators)} generators")
             generators.extend(advanced_generators)
-            tprint(f"✅ Created {len(advanced_generators)} momentum generators")
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                print("🔍 DEBUG: No advanced generators, trying legacy")
+                from ..categories.legacy import create_default_legacy_generators
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter momentum-related generators from legacy set
+                momentum_names = ['rsi', 'macd', 'stochastic', 'williams_r']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in momentum_names):
+                        # Update the category to momentum
+                        gen.config.category = FeatureCategory.MOMENTUM
+                        generators.append(gen)
+
         except Exception as e:
-            tprint(f"⚠️ Failed to create momentum generators: {e}")
+            print(f"🔍 DEBUG: Exception in _create_momentum_generators: {e}")
+            import traceback
+            print(f"🔍 DEBUG: Traceback: {traceback.format_exc()}")
             self.logger.warning(f"⚠️ Failed to create momentum generators: {e}")
 
+        print(f"🔍 DEBUG: _create_momentum_generators returning {len(generators)} generators")
         return generators
 
     def _create_volatility_generators(self) -> List[FeatureGenerator]:
         """Create volatility-specific feature generators."""
-        tprint("🔧 Creating volatility generators...")
         generators = []
         try:
+            # First try to create advanced volatility generators
             from ..categories.volatility import create_default_volatility_generators
             advanced_generators = create_default_volatility_generators()
             generators.extend(advanced_generators)
-            tprint(f"✅ Created {len(advanced_generators)} volatility generators")
+
+            # Fallback to legacy generators if advanced ones fail
+            if not generators:
+                from ..categories.legacy import create_default_legacy_generators
+                legacy_generators = create_default_legacy_generators()
+
+                # Filter volatility-related generators from legacy set
+                volatility_names = ['bollinger', 'atr']
+                for gen in legacy_generators:
+                    if any(name in gen.config.name for name in volatility_names):
+                        # Update the category to volatility
+                        gen.config.category = FeatureCategory.VOLATILITY
+                        generators.append(gen)
+
         except Exception as e:
-            tprint(f"⚠️ Failed to create volatility generators: {e}")
             self.logger.warning(f"⚠️ Failed to create volatility generators: {e}")
 
         return generators
@@ -1532,56 +1598,3 @@ def set_global_feature_bank(bank: FeatureBank) -> None:
     """
     Set the global feature bank instance.
     
-    Args:
-        bank: Feature bank instance
-    """
-    global _global_feature_bank
-    _global_feature_bank = bank
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

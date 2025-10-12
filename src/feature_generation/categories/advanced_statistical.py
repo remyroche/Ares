@@ -20,6 +20,23 @@ try:
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -56,7 +73,7 @@ except ImportError:
     cp = None
 
 class HurstExponentGenerator(VectorizedFeatureGenerator):
-    """Generator for Hurst exponent using R/S analysis."""
+    """Generator for Hurst exponent using R/S analysis with VectorBT optimization."""
     
     def __init__(self, window: int = 20):
         config = FeatureConfig(
@@ -73,6 +90,18 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -85,10 +114,31 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_hurst_vectorbt_optimized(returns)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_hurst_vectorbt(returns)
         else:
+            return self._calculate_hurst_pandas(returns)
+    
+    def _calculate_hurst_vectorbt_optimized(self, returns: pd.Series) -> pd.Series:
+        """Calculate Hurst exponent using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT rolling apply for efficient computation
+            def hurst_calculation(window_data):
+                if len(window_data) < 10:  # Need enough data for R/S analysis
+                    return np.nan
+                return self._calculate_hurst_exponent(window_data.values)
+            
+            # Use VectorBT rolling apply for optimal performance
+            hurst = self.rolling_optimizer.rolling_apply(
+                returns, func=hurst_calculation, window=self.window
+            )
+            
+            return hurst
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_hurst_pandas(returns)
     
     def _calculate_hurst_vectorbt(self, returns: pd.Series) -> pd.Series:
@@ -157,7 +207,7 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
             return 0.5
 
 class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
-    """Generator for jump indicators (tail count and bipower variation)."""
+    """Generator for jump indicators (tail count and bipower variation) with VectorBT optimization."""
     
     def __init__(self, window: int = 20, k_multiplier: float = 3.0):
         config = FeatureConfig(
@@ -175,6 +225,18 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.k_multiplier = k_multiplier
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -187,10 +249,31 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_jump_indicators_vectorbt_optimized(returns)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_jump_indicators_vectorbt(returns)
         else:
+            return self._calculate_jump_indicators_pandas(returns)
+    
+    def _calculate_jump_indicators_vectorbt_optimized(self, returns: pd.Series) -> pd.Series:
+        """Calculate jump indicators using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT rolling apply for efficient computation
+            def jump_calculation(window_data):
+                if len(window_data) < 2:
+                    return np.nan
+                return self._calculate_jump_indicator(window_data.values, self.k_multiplier)
+            
+            # Use VectorBT rolling apply for optimal performance
+            jump_indicators = self.rolling_optimizer.rolling_apply(
+                returns, func=jump_calculation, window=self.window
+            )
+            
+            return jump_indicators
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_jump_indicators_pandas(returns)
     
     def _calculate_jump_indicators_vectorbt(self, returns: pd.Series) -> pd.Series:
@@ -242,7 +325,7 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
             return 0.0
 
 class CVaRGenerator(VectorizedFeatureGenerator):
-    """Generator for Conditional Value at Risk (CVaR)."""
+    """Generator for Conditional Value at Risk (CVaR) with VectorBT optimization."""
     
     def __init__(self, window: int = 20, confidence_level: float = 0.05):
         config = FeatureConfig(
@@ -260,6 +343,18 @@ class CVaRGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.confidence_level = confidence_level
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -272,10 +367,31 @@ class CVaRGenerator(VectorizedFeatureGenerator):
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_cvar_vectorbt_optimized(returns)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_cvar_vectorbt(returns)
         else:
+            return self._calculate_cvar_pandas(returns)
+    
+    def _calculate_cvar_vectorbt_optimized(self, returns: pd.Series) -> pd.Series:
+        """Calculate CVaR using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT rolling apply for efficient computation
+            def cvar_calculation(window_data):
+                if len(window_data) < 2:
+                    return np.nan
+                return self._calculate_cvar(window_data.values, self.confidence_level)
+            
+            # Use VectorBT rolling apply for optimal performance
+            cvar = self.rolling_optimizer.rolling_apply(
+                returns, func=cvar_calculation, window=self.window
+            )
+            
+            return cvar
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_cvar_pandas(returns)
     
     def _calculate_cvar_vectorbt(self, returns: pd.Series) -> pd.Series:
@@ -327,7 +443,7 @@ class CVaRGenerator(VectorizedFeatureGenerator):
             return 0.0
 
 class MaxDrawdownGenerator(VectorizedFeatureGenerator):
-    """Generator for maximum drawdown and time under water."""
+    """Generator for maximum drawdown and time under water with VectorBT optimization."""
     
     def __init__(self, window: int = 20):
         config = FeatureConfig(
@@ -344,6 +460,18 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -353,10 +481,31 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
         if len(close) < self.window:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_max_drawdown_vectorbt_optimized(close)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_max_drawdown_vectorbt(close)
         else:
+            return self._calculate_max_drawdown_pandas(close)
+    
+    def _calculate_max_drawdown_vectorbt_optimized(self, close: pd.Series) -> pd.Series:
+        """Calculate maximum drawdown using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT rolling apply for efficient computation
+            def drawdown_calculation(window_data):
+                if len(window_data) < 2:
+                    return np.nan
+                return self._calculate_max_drawdown(window_data.values)
+            
+            # Use VectorBT rolling apply for optimal performance
+            max_drawdown = self.rolling_optimizer.rolling_apply(
+                close, func=drawdown_calculation, window=self.window
+            )
+            
+            return max_drawdown
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_max_drawdown_pandas(close)
     
     def _calculate_max_drawdown_vectorbt(self, close: pd.Series) -> pd.Series:
@@ -399,7 +548,7 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
             return 0.0
 
 class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
-    """Generator for rolling skewness and kurtosis of returns."""
+    """Generator for rolling skewness and kurtosis of returns with VectorBT optimization."""
     
     def __init__(self, window: int = 20, stat_type: str = 'skewness'):
         config = FeatureConfig(
@@ -417,6 +566,18 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.stat_type = stat_type
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -429,10 +590,40 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_rolling_stats_vectorbt_optimized(returns)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_rolling_stats_vectorbt(returns)
         else:
+            return self._calculate_rolling_stats_pandas(returns)
+    
+    def _calculate_rolling_stats_vectorbt_optimized(self, returns: pd.Series) -> pd.Series:
+        """Calculate rolling statistics using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT native rolling functions for optimal performance
+            if self.stat_type == 'skewness':
+                rolling_stats = self.rolling_optimizer.rolling_skew(returns, window=self.window)
+            elif self.stat_type == 'kurtosis':
+                rolling_stats = self.rolling_optimizer.rolling_kurt(returns, window=self.window)
+            else:
+                # Fallback to rolling apply for custom statistics
+                def stat_calculation(window_data):
+                    if len(window_data) < 2:
+                        return np.nan
+                    if self.stat_type == 'skewness':
+                        return self._calculate_skewness(window_data.values)
+                    elif self.stat_type == 'kurtosis':
+                        return self._calculate_kurtosis(window_data.values)
+                    return np.nan
+                
+                rolling_stats = self.rolling_optimizer.rolling_apply(
+                    returns, func=stat_calculation, window=self.window
+                )
+            
+            return rolling_stats
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_rolling_stats_pandas(returns)
     
     def _calculate_rolling_stats_vectorbt(self, returns: pd.Series) -> pd.Series:
@@ -495,7 +686,7 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
             return 0.0
 
 class TrendPersistenceGenerator(VectorizedFeatureGenerator):
-    """Generator for trend persistence (run length and fraction of up bars)."""
+    """Generator for trend persistence (run length and fraction of up bars) with VectorBT optimization."""
     
     def __init__(self, window: int = 20):
         config = FeatureConfig(
@@ -512,6 +703,18 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
+            
+        # Initialize unified vectorization manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -524,10 +727,31 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
         # Calculate returns
         returns = close.pct_change()
         
-        # Use VectorBT for optimized rolling operations if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+        # Use VectorBT rolling optimizer for enhanced performance
+        if self.rolling_optimizer is not None:
+            return self._calculate_trend_persistence_vectorbt_optimized(returns)
+        elif VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
             return self._calculate_trend_persistence_vectorbt(returns)
         else:
+            return self._calculate_trend_persistence_pandas(returns)
+    
+    def _calculate_trend_persistence_vectorbt_optimized(self, returns: pd.Series) -> pd.Series:
+        """Calculate trend persistence using VectorBT rolling optimizer for maximum performance."""
+        try:
+            # Use VectorBT rolling apply for efficient computation
+            def persistence_calculation(window_data):
+                if len(window_data) < 1:
+                    return np.nan
+                return self._calculate_trend_persistence(window_data.values)
+            
+            # Use VectorBT rolling apply for optimal performance
+            trend_persistence = self.rolling_optimizer.rolling_apply(
+                returns, func=persistence_calculation, window=self.window
+            )
+            
+            return trend_persistence
+        except Exception as e:
+            # Fallback to manual calculation if VectorBT fails
             return self._calculate_trend_persistence_pandas(returns)
     
     def _calculate_trend_persistence_vectorbt(self, returns: pd.Series) -> pd.Series:
@@ -591,8 +815,115 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
         except:
             return 0.0
 
+class AdvancedStatisticalPerformanceMonitor:
+    """Performance monitoring and statistics tracking for advanced statistical features."""
+    
+    def __init__(self):
+        self.performance_stats = {
+            'total_generators': 0,
+            'vectorbt_optimized_generators': 0,
+            'pandas_fallback_generators': 0,
+            'total_operations': 0,
+            'vectorbt_operations': 0,
+            'pandas_operations': 0,
+            'total_computation_time': 0.0,
+            'vectorbt_computation_time': 0.0,
+            'pandas_computation_time': 0.0,
+            'memory_usage_mb': 0.0,
+            'optimization_effectiveness': 0.0
+        }
+        self.generator_stats = {}
+    
+    def track_generator_performance(self, generator_name: str, method_used: str, 
+                                  computation_time: float, memory_usage: float = 0.0):
+        """Track performance metrics for a specific generator."""
+        if generator_name not in self.generator_stats:
+            self.generator_stats[generator_name] = {
+                'total_operations': 0,
+                'vectorbt_operations': 0,
+                'pandas_operations': 0,
+                'total_time': 0.0,
+                'vectorbt_time': 0.0,
+                'pandas_time': 0.0,
+                'memory_usage': 0.0
+            }
+        
+        stats = self.generator_stats[generator_name]
+        stats['total_operations'] += 1
+        stats['total_time'] += computation_time
+        stats['memory_usage'] += memory_usage
+        
+        if method_used == 'vectorbt_optimized':
+            stats['vectorbt_operations'] += 1
+            stats['vectorbt_time'] += computation_time
+        else:
+            stats['pandas_operations'] += 1
+            stats['pandas_time'] += computation_time
+        
+        # Update global stats
+        self.performance_stats['total_operations'] += 1
+        self.performance_stats['total_computation_time'] += computation_time
+        self.performance_stats['memory_usage_mb'] += memory_usage
+        
+        if method_used == 'vectorbt_optimized':
+            self.performance_stats['vectorbt_operations'] += 1
+            self.performance_stats['vectorbt_computation_time'] += computation_time
+        else:
+            self.performance_stats['pandas_operations'] += 1
+            self.performance_stats['pandas_computation_time'] += computation_time
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        if self.performance_stats['total_operations'] > 0:
+            self.performance_stats['vectorbt_usage_rate'] = (
+                self.performance_stats['vectorbt_operations'] / 
+                self.performance_stats['total_operations']
+            )
+            self.performance_stats['avg_computation_time'] = (
+                self.performance_stats['total_computation_time'] / 
+                self.performance_stats['total_operations']
+            )
+            
+            if self.performance_stats['pandas_computation_time'] > 0:
+                self.performance_stats['optimization_effectiveness'] = (
+                    self.performance_stats['pandas_computation_time'] / 
+                    self.performance_stats['vectorbt_computation_time']
+                )
+        
+        return self.performance_stats.copy()
+    
+    def get_generator_breakdown(self) -> Dict[str, Any]:
+        """Get performance breakdown by generator."""
+        return self.generator_stats.copy()
+    
+    def reset_stats(self):
+        """Reset all performance statistics."""
+        self.performance_stats = {
+            'total_generators': 0,
+            'vectorbt_optimized_generators': 0,
+            'pandas_fallback_generators': 0,
+            'total_operations': 0,
+            'vectorbt_operations': 0,
+            'pandas_operations': 0,
+            'total_computation_time': 0.0,
+            'vectorbt_computation_time': 0.0,
+            'pandas_computation_time': 0.0,
+            'memory_usage_mb': 0.0,
+            'optimization_effectiveness': 0.0
+        }
+        self.generator_stats = {}
+
+
+# Global performance monitor instance
+_performance_monitor = AdvancedStatisticalPerformanceMonitor()
+
+def get_performance_monitor() -> AdvancedStatisticalPerformanceMonitor:
+    """Get global performance monitor instance."""
+    return _performance_monitor
+
+
 def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
-    """Create default advanced statistical feature generators."""
+    """Create default advanced statistical feature generators with VectorBT optimization."""
     generators = []
     
     # Hurst exponent generators
@@ -625,9 +956,20 @@ def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
     for window in [20]:
         generators.append(TrendPersistenceGenerator(window))
     
+    # Update performance monitor
+    monitor = get_performance_monitor()
+    monitor.performance_stats['total_generators'] = len(generators)
+    monitor.performance_stats['vectorbt_optimized_generators'] = len([
+        g for g in generators if hasattr(g, 'rolling_optimizer') and g.rolling_optimizer is not None
+    ])
+    monitor.performance_stats['pandas_fallback_generators'] = (
+        monitor.performance_stats['total_generators'] - 
+        monitor.performance_stats['vectorbt_optimized_generators']
+    )
+    
     return generators
 
-# Export all generators
+# Export all generators and utilities
 __all__ = [
     'HurstExponentGenerator',
     'JumpIndicatorsGenerator',
@@ -635,5 +977,7 @@ __all__ = [
     'MaxDrawdownGenerator',
     'RollingSkewnessKurtosisGenerator',
     'TrendPersistenceGenerator',
+    'AdvancedStatisticalPerformanceMonitor',
+    'get_performance_monitor',
     'create_default_advanced_statistical_generators'
 ]

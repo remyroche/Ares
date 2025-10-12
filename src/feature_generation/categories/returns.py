@@ -18,6 +18,25 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, UnifiedVectorizationManager, 
+        OperationType, OptimizationStrategy, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_MANAGER_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_MANAGER_AVAILABLE = False
+    UnifiedVectorizationManager = None
 from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
@@ -50,12 +69,42 @@ except ImportError:
     cp = None
 
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for return-based features."""
+    """Feature generator for return-based features with full VectorBT optimization."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        # Initialize VectorBT Rolling Optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+                self.logger.info("✅ VectorBTRollingOptimizer initialized for returns features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_MANAGER_AVAILABLE:
+            try:
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ UnifiedVectorizationManager initialized for returns features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+        
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0,
+            'rolling_optimizer_operations': 0,
+            'total_operations': 0,
+            'total_time': 0.0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -119,6 +168,28 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period + 1:
             return np.full(len(prices), np.nan)
 
+        # Use VectorBT Rolling Optimizer for optimized returns calculation
+        if self.rolling_optimizer and len(prices) > 50:  # Lower threshold for VectorBT usage
+            try:
+                prices_series = pd.Series(prices)
+                # Use VectorBT Rolling Optimizer for percentage change
+                if period == 1:
+                    # For single period, use direct pct_change
+                    returns = prices_series.pct_change(periods=period).values
+                else:
+                    # For multiple periods, use rolling operations
+                    returns = self.rolling_optimizer.rolling_apply(
+                        prices_series, 
+                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan,
+                        window=period
+                    ).values
+                
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return returns
+            except Exception as e:
+                self.logger.warning(f"VectorBT Rolling Optimizer returns calculation failed: {e}, using VectorBT fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+
         # Use VectorBT for optimized returns calculation
         if VECTORBT_AVAILABLE and len(prices) > 100:  # Use VectorBT for larger datasets
             try:
@@ -168,16 +239,124 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 data, operations, windows, columns
             )
         return data
+    
+    def generate_returns_features_batch(self, data: pd.DataFrame, 
+                                      feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple returns features in batch using VectorBT optimization.
+        
+        Args:
+            data: Input OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated features
+        """
+        if self.unified_manager and len(data) > 100:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                config = OperationConfig(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(data),
+                    data_dimensions=data.shape,
+                    memory_budget_mb=2048.0
+                )
+                
+                # Prepare data for batch processing
+                batch_data = {
+                    'data': data,
+                    'feature_configs': feature_configs,
+                    'feature_type': 'returns'
+                }
+                
+                result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    batch_data,
+                    config
+                )
+                
+                if hasattr(result, 'result') and result.result is not None:
+                    self.performance_stats['unified_manager_operations'] += 1
+                    return result.result
+                else:
+                    return self._fallback_batch_processing(data, feature_configs)
+                    
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                return self._fallback_batch_processing(data, feature_configs)
+        else:
+            return self._fallback_batch_processing(data, feature_configs)
+    
+    def _fallback_batch_processing(self, data: pd.DataFrame, 
+                                 feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback batch processing using individual feature generators."""
+        results = {}
+        
+        for config in feature_configs:
+            feature_type = config.get('type', 'simple_returns')
+            period = config.get('period', 1)
+            window = config.get('window', 20)
+            
+            try:
+                if feature_type == 'simple_returns':
+                    generator = SimpleReturnsGenerator(period)
+                elif feature_type == 'log_returns':
+                    generator = LogReturnsGenerator(period)
+                elif feature_type == 'cumulative_returns':
+                    generator = CumulativeReturnsGenerator(window)
+                elif feature_type == 'rolling_returns':
+                    generator = RollingReturnsGenerator(window)
+                elif feature_type == 'returns_volatility':
+                    generator = ReturnsVolatilityGenerator(window)
+                elif feature_type == 'returns_skewness':
+                    generator = ReturnsSkewnessGenerator(window)
+                elif feature_type == 'returns_kurtosis':
+                    generator = ReturnsKurtosisGenerator(window)
+                elif feature_type == 'sharpe_ratio':
+                    generator = SharpeRatioGenerator(window)
+                else:
+                    continue
+                
+                feature_result = generator.generate_feature(data)
+                results[f"{feature_type}_{period}_{window}"] = feature_result
+                
+            except Exception as e:
+                self.logger.warning(f"Feature generation failed for {feature_type}: {e}")
+                continue
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        if stats['total_operations'] > 0:
+            stats['vectorbt_usage_percentage'] = (
+                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) / 
+                stats['total_operations'] * 100
+            )
+            stats['unified_manager_usage_percentage'] = (
+                stats['unified_manager_operations'] / stats['total_operations'] * 100
+            )
+            stats['pandas_fallback_percentage'] = (
+                stats['pandas_fallbacks'] / stats['total_operations'] * 100
+            )
+        else:
+            stats['vectorbt_usage_percentage'] = 0
+            stats['unified_manager_usage_percentage'] = 0
+            stats['pandas_fallback_percentage'] = 0
+        
+        return stats
 
 class LogReturnsGenerator(VectorizedFeatureGenerator):
-    """Generator for Log Returns with different base calculations - VECTORIZED."""
+    """Generator for Log Returns with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  period: int = 1,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
-        Initialize Log Returns generator.
+        Initialize Log Returns generator with VectorBT optimization.
         
         Args:
             period: Return period
@@ -212,22 +391,55 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT Rolling Optimizer
+        self.rolling_optimizer = None
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer initialization failed: {e}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate log returns based on the specified base calculation - VECTORIZED."""
+        """Generate log returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized log returns calculation
-        if len(values) < self.period + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized log returns calculation with VectorBT optimization
+        if len(values_series) < self.period + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
+        
+        # Use VectorBT Rolling Optimizer for log returns calculation
+        if self.rolling_optimizer and len(values_series) > 50:
+            try:
+                # Use VectorBT Rolling Optimizer for percentage change, then apply log
+                if self.period == 1:
+                    # For single period, use direct pct_change
+                    returns = values_series.pct_change(periods=self.period)
+                else:
+                    # For multiple periods, use rolling operations
+                    returns = self.rolling_optimizer.rolling_apply(
+                        values_series, 
+                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
+                        window=self.period
+                    )
+                
+                # Apply log transformation to returns
+                log_returns = np.log(1 + returns)
+                return log_returns
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBT Rolling Optimizer log returns calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
         
         # Calculate log returns using numpy operations
         shifted_values = np.roll(values, self.period)
@@ -258,14 +470,14 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         return data
 
 class SimpleReturnsGenerator(VectorizedFeatureGenerator):
-    """Generator for Simple Returns with different base calculations - VECTORIZED."""
+    """Generator for Simple Returns with different base calculations - VECTORIZED with VectorBT optimization."""
     
     def __init__(self, 
                  period: int = 1,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
-        Initialize Simple Returns generator.
+        Initialize Simple Returns generator with VectorBT optimization.
         
         Args:
             period: Return period
@@ -300,22 +512,53 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT Rolling Optimizer
+        self.rolling_optimizer = None
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer initialization failed: {e}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate simple returns based on the specified base calculation - VECTORIZED."""
+        """Generate simple returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Convert to numpy array for vectorized operations
-        values = base_values.values
+        # Convert to pandas Series for VectorBT operations
+        values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
         
-        # Vectorized simple returns calculation
-        if len(values) < self.period + 1:
-            return pd.Series(np.full(len(values), np.nan), index=data.index)
+        # Vectorized simple returns calculation with VectorBT optimization
+        if len(values_series) < self.period + 1:
+            return pd.Series(np.full(len(values_series), np.nan), index=data.index)
+        
+        # Use VectorBT Rolling Optimizer for simple returns calculation
+        if self.rolling_optimizer and len(values_series) > 50:
+            try:
+                # Use VectorBT Rolling Optimizer for percentage change
+                if self.period == 1:
+                    # For single period, use direct pct_change
+                    simple_returns = values_series.pct_change(periods=self.period)
+                else:
+                    # For multiple periods, use rolling operations
+                    simple_returns = self.rolling_optimizer.rolling_apply(
+                        values_series, 
+                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
+                        window=self.period
+                    )
+                
+                return simple_returns
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBT Rolling Optimizer simple returns calculation failed: {e}, using numpy fallback")
+        
+        # Fallback to numpy operations
+        values = values_series.values
         
         # Calculate simple returns using numpy operations
         shifted_values = np.roll(values, self.period)
@@ -1192,6 +1435,282 @@ class ReturnGenerator(SimpleReturnsGenerator):
 def create_default_returns_generators() -> List[FeatureGenerator]:
     """Create default returns generators."""
     return create_returns_generators()
+
+
+class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
+    """
+    Comprehensive VectorBT-optimized returns feature generator.
+    
+    This generator uses both VectorBTRollingOptimizer and UnifiedVectorizationManager
+    for maximum performance in returns feature generation.
+    """
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        # Initialize VectorBT Rolling Optimizer
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+                self.logger.info("✅ VectorBTRollingOptimizer initialized for optimized returns features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_MANAGER_AVAILABLE:
+            try:
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ UnifiedVectorizationManager initialized for optimized returns features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+        
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0,
+            'rolling_optimizer_operations': 0,
+            'batch_operations': 0,
+            'total_operations': 0,
+            'total_time': 0.0
+        }
+    
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="vectorbt_optimized_returns_features",
+            category=FeatureCategory.RETURNS,
+            description="Comprehensive VectorBT-optimized return-based features with intelligent optimization",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=2,
+            max_lookback=50,
+            parameters={
+                "return_periods": [1, 5, 10, 20],
+                "log_return_periods": [1, 5, 10],
+                "cumulative_windows": [10, 20],
+                "volatility_windows": [20],
+                "statistical_windows": [20]
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+    
+    def generate_comprehensive_returns_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate comprehensive returns features using VectorBT optimization.
+        
+        Args:
+            data: Input OHLCV data
+            
+        Returns:
+            DataFrame with comprehensive returns features
+        """
+        if self.unified_manager and len(data) > 100:
+            try:
+                # Use Unified Vectorization Manager for comprehensive feature generation
+                config = OperationConfig(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(data),
+                    data_dimensions=data.shape,
+                    memory_budget_mb=2048.0
+                )
+                
+                # Prepare comprehensive feature configuration
+                feature_configs = self._create_comprehensive_feature_configs()
+                batch_data = {
+                    'data': data,
+                    'feature_configs': feature_configs,
+                    'feature_type': 'comprehensive_returns'
+                }
+                
+                result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    batch_data,
+                    config
+                )
+                
+                if hasattr(result, 'result') and result.result is not None:
+                    self.performance_stats['unified_manager_operations'] += 1
+                    return result.result
+                else:
+                    return self._fallback_comprehensive_features(data)
+                    
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager comprehensive features failed: {e}, using fallback")
+                return self._fallback_comprehensive_features(data)
+        else:
+            return self._fallback_comprehensive_features(data)
+    
+    def _create_comprehensive_feature_configs(self) -> List[Dict[str, Any]]:
+        """Create comprehensive feature configurations for returns analysis."""
+        configs = []
+        
+        # Simple returns
+        for period in [1, 5, 10, 20]:
+            configs.append({
+                'type': 'simple_returns',
+                'period': period,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Log returns
+        for period in [1, 5, 10]:
+            configs.append({
+                'type': 'log_returns',
+                'period': period,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Cumulative returns
+        for window in [10, 20]:
+            configs.append({
+                'type': 'cumulative_returns',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Rolling returns
+        for window in [10, 20]:
+            configs.append({
+                'type': 'rolling_returns',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Returns volatility
+        for window in [20]:
+            configs.append({
+                'type': 'returns_volatility',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Returns skewness
+        for window in [20]:
+            configs.append({
+                'type': 'returns_skewness',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Returns kurtosis
+        for window in [20]:
+            configs.append({
+                'type': 'returns_kurtosis',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        # Sharpe ratio
+        for window in [20]:
+            configs.append({
+                'type': 'sharpe_ratio',
+                'window': window,
+                'base_calculation': 'price_returns'
+            })
+        
+        return configs
+    
+    def _fallback_comprehensive_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fallback comprehensive features using individual generators."""
+        results = {}
+        
+        # Generate features using individual optimized generators
+        generators = [
+            ReturnsFeatureGenerator(),
+            LogReturnsGenerator(period=1),
+            LogReturnsGenerator(period=5),
+            LogReturnsGenerator(period=10),
+            SimpleReturnsGenerator(period=1),
+            SimpleReturnsGenerator(period=5),
+            SimpleReturnsGenerator(period=10),
+            SimpleReturnsGenerator(period=20),
+            CumulativeReturnsGenerator(window=10),
+            CumulativeReturnsGenerator(window=20),
+            RollingReturnsGenerator(window=10),
+            RollingReturnsGenerator(window=20),
+            ReturnsVolatilityGenerator(window=20),
+            ReturnsSkewnessGenerator(window=20),
+            ReturnsKurtosisGenerator(window=20),
+            SharpeRatioGenerator(window=20)
+        ]
+        
+        for generator in generators:
+            try:
+                feature_result = generator.generate_feature(data)
+                if hasattr(feature_result, 'name'):
+                    results[feature_result.name] = feature_result
+                else:
+                    results[f"{generator.__class__.__name__}_{len(results)}"] = feature_result
+            except Exception as e:
+                self.logger.warning(f"Feature generation failed for {generator.__class__.__name__}: {e}")
+                continue
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        if stats['total_operations'] > 0:
+            stats['vectorbt_usage_percentage'] = (
+                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) / 
+                stats['total_operations'] * 100
+            )
+            stats['unified_manager_usage_percentage'] = (
+                stats['unified_manager_operations'] / stats['total_operations'] * 100
+            )
+            stats['batch_operations_percentage'] = (
+                stats['batch_operations'] / stats['total_operations'] * 100
+            )
+            stats['pandas_fallback_percentage'] = (
+                stats['pandas_fallbacks'] / stats['total_operations'] * 100
+            )
+        else:
+            stats['vectorbt_usage_percentage'] = 0
+            stats['unified_manager_usage_percentage'] = 0
+            stats['batch_operations_percentage'] = 0
+            stats['pandas_fallback_percentage'] = 0
+        
+        return stats
+
+
+def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
+    """Create VectorBT-optimized returns feature generators."""
+    generators = []
+    
+    # Add the comprehensive VectorBT-optimized generator
+    generators.append(VectorBTOptimizedReturnsGenerator())
+    
+    # Add individual optimized generators
+    generators.extend([
+        ReturnsFeatureGenerator(),
+        LogReturnsGenerator(period=1),
+        LogReturnsGenerator(period=5),
+        LogReturnsGenerator(period=10),
+        SimpleReturnsGenerator(period=1),
+        SimpleReturnsGenerator(period=5),
+        SimpleReturnsGenerator(period=10),
+        SimpleReturnsGenerator(period=20),
+        CumulativeReturnsGenerator(window=10),
+        CumulativeReturnsGenerator(window=20),
+        RollingReturnsGenerator(window=10),
+        RollingReturnsGenerator(window=20),
+        ReturnsVolatilityGenerator(window=20),
+        ReturnsSkewnessGenerator(window=20),
+        ReturnsKurtosisGenerator(window=20),
+        SharpeRatioGenerator(window=20)
+    ])
+    
+    return generators
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for vectorized processing."""

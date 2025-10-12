@@ -47,6 +47,20 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT optimization components
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OperationConfig
+    )
+    VECTORBT_OPTIMIZERS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZERS_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OperationConfig = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp

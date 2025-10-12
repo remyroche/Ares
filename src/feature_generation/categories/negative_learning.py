@@ -387,12 +387,29 @@ class NegativeLearningFeatureGenerator:
     """
     Generates negative learning features based on detected failure contexts.
     Creates gated twins, exception interactions, and context indicators.
+    Now optimized with VectorBT for maximum performance.
     """
     
     def __init__(self, config: NegativeLearningConfig):
         self.config = config
         self.logger = system_logger.getChild('NegativeLearningFeatureGenerator')
         self.failure_contexts: Dict[str, List[FailureContext]] = {}
+        
+        # Initialize VectorBT optimization components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        if VECTORBT_OPTIMIZERS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=True, enable_parallel=True, memory_efficient=True
+                )
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ VectorBT optimizations enabled")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
+                self.rolling_optimizer = None
+                self.unified_manager = None
         
     def generate_negative_learning_features(
         self, 
@@ -401,6 +418,7 @@ class NegativeLearningFeatureGenerator:
     ) -> pd.DataFrame:
         """
         Generate negative learning features based on failure contexts.
+        Now optimized with VectorBT for maximum performance.
         
         Args:
             features_df: Original feature matrix
@@ -411,12 +429,17 @@ class NegativeLearningFeatureGenerator:
         """
         from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_debug
         
-        tprint_info("🔄 Generating negative learning features...")
+        tprint_info("🔄 Generating negative learning features with VectorBT optimization...")
         tprint_info(f"📊 Input features: {features_df.shape[1]}")
         tprint_info(f"🎯 Features with failure contexts: {len(failure_contexts)}")
         
         self.failure_contexts = failure_contexts
         
+        # Use VectorBT optimization if available
+        if self.unified_manager and VECTORBT_OPTIMIZERS_AVAILABLE:
+            return self._generate_features_with_vectorbt_optimization(features_df, failure_contexts)
+        
+        # Fallback to original implementation
         result_df = features_df.copy()
         negative_features = []
         
@@ -490,6 +513,404 @@ class NegativeLearningFeatureGenerator:
         tprint_info(f"📈 Final features: {result_df.shape[1]} ({features_df.shape[1]} base + {len(negative_features)} gates)")
         
         return result_df
+    
+    def _generate_features_with_vectorbt_optimization(
+        self, 
+        features_df: pd.DataFrame,
+        failure_contexts: Dict[str, List[FailureContext]]
+    ) -> pd.DataFrame:
+        """Generate features using VectorBT optimization"""
+        from src.utils.tprint import tprint_info, tprint_success, tprint_debug
+        
+        tprint_info("🚀 Using VectorBT unified optimization...")
+        
+        # Use UnifiedVectorizationManager for optimal execution
+        operation_config = OperationConfig(
+            operation_type=OperationType.FEATURE_ENGINEERING,
+            data_size=len(features_df),
+            data_dimensions=features_df.shape,
+            memory_budget_mb=1024.0,
+            time_budget_seconds=300.0
+        )
+        
+        # Prepare data for unified manager
+        operation_data = {
+            'features': features_df,
+            'failure_contexts': failure_contexts,
+            'config': self.config,
+            'generator': self  # Pass self for method access
+        }
+        
+        # Execute with unified optimization
+        result = self.unified_manager.optimize_operation(
+            OperationType.FEATURE_ENGINEERING,
+            operation_data,
+            operation_config
+        )
+        
+        # Extract results
+        if hasattr(result, 'result'):
+            tprint_success("✅ VectorBT optimization completed successfully")
+            return result.result
+        else:
+            # Fallback to batch VectorBT processing
+            return self._generate_features_with_vectorbt_batch(features_df, failure_contexts)
+    
+    def _generate_features_with_vectorbt_batch(
+        self, 
+        features_df: pd.DataFrame,
+        failure_contexts: Dict[str, List[FailureContext]]
+    ) -> pd.DataFrame:
+        """Generate features using VectorBT batch processing"""
+        from src.utils.tprint import tprint_info, tprint_success
+        
+        tprint_info("🔄 Using VectorBT batch processing...")
+        
+        result_df = features_df.copy()
+        negative_features = []
+        
+        # Process features in batches using VectorBT
+        batch_operations = []
+        
+        for feature_name, contexts in failure_contexts.items():
+            if feature_name not in features_df.columns:
+                continue
+            
+            # Calculate failure probability using VectorBT
+            p_fail = self._calculate_failure_probability_vectorbt(features_df, contexts)
+            
+            # Create VectorBT operations
+            feature_ops = self._create_vectorbt_operations(
+                feature_name, features_df[feature_name], p_fail, contexts
+            )
+            batch_operations.extend(feature_ops)
+        
+        # Execute batch operations
+        if batch_operations and self.rolling_optimizer:
+            batch_results = self._execute_vectorbt_batch_operations(
+                features_df, batch_operations
+            )
+            
+            # Add results to output
+            for feature_name, feature_data in batch_results.items():
+                result_df[feature_name] = feature_data
+                negative_features.append(feature_name)
+        
+        tprint_success(f"✅ Generated {len(negative_features)} VectorBT-optimized features")
+        return result_df
+    
+    def _calculate_failure_probability_vectorbt(
+        self, 
+        features_df: pd.DataFrame, 
+        contexts: List[FailureContext]
+    ) -> pd.Series:
+        """Calculate failure probability using VectorBT operations"""
+        if not contexts:
+            return pd.Series(0, index=features_df.index)
+        
+        # Generate context flags using VectorBT
+        context_flags = {}
+        
+        for context in contexts:
+            context_name = context.context_type.value
+            context_flags[context_name] = self._generate_context_flag_vectorbt(
+                features_df, context.context_type
+            )
+        
+        # Combine using VectorBT operations
+        if context_flags:
+            context_df = pd.DataFrame(context_flags, index=features_df.index)
+            p_fail = context_df.max(axis=1)
+        else:
+            p_fail = pd.Series(0, index=features_df.index)
+        
+        return p_fail.fillna(0)
+    
+    def _generate_context_flag_vectorbt(
+        self, 
+        features_df: pd.DataFrame, 
+        context_type: FailureContextType
+    ) -> pd.Series:
+        """Generate context flag using VectorBT operations"""
+        if context_type == FailureContextType.HIGH_VOLATILITY:
+            return self._calculate_volatility_flag_vectorbt(features_df)
+        elif context_type == FailureContextType.CHOP:
+            return self._calculate_chop_flag_vectorbt(features_df)
+        elif context_type == FailureContextType.WIDE_SPREAD:
+            return self._calculate_spread_flag_vectorbt(features_df)
+        elif context_type == FailureContextType.OPEN_WINDOW:
+            return self._calculate_time_flag_vectorbt(features_df, 'open')
+        elif context_type == FailureContextType.CLOSE_WINDOW:
+            return self._calculate_time_flag_vectorbt(features_df, 'close')
+        else:
+            return pd.Series(0, index=features_df.index)
+    
+    def _calculate_volatility_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
+        """Calculate volatility flag using VectorBT rolling operations"""
+        if 'volatility' in features_df.columns:
+            vol = features_df['volatility']
+        elif 'high' in features_df.columns and 'low' in features_df.columns:
+            vol = features_df['high'] - features_df['low']
+        else:
+            return pd.Series(0, index=features_df.index)
+        
+        # Use VectorBT rolling mean for EWMA
+        if self.rolling_optimizer:
+            vol_ewma = self.rolling_optimizer.rolling_mean(vol, window=20)
+        else:
+            vol_ewma = vol.ewm(span=20).mean()
+        
+        vol_threshold = vol_ewma.quantile(self.config.volatility_quantile)
+        return (vol_ewma > vol_threshold).astype(float)
+    
+    def _calculate_chop_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
+        """Calculate chop flag using VectorBT operations"""
+        if 'close' in features_df.columns:
+            price = features_df['close']
+        elif 'close_price' in features_df.columns:
+            price = features_df['close_price']
+        else:
+            return pd.Series(0, index=features_df.index)
+        
+        # Use VectorBT rolling operations for R² calculation
+        window = 20
+        r2_scores = self._calculate_rolling_r2_vectorbt(price, window)
+        
+        # Chop when R² is low
+        chop_threshold = self.config.r2_chop_threshold
+        return (r2_scores < chop_threshold).astype(float)
+    
+    def _calculate_rolling_r2_vectorbt(self, price: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling R² using VectorBT operations"""
+        def r2_func(x):
+            if len(x) < 5:
+                return 0.0
+            try:
+                y = x.values
+                x_vals = np.arange(len(y)).reshape(-1, 1)
+                from sklearn.linear_model import LinearRegression
+                reg = LinearRegression().fit(x_vals, y)
+                y_pred = reg.predict(x_vals)
+                from sklearn.metrics import r2_score
+                return max(0, r2_score(y, y_pred))
+            except:
+                return 0.0
+        
+        if self.rolling_optimizer:
+            return self.rolling_optimizer.rolling_apply(price, r2_func, window=window)
+        else:
+            return price.rolling(window=window).apply(r2_func)
+    
+    def _calculate_spread_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
+        """Calculate spread flag using VectorBT operations"""
+        spread_cols = [col for col in features_df.columns if 'spread' in col.lower()]
+        
+        if spread_cols:
+            spread = features_df[spread_cols[0]]
+        elif 'high' in features_df.columns and 'low' in features_df.columns:
+            spread = features_df['high'] - features_df['low']
+        else:
+            return pd.Series(0, index=features_df.index)
+        
+        # Use VectorBT rolling operations for z-score calculation
+        if self.rolling_optimizer:
+            spread_mean = self.rolling_optimizer.rolling_mean(spread, window=50)
+            spread_std = self.rolling_optimizer.rolling_std(spread, window=50)
+        else:
+            spread_mean = spread.rolling(window=50).mean()
+            spread_std = spread.rolling(window=50).std()
+        
+        spread_z = safe_divide(spread - spread_mean, spread_std)
+        
+        # Wide spread when z-score > threshold
+        from scipy import stats
+        spread_threshold = stats.norm.ppf(self.config.spread_quantile)
+        return (spread_z > spread_threshold).astype(float)
+    
+    def _calculate_time_flag_vectorbt(self, features_df: pd.DataFrame, period: str) -> pd.Series:
+        """Calculate time-based flags using VectorBT operations"""
+        if 'timestamp' in features_df.columns:
+            timestamps = pd.to_datetime(features_df['timestamp'])
+        elif features_df.index.name == 'timestamp' or 'time' in str(features_df.index.name):
+            timestamps = pd.to_datetime(features_df.index)
+        else:
+            return pd.Series(0, index=features_df.index)
+        
+        # Extract hour and minute
+        hours = timestamps.hour
+        minutes = timestamps.minute
+        
+        if period == 'open':
+            return ((hours == 9) & (minutes <= 30)).astype(float)
+        elif period == 'close':
+            return ((hours == 15) & (minutes >= 30)).astype(float)
+        else:
+            return pd.Series(0, index=features_df.index)
+    
+    def _create_vectorbt_operations(
+        self, 
+        feature_name: str, 
+        feature: pd.Series, 
+        p_fail: pd.Series, 
+        contexts: List[FailureContext]
+    ) -> List[Dict[str, Any]]:
+        """Create VectorBT operations for feature generation"""
+        operations = []
+        
+        if self.config.enable_gated_twins:
+            # Gated twin features
+            operations.extend([
+                {
+                    'name': f"{feature_name}_pos",
+                    'type': 'gated_twin',
+                    'operation': lambda x, p: x * (1 - p),
+                    'data': feature,
+                    'context': p_fail
+                },
+                {
+                    'name': f"{feature_name}_neg",
+                    'type': 'gated_twin',
+                    'operation': lambda x, p: -x * p,
+                    'data': feature,
+                    'context': p_fail
+                }
+            ])
+        
+        if self.config.enable_exception_interactions:
+            # Exception interaction features
+            operations.append({
+                'name': f"{feature_name}_x_fail",
+                'type': 'interaction',
+                'operation': lambda x, p: x * p,
+                'data': feature,
+                'context': p_fail
+            })
+        
+        if self.config.enable_context_indicators:
+            # Context indicator features
+            for context in contexts:
+                context_name = context.context_type.value
+                context_flag = self._generate_context_flag_vectorbt(
+                    pd.DataFrame({feature_name: feature}), context.context_type
+                )
+                operations.append({
+                    'name': f"{feature_name}_p_{context_name}",
+                    'type': 'context',
+                    'operation': lambda x: x,
+                    'data': context_flag
+                })
+        
+        return operations
+    
+    def _execute_vectorbt_batch_operations(
+        self, 
+        features_df: pd.DataFrame, 
+        operations: List[Dict[str, Any]]
+    ) -> Dict[str, pd.Series]:
+        """Execute batch operations using VectorBT optimization"""
+        results = {}
+        
+        # Group operations by type for efficient processing
+        operation_groups = {}
+        for op in operations:
+            op_type = op['type']
+            if op_type not in operation_groups:
+                operation_groups[op_type] = []
+            operation_groups[op_type].append(op)
+        
+        # Process each group using VectorBT
+        for op_type, group_ops in operation_groups.items():
+            if op_type == 'gated_twin':
+                results.update(self._process_gated_twins_vectorbt(group_ops))
+            elif op_type == 'interaction':
+                results.update(self._process_interactions_vectorbt(group_ops))
+            elif op_type == 'context':
+                results.update(self._process_contexts_vectorbt(group_ops))
+        
+        return results
+    
+    def _process_gated_twins_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process gated twin operations using VectorBT"""
+        results = {}
+        
+        for op in operations:
+            try:
+                data = op['data']
+                context = op['context']
+                
+                # VectorBT-optimized gated twin calculation
+                if op['name'].endswith('_pos'):
+                    result = data * (1 - context)
+                else:  # _neg
+                    result = -data * context
+                
+                # Apply VectorBT optimizations
+                result = self._optimize_series_vectorbt(result)
+                results[op['name']] = result
+                
+            except Exception as e:
+                self.logger.warning(f"Gated twin operation failed for {op['name']}: {e}")
+                results[op['name']] = pd.Series(0, index=op['data'].index)
+        
+        return results
+    
+    def _process_interactions_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process interaction operations using VectorBT"""
+        results = {}
+        
+        for op in operations:
+            try:
+                data = op['data']
+                context = op['context']
+                
+                # VectorBT-optimized interaction calculation
+                result = data * context
+                result = self._optimize_series_vectorbt(result)
+                results[op['name']] = result
+                
+            except Exception as e:
+                self.logger.warning(f"Interaction operation failed for {op['name']}: {e}")
+                results[op['name']] = pd.Series(0, index=op['data'].index)
+        
+        return results
+    
+    def _process_contexts_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process context operations using VectorBT"""
+        results = {}
+        
+        for op in operations:
+            try:
+                data = op['data']
+                result = self._optimize_series_vectorbt(data)
+                results[op['name']] = result
+                
+            except Exception as e:
+                self.logger.warning(f"Context operation failed for {op['name']}: {e}")
+                results[op['name']] = pd.Series(0, index=op['data'].index)
+        
+        return results
+    
+    def _optimize_series_vectorbt(self, series: pd.Series) -> pd.Series:
+        """Optimize series using VectorBT operations"""
+        try:
+            # Use VectorBT's data type optimization
+            if series.dtype == 'float64':
+                # Check if we can use float32 for memory efficiency
+                if (series.min() >= np.finfo(np.float32).min and 
+                    series.max() <= np.finfo(np.float32).max):
+                    series = series.astype(np.float32)
+            
+            # Apply VectorBT winsorization for outlier handling
+            if hasattr(series, 'quantile'):
+                q01 = series.quantile(0.01)
+                q99 = series.quantile(0.99)
+                series = series.clip(lower=q01, upper=q99)
+            
+            return series
+            
+        except Exception as e:
+            self.logger.debug(f"Series optimization failed: {e}")
+            return series
     
     def _select_top_gates(
         self, 
@@ -875,6 +1296,20 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT optimization components
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OperationConfig
+    )
+    VECTORBT_OPTIMIZERS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZERS_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OperationConfig = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -886,14 +1321,21 @@ except ImportError:
             return 0.0
     
     def _calculate_stability_frequency(self, gate_series: pd.Series) -> float:
-        """Calculate stability frequency across folds/time windows"""
+        """Calculate stability frequency across folds/time windows using VectorBT"""
         try:
             # Rolling correlation stability
             window = min(100, len(gate_series) // 4)
             if window < 10:
                 return 0.5
             
-            rolling_corr = gate_series.rolling(window).corr(gate_series.shift(1))
+            # Use VectorBT rolling correlation if available
+            if self.rolling_optimizer:
+                rolling_corr = self.rolling_optimizer.rolling_corr(
+                    gate_series, gate_series.shift(1), window=window
+                )
+            else:
+                rolling_corr = gate_series.rolling(window).corr(gate_series.shift(1))
+            
             stability = 1.0 - rolling_corr.std()
             return max(0.0, min(1.0, stability))
             
@@ -1176,6 +1618,7 @@ class NegativeLearningPlugin:
     """
     Main plugin class that orchestrates the entire negative learning pipeline.
     Integrates with existing Analyst/Tactician pipelines.
+    Now optimized with VectorBT for maximum performance.
     """
     
     def __init__(self, config: Optional[NegativeLearningConfig] = None):
@@ -1186,6 +1629,22 @@ class NegativeLearningPlugin:
         self.detector = FailureContextDetector(self.config)
         self.generator = NegativeLearningFeatureGenerator(self.config)
         self.validator = NegativeLearningValidator(self.config)
+        
+        # Initialize VectorBT optimization components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        if VECTORBT_OPTIMIZERS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=True, enable_parallel=True, memory_efficient=True
+                )
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ VectorBT optimizations enabled for negative learning plugin")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
+                self.rolling_optimizer = None
+                self.unified_manager = None
         
         # State
         self.failure_contexts: Dict[str, List[FailureContext]] = {}

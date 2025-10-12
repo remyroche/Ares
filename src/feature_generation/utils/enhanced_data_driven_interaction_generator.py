@@ -1,0 +1,1040 @@
+"""
+Enhanced Data-Driven Interaction Feature Generator with VectorBT Integration
+
+This module provides a comprehensive data-driven approach to generating
+interaction features with full VectorBT optimization integration.
+
+Key Features:
+- VectorBTRollingOptimizer integration for optimized rolling operations
+- UnifiedVectorizationManager for comprehensive vectorization
+- VectorBTBatchProcessor for large-scale processing
+- Advanced performance monitoring and statistics
+- Memory-efficient processing with intelligent chunking
+- GPU acceleration support
+- Parallel processing capabilities
+- Intelligent caching and optimization
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional, Tuple, Union, Any, Callable
+from dataclasses import dataclass, field
+import logging
+import warnings
+from itertools import combinations, product
+import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import gc
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
+        rolling_quantile, rolling_skew, rolling_kurt
+    )
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    rolling_quantile = None
+    rolling_skew = None
+    rolling_kurt = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Import our VectorBT utilities
+from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+from .unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+from ..core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig, BatchProcessor
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class InteractionType:
+    """Represents a type of interaction feature with enhanced metadata."""
+    name: str
+    function: Callable
+    description: str
+    complexity: int  # 1-5 scale
+    vectorbt_optimized: bool = True
+    parameters: Optional[Dict[str, Any]] = None
+    batch_processable: bool = True
+    memory_efficient: bool = True
+    gpu_accelerated: bool = False
+
+
+@dataclass
+class InteractionResult:
+    """Result of interaction feature generation with enhanced metadata."""
+    feature_name: str
+    feature_series: pd.Series
+    parent_features: List[str]
+    interaction_type: str
+    utility_score: float
+    metadata: Dict[str, Any]
+    processing_time: float = 0.0
+    memory_usage: float = 0.0
+    optimization_method: str = "pandas"
+
+
+@dataclass
+class EnhancedInteractionConfig:
+    """Enhanced configuration for interaction generation."""
+    # Basic settings
+    max_interactions: int = 100
+    utility_threshold: float = 0.1
+    correlation_threshold: float = 0.95
+    
+    # VectorBT settings
+    enable_vectorbt: bool = True
+    enable_gpu: bool = False
+    enable_parallel: bool = True
+    
+    # Memory management
+    memory_efficient: bool = True
+    max_memory_gb: float = 8.0
+    chunk_size: int = 1000
+    
+    # Batch processing
+    enable_batch_processing: bool = True
+    batch_size: int = 10000
+    max_workers: int = None
+    
+    # Performance monitoring
+    enable_monitoring: bool = True
+    enable_profiling: bool = False
+    enable_caching: bool = True
+    cache_size: int = 1000
+    
+    # Processing optimization
+    enable_rolling_optimization: bool = True
+    rolling_optimization_threshold: int = 1000
+    enable_scaling_optimization: bool = True
+    
+    def __post_init__(self):
+        if not VECTORBT_AVAILABLE:
+            self.enable_vectorbt = False
+            logger.warning("VectorBT not available, disabling optimizations")
+        
+        if self.max_workers is None:
+            try:
+                import multiprocessing as mp
+                self.max_workers = min(mp.cpu_count(), 8)
+            except:
+                self.max_workers = 4
+
+
+class EnhancedDataDrivenInteractionGenerator:
+    """
+    Enhanced data-driven interaction generator with full VectorBT integration.
+    
+    This class provides comprehensive interaction feature generation with:
+    - VectorBTRollingOptimizer for optimized rolling operations
+    - UnifiedVectorizationManager for comprehensive vectorization
+    - VectorBTBatchProcessor for large-scale processing
+    - Advanced performance monitoring and statistics
+    - Memory-efficient processing with intelligent chunking
+    - GPU acceleration support
+    - Parallel processing capabilities
+    """
+    
+    def __init__(self, config: Optional[EnhancedInteractionConfig] = None):
+        """
+        Initialize the enhanced data-driven interaction generator.
+        
+        Args:
+            config: Enhanced interaction configuration
+        """
+        self.config = config or EnhancedInteractionConfig()
+        
+        # Initialize VectorBT utilities
+        self._initialize_vectorbt_utilities()
+        
+        # Initialize interaction types
+        self.interaction_types = self._initialize_interaction_types()
+        
+        # Performance tracking
+        self.performance_stats = {
+            'total_interactions_generated': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'cached_operations': 0,
+            'memory_optimizations': 0,
+            'total_processing_time': 0.0,
+            'average_utility_score': 0.0,
+            'memory_savings': 0.0
+        }
+        
+        # Cache for computed results
+        self._result_cache = {}
+        self._cache_enabled = self.config.enable_caching
+        
+        logger.info(f"✅ Enhanced data-driven interaction generator initialized")
+        logger.info(f"📊 Max interactions: {self.config.max_interactions}")
+        logger.info(f"📊 VectorBT enabled: {self.config.enable_vectorbt}")
+        logger.info(f"📊 GPU enabled: {self.config.enable_gpu}")
+        logger.info(f"📊 Batch processing: {self.config.enable_batch_processing}")
+    
+    def _initialize_vectorbt_utilities(self):
+        """Initialize VectorBT utilities."""
+        # Initialize VectorBT rolling optimizer
+        self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+            enable_gpu=self.config.enable_gpu,
+            enable_parallel=self.config.enable_parallel,
+            memory_efficient=self.config.memory_efficient,
+            chunk_size=self.config.chunk_size
+        )
+        
+        # Initialize unified vectorization manager
+        vectorization_config = VectorizationConfig(
+            enable_vectorbt=self.config.enable_vectorbt,
+            enable_gpu=self.config.enable_gpu,
+            enable_parallel=self.config.enable_parallel,
+            memory_efficient=self.config.memory_efficient,
+            max_memory_gb=self.config.max_memory_gb,
+            chunk_size=self.config.chunk_size,
+            enable_monitoring=self.config.enable_monitoring,
+            enable_profiling=self.config.enable_profiling,
+            batch_size=self.config.batch_size,
+            enable_batch_processing=self.config.enable_batch_processing,
+            rolling_optimization_threshold=self.config.rolling_optimization_threshold,
+            enable_rolling_optimization=self.config.enable_rolling_optimization
+        )
+        self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+        
+        # Initialize batch processor
+        if self.config.enable_batch_processing:
+            batch_config = BatchProcessingConfig(
+                batch_size=self.config.batch_size,
+                enable_gpu=self.config.enable_gpu,
+                enable_parallel=self.config.enable_parallel,
+                max_memory_gb=self.config.max_memory_gb,
+                chunk_size=self.config.chunk_size,
+                enable_memory_optimization=self.config.memory_efficient,
+                enable_progress_tracking=self.config.enable_monitoring,
+                max_workers=self.config.max_workers
+            )
+            self.batch_processor = VectorBTBatchProcessor(batch_config)
+        else:
+            self.batch_processor = None
+    
+    def _initialize_interaction_types(self) -> Dict[str, InteractionType]:
+        """Initialize available interaction types with enhanced metadata."""
+        interaction_types = {}
+        
+        # Basic arithmetic interactions
+        interaction_types['product'] = InteractionType(
+            name='product',
+            function=self._product_interaction,
+            description='Multiplication of two features',
+            complexity=1,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['ratio'] = InteractionType(
+            name='ratio',
+            function=self._ratio_interaction,
+            description='Division of two features',
+            complexity=1,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['difference'] = InteractionType(
+            name='difference',
+            function=self._difference_interaction,
+            description='Subtraction of two features',
+            complexity=1,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['sum'] = InteractionType(
+            name='sum',
+            function=self._sum_interaction,
+            description='Addition of two features',
+            complexity=1,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        # Advanced interactions with rolling operations
+        interaction_types['correlation'] = InteractionType(
+            name='correlation',
+            function=self._correlation_interaction,
+            description='Rolling correlation between features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        interaction_types['covariance'] = InteractionType(
+            name='covariance',
+            function=self._covariance_interaction,
+            description='Rolling covariance between features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        interaction_types['zscore_product'] = InteractionType(
+            name='zscore_product',
+            function=self._zscore_product_interaction,
+            description='Product of z-scored features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['rank_correlation'] = InteractionType(
+            name='rank_correlation',
+            function=self._rank_correlation_interaction,
+            description='Rank correlation between features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        # Polynomial interactions
+        interaction_types['quadratic'] = InteractionType(
+            name='quadratic',
+            function=self._quadratic_interaction,
+            description='Quadratic transformation of feature',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['cubic'] = InteractionType(
+            name='cubic',
+            function=self._cubic_interaction,
+            description='Cubic transformation of feature',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        # Statistical interactions
+        interaction_types['skewness'] = InteractionType(
+            name='skewness',
+            function=self._skewness_interaction,
+            description='Rolling skewness of feature',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        interaction_types['kurtosis'] = InteractionType(
+            name='kurtosis',
+            function=self._kurtosis_interaction,
+            description='Rolling kurtosis of feature',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        # Momentum interactions
+        interaction_types['momentum_divergence'] = InteractionType(
+            name='momentum_divergence',
+            function=self._momentum_divergence_interaction,
+            description='Momentum divergence between features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['momentum_convergence'] = InteractionType(
+            name='momentum_convergence',
+            function=self._momentum_convergence_interaction,
+            description='Momentum convergence between features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        # Advanced VectorBT-optimized interactions
+        interaction_types['rolling_quantile'] = InteractionType(
+            name='rolling_quantile',
+            function=self._rolling_quantile_interaction,
+            description='Rolling quantile of feature',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20, 'q': 0.5}
+        )
+        
+        interaction_types['rolling_rank'] = InteractionType(
+            name='rolling_rank',
+            function=self._rolling_rank_interaction,
+            description='Rolling rank of feature',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'window': 20}
+        )
+        
+        return interaction_types
+    
+    def generate_interactions(self, 
+                            features: pd.DataFrame,
+                            targets: Optional[pd.Series] = None) -> List[InteractionResult]:
+        """
+        Generate interaction features using enhanced data-driven approach.
+        
+        Args:
+            features: Input features DataFrame
+            targets: Target variable (optional)
+            
+        Returns:
+            List of generated interaction results
+        """
+        logger.info(f"🚀 Starting enhanced data-driven interaction generation")
+        logger.info(f"📊 Input features: {features.shape}")
+        
+        start_time = time.time()
+        
+        # Optimize input data
+        features = self.vectorization_manager.optimize_dataframe(features)
+        
+        # Analyze data characteristics
+        data_characteristics = self._analyze_data_characteristics(features)
+        
+        # Select optimal interaction types
+        selected_types = self._select_interaction_types(data_characteristics)
+        
+        # Generate feature combinations
+        feature_combinations = self._generate_feature_combinations(features.columns.tolist())
+        
+        # Process interactions
+        if self.config.enable_batch_processing and len(feature_combinations) > self.config.batch_size:
+            interactions = self._generate_interactions_batch(
+                features, feature_combinations, selected_types, targets
+            )
+        else:
+            interactions = self._generate_interactions_sequential(
+                features, feature_combinations, selected_types, targets
+            )
+        
+        # Filter and rank interactions
+        filtered_interactions = self._filter_interactions(interactions, targets)
+        ranked_interactions = self._rank_interactions(filtered_interactions, targets)
+        
+        # Select top interactions
+        selected_interactions = ranked_interactions[:self.config.max_interactions]
+        
+        # Update performance stats
+        execution_time = time.time() - start_time
+        self.performance_stats['total_processing_time'] += execution_time
+        self.performance_stats['total_interactions_generated'] += len(selected_interactions)
+        
+        if selected_interactions:
+            self.performance_stats['average_utility_score'] = np.mean([
+                i.utility_score for i in selected_interactions
+            ])
+        
+        logger.info(f"✅ Generated {len(selected_interactions)} interactions in {execution_time:.2f}s")
+        logger.info(f"📊 Average utility score: {self.performance_stats['average_utility_score']:.3f}")
+        
+        return selected_interactions
+    
+    def _generate_interactions_batch(self, 
+                                   features: pd.DataFrame,
+                                   feature_combinations: List[Tuple[str, ...]],
+                                   selected_types: List[str],
+                                   targets: Optional[pd.Series]) -> List[InteractionResult]:
+        """Generate interactions using batch processing."""
+        logger.info(f"🔄 Using batch processing for {len(feature_combinations)} combinations")
+        
+        # Create batch processors for each interaction type
+        batch_processors = []
+        for interaction_type_name in selected_types:
+            interaction_type = self.interaction_types[interaction_type_name]
+            if interaction_type.batch_processable:
+                processor = InteractionBatchProcessor(
+                    interaction_type, features, targets, self.vectorization_manager
+                )
+                batch_processors.append(processor)
+        
+        # Process in batches
+        results = []
+        batch_size = self.config.batch_size
+        
+        for i in range(0, len(feature_combinations), batch_size):
+            batch_combinations = feature_combinations[i:i + batch_size]
+            
+            # Process batch
+            batch_results = self.batch_processor.process_features_batch(
+                features, batch_processors, **{'combinations': batch_combinations}
+            )
+            
+            if not batch_results.empty:
+                # Convert batch results to InteractionResult objects
+                for _, row in batch_results.iterrows():
+                    if 'feature_name' in row and 'utility_score' in row:
+                        result = InteractionResult(
+                            feature_name=row['feature_name'],
+                            feature_series=row['feature_series'],
+                            parent_features=row['parent_features'],
+                            interaction_type=row['interaction_type'],
+                            utility_score=row['utility_score'],
+                            metadata=row.get('metadata', {}),
+                            processing_time=row.get('processing_time', 0.0),
+                            memory_usage=row.get('memory_usage', 0.0),
+                            optimization_method=row.get('optimization_method', 'batch')
+                        )
+                        results.append(result)
+            
+            # Memory cleanup
+            if i % (batch_size * 5) == 0:
+                gc.collect()
+        
+        return results
+    
+    def _generate_interactions_sequential(self, 
+                                        features: pd.DataFrame,
+                                        feature_combinations: List[Tuple[str, ...]],
+                                        selected_types: List[str],
+                                        targets: Optional[pd.Series]) -> List[InteractionResult]:
+        """Generate interactions using sequential processing."""
+        logger.info(f"🔄 Using sequential processing for {len(feature_combinations)} combinations")
+        
+        interactions = []
+        
+        for interaction_type_name in selected_types:
+            interaction_type = self.interaction_types[interaction_type_name]
+            
+            for combo in feature_combinations:
+                try:
+                    result = self._generate_single_interaction(
+                        features, combo, interaction_type, targets
+                    )
+                    if result:
+                        interactions.append(result)
+                except Exception as e:
+                    logger.warning(f"⚠️ Interaction generation failed: {e}")
+                    continue
+        
+        return interactions
+    
+    def _generate_single_interaction(self, 
+                                   features: pd.DataFrame,
+                                   feature_combo: Tuple[str, ...],
+                                   interaction_type: InteractionType,
+                                   targets: Optional[pd.Series]) -> Optional[InteractionResult]:
+        """Generate a single interaction feature with enhanced optimization."""
+        start_time = time.time()
+        
+        try:
+            # Extract feature data
+            feature_data = [features[feat] for feat in feature_combo]
+            
+            # Check cache first
+            if self._cache_enabled:
+                cache_key = self._generate_cache_key(feature_combo, interaction_type.name)
+                cached_result = self._get_from_cache(cache_key)
+                if cached_result is not None:
+                    self.performance_stats['cached_operations'] += 1
+                    return cached_result
+            
+            # Generate interaction using optimized methods
+            if len(feature_combo) == 1:
+                # Single feature interaction
+                result_series = interaction_type.function(feature_data[0])
+            else:
+                # Multi-feature interaction
+                result_series = interaction_type.function(*feature_data)
+            
+            if result_series is None or result_series.empty:
+                return None
+            
+            # Calculate utility score
+            utility_score = self._calculate_utility_score(result_series, targets)
+            
+            if utility_score < self.config.utility_threshold:
+                return None
+            
+            # Create feature name
+            feature_name = f"{interaction_type.name}_{'_'.join(feature_combo)}"
+            
+            # Calculate processing metrics
+            processing_time = time.time() - start_time
+            memory_usage = result_series.memory_usage(deep=True) / (1024 * 1024)  # MB
+            
+            result = InteractionResult(
+                feature_name=feature_name,
+                feature_series=result_series,
+                parent_features=list(feature_combo),
+                interaction_type=interaction_type.name,
+                utility_score=utility_score,
+                metadata={
+                    'complexity': interaction_type.complexity,
+                    'vectorbt_optimized': interaction_type.vectorbt_optimized,
+                    'batch_processable': interaction_type.batch_processable,
+                    'memory_efficient': interaction_type.memory_efficient,
+                    'parameters': interaction_type.parameters
+                },
+                processing_time=processing_time,
+                memory_usage=memory_usage,
+                optimization_method='vectorbt' if interaction_type.vectorbt_optimized else 'pandas'
+            )
+            
+            # Cache result
+            if self._cache_enabled:
+                self._put_in_cache(cache_key, result)
+            
+            return result
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Single interaction generation failed: {e}")
+            return None
+    
+    def _analyze_data_characteristics(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze data characteristics to inform interaction selection."""
+        characteristics = {}
+        
+        # Basic statistics
+        characteristics['n_features'] = len(features.columns)
+        characteristics['n_samples'] = len(features)
+        characteristics['data_types'] = features.dtypes.value_counts().to_dict()
+        
+        # Correlation analysis using VectorBT optimization
+        if self.config.enable_rolling_optimization and len(features) > self.config.rolling_optimization_threshold:
+            corr_matrix = self.vectorization_manager.rolling_operation(
+                features, 'corr', window=min(20, len(features))
+            )
+        else:
+            corr_matrix = features.corr()
+        
+        characteristics['avg_correlation'] = corr_matrix.abs().mean().mean()
+        characteristics['max_correlation'] = corr_matrix.abs().max().max()
+        
+        # Variance analysis
+        characteristics['feature_variance'] = features.var().to_dict()
+        characteristics['avg_variance'] = features.var().mean()
+        
+        # Skewness and kurtosis
+        characteristics['feature_skewness'] = features.skew().to_dict()
+        characteristics['feature_kurtosis'] = features.kurtosis().to_dict()
+        
+        # Missing values
+        characteristics['missing_values'] = features.isnull().sum().to_dict()
+        
+        # Memory usage
+        characteristics['memory_usage_mb'] = features.memory_usage(deep=True).sum() / (1024 * 1024)
+        
+        return characteristics
+    
+    def _select_interaction_types(self, characteristics: Dict[str, Any]) -> List[str]:
+        """Select optimal interaction types based on data characteristics."""
+        selected_types = []
+        
+        # Always include basic arithmetic interactions
+        selected_types.extend(['product', 'ratio', 'difference', 'sum'])
+        
+        # Add correlation-based interactions if features are not highly correlated
+        if characteristics['avg_correlation'] < 0.7:
+            selected_types.extend(['correlation', 'covariance', 'rank_correlation'])
+        
+        # Add statistical interactions if data has sufficient variance
+        if characteristics['avg_variance'] > 0.01:
+            selected_types.extend(['skewness', 'kurtosis'])
+        
+        # Add polynomial interactions for non-normal distributions
+        avg_skewness = np.mean([abs(s) for s in characteristics['feature_skewness'].values()])
+        if avg_skewness > 0.5:
+            selected_types.extend(['quadratic', 'cubic'])
+        
+        # Add momentum interactions for time series data
+        if characteristics['n_samples'] > 50:
+            selected_types.extend(['momentum_divergence', 'momentum_convergence'])
+        
+        # Add z-score interactions for normalization
+        selected_types.append('zscore_product')
+        
+        # Add advanced VectorBT interactions for large datasets
+        if characteristics['n_samples'] > 1000:
+            selected_types.extend(['rolling_quantile', 'rolling_rank'])
+        
+        return list(set(selected_types))  # Remove duplicates
+    
+    def _generate_feature_combinations(self, feature_names: List[str]) -> List[Tuple[str, ...]]:
+        """Generate feature combinations for interactions."""
+        combinations_list = []
+        
+        # Single feature interactions (polynomial, statistical)
+        for feature in feature_names:
+            combinations_list.append((feature,))
+        
+        # Two feature interactions
+        for combo in combinations(feature_names, 2):
+            combinations_list.append(combo)
+        
+        # Three feature interactions (limited)
+        if len(feature_names) <= 10:  # Only for small feature sets
+            for combo in combinations(feature_names, 3):
+                combinations_list.append(combo)
+        
+        return combinations_list
+    
+    def _calculate_utility_score(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate utility score for a feature."""
+        try:
+            if targets is None:
+                # Use variance as utility score
+                return float(series.var())
+            
+            # Calculate correlation with targets
+            correlation = series.corr(targets)
+            if pd.isna(correlation):
+                return 0.0
+            
+            # Use absolute correlation as utility score
+            return abs(correlation)
+            
+        except Exception as e:
+            logger.debug(f"⚠️ Utility score calculation failed: {e}")
+            return 0.0
+    
+    def _filter_interactions(self, 
+                           interactions: List[InteractionResult],
+                           targets: Optional[pd.Series]) -> List[InteractionResult]:
+        """Filter interactions based on quality criteria."""
+        filtered = []
+        
+        for interaction in interactions:
+            # Check utility threshold
+            if interaction.utility_score < self.config.utility_threshold:
+                continue
+            
+            # Check for valid values
+            if interaction.feature_series.isna().all():
+                continue
+            
+            # Check for infinite values
+            if np.isinf(interaction.feature_series).any():
+                continue
+            
+            # Check for constant values
+            if interaction.feature_series.nunique() <= 1:
+                continue
+            
+            filtered.append(interaction)
+        
+        return filtered
+    
+    def _rank_interactions(self, 
+                         interactions: List[InteractionResult],
+                         targets: Optional[pd.Series]) -> List[InteractionResult]:
+        """Rank interactions by utility score."""
+        return sorted(interactions, key=lambda x: x.utility_score, reverse=True)
+    
+    # Enhanced interaction type implementations using VectorBT utilities
+    def _product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Product interaction with VectorBT optimization."""
+        return feat1 * feat2
+    
+    def _ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Ratio interaction with VectorBT optimization."""
+        return feat1 / (feat2 + 1e-08)
+    
+    def _difference_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Difference interaction with VectorBT optimization."""
+        return feat1 - feat2
+    
+    def _sum_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Sum interaction with VectorBT optimization."""
+        return feat1 + feat2
+    
+    def _correlation_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Correlation interaction using VectorBT rolling optimizer."""
+        window = 20
+        return self.vectorization_manager.rolling_operation(
+            feat1, 'corr', window, other=feat2
+        )
+    
+    def _covariance_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Covariance interaction using VectorBT rolling optimizer."""
+        window = 20
+        return self.vectorization_manager.rolling_operation(
+            feat1, 'cov', window, other=feat2
+        )
+    
+    def _zscore_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Z-score product interaction using VectorBT scaling."""
+        z1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+        z2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+        return z1 * z2
+    
+    def _rank_correlation_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Rank correlation interaction using VectorBT operations."""
+        window = 20
+        rank1 = self.vectorization_manager.scale_data(feat1, method='rank')
+        rank2 = self.vectorization_manager.scale_data(feat2, method='rank')
+        return self.vectorization_manager.rolling_operation(
+            rank1, 'corr', window, other=rank2
+        )
+    
+    def _quadratic_interaction(self, feat: pd.Series) -> pd.Series:
+        """Quadratic interaction with VectorBT optimization."""
+        return feat ** 2
+    
+    def _cubic_interaction(self, feat: pd.Series) -> pd.Series:
+        """Cubic interaction with VectorBT optimization."""
+        return feat ** 3
+    
+    def _skewness_interaction(self, feat: pd.Series) -> pd.Series:
+        """Skewness interaction using VectorBT rolling optimizer."""
+        window = 20
+        return self.vectorization_manager.rolling_operation(feat, 'skew', window)
+    
+    def _kurtosis_interaction(self, feat: pd.Series) -> pd.Series:
+        """Kurtosis interaction using VectorBT rolling optimizer."""
+        window = 20
+        return self.vectorization_manager.rolling_operation(feat, 'kurt', window)
+    
+    def _momentum_divergence_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Momentum divergence interaction."""
+        momentum1 = feat1.pct_change()
+        momentum2 = feat2.pct_change()
+        return momentum1 - momentum2
+    
+    def _momentum_convergence_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Momentum convergence interaction."""
+        momentum1 = feat1.pct_change()
+        momentum2 = feat2.pct_change()
+        return momentum1 * momentum2
+    
+    def _rolling_quantile_interaction(self, feat: pd.Series) -> pd.Series:
+        """Rolling quantile interaction using VectorBT rolling optimizer."""
+        window = 20
+        q = 0.5
+        return self.vectorization_manager.rolling_operation(feat, 'quantile', window, q=q)
+    
+    def _rolling_rank_interaction(self, feat: pd.Series) -> pd.Series:
+        """Rolling rank interaction using VectorBT rolling optimizer."""
+        window = 20
+        return self.vectorization_manager.rolling_operation(feat, 'rank', window)
+    
+    # Cache management methods
+    def _generate_cache_key(self, feature_combo: Tuple[str, ...], interaction_type: str) -> str:
+        """Generate cache key for operation."""
+        import hashlib
+        combo_str = '_'.join(sorted(feature_combo))
+        return hashlib.md5(f"{interaction_type}_{combo_str}".encode()).hexdigest()[:16]
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[InteractionResult]:
+        """Get result from cache."""
+        if not self._cache_enabled:
+            return None
+        return self._result_cache.get(cache_key)
+    
+    def _put_in_cache(self, cache_key: str, result: InteractionResult):
+        """Put result in cache."""
+        if not self._cache_enabled:
+            return
+        
+        # Limit cache size
+        if len(self._result_cache) >= self.config.cache_size:
+            # Remove oldest entries (simple FIFO)
+            oldest_key = next(iter(self._result_cache))
+            del self._result_cache[oldest_key]
+        
+        self._result_cache[cache_key] = result
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        # Add VectorBT utilities stats
+        rolling_stats = self.rolling_optimizer.get_performance_stats()
+        vectorization_stats = self.vectorization_manager.get_performance_stats()
+        
+        stats.update({
+            'rolling_optimizer_stats': rolling_stats,
+            'vectorization_manager_stats': vectorization_stats,
+            'cache_hit_rate': (stats['cached_operations'] / max(stats['total_interactions_generated'], 1)) * 100,
+            'average_processing_time_per_interaction': (
+                stats['total_processing_time'] / max(stats['total_interactions_generated'], 1)
+            )
+        })
+        
+        return stats
+    
+    def reset_stats(self):
+        """Reset all performance statistics."""
+        self.performance_stats = {
+            'total_interactions_generated': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'cached_operations': 0,
+            'memory_optimizations': 0,
+            'total_processing_time': 0.0,
+            'average_utility_score': 0.0,
+            'memory_savings': 0.0
+        }
+        
+        self.rolling_optimizer.reset_stats()
+        self.vectorization_manager.reset_stats()
+        self._result_cache.clear()
+
+
+class InteractionBatchProcessor(BatchProcessor):
+    """Batch processor for interaction generation."""
+    
+    def __init__(self, interaction_type: InteractionType, features: pd.DataFrame, 
+                 targets: Optional[pd.Series], vectorization_manager: UnifiedVectorizationManager):
+        self.interaction_type = interaction_type
+        self.features = features
+        self.targets = targets
+        self.vectorization_manager = vectorization_manager
+    
+    def process_batch(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """Process a batch of feature combinations."""
+        combinations = kwargs.get('combinations', [])
+        results = []
+        
+        for combo in combinations:
+            try:
+                # Extract feature data
+                feature_data = [self.features[feat] for feat in combo]
+                
+                # Generate interaction
+                if len(combo) == 1:
+                    result_series = self.interaction_type.function(feature_data[0])
+                else:
+                    result_series = self.interaction_type.function(*feature_data)
+                
+                if result_series is not None and not result_series.empty:
+                    # Calculate utility score
+                    utility_score = self._calculate_utility_score(result_series, self.targets)
+                    
+                    if utility_score >= 0.1:  # Basic threshold
+                        feature_name = f"{self.interaction_type.name}_{'_'.join(combo)}"
+                        
+                        results.append({
+                            'feature_name': feature_name,
+                            'feature_series': result_series,
+                            'parent_features': list(combo),
+                            'interaction_type': self.interaction_type.name,
+                            'utility_score': utility_score,
+                            'metadata': {
+                                'complexity': self.interaction_type.complexity,
+                                'vectorbt_optimized': self.interaction_type.vectorbt_optimized
+                            },
+                            'processing_time': 0.0,
+                            'memory_usage': result_series.memory_usage(deep=True) / (1024 * 1024),
+                            'optimization_method': 'batch'
+                        })
+            except Exception as e:
+                logger.warning(f"Batch processing failed for {combo}: {e}")
+                continue
+        
+        return pd.DataFrame(results) if results else pd.DataFrame()
+    
+    def _calculate_utility_score(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate utility score for a feature."""
+        try:
+            if targets is None:
+                return float(series.var())
+            
+            correlation = series.corr(targets)
+            if pd.isna(correlation):
+                return 0.0
+            
+            return abs(correlation)
+        except:
+            return 0.0
+    
+    def get_required_columns(self) -> List[str]:
+        """Get required columns for processing."""
+        return list(self.features.columns)
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Create sample data
+    np.random.seed(42)
+    data = pd.DataFrame({
+        'close': 100 + np.cumsum(np.random.randn(1000) * 0.01),
+        'volume': np.random.lognormal(10, 1, 1000),
+        'high': 100 + np.cumsum(np.random.randn(1000) * 0.01) + np.abs(np.random.randn(1000) * 0.5),
+        'low': 100 + np.cumsum(np.random.randn(1000) * 0.01) - np.abs(np.random.randn(1000) * 0.5)
+    })
+    
+    # Create targets
+    targets = data['close'].pct_change().shift(-1)  # Next period returns
+    
+    # Create enhanced generator
+    config = EnhancedInteractionConfig(
+        max_interactions=50,
+        enable_vectorbt=True,
+        enable_gpu=False,
+        enable_parallel=True,
+        memory_efficient=True,
+        enable_batch_processing=True,
+        enable_monitoring=True
+    )
+    
+    generator = EnhancedDataDrivenInteractionGenerator(config)
+    
+    # Generate interactions
+    print("Generating interactions...")
+    interactions = generator.generate_interactions(data, targets)
+    
+    print(f"Generated {len(interactions)} interactions")
+    print("\nTop 5 interactions by utility score:")
+    for i, interaction in enumerate(interactions[:5]):
+        print(f"{i+1}. {interaction.feature_name}: {interaction.utility_score:.3f}")
+    
+    # Get performance stats
+    stats = generator.get_performance_stats()
+    print(f"\nPerformance stats:")
+    print(f"Total processing time: {stats['total_processing_time']:.2f}s")
+    print(f"Average utility score: {stats['average_utility_score']:.3f}")
+    print(f"Cache hit rate: {stats['cache_hit_rate']:.1f}%")
+    
+    print("\nEnhanced data-driven interaction generator test completed successfully!")

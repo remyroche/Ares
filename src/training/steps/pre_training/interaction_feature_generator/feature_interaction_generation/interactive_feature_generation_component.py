@@ -22,7 +22,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 
-# Import tprint utilities
+# Import tprint utilities - comprehensive logging
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress
@@ -42,7 +42,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
 from .import_manager import get_import_manager
 from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
 
-# Import VectorBT optimizations
+# Import VectorBT optimizations - fast fail if not available
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
@@ -58,13 +58,15 @@ try:
     VECTORBT_OPTIMIZATIONS_AVAILABLE = True
     tprint_success("✅ VectorBT optimizations imported successfully")
 except ImportError as e:
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
-    tprint_warning(f"⚠️ VectorBT optimizations not available: {e}")
+    tprint_error(f"❌ VectorBT optimizations required but not available: {e}")
+    raise ImportError(f"VectorBT optimizations are required: {e}")
 
 # Initialize import manager
+tprint_debug("🔧 Initializing import manager...")
 import_manager = get_import_manager()
 
 # Fast-fail imports - all required dependencies must be available
+tprint_debug("🔧 Importing required dependencies...")
 try:
     # Import common operations and utilities using import manager
     common_ops_result = import_manager.import_common_operations()
@@ -74,9 +76,11 @@ try:
     # Import math validation
     math_validation_result = import_manager.import_math_validation()
     MATH_VALIDATION = math_validation_result.module
+    tprint_success("✅ Math validation imported successfully")
     
     # Import component registration
     from src.training.steps.pre_training.components.component_factory import register_component
+    tprint_success("✅ Component factory imported successfully")
     
     # Import matrix operations using import manager
     matrix_ops_result = import_manager.import_matrix_operations()
@@ -104,20 +108,13 @@ try:
     # Import ares launcher integration
     from .ares_launcher_integration import AresLauncherInteractiveFeatureGenerator
     ARES_LAUNCHER_AVAILABLE = True
+    tprint_success("✅ Ares launcher integration imported successfully")
     
 except ImportError as e:
     tprint_error(f"❌ Critical dependency missing: {e}")
-    # Set fallback values
-    MATRIX_OPS_AVAILABLE = False
-    ML_COMMON_AVAILABLE = False
-    DATA_UTILS_AVAILABLE = False
     raise ImportError(f"Required dependency not available: {e}")
 except Exception as e:
     tprint_error(f"❌ Unexpected error during initialization: {e}")
-    # Set fallback values
-    MATRIX_OPS_AVAILABLE = False
-    ML_COMMON_AVAILABLE = False
-    DATA_UTILS_AVAILABLE = False
     raise RuntimeError(f"Initialization failed: {e}")
 
 # Import column naming utilities
@@ -137,6 +134,7 @@ from .enhanced_optimized_orchestrator import (
 from ...settings import get_pre_training_settings
 
 # Import sub_pipeline components for compatibility - fail fast if not available
+tprint_debug("🔧 Importing component subsystem...")
 try:
     from ...components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
     from ...components.component_factory import ComponentFactory
@@ -162,12 +160,20 @@ class InteractiveFeatureGenerationStatus(Enum):
 
 
 def _default_data_directory() -> str:
-    return str(get_pre_training_settings().data_root)
+    """Get default data directory with validation."""
+    tprint_debug("🔧 Getting default data directory...")
+    try:
+        data_root = get_pre_training_settings().data_root
+        tprint_success(f"✅ Default data directory: {data_root}")
+        return str(data_root)
+    except Exception as e:
+        tprint_error(f"❌ Failed to get default data directory: {e}")
+        raise RuntimeError(f"Could not determine default data directory: {e}")
 
 
 @dataclass
 class InteractiveFeatureGenerationConfig:
-    """Configuration for interactive feature generation component."""
+    """Configuration for interactive feature generation component with validation."""
     # Basic configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
@@ -208,8 +214,8 @@ class InteractiveFeatureGenerationConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-6  # FIXED: More reasonable threshold to prevent over-filtering
-    top_k_per_family: int = 10  # FIXED: Reduced to prevent memory issues and improve performance
+    variance_threshold: float = 1e-6
+    top_k_per_family: int = 10
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6
@@ -228,24 +234,24 @@ class InteractiveFeatureGenerationConfig:
     # Budget constraints for final feature selection
     enable_budget_constraints: bool = True
     total_budget_ms: float = 100.0
-    base_features_budget_ms: float = 68.0  # 68% of total budget
-    interaction_features_budget_ms: float = 15.0  # 15% of total budget
-    cross_timeframe_features_budget_ms: float = 10.0  # 10% of total budget
-    gate_features_budget_ms: float = 7.0  # 7% of total budget
+    base_features_budget_ms: float = 68.0
+    interaction_features_budget_ms: float = 15.0
+    cross_timeframe_features_budget_ms: float = 10.0
+    gate_features_budget_ms: float = 7.0
 
-    # Feature type constraints - Updated for new pipeline
+    # Feature type constraints
     base_features_min: int = 40
     base_features_max: int = 80
-    base_features_target: int = 60  # Target 60 base features
+    base_features_target: int = 60
     interaction_features_min: int = 5
     interaction_features_max: int = 15
-    interaction_features_target: int = 10  # Target 10 interaction features
+    interaction_features_target: int = 10
     cross_timeframe_features_min: int = 3
     cross_timeframe_features_max: int = 10
-    cross_timeframe_features_target: int = 6  # Target 6 cross-timeframe features
+    cross_timeframe_features_target: int = 6
     gate_features_min: int = 2
     gate_features_max: int = 8
-    gate_features_target: int = 5  # Target 5 gate features
+    gate_features_target: int = 5
 
     # Logging configuration
     verbose_logging: bool = True
@@ -265,8 +271,44 @@ class InteractiveFeatureGenerationConfig:
     vectorbt_chunk_size: int = 50000
     vectorbt_memory_limit_gb: float = 8.0
     vectorbt_enable_parallel: bool = True
-    vectorbt_rolling_window_threshold: int = 1000  # Use VectorBT for windows >= this size
-    vectorbt_correlation_threshold: int = 500  # Use VectorBT for correlation with >= this data points
+    vectorbt_rolling_window_threshold: int = 1000
+    vectorbt_correlation_threshold: int = 500
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        tprint_debug("🔧 Validating InteractiveFeatureGenerationConfig...")
+        
+        # Validate basic configuration
+        if not self.symbol or not isinstance(self.symbol, str):
+            raise ValueError(f"Invalid symbol: {self.symbol}")
+        if not self.exchange or not isinstance(self.exchange, str):
+            raise ValueError(f"Invalid exchange: {self.exchange}")
+        if not self.timeframe or not isinstance(self.timeframe, str):
+            raise ValueError(f"Invalid timeframe: {self.timeframe}")
+        
+        # Validate numeric ranges
+        if self.feature_budget_pre <= 0:
+            raise ValueError(f"feature_budget_pre must be positive: {self.feature_budget_pre}")
+        if self.max_workers <= 0:
+            raise ValueError(f"max_workers must be positive: {self.max_workers}")
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be positive: {self.batch_size}")
+        if self.max_memory_gb <= 0:
+            raise ValueError(f"max_memory_gb must be positive: {self.max_memory_gb}")
+        
+        # Validate feature constraints
+        if self.base_features_min > self.base_features_max:
+            raise ValueError(f"base_features_min ({self.base_features_min}) > base_features_max ({self.base_features_max})")
+        if self.interaction_features_min > self.interaction_features_max:
+            raise ValueError(f"interaction_features_min ({self.interaction_features_min}) > interaction_features_max ({self.interaction_features_max})")
+        
+        # Validate budget constraints
+        total_budget = (self.base_features_budget_ms + self.interaction_features_budget_ms + 
+                       self.cross_timeframe_features_budget_ms + self.gate_features_budget_ms)
+        if abs(total_budget - self.total_budget_ms) > 1e-6:
+            tprint_warning(f"⚠️ Budget components sum to {total_budget:.2f}ms, expected {self.total_budget_ms:.2f}ms")
+        
+        tprint_success("✅ Configuration validation passed")
 
 
 @dataclass
@@ -307,20 +349,42 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
     """
 
     def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the interactive feature generation component."""
+        """Initialize the interactive feature generation component with comprehensive error handling."""
         tprint_debug("🔧 Initializing InteractiveFeatureGenerationComponent...")
-        super().__init__(config)
+        
+        try:
+            super().__init__(config)
+            tprint_success("✅ Base component initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize base component: {e}")
+            raise RuntimeError(f"Base component initialization failed: {e}")
 
-        self.performance_metrics: Dict[str, Any] = {}
-        self._interactive_config = self._build_interactive_config(self.config)
+        try:
+            self.performance_metrics: Dict[str, Any] = {}
+            tprint_debug("🔧 Building interactive configuration...")
+            self._interactive_config = self._build_interactive_config(self.config)
+            tprint_success("✅ Interactive configuration built")
+        except Exception as e:
+            tprint_error(f"❌ Failed to build interactive configuration: {e}")
+            raise RuntimeError(f"Configuration building failed: {e}")
 
-        # Initialize the optimized orchestrator
-        self._initialize_orchestrator()
+        try:
+            tprint_debug("🔧 Initializing optimized orchestrator...")
+            self._initialize_orchestrator()
+            tprint_success("✅ Optimized orchestrator initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize orchestrator: {e}")
+            raise RuntimeError(f"Orchestrator initialization failed: {e}")
 
-        # Initialize VectorBT optimizations
-        self._initialize_vectorbt_optimizations()
+        try:
+            tprint_debug("🔧 Initializing VectorBT optimizations...")
+            self._initialize_vectorbt_optimizations()
+            tprint_success("✅ VectorBT optimizations initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize VectorBT optimizations: {e}")
+            raise RuntimeError(f"VectorBT initialization failed: {e}")
 
-        tprint_success("🚀 Interactive Feature Generation Component initialized")
+        tprint_success("🚀 Interactive Feature Generation Component initialized successfully")
         tprint_info(f"📊 Symbol: {self.config.symbol}, Exchange: {self.config.exchange}")
         tprint_info(f"⏰ Timeframe: {self.config.timeframe}")
         tprint_info(f"🔧 Matrix ops: {'✅' if MATRIX_OPS_AVAILABLE else '❌'}, ML common: {'✅' if ML_COMMON_AVAILABLE else '❌'}")
@@ -328,93 +392,179 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
 
     @staticmethod
     def _coerce_tuple(value: Optional[Any], default: Tuple[int, int]) -> Tuple[int, int]:
-        """Coerce configuration values that may be provided as a tuple or list."""
+        """Coerce configuration values that may be provided as a tuple or list with validation."""
         tprint_debug("🔧 Coercing tuple configuration value...")
         
         if value is None:
             tprint_debug("   → Using default value")
             return default
+        
         if isinstance(value, (list, tuple)) and len(value) == 2:
-            tprint_debug(f"   → Converting {value} to tuple")
-            return int(value[0]), int(value[1])
-        tprint_debug("   → Invalid format, using default")
+            try:
+                result = (int(value[0]), int(value[1]))
+                tprint_debug(f"   → Converting {value} to tuple: {result}")
+                
+                # Validate the converted values
+                if result[0] <= 0 or result[1] <= 0:
+                    tprint_warning(f"⚠️ Invalid tuple values: {result}, using default")
+                    return default
+                if result[0] > result[1]:
+                    tprint_warning(f"⚠️ First value ({result[0]}) > second value ({result[1]}), using default")
+                    return default
+                
+                return result
+            except (ValueError, TypeError) as e:
+                tprint_warning(f"⚠️ Failed to convert tuple values: {e}, using default")
+                return default
+        
+        tprint_warning(f"⚠️ Invalid format for tuple: {type(value)}, using default")
         return default
 
     def _build_interactive_config(
         self,
         component_config: ComponentConfig,
     ) -> InteractiveFeatureGenerationConfig:
-        """Translate the generic component config into the interactive schema."""
+        """Translate the generic component config into the interactive schema with validation."""
         tprint_debug("🔧 Building interactive configuration from component config...")
+
+        if not component_config:
+            tprint_error("❌ Component config is None")
+            raise ValueError("Component config cannot be None")
 
         params = dict(component_config.custom_params or {})
         tprint_debug(f"   → Custom params: {len(params)} parameters")
+        
+        # Validate required fields
+        if not hasattr(component_config, 'symbol') or not component_config.symbol:
+            tprint_error("❌ Component config missing required symbol field")
+            raise ValueError("Component config must have a symbol field")
+        if not hasattr(component_config, 'exchange') or not component_config.exchange:
+            tprint_error("❌ Component config missing required exchange field")
+            raise ValueError("Component config must have an exchange field")
+        if not hasattr(component_config, 'timeframe') or not component_config.timeframe:
+            tprint_error("❌ Component config missing required timeframe field")
+            raise ValueError("Component config must have a timeframe field")
 
-        feature_budget_post = self._coerce_tuple(
-            params.get('feature_budget_post'),
-            InteractiveFeatureGenerationConfig.feature_budget_post,
-        )
+        try:
+            feature_budget_post = self._coerce_tuple(
+                params.get('feature_budget_post'),
+                InteractiveFeatureGenerationConfig.feature_budget_post,
+            )
+            tprint_debug(f"   → Feature budget post: {feature_budget_post}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to coerce feature_budget_post: {e}, using default")
+            feature_budget_post = InteractiveFeatureGenerationConfig.feature_budget_post
 
-        return InteractiveFeatureGenerationConfig(
-            symbol=component_config.symbol,
-            exchange=component_config.exchange,
-            timeframe=component_config.timeframe,
-            data_dir=component_config.data_dir,
-            feature_budget_pre=int(params.get('feature_budget_pre', InteractiveFeatureGenerationConfig.feature_budget_pre)),
-            feature_budget_post=feature_budget_post,
-            interactions_cap=int(params.get('interactions_cap', InteractiveFeatureGenerationConfig.interactions_cap)),
-            transforms_per_parent=int(params.get('transforms_per_parent', InteractiveFeatureGenerationConfig.transforms_per_parent)),
-            lookback_ceiling_minutes=int(params.get('lookback_ceiling_minutes', InteractiveFeatureGenerationConfig.lookback_ceiling_minutes)),
-            latency_budget_ms=int(params.get('latency_budget_ms', InteractiveFeatureGenerationConfig.latency_budget_ms)),
-            enable_matrix_optimization=bool(params.get('enable_matrix_optimization', InteractiveFeatureGenerationConfig.enable_matrix_optimization)),
-            enable_hardware_optimization=bool(params.get('enable_hardware_optimization', InteractiveFeatureGenerationConfig.enable_hardware_optimization)),
-            enable_parallel_processing=bool(params.get('enable_parallel_processing', InteractiveFeatureGenerationConfig.enable_parallel_processing)),
-            max_workers=int(params.get('max_workers', InteractiveFeatureGenerationConfig.max_workers)),
-            batch_size=int(params.get('batch_size', InteractiveFeatureGenerationConfig.batch_size)),
-            enable_validation=bool(params.get('enable_validation', InteractiveFeatureGenerationConfig.enable_validation)),
-            validation_threshold=float(params.get('validation_threshold', InteractiveFeatureGenerationConfig.validation_threshold)),
-            # Budget constraints for final feature selection
-            enable_budget_constraints=bool(params.get('enable_budget_constraints', InteractiveFeatureGenerationConfig.enable_budget_constraints)),
-            total_budget_ms=float(params.get('total_budget_ms', InteractiveFeatureGenerationConfig.total_budget_ms)),
-            base_features_budget_ms=float(params.get('base_features_budget_ms', InteractiveFeatureGenerationConfig.base_features_budget_ms)),
-            interaction_features_budget_ms=float(params.get('interaction_features_budget_ms', InteractiveFeatureGenerationConfig.interaction_features_budget_ms)),
-            cross_timeframe_features_budget_ms=float(params.get('cross_timeframe_features_budget_ms', InteractiveFeatureGenerationConfig.cross_timeframe_features_budget_ms)),
-            gate_features_budget_ms=float(params.get('gate_features_budget_ms', InteractiveFeatureGenerationConfig.gate_features_budget_ms)),
-            # Feature type constraints
-            base_features_min=int(params.get('base_features_min', InteractiveFeatureGenerationConfig.base_features_min)),
-            base_features_max=int(params.get('base_features_max', InteractiveFeatureGenerationConfig.base_features_max)),
-            base_features_target=int(params.get('base_features_target', InteractiveFeatureGenerationConfig.base_features_target)),
-            interaction_features_min=int(params.get('interaction_features_min', InteractiveFeatureGenerationConfig.interaction_features_min)),
-            interaction_features_max=int(params.get('interaction_features_max', InteractiveFeatureGenerationConfig.interaction_features_max)),
-            interaction_features_target=int(params.get('interaction_features_target', InteractiveFeatureGenerationConfig.interaction_features_target)),
-            cross_timeframe_features_min=int(params.get('cross_timeframe_features_min', InteractiveFeatureGenerationConfig.cross_timeframe_features_min)),
-            cross_timeframe_features_max=int(params.get('cross_timeframe_features_max', InteractiveFeatureGenerationConfig.cross_timeframe_features_max)),
-            cross_timeframe_features_target=int(params.get('cross_timeframe_features_target', InteractiveFeatureGenerationConfig.cross_timeframe_features_target)),
-            gate_features_min=int(params.get('gate_features_min', InteractiveFeatureGenerationConfig.gate_features_min)),
-            gate_features_max=int(params.get('gate_features_max', InteractiveFeatureGenerationConfig.gate_features_max)),
-            gate_features_target=int(params.get('gate_features_target', InteractiveFeatureGenerationConfig.gate_features_target)),
-            verbose_logging=bool(params.get('verbose_logging', InteractiveFeatureGenerationConfig.verbose_logging)),
-            log_performance=bool(params.get('log_performance', InteractiveFeatureGenerationConfig.log_performance)),
-            integrate_with_ares_launcher=bool(params.get('integrate_with_ares_launcher', InteractiveFeatureGenerationConfig.integrate_with_ares_launcher)),
-            maintain_backward_compatibility=bool(params.get('maintain_backward_compatibility', InteractiveFeatureGenerationConfig.maintain_backward_compatibility)),
-            market_data_batch_size=params.get('market_data_batch_size', InteractiveFeatureGenerationConfig.market_data_batch_size),
-            market_data_window_days=params.get('market_data_window_days', InteractiveFeatureGenerationConfig.market_data_window_days),
-            # VectorBT optimization settings
-            enable_vectorbt_optimizations=bool(params.get('enable_vectorbt_optimizations', InteractiveFeatureGenerationConfig.enable_vectorbt_optimizations)),
-            vectorbt_use_gpu=bool(params.get('vectorbt_use_gpu', InteractiveFeatureGenerationConfig.vectorbt_use_gpu)),
-            vectorbt_chunk_size=int(params.get('vectorbt_chunk_size', InteractiveFeatureGenerationConfig.vectorbt_chunk_size)),
-            vectorbt_memory_limit_gb=float(params.get('vectorbt_memory_limit_gb', InteractiveFeatureGenerationConfig.vectorbt_memory_limit_gb)),
-            vectorbt_enable_parallel=bool(params.get('vectorbt_enable_parallel', InteractiveFeatureGenerationConfig.vectorbt_enable_parallel)),
-            vectorbt_rolling_window_threshold=int(params.get('vectorbt_rolling_window_threshold', InteractiveFeatureGenerationConfig.vectorbt_rolling_window_threshold)),
-            vectorbt_correlation_threshold=int(params.get('vectorbt_correlation_threshold', InteractiveFeatureGenerationConfig.vectorbt_correlation_threshold)),
-        )
+        try:
+            tprint_debug("🔧 Creating InteractiveFeatureGenerationConfig...")
+            config = InteractiveFeatureGenerationConfig(
+                symbol=component_config.symbol,
+                exchange=component_config.exchange,
+                timeframe=component_config.timeframe,
+                data_dir=component_config.data_dir,
+                feature_budget_pre=self._safe_int(params.get('feature_budget_pre'), InteractiveFeatureGenerationConfig.feature_budget_pre),
+                feature_budget_post=feature_budget_post,
+                interactions_cap=self._safe_int(params.get('interactions_cap'), InteractiveFeatureGenerationConfig.interactions_cap),
+                transforms_per_parent=self._safe_int(params.get('transforms_per_parent'), InteractiveFeatureGenerationConfig.transforms_per_parent),
+                lookback_ceiling_minutes=self._safe_int(params.get('lookback_ceiling_minutes'), InteractiveFeatureGenerationConfig.lookback_ceiling_minutes),
+                latency_budget_ms=self._safe_int(params.get('latency_budget_ms'), InteractiveFeatureGenerationConfig.latency_budget_ms),
+                enable_matrix_optimization=self._safe_bool(params.get('enable_matrix_optimization'), InteractiveFeatureGenerationConfig.enable_matrix_optimization),
+                enable_hardware_optimization=self._safe_bool(params.get('enable_hardware_optimization'), InteractiveFeatureGenerationConfig.enable_hardware_optimization),
+                enable_parallel_processing=self._safe_bool(params.get('enable_parallel_processing'), InteractiveFeatureGenerationConfig.enable_parallel_processing),
+                max_workers=self._safe_int(params.get('max_workers'), InteractiveFeatureGenerationConfig.max_workers),
+                batch_size=self._safe_int(params.get('batch_size'), InteractiveFeatureGenerationConfig.batch_size),
+                enable_validation=self._safe_bool(params.get('enable_validation'), InteractiveFeatureGenerationConfig.enable_validation),
+                validation_threshold=self._safe_float(params.get('validation_threshold'), InteractiveFeatureGenerationConfig.validation_threshold),
+                # Budget constraints for final feature selection
+                enable_budget_constraints=self._safe_bool(params.get('enable_budget_constraints'), InteractiveFeatureGenerationConfig.enable_budget_constraints),
+                total_budget_ms=self._safe_float(params.get('total_budget_ms'), InteractiveFeatureGenerationConfig.total_budget_ms),
+                base_features_budget_ms=self._safe_float(params.get('base_features_budget_ms'), InteractiveFeatureGenerationConfig.base_features_budget_ms),
+                interaction_features_budget_ms=self._safe_float(params.get('interaction_features_budget_ms'), InteractiveFeatureGenerationConfig.interaction_features_budget_ms),
+                cross_timeframe_features_budget_ms=self._safe_float(params.get('cross_timeframe_features_budget_ms'), InteractiveFeatureGenerationConfig.cross_timeframe_features_budget_ms),
+                gate_features_budget_ms=self._safe_float(params.get('gate_features_budget_ms'), InteractiveFeatureGenerationConfig.gate_features_budget_ms),
+                # Feature type constraints
+                base_features_min=self._safe_int(params.get('base_features_min'), InteractiveFeatureGenerationConfig.base_features_min),
+                base_features_max=self._safe_int(params.get('base_features_max'), InteractiveFeatureGenerationConfig.base_features_max),
+                base_features_target=self._safe_int(params.get('base_features_target'), InteractiveFeatureGenerationConfig.base_features_target),
+                interaction_features_min=self._safe_int(params.get('interaction_features_min'), InteractiveFeatureGenerationConfig.interaction_features_min),
+                interaction_features_max=self._safe_int(params.get('interaction_features_max'), InteractiveFeatureGenerationConfig.interaction_features_max),
+                interaction_features_target=self._safe_int(params.get('interaction_features_target'), InteractiveFeatureGenerationConfig.interaction_features_target),
+                cross_timeframe_features_min=self._safe_int(params.get('cross_timeframe_features_min'), InteractiveFeatureGenerationConfig.cross_timeframe_features_min),
+                cross_timeframe_features_max=self._safe_int(params.get('cross_timeframe_features_max'), InteractiveFeatureGenerationConfig.cross_timeframe_features_max),
+                cross_timeframe_features_target=self._safe_int(params.get('cross_timeframe_features_target'), InteractiveFeatureGenerationConfig.cross_timeframe_features_target),
+                gate_features_min=self._safe_int(params.get('gate_features_min'), InteractiveFeatureGenerationConfig.gate_features_min),
+                gate_features_max=self._safe_int(params.get('gate_features_max'), InteractiveFeatureGenerationConfig.gate_features_max),
+                gate_features_target=self._safe_int(params.get('gate_features_target'), InteractiveFeatureGenerationConfig.gate_features_target),
+                verbose_logging=self._safe_bool(params.get('verbose_logging'), InteractiveFeatureGenerationConfig.verbose_logging),
+                log_performance=self._safe_bool(params.get('log_performance'), InteractiveFeatureGenerationConfig.log_performance),
+                integrate_with_ares_launcher=self._safe_bool(params.get('integrate_with_ares_launcher'), InteractiveFeatureGenerationConfig.integrate_with_ares_launcher),
+                maintain_backward_compatibility=self._safe_bool(params.get('maintain_backward_compatibility'), InteractiveFeatureGenerationConfig.maintain_backward_compatibility),
+                market_data_batch_size=params.get('market_data_batch_size', InteractiveFeatureGenerationConfig.market_data_batch_size),
+                market_data_window_days=params.get('market_data_window_days', InteractiveFeatureGenerationConfig.market_data_window_days),
+                # VectorBT optimization settings
+                enable_vectorbt_optimizations=self._safe_bool(params.get('enable_vectorbt_optimizations'), InteractiveFeatureGenerationConfig.enable_vectorbt_optimizations),
+                vectorbt_use_gpu=self._safe_bool(params.get('vectorbt_use_gpu'), InteractiveFeatureGenerationConfig.vectorbt_use_gpu),
+                vectorbt_chunk_size=self._safe_int(params.get('vectorbt_chunk_size'), InteractiveFeatureGenerationConfig.vectorbt_chunk_size),
+                vectorbt_memory_limit_gb=self._safe_float(params.get('vectorbt_memory_limit_gb'), InteractiveFeatureGenerationConfig.vectorbt_memory_limit_gb),
+                vectorbt_enable_parallel=self._safe_bool(params.get('vectorbt_enable_parallel'), InteractiveFeatureGenerationConfig.vectorbt_enable_parallel),
+                vectorbt_rolling_window_threshold=self._safe_int(params.get('vectorbt_rolling_window_threshold'), InteractiveFeatureGenerationConfig.vectorbt_rolling_window_threshold),
+                vectorbt_correlation_threshold=self._safe_int(params.get('vectorbt_correlation_threshold'), InteractiveFeatureGenerationConfig.vectorbt_correlation_threshold),
+            )
+            tprint_success("✅ InteractiveFeatureGenerationConfig created successfully")
+            return config
+        except Exception as e:
+            tprint_error(f"❌ Failed to create InteractiveFeatureGenerationConfig: {e}")
+            raise RuntimeError(f"Configuration creation failed: {e}")
+    
+    def _safe_int(self, value: Any, default: int) -> int:
+        """Safely convert value to int with validation."""
+        try:
+            if value is None:
+                return default
+            result = int(value)
+            if result < 0:
+                tprint_warning(f"⚠️ Negative value {result} for int parameter, using default {default}")
+                return default
+            return result
+        except (ValueError, TypeError) as e:
+            tprint_warning(f"⚠️ Failed to convert {value} to int: {e}, using default {default}")
+            return default
+    
+    def _safe_float(self, value: Any, default: float) -> float:
+        """Safely convert value to float with validation."""
+        try:
+            if value is None:
+                return default
+            result = float(value)
+            if not np.isfinite(result):
+                tprint_warning(f"⚠️ Non-finite value {result} for float parameter, using default {default}")
+                return default
+            return result
+        except (ValueError, TypeError) as e:
+            tprint_warning(f"⚠️ Failed to convert {value} to float: {e}, using default {default}")
+            return default
+    
+    def _safe_bool(self, value: Any, default: bool) -> bool:
+        """Safely convert value to bool with validation."""
+        try:
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in ('true', '1', 'yes', 'on')
+            return bool(value)
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to convert {value} to bool: {e}, using default {default}")
+            return default
 
     def _initialize_orchestrator(self):
-        """Initialize the optimized interaction orchestrator."""
+        """Initialize the optimized interaction orchestrator with comprehensive error handling."""
         tprint_debug("🔧 Initializing optimized interaction orchestrator...")
 
-        # Convert config to enhanced orchestrator config
-        tprint_debug("   → Creating enhanced orchestrator configuration...")
+        try:
+            # Convert config to enhanced orchestrator config
+            tprint_debug("   → Creating enhanced orchestrator configuration...")
         orchestrator_config = EnhancedOptimizedConfig(
             # Core settings
             enable_early_filtering=self._interactive_config.enable_early_filtering,
@@ -459,22 +609,22 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             save_intermediate_results=False
         )
 
-        self.orchestrator = EnhancedOptimizedInteractionOrchestrator(orchestrator_config)
-        tprint_debug("✅ Optimized interaction orchestrator initialized")
+            self.orchestrator = EnhancedOptimizedInteractionOrchestrator(orchestrator_config)
+            tprint_success("✅ Optimized interaction orchestrator initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize orchestrator: {e}")
+            raise RuntimeError(f"Orchestrator initialization failed: {e}")
     
     def _initialize_vectorbt_optimizations(self):
-        """Initialize VectorBT optimization components."""
+        """Initialize VectorBT optimization components with comprehensive error handling."""
         tprint_debug("🔧 Initializing VectorBT optimization components...")
         
         if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
-            tprint_warning("⚠️ VectorBT optimizations not available, using fallback methods")
-            self.vectorbt_rolling_optimizer = None
-            self.unified_vectorization_manager = None
-            return
-
-        tprint_debug("   → VectorBT optimizations available, initializing components...")
-
+            tprint_error("❌ VectorBT optimizations required but not available")
+            raise RuntimeError("VectorBT optimizations are required but not available")
+        
         try:
+            tprint_debug("   → VectorBT optimizations available, initializing components...")
             # Initialize VectorBT rolling optimizer
             tprint_debug("   → Initializing VectorBT rolling optimizer...")
             self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
@@ -500,13 +650,12 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize VectorBT optimizations: {e}")
-            self.vectorbt_rolling_optimizer = None
-            self.unified_vectorization_manager = None
+            raise RuntimeError(f"VectorBT initialization failed: {e}")
     
     def generate_features_optimized_batch(self, data: pd.DataFrame, 
                                         feature_specs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
-        Generate features using optimized batch processing with VectorBTRollingOptimizer and UnifiedVectorizationManager.
+        Generate features using optimized batch processing with comprehensive error handling.
         
         Args:
             data: OHLCV data
@@ -517,17 +666,37 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         """
         tprint_debug(f"🔄 Starting optimized batch feature generation: {len(feature_specs)} features")
         
+        # Validate inputs
+        if data.empty:
+            tprint_error("❌ Input data is empty")
+            raise ValueError("Input data cannot be empty")
+        
+        if not feature_specs:
+            tprint_warning("⚠️ No feature specifications provided")
+            return pd.DataFrame(index=data.index)
+        
+        # Check if VectorBT optimizations are available
         if not self.unified_vectorization_manager:
             tprint_warning("⚠️ UnifiedVectorizationManager not available, using fallback processing")
             return self._process_features_fallback(data, feature_specs)
         
         try:
             # Convert feature specs to batch configs
+            tprint_debug("🔧 Converting feature specifications to batch configs...")
             batch_configs = self._convert_to_batch_configs(feature_specs)
+            
+            if not batch_configs:
+                tprint_warning("⚠️ No valid batch configurations created")
+                return pd.DataFrame(index=data.index)
             
             # Use UnifiedVectorizationManager for batch processing
             tprint_debug(f"🎯 Processing {len(batch_configs)} features with UnifiedVectorizationManager")
             results = self.unified_vectorization_manager.batch_process_features(data, batch_configs)
+            
+            # Validate results
+            if results.empty:
+                tprint_warning("⚠️ No features generated, returning empty DataFrame")
+                return pd.DataFrame(index=data.index)
             
             tprint_success(f"✅ Batch processing completed: {results.shape[1]} features generated")
             return results
@@ -541,7 +710,7 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
                                       operations: List[str],
                                       columns: List[str] = None) -> pd.DataFrame:
         """
-        Generate rolling features in batch using VectorBTRollingOptimizer.
+        Generate rolling features in batch using VectorBTRollingOptimizer with validation.
         
         Args:
             data: OHLCV data
@@ -552,34 +721,59 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         Returns:
             DataFrame with rolling features
         """
+        tprint_debug(f"🔄 Generating rolling features: {len(windows)} windows, {len(operations)} operations")
+        
+        # Validate inputs
+        if not windows or not operations:
+            tprint_error("❌ Windows and operations cannot be empty")
+            raise ValueError("Windows and operations must be provided")
+        
         if columns is None:
             columns = ['close', 'volume']
         
-        tprint_debug(f"🔄 Generating rolling features: {len(windows)} windows, {len(operations)} operations, {len(columns)} columns")
+        # Filter columns that exist in data
+        available_columns = [col for col in columns if col in data.columns]
+        if not available_columns:
+            tprint_error("❌ None of the specified columns exist in data")
+            raise ValueError("None of the specified columns exist in data")
+        
+        tprint_debug(f"   → Using columns: {available_columns}")
         
         feature_configs = []
         
         for window in windows:
+            if window <= 0:
+                tprint_warning(f"⚠️ Invalid window size {window}, skipping")
+                continue
+                
             for operation in operations:
-                for column in columns:
-                    if column in data.columns:
-                        feature_configs.append({
-                            'name': f'{operation}_{column}_{window}',
-                            'type': 'rolling',
-                            'params': {
-                                'operation': operation,
-                                'window': window,
-                                'column': column
-                            }
-                        })
+                if operation not in ['mean', 'std', 'var', 'min', 'max', 'sum', 'corr']:
+                    tprint_warning(f"⚠️ Unsupported operation {operation}, skipping")
+                    continue
+                    
+                for column in available_columns:
+                    feature_configs.append({
+                        'name': f'{operation}_{column}_{window}',
+                        'type': 'rolling',
+                        'params': {
+                            'operation': operation,
+                            'window': window,
+                            'column': column
+                        }
+                    })
         
+        if not feature_configs:
+            tprint_warning("⚠️ No valid feature configurations created")
+            return pd.DataFrame(index=data.index)
+        
+        tprint_debug(f"   → Created {len(feature_configs)} feature configurations")
         return self.generate_features_optimized_batch(data, feature_configs)
     
     def generate_correlation_features_batch(self, data: pd.DataFrame,
                                           windows: List[int],
                                           column_pairs: List[Tuple[str, str]] = None) -> pd.DataFrame:
         """
-        Generate correlation features in batch.
+        Generate correlation features in batch with validation.
         
         Args:
             data: OHLCV data
@@ -589,62 +783,112 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         Returns:
             DataFrame with correlation features
         """
+        tprint_debug(f"🔄 Generating correlation features: {len(windows)} windows")
+        
+        # Validate inputs
+        if not windows:
+            tprint_error("❌ Windows cannot be empty")
+            raise ValueError("Windows must be provided")
+        
         if column_pairs is None:
             column_pairs = [('close', 'volume'), ('high', 'low'), ('close', 'high')]
         
-        tprint_debug(f"🔄 Generating correlation features: {len(windows)} windows, {len(column_pairs)} pairs")
+        # Filter valid column pairs
+        valid_pairs = []
+        for col1, col2 in column_pairs:
+            if col1 in data.columns and col2 in data.columns and col1 != col2:
+                valid_pairs.append((col1, col2))
+            else:
+                tprint_warning(f"⚠️ Invalid column pair ({col1}, {col2}), skipping")
+        
+        if not valid_pairs:
+            tprint_error("❌ No valid column pairs found")
+            raise ValueError("No valid column pairs found")
+        
+        tprint_debug(f"   → Using column pairs: {valid_pairs}")
         
         feature_configs = []
         
         for window in windows:
-            for col1, col2 in column_pairs:
-                if col1 in data.columns and col2 in data.columns:
-                    feature_configs.append({
-                        'name': f'corr_{col1}_{col2}_{window}',
-                        'type': 'rolling',
-                        'params': {
-                            'operation': 'corr',
-                            'window': window,
-                            'column': col1,
-                            'other_column': col2
-                        }
-                    })
+            if window <= 0:
+                tprint_warning(f"⚠️ Invalid window size {window}, skipping")
+                continue
+                
+            for col1, col2 in valid_pairs:
+                feature_configs.append({
+                    'name': f'corr_{col1}_{col2}_{window}',
+                    'type': 'rolling',
+                    'params': {
+                        'operation': 'corr',
+                        'window': window,
+                        'column': col1,
+                        'other_column': col2
+                    }
+                })
         
+        if not feature_configs:
+            tprint_warning("⚠️ No valid correlation feature configurations created")
+            return pd.DataFrame(index=data.index)
+        
+        tprint_debug(f"   → Created {len(feature_configs)} correlation feature configurations")
         return self.generate_features_optimized_batch(data, feature_configs)
     
     def generate_scaling_features_batch(self, data: pd.DataFrame,
                                       methods: List[str],
                                       columns: List[str] = None) -> pd.DataFrame:
         """
-        Generate scaling features in batch using UnifiedVectorizationManager.
+        Generate scaling features in batch with validation.
         
         Args:
             data: OHLCV data
             methods: List of scaling methods ('zscore', 'minmax', 'robust', 'quantile')
-            columns: List of columns to scale (default: ['close', 'volume'])
+            columns: List of columns to scale (default: all numeric columns)
             
         Returns:
             DataFrame with scaled features
         """
-        if columns is None:
-            columns = ['close', 'volume']
+        tprint_debug(f"🔄 Generating scaling features: {len(methods)} methods")
         
-        tprint_debug(f"🔄 Generating scaling features: {len(methods)} methods, {len(columns)} columns")
+        # Validate inputs
+        if not methods:
+            tprint_error("❌ Methods cannot be empty")
+            raise ValueError("Methods must be provided")
+        
+        if columns is None:
+            columns = data.select_dtypes(include=[np.number]).columns.tolist()
+        
+        # Filter valid methods and columns
+        valid_methods = [method for method in methods if method in ['zscore', 'minmax', 'robust', 'quantile']]
+        if not valid_methods:
+            tprint_error("❌ No valid scaling methods provided")
+            raise ValueError("No valid scaling methods provided")
+        
+        available_columns = [col for col in columns if col in data.columns]
+        if not available_columns:
+            tprint_error("❌ No valid columns found for scaling")
+            raise ValueError("No valid columns found for scaling")
+        
+        tprint_debug(f"   → Using methods: {valid_methods}")
+        tprint_debug(f"   → Using columns: {available_columns}")
         
         feature_configs = []
         
-        for method in methods:
-            for column in columns:
-                if column in data.columns:
-                    feature_configs.append({
-                        'name': f'{method}_{column}',
-                        'type': 'scaling',
-                        'params': {
-                            'method': method,
-                            'column': column
-                        }
-                    })
+        for method in valid_methods:
+            for column in available_columns:
+                feature_configs.append({
+                    'name': f'{method}_{column}',
+                    'type': 'scaling',
+                    'params': {
+                        'method': method,
+                        'column': column
+                    }
+                })
         
+        if not feature_configs:
+            tprint_warning("⚠️ No valid scaling feature configurations created")
+            return pd.DataFrame(index=data.index)
+        
+        tprint_debug(f"   → Created {len(feature_configs)} scaling feature configurations")
         return self.generate_features_optimized_batch(data, feature_configs)
     
     def _convert_to_batch_configs(self, feature_specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -685,10 +929,20 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         return batch_configs
     
     def _process_features_fallback(self, data: pd.DataFrame, feature_specs: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Fallback processing when batch processing is not available."""
+        """Fallback processing when batch processing is not available with comprehensive error handling."""
         tprint_warning("⚠️ Using fallback feature processing")
         
+        if data.empty:
+            tprint_error("❌ Input data is empty for fallback processing")
+            return pd.DataFrame(index=data.index)
+        
+        if not feature_specs:
+            tprint_warning("⚠️ No feature specifications for fallback processing")
+            return pd.DataFrame(index=data.index)
+        
         results = {}
+        successful_features = 0
+        failed_features = 0
         
         for spec in feature_specs:
             feature_name = spec.get('name', f'feature_{len(results)}')
@@ -696,43 +950,106 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             params = spec.get('params', {})
             
             try:
+                tprint_debug(f"   → Processing {feature_type} feature: {feature_name}")
+                
                 if feature_type == 'rolling':
                     operation = params.get('operation', 'mean')
                     window = params.get('window', 20)
                     column = params.get('column', 'close')
                     
-                    if column in data.columns:
-                        if self.vectorbt_rolling_optimizer:
+                    # Validate parameters
+                    if window <= 0:
+                        tprint_warning(f"⚠️ Invalid window size {window} for {feature_name}, skipping")
+                        failed_features += 1
+                        continue
+                    
+                    if column not in data.columns:
+                        tprint_warning(f"⚠️ Column {column} not found for {feature_name}, skipping")
+                        failed_features += 1
+                        continue
+                    
+                    if operation not in ['mean', 'std', 'var', 'min', 'max', 'sum']:
+                        tprint_warning(f"⚠️ Unsupported operation {operation} for {feature_name}, skipping")
+                        failed_features += 1
+                        continue
+                    
+                    if self.vectorbt_rolling_optimizer:
+                        try:
                             results[feature_name] = getattr(self.vectorbt_rolling_optimizer, f'rolling_{operation}')(
                                 data[column], window
                             )
-                        else:
+                            successful_features += 1
+                        except Exception as e:
+                            tprint_warning(f"⚠️ VectorBT operation failed for {feature_name}: {e}, using pandas")
                             # Fallback to pandas
                             rolling_obj = data[column].rolling(window=window)
                             results[feature_name] = getattr(rolling_obj, operation)()
+                            successful_features += 1
+                    else:
+                        # Fallback to pandas
+                        rolling_obj = data[column].rolling(window=window)
+                        results[feature_name] = getattr(rolling_obj, operation)()
+                        successful_features += 1
                 
                 elif feature_type == 'scaling':
                     method = params.get('method', 'zscore')
                     column = params.get('column', 'close')
                     
-                    if column in data.columns:
-                        if method == 'zscore':
-                            results[feature_name] = (data[column] - data[column].mean()) / data[column].std()
-                        elif method == 'minmax':
-                            results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
-                        else:
+                    if column not in data.columns:
+                        tprint_warning(f"⚠️ Column {column} not found for {feature_name}, skipping")
+                        failed_features += 1
+                        continue
+                    
+                    if method == 'zscore':
+                        std_val = data[column].std()
+                        if std_val == 0 or not np.isfinite(std_val):
+                            tprint_warning(f"⚠️ Invalid std for {feature_name}, using NaN")
                             results[feature_name] = pd.Series(np.nan, index=data.index)
+                        else:
+                            results[feature_name] = (data[column] - data[column].mean()) / std_val
+                        successful_features += 1
+                    elif method == 'minmax':
+                        min_val = data[column].min()
+                        max_val = data[column].max()
+                        if min_val == max_val or not np.isfinite(min_val) or not np.isfinite(max_val):
+                            tprint_warning(f"⚠️ Invalid min/max for {feature_name}, using NaN")
+                            results[feature_name] = pd.Series(np.nan, index=data.index)
+                        else:
+                            results[feature_name] = (data[column] - min_val) / (max_val - min_val)
+                        successful_features += 1
+                    else:
+                        tprint_warning(f"⚠️ Unsupported scaling method {method} for {feature_name}, using NaN")
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+                        failed_features += 1
                 
                 elif feature_type == 'custom':
                     func = params.get('function')
                     if callable(func):
-                        results[feature_name] = func(data)
+                        try:
+                            results[feature_name] = func(data)
+                            successful_features += 1
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Custom function failed for {feature_name}: {e}")
+                            results[feature_name] = pd.Series(np.nan, index=data.index)
+                            failed_features += 1
                     else:
+                        tprint_warning(f"⚠️ Invalid custom function for {feature_name}, using NaN")
                         results[feature_name] = pd.Series(np.nan, index=data.index)
+                        failed_features += 1
+                else:
+                    tprint_warning(f"⚠️ Unknown feature type {feature_type} for {feature_name}, skipping")
+                    failed_features += 1
                 
             except Exception as e:
                 tprint_warning(f"⚠️ Feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
+                failed_features += 1
+        
+        tprint_info(f"📊 Fallback processing completed: {successful_features} successful, {failed_features} failed")
+        
+        if not results:
+            tprint_warning("⚠️ No features generated in fallback processing")
+            return pd.DataFrame(index=data.index)
         
         return pd.DataFrame(results, index=data.index)
     
@@ -1065,7 +1382,8 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             error_message = f"Interactive feature generation failed: {str(e)}"
 
             tprint_error(f"❌ {error_message}")
-            tprint_error(f"Interactive feature generation failed: {error_message}")
+            tprint_debug(f"   → Exception type: {type(e).__name__}")
+            tprint_debug(f"   → Exception details: {str(e)}")
 
             return ComponentResult(
                 success=False,

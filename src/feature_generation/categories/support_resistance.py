@@ -57,6 +57,23 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import VectorBT-optimized support/resistance generators
+try:
+    from .vectorbt_support_resistance import (
+        create_vectorbt_support_resistance_generators,
+        create_default_vectorbt_support_resistance_generators,
+        VectorBTSupportLevelGenerator,
+        VectorBTResistanceLevelGenerator,
+        VectorBTPivotPointGenerator,
+        VectorBTFibonacciLevelGenerator,
+        VectorBTVolumeProfileGenerator,
+        VectorBTDynamicSupportResistanceGenerator,
+        VectorBTMultiTimeframeSupportResistanceGenerator
+    )
+    VECTORBT_SUPPORT_RESISTANCE_AVAILABLE = True
+except ImportError:
+    VECTORBT_SUPPORT_RESISTANCE_AVAILABLE = False
+
 class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for support/resistance-based features."""
     
@@ -372,30 +389,36 @@ class FibonacciLevelGenerator(VectorizedFeatureGenerator):
 
 def create_default_support_resistance_generators() -> List[FeatureGenerator]:
     """Create default support/resistance feature generators."""
-    windows = [5, 10, 20]
-    fibonacci_levels = [0.236, 0.382, 0.5, 0.618, 0.786]
-    
     generators = []
     
-    # Create generators for each window
-    for window in windows:
-        generators.extend([
-            SupportLevelGenerator(1, window),
-            SupportLevelGenerator(2, window),
-            SupportLevelGenerator(3, window),
-            SupportLevelGenerator(4, window),
-            SupportLevelGenerator(5, window),
-            ResistanceLevelGenerator(1, window),
-            ResistanceLevelGenerator(2, window),
-            ResistanceLevelGenerator(3, window),
-            ResistanceLevelGenerator(4, window),
-            ResistanceLevelGenerator(5, window),
-            PivotPointGenerator(window),
-        ])
-    
-    # Create Fibonacci level generators
-    for level in fibonacci_levels:
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_SUPPORT_RESISTANCE_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_default_vectorbt_support_resistance_generators())
+    else:
+        # Fall back to legacy generators
+        windows = [5, 10, 20]
+        fibonacci_levels = [0.236, 0.382, 0.5, 0.618, 0.786]
+        
+        # Create generators for each window
         for window in windows:
-            generators.append(FibonacciLevelGenerator(level, window))
+            generators.extend([
+                SupportLevelGenerator(1, window),
+                SupportLevelGenerator(2, window),
+                SupportLevelGenerator(3, window),
+                SupportLevelGenerator(4, window),
+                SupportLevelGenerator(5, window),
+                ResistanceLevelGenerator(1, window),
+                ResistanceLevelGenerator(2, window),
+                ResistanceLevelGenerator(3, window),
+                ResistanceLevelGenerator(4, window),
+                ResistanceLevelGenerator(5, window),
+                PivotPointGenerator(window),
+            ])
+        
+        # Create Fibonacci level generators
+        for level in fibonacci_levels:
+            for window in windows:
+                generators.append(FibonacciLevelGenerator(level, window))
     
     return generators

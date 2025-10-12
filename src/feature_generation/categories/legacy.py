@@ -61,6 +61,25 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import VectorBT-optimized legacy generators
+try:
+    from .vectorbt_legacy import (
+        create_vectorbt_legacy_generators,
+        create_default_vectorbt_legacy_generators,
+        VectorBTLegacyRSIGenerator,
+        VectorBTLegacyMACDGenerator,
+        VectorBTLegacyBollingerBandsGenerator,
+        VectorBTLegacySMAGenerator,
+        VectorBTLegacyEMAGenerator,
+        VectorBTLegacyATRGenerator,
+        VectorBTLegacyStochasticGenerator,
+        VectorBTLegacyWilliamsRGenerator,
+        VectorBTLegacyOBVGenerator
+    )
+    VECTORBT_LEGACY_AVAILABLE = True
+except ImportError:
+    VECTORBT_LEGACY_AVAILABLE = False
+
 class LegacyRSIGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
@@ -751,32 +770,38 @@ def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     """
     generators = []
     
-    # Classic indicators with standard parameters
-    generators.extend([
-        LegacyRSIGenerator(14),
-        LegacyMACDGenerator(12, 26, 9),
-        LegacyBollingerBandsGenerator(20, 2.0),
-        LegacySMAGenerator(20),
-        LegacyEMAGenerator(21),
-        LegacyATRGenerator(14),
-        LegacyStochasticGenerator(14, 3),
-        LegacyWilliamsRGenerator(14),
-        LegacyOBVGenerator(),
-    ])
-    
-    # Additional legacy moving averages
-    sma_periods = [5, 10, 50, 100, 200]
-    for period in sma_periods:
-        generators.append(LegacySMAGenerator(period))
-    
-    # Additional legacy EMAs
-    ema_periods = [8, 12, 26, 50, 100]
-    for period in ema_periods:
-        generators.append(LegacyEMAGenerator(period))
-    
-    # Additional legacy RSI periods
-    rsi_periods = [9, 21, 25]
-    for period in rsi_periods:
-        generators.append(LegacyRSIGenerator(period))
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_LEGACY_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_default_vectorbt_legacy_generators())
+    else:
+        # Fall back to legacy generators
+        # Classic indicators with standard parameters
+        generators.extend([
+            LegacyRSIGenerator(14),
+            LegacyMACDGenerator(12, 26, 9),
+            LegacyBollingerBandsGenerator(20, 2.0),
+            LegacySMAGenerator(20),
+            LegacyEMAGenerator(21),
+            LegacyATRGenerator(14),
+            LegacyStochasticGenerator(14, 3),
+            LegacyWilliamsRGenerator(14),
+            LegacyOBVGenerator(),
+        ])
+        
+        # Additional legacy moving averages
+        sma_periods = [5, 10, 50, 100, 200]
+        for period in sma_periods:
+            generators.append(LegacySMAGenerator(period))
+        
+        # Additional legacy EMAs
+        ema_periods = [8, 12, 26, 50, 100]
+        for period in ema_periods:
+            generators.append(LegacyEMAGenerator(period))
+        
+        # Additional legacy RSI periods
+        rsi_periods = [9, 21, 25]
+        for period in rsi_periods:
+            generators.append(LegacyRSIGenerator(period))
     
     return generators

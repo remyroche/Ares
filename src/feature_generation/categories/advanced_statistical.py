@@ -55,6 +55,22 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import VectorBT-optimized advanced statistical generators
+try:
+    from .vectorbt_advanced_statistical import (
+        create_vectorbt_advanced_statistical_generators,
+        create_default_vectorbt_advanced_statistical_generators,
+        VectorBTHurstExponentGenerator,
+        VectorBTJumpIndicatorsGenerator,
+        VectorBTCVaRGenerator,
+        VectorBTMaxDrawdownGenerator,
+        VectorBTRollingSkewnessKurtosisGenerator,
+        VectorBTTrendPersistenceGenerator
+    )
+    VECTORBT_ADVANCED_STATISTICAL_AVAILABLE = True
+except ImportError:
+    VECTORBT_ADVANCED_STATISTICAL_AVAILABLE = False
+
 class HurstExponentGenerator(VectorizedFeatureGenerator):
     """Generator for Hurst exponent using R/S analysis."""
     
@@ -595,35 +611,41 @@ def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
     """Create default advanced statistical feature generators."""
     generators = []
     
-    # Hurst exponent generators
-    for window in [20, 50]:
-        generators.append(HurstExponentGenerator(window))
-    
-    # Jump indicators generators
-    for window in [20]:
-        for k_multiplier in [2.0, 3.0]:
-            generators.append(JumpIndicatorsGenerator(window, k_multiplier))
-    
-    # CVaR generators
-    for window in [20]:
-        for confidence_level in [0.05, 0.01]:
-            generators.append(CVaRGenerator(window, confidence_level))
-    
-    # Max drawdown generators
-    for window in [20, 50]:
-        generators.append(MaxDrawdownGenerator(window))
-    
-    # Rolling skewness generators
-    for window in [20]:
-        generators.append(RollingSkewnessKurtosisGenerator(window, 'skewness'))
-    
-    # Rolling kurtosis generators
-    for window in [20]:
-        generators.append(RollingSkewnessKurtosisGenerator(window, 'kurtosis'))
-    
-    # Trend persistence generators
-    for window in [20]:
-        generators.append(TrendPersistenceGenerator(window))
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_ADVANCED_STATISTICAL_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_default_vectorbt_advanced_statistical_generators())
+    else:
+        # Fall back to legacy generators
+        # Hurst exponent generators
+        for window in [20, 50]:
+            generators.append(HurstExponentGenerator(window))
+        
+        # Jump indicators generators
+        for window in [20]:
+            for k_multiplier in [2.0, 3.0]:
+                generators.append(JumpIndicatorsGenerator(window, k_multiplier))
+        
+        # CVaR generators
+        for window in [20]:
+            for confidence_level in [0.05, 0.01]:
+                generators.append(CVaRGenerator(window, confidence_level))
+        
+        # Max drawdown generators
+        for window in [20, 50]:
+            generators.append(MaxDrawdownGenerator(window))
+        
+        # Rolling skewness generators
+        for window in [20]:
+            generators.append(RollingSkewnessKurtosisGenerator(window, 'skewness'))
+        
+        # Rolling kurtosis generators
+        for window in [20]:
+            generators.append(RollingSkewnessKurtosisGenerator(window, 'kurtosis'))
+        
+        # Trend persistence generators
+        for window in [20]:
+            generators.append(TrendPersistenceGenerator(window))
     
     return generators
 

@@ -673,8 +673,42 @@ def create_acceleration_generators() -> List[FeatureGenerator]:
     return generators
 
 def create_default_acceleration_generators() -> List[FeatureGenerator]:
-    """Create default acceleration-based feature generators (alias for create_acceleration_generators)."""
-    return create_acceleration_generators()
+    """Create default acceleration-based feature generators."""
+    generators = []
+    
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_ACCELERATION_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_default_vectorbt_acceleration_generators())
+    else:
+        # Fall back to legacy generators
+        # Momentum generators for different periods
+        for period in [5, 10, 20, 50]:
+            generators.append(MomentumGenerator(period=period))
+        
+        # Acceleration generators
+        for period in [5, 10]:
+            generators.append(PriceAccelerationGenerator(period=period))
+        
+        # Jerk generators
+        for period in [5, 10]:
+            generators.append(PriceJerkGenerator(period=period))
+        
+        # Trend strength generators
+        for window in [5, 10, 20, 50]:
+            generators.append(TrendStrengthGenerator(window=window))
+        
+        # Trend consistency generators
+        for window in [5, 10, 20, 50]:
+            generators.append(TrendConsistencyGenerator(window=window))
+        
+        # Volume acceleration
+        generators.append(VolumeAccelerationGenerator(period=5))
+        
+        # Volatility acceleration
+        generators.append(VolatilityAccelerationGenerator(period=5, volatility_window=20))
+    
+    return generators
 
 # Export all generators
 __all__ = [

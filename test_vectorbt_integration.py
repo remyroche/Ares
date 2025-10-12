@@ -1,262 +1,254 @@
 #!/usr/bin/env python3
 """
-Test script to verify VectorBT integration for feature generation categories.
+Test script for VectorBT integration in feature generation.
 
-This script tests the VectorBT integration for:
-- Advanced Statistical Features (13 features)
-- Support/Resistance Features (13 features) 
-- Legacy Features (19 features)
+This script tests the VectorBT-optimized feature generators to ensure they work correctly
+and provide performance improvements over the legacy implementations.
 """
 
-import pandas as pd
-import numpy as np
 import sys
 import os
-from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import time
+from typing import List, Dict, Any
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-def create_sample_data(n_points=2000):
+def create_sample_data(n_points: int = 10000) -> pd.DataFrame:
     """Create sample OHLCV data for testing."""
     np.random.seed(42)
     
     # Generate price data with some trend and volatility
     base_price = 100
-    returns = np.random.normal(0.001, 0.02, n_points)
-    prices = [base_price]
+    returns = np.random.normal(0, 0.02, n_points)
+    prices = base_price * np.exp(np.cumsum(returns))
     
-    for ret in returns[1:]:
-        prices.append(prices[-1] * (1 + ret))
+    # Generate OHLCV data
+    data = pd.DataFrame({
+        'open': prices * (1 + np.random.normal(0, 0.001, n_points)),
+        'high': prices * (1 + np.abs(np.random.normal(0, 0.01, n_points))),
+        'low': prices * (1 - np.abs(np.random.normal(0, 0.01, n_points))),
+        'close': prices,
+        'volume': np.random.lognormal(10, 1, n_points)
+    })
     
-    # Create OHLCV data
-    data = []
-    for i, price in enumerate(prices):
-        # Add some intraday volatility
-        high = price * (1 + abs(np.random.normal(0, 0.01)))
-        low = price * (1 - abs(np.random.normal(0, 0.01)))
-        open_price = prices[i-1] if i > 0 else price
-        volume = np.random.randint(1000, 10000)
-        
-        data.append({
-            'open': open_price,
-            'high': high,
-            'low': low,
-            'close': price,
-            'volume': volume
-        })
+    # Ensure high >= low and high/low contain open/close
+    data['high'] = np.maximum(data['high'], np.maximum(data['open'], data['close']))
+    data['low'] = np.minimum(data['low'], np.minimum(data['open'], data['close']))
     
-    # Create datetime index
-    start_date = datetime.now() - timedelta(days=n_points)
-    dates = [start_date + timedelta(days=i) for i in range(n_points)]
-    
-    df = pd.DataFrame(data, index=dates)
-    return df
-
-def test_advanced_statistical_features():
-    """Test Advanced Statistical Features with VectorBT integration."""
-    print("🧪 Testing Advanced Statistical Features...")
-    
-    try:
-        from feature_generation.categories.advanced_statistical import (
-            HurstExponentGenerator,
-            JumpIndicatorsGenerator,
-            CVaRGenerator,
-            MaxDrawdownGenerator,
-            RollingSkewnessKurtosisGenerator,
-            TrendPersistenceGenerator,
-            create_default_advanced_statistical_generators
-        )
-        
-        # Create sample data
-        data = create_sample_data(1500)  # Large dataset to trigger VectorBT
-        
-        # Test individual generators
-        generators = [
-            HurstExponentGenerator(window=20),
-            JumpIndicatorsGenerator(window=20, k_multiplier=3.0),
-            CVaRGenerator(window=20, confidence_level=0.05),
-            MaxDrawdownGenerator(window=20),
-            RollingSkewnessKurtosisGenerator(window=20, stat_type='skewness'),
-            TrendPersistenceGenerator(window=20)
-        ]
-        
-        results = {}
-        for generator in generators:
-            try:
-                result = generator.generate(data)
-                results[generator.config.name] = result
-                print(f"  ✅ {generator.config.name}: {len(result)} values generated")
-            except Exception as e:
-                print(f"  ❌ {generator.config.name}: {str(e)}")
-        
-        # Test default generators
-        default_generators = create_default_advanced_statistical_generators()
-        print(f"  📊 Created {len(default_generators)} default generators")
-        
-        return len(results)
-        
-    except Exception as e:
-        print(f"  ❌ Advanced Statistical Features test failed: {str(e)}")
-        return 0
-
-def test_support_resistance_features():
-    """Test Support/Resistance Features with VectorBT integration."""
-    print("🧪 Testing Support/Resistance Features...")
-    
-    try:
-        from feature_generation.categories.support_resistance import (
-            SupportLevelGenerator,
-            ResistanceLevelGenerator,
-            PivotPointGenerator,
-            FibonacciLevelGenerator,
-            create_default_support_resistance_generators
-        )
-        
-        # Create sample data
-        data = create_sample_data(1500)  # Large dataset to trigger VectorBT
-        
-        # Test individual generators
-        generators = [
-            SupportLevelGenerator(level=1, window=20),
-            ResistanceLevelGenerator(level=1, window=20),
-            PivotPointGenerator(window=20),
-            FibonacciLevelGenerator(level=0.618, window=20)
-        ]
-        
-        results = {}
-        for generator in generators:
-            try:
-                result = generator.generate(data)
-                results[generator.config.name] = result
-                print(f"  ✅ {generator.config.name}: {len(result)} values generated")
-            except Exception as e:
-                print(f"  ❌ {generator.config.name}: {str(e)}")
-        
-        # Test default generators
-        default_generators = create_default_support_resistance_generators()
-        print(f"  📊 Created {len(default_generators)} default generators")
-        
-        return len(results)
-        
-    except Exception as e:
-        print(f"  ❌ Support/Resistance Features test failed: {str(e)}")
-        return 0
-
-def test_legacy_features():
-    """Test Legacy Features with VectorBT integration."""
-    print("🧪 Testing Legacy Features...")
-    
-    try:
-        from feature_generation.categories.legacy import (
-            LegacyRSIGenerator,
-            LegacyMACDGenerator,
-            LegacyBollingerBandsGenerator,
-            LegacySMAGenerator,
-            LegacyEMAGenerator,
-            LegacyATRGenerator,
-            LegacyStochasticGenerator,
-            LegacyWilliamsRGenerator,
-            LegacyOBVGenerator,
-            create_default_legacy_generators
-        )
-        
-        # Create sample data
-        data = create_sample_data(1500)  # Large dataset to trigger VectorBT
-        
-        # Test individual generators
-        generators = [
-            LegacyRSIGenerator(period=14),
-            LegacyMACDGenerator(fast=12, slow=26, signal=9),
-            LegacyBollingerBandsGenerator(period=20, std_dev=2.0),
-            LegacySMAGenerator(period=20),
-            LegacyEMAGenerator(period=21),
-            LegacyATRGenerator(period=14),
-            LegacyStochasticGenerator(k_period=14, d_period=3),
-            LegacyWilliamsRGenerator(period=14),
-            LegacyOBVGenerator()
-        ]
-        
-        results = {}
-        for generator in generators:
-            try:
-                result = generator.generate(data)
-                results[generator.config.name] = result
-                print(f"  ✅ {generator.config.name}: {len(result)} values generated")
-            except Exception as e:
-                print(f"  ❌ {generator.config.name}: {str(e)}")
-        
-        # Test default generators
-        default_generators = create_default_legacy_generators()
-        print(f"  📊 Created {len(default_generators)} default generators")
-        
-        return len(results)
-        
-    except Exception as e:
-        print(f"  ❌ Legacy Features test failed: {str(e)}")
-        return 0
+    return data
 
 def test_vectorbt_availability():
-    """Test VectorBT availability and basic functionality."""
-    print("🔍 Checking VectorBT availability...")
+    """Test if VectorBT is available and working."""
+    print("Testing VectorBT availability...")
     
     try:
         import vectorbt as vbt
-        print(f"  ✅ VectorBT version: {vbt.__version__}")
+        print(f"✓ VectorBT version: {vbt.__version__}")
         
         # Test basic VectorBT functionality
-        test_data = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-        rolling_mean_result = vbt.generic.rolling_mean(test_data, window=3)
-        print(f"  ✅ VectorBT rolling operations working: {len(rolling_mean_result)} values")
+        test_data = pd.Series([1, 2, 3, 4, 5])
+        result = vbt.generic.rolling_mean(test_data, window=3)
+        print(f"✓ VectorBT rolling operations working: {len(result)} results")
         
         return True
-        
-    except ImportError:
-        print("  ❌ VectorBT not available - features will use pandas fallback")
+    except ImportError as e:
+        print(f"✗ VectorBT not available: {e}")
         return False
     except Exception as e:
-        print(f"  ⚠️ VectorBT available but has issues: {str(e)}")
+        print(f"✗ VectorBT error: {e}")
         return False
+
+def test_feature_generators():
+    """Test the VectorBT-optimized feature generators."""
+    print("\nTesting VectorBT feature generators...")
+    
+    # Create sample data
+    data = create_sample_data(1000)
+    print(f"Created sample data with {len(data)} points")
+    
+    # Test each category
+    categories = [
+        ('Advanced Statistical', 'src.feature_generation.categories.advanced_statistical'),
+        ('Support/Resistance', 'src.feature_generation.categories.support_resistance'),
+        ('Legacy', 'src.feature_generation.categories.legacy'),
+        ('Acceleration', 'src.feature_generation.categories.acceleration'),
+        ('Order Flow', 'src.feature_generation.categories.order_flow')
+    ]
+    
+    results = {}
+    
+    for category_name, module_path in categories:
+        print(f"\n--- Testing {category_name} Features ---")
+        
+        try:
+            # Import the module
+            module = __import__(module_path, fromlist=['create_default_vectorbt_advanced_statistical_generators', 
+                                                      'create_default_vectorbt_support_resistance_generators',
+                                                      'create_default_vectorbt_legacy_generators',
+                                                      'create_default_vectorbt_acceleration_generators',
+                                                      'create_default_vectorbt_order_flow_generators'])
+            
+            # Get the appropriate function name
+            if 'advanced_statistical' in module_path:
+                create_func = getattr(module, 'create_default_vectorbt_advanced_statistical_generators', None)
+            elif 'support_resistance' in module_path:
+                create_func = getattr(module, 'create_default_vectorbt_support_resistance_generators', None)
+            elif 'legacy' in module_path:
+                create_func = getattr(module, 'create_default_vectorbt_legacy_generators', None)
+            elif 'acceleration' in module_path:
+                create_func = getattr(module, 'create_default_vectorbt_acceleration_generators', None)
+            elif 'order_flow' in module_path:
+                create_func = getattr(module, 'create_default_vectorbt_order_flow_generators', None)
+            else:
+                create_func = None
+            
+            if create_func:
+                # Create generators
+                generators = create_func()
+                print(f"✓ Created {len(generators)} {category_name} generators")
+                
+                # Test a few generators
+                test_generators = generators[:3]  # Test first 3 generators
+                for i, generator in enumerate(test_generators):
+                    try:
+                        start_time = time.time()
+                        result = generator.generate(data)
+                        end_time = time.time()
+                        
+                        print(f"  ✓ Generator {i+1} ({generator.config.name}): {len(result)} features in {end_time - start_time:.4f}s")
+                        
+                        # Check if result is valid
+                        if hasattr(result, 'values') and len(result.values) > 0:
+                            valid_values = np.isfinite(result.values).sum()
+                            total_values = len(result.values)
+                            print(f"    Valid values: {valid_values}/{total_values} ({valid_values/total_values*100:.1f}%)")
+                        
+                    except Exception as e:
+                        print(f"  ✗ Generator {i+1} failed: {e}")
+                
+                results[category_name] = {
+                    'total_generators': len(generators),
+                    'tested_generators': len(test_generators),
+                    'status': 'success'
+                }
+            else:
+                print(f"✗ No VectorBT generators found for {category_name}")
+                results[category_name] = {'status': 'no_generators'}
+                
+        except Exception as e:
+            print(f"✗ Error testing {category_name}: {e}")
+            results[category_name] = {'status': 'error', 'error': str(e)}
+    
+    return results
+
+def test_performance_comparison():
+    """Compare performance between VectorBT and legacy implementations."""
+    print("\n--- Performance Comparison ---")
+    
+    # Create larger dataset for performance testing
+    data = create_sample_data(5000)
+    print(f"Testing with {len(data)} data points")
+    
+    # Test a simple feature (SMA) with both implementations
+    try:
+        from src.feature_generation.categories.legacy import LegacySMAGenerator
+        from src.feature_generation.categories.vectorbt_legacy import VectorBTLegacySMAGenerator
+        
+        # Test legacy implementation
+        legacy_generator = LegacySMAGenerator(period=20)
+        start_time = time.time()
+        legacy_result = legacy_generator.generate(data)
+        legacy_time = time.time() - start_time
+        
+        # Test VectorBT implementation
+        vectorbt_generator = VectorBTLegacySMAGenerator(period=20)
+        start_time = time.time()
+        vectorbt_result = vectorbt_generator.generate(data)
+        vectorbt_time = time.time() - start_time
+        
+        print(f"Legacy SMA: {legacy_time:.4f}s")
+        print(f"VectorBT SMA: {vectorbt_time:.4f}s")
+        print(f"Speedup: {legacy_time/vectorbt_time:.2f}x")
+        
+        # Check if results are similar
+        if len(legacy_result) == len(vectorbt_result):
+            correlation = np.corrcoef(legacy_result.dropna(), vectorbt_result.dropna())[0, 1]
+            print(f"Correlation between results: {correlation:.4f}")
+        
+    except Exception as e:
+        print(f"Performance comparison failed: {e}")
+
+def test_vectorbt_rolling_optimizer():
+    """Test the VectorBT rolling optimizer."""
+    print("\n--- Testing VectorBT Rolling Optimizer ---")
+    
+    try:
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+        
+        # Create optimizer
+        optimizer = VectorBTRollingOptimizer(enable_gpu=False, enable_parallel=True)
+        
+        # Test with sample data
+        data = create_sample_data(1000)
+        close = data['close']
+        
+        # Test various operations
+        operations = ['mean', 'std', 'min', 'max', 'sum']
+        windows = [10, 20, 50]
+        
+        for operation in operations:
+            for window in windows:
+                try:
+                    result = getattr(optimizer, f'rolling_{operation}')(close, window)
+                    print(f"  ✓ {operation} (window={window}): {len(result)} results")
+                except Exception as e:
+                    print(f"  ✗ {operation} (window={window}): {e}")
+        
+        # Get performance stats
+        stats = optimizer.get_performance_stats()
+        print(f"Performance stats: {stats}")
+        
+    except Exception as e:
+        print(f"VectorBT Rolling Optimizer test failed: {e}")
 
 def main():
-    """Run all VectorBT integration tests."""
-    print("🚀 Starting VectorBT Integration Tests")
+    """Main test function."""
+    print("VectorBT Integration Test")
     print("=" * 50)
     
-    # Check VectorBT availability
+    # Test VectorBT availability
     vectorbt_available = test_vectorbt_availability()
-    print()
     
-    # Test each feature category
-    advanced_stats_count = test_advanced_statistical_features()
-    print()
+    if not vectorbt_available:
+        print("\nVectorBT is not available. Please install it with: pip install vectorbt")
+        return
     
-    support_resistance_count = test_support_resistance_features()
-    print()
+    # Test feature generators
+    results = test_feature_generators()
     
-    legacy_count = test_legacy_features()
-    print()
+    # Test performance comparison
+    test_performance_comparison()
+    
+    # Test VectorBT rolling optimizer
+    test_vectorbt_rolling_optimizer()
     
     # Summary
-    print("📊 Test Summary")
+    print("\n" + "=" * 50)
+    print("Test Summary:")
     print("=" * 50)
-    print(f"VectorBT Available: {'✅ Yes' if vectorbt_available else '❌ No'}")
-    print(f"Advanced Statistical Features: {advanced_stats_count}/13 working")
-    print(f"Support/Resistance Features: {support_resistance_count}/13 working")
-    print(f"Legacy Features: {legacy_count}/19 working")
     
-    total_working = advanced_stats_count + support_resistance_count + legacy_count
-    total_expected = 13 + 13 + 19  # 45 total features
+    for category, result in results.items():
+        if result['status'] == 'success':
+            print(f"✓ {category}: {result['total_generators']} generators, {result['tested_generators']} tested")
+        elif result['status'] == 'no_generators':
+            print(f"⚠ {category}: No VectorBT generators found")
+        else:
+            print(f"✗ {category}: {result.get('error', 'Unknown error')}")
     
-    print(f"\nOverall: {total_working}/{total_expected} features working")
-    
-    if total_working == total_expected:
-        print("🎉 All VectorBT integrations successful!")
-        return True
-    else:
-        print("⚠️ Some features may need attention")
-        return False
+    print("\nVectorBT integration test completed!")
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    main()

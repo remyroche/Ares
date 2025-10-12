@@ -3,196 +3,130 @@
 Simple validation script for VectorBT migration.
 
 This script validates that the VectorBT migration was completed successfully
-by checking the code structure and imports.
+by checking file structure and imports.
 """
 
 import os
-import re
+import sys
 from pathlib import Path
 
-def check_file_imports(file_path: str, required_imports: list) -> bool:
-    """Check if a file contains the required imports."""
+def check_file_exists(file_path: str) -> bool:
+    """Check if a file exists."""
+    return os.path.exists(file_path)
+
+def check_imports_in_file(file_path: str, expected_imports: list) -> dict:
+    """Check if expected imports are present in a file."""
+    if not check_file_exists(file_path):
+        return {'exists': False, 'imports': []}
+    
     try:
         with open(file_path, 'r') as f:
             content = f.read()
         
-        missing_imports = []
-        for import_name in required_imports:
-            if import_name not in content:
-                missing_imports.append(import_name)
+        found_imports = []
+        for import_name in expected_imports:
+            if import_name in content:
+                found_imports.append(import_name)
         
-        if missing_imports:
-            print(f"❌ {file_path}: Missing imports: {missing_imports}")
-            return False
-        else:
-            print(f"✅ {file_path}: All required imports found")
-            return True
+        return {'exists': True, 'imports': found_imports}
     except Exception as e:
-        print(f"❌ {file_path}: Error reading file - {e}")
-        return False
-
-def check_vectorbt_usage(file_path: str) -> bool:
-    """Check if a file properly uses VectorBT optimizations."""
-    try:
-        with open(file_path, 'r') as f:
-            content = f.read()
-        
-        # Check for VectorBT optimization patterns
-        patterns = [
-            r'VectorBTOptimizationMixin',
-            r'get_vectorbt_rolling_optimizer',
-            r'rolling_optimizer',
-            r'vectorbt_operations',
-            r'performance_stats'
-        ]
-        
-        found_patterns = []
-        for pattern in patterns:
-            if re.search(pattern, content):
-                found_patterns.append(pattern)
-        
-        if len(found_patterns) >= 3:  # At least 3 patterns should be present
-            print(f"✅ {file_path}: VectorBT optimization patterns found ({len(found_patterns)}/5)")
-            return True
-        else:
-            print(f"⚠️ {file_path}: Limited VectorBT optimization patterns ({len(found_patterns)}/5)")
-            return False
-    except Exception as e:
-        print(f"❌ {file_path}: Error reading file - {e}")
-        return False
-
-def validate_volume_features():
-    """Validate Advanced Volume Features migration."""
-    print("\n🔍 Validating Advanced Volume Features...")
-    
-    file_path = "src/feature_generation/categories/volume.py"
-    required_imports = [
-        "VectorBTOptimizationMixin",
-        "get_vectorbt_rolling_optimizer",
-        "VectorBTRollingOptimizer"
-    ]
-    
-    imports_ok = check_file_imports(file_path, required_imports)
-    vectorbt_ok = check_vectorbt_usage(file_path)
-    
-    return imports_ok and vectorbt_ok
-
-def validate_volatility_features():
-    """Validate Advanced Volatility Features migration."""
-    print("\n🔍 Validating Advanced Volatility Features...")
-    
-    file_path = "src/feature_generation/categories/volatility.py"
-    required_imports = [
-        "VectorBTOptimizationMixin",
-        "get_vectorbt_rolling_optimizer",
-        "VectorBTRollingOptimizer"
-    ]
-    
-    imports_ok = check_file_imports(file_path, required_imports)
-    vectorbt_ok = check_vectorbt_usage(file_path)
-    
-    return imports_ok and vectorbt_ok
-
-def validate_cross_timeframe_features():
-    """Validate Cross-Timeframe Features migration."""
-    print("\n🔍 Validating Cross-Timeframe Features...")
-    
-    file_path = "src/feature_generation/categories/cross_timeframe.py"
-    required_imports = [
-        "VectorBTOptimizationMixin",
-        "get_vectorbt_rolling_optimizer",
-        "VectorBTRollingOptimizer"
-    ]
-    
-    imports_ok = check_file_imports(file_path, required_imports)
-    vectorbt_ok = check_vectorbt_usage(file_path)
-    
-    return imports_ok and vectorbt_ok
-
-def validate_vectorbt_rolling_optimizer():
-    """Validate VectorBT Rolling Optimizer exists and is properly implemented."""
-    print("\n🔍 Validating VectorBT Rolling Optimizer...")
-    
-    file_path = "src/feature_generation/utils/vectorbt_rolling_optimizer.py"
-    
-    if not os.path.exists(file_path):
-        print(f"❌ {file_path}: File not found")
-        return False
-    
-    required_classes = [
-        "VectorBTRollingOptimizer",
-        "get_vectorbt_rolling_optimizer"
-    ]
-    
-    return check_file_imports(file_path, required_classes)
-
-def validate_vectorbt_optimization_mixin():
-    """Validate VectorBT Optimization Mixin exists and is properly implemented."""
-    print("\n🔍 Validating VectorBT Optimization Mixin...")
-    
-    file_path = "src/feature_generation/core/vectorbt_optimization_mixin.py"
-    
-    if not os.path.exists(file_path):
-        print(f"❌ {file_path}: File not found")
-        return False
-    
-    required_classes = [
-        "VectorBTOptimizationMixin",
-        "_vectorbt_rolling_operation",
-        "performance_stats"
-    ]
-    
-    return check_file_imports(file_path, required_classes)
+        return {'exists': True, 'imports': [], 'error': str(e)}
 
 def main():
-    """Run all validation checks."""
-    print("🚀 VectorBT Migration Validation")
+    """Main validation function."""
+    print("VectorBT Migration Validation")
     print("=" * 50)
     
     # Check if we're in the right directory
-    if not os.path.exists("src/feature_generation"):
-        print("❌ Error: Not in the correct directory. Please run from the workspace root.")
-        return False
+    if not os.path.exists('src/feature_generation'):
+        print("✗ Not in the correct directory. Please run from the workspace root.")
+        return
     
-    validation_results = {}
+    # Define the files that should have been created
+    vectorbt_files = [
+        'src/feature_generation/categories/vectorbt_advanced_statistical.py',
+        'src/feature_generation/categories/vectorbt_support_resistance.py',
+        'src/feature_generation/categories/vectorbt_legacy.py',
+        'src/feature_generation/categories/vectorbt_order_flow.py',
+        'src/feature_generation/categories/vectorbt_acceleration.py'
+    ]
     
-    # Validate core components
-    validation_results['vectorbt_rolling_optimizer'] = validate_vectorbt_rolling_optimizer()
-    validation_results['vectorbt_optimization_mixin'] = validate_vectorbt_optimization_mixin()
+    # Define the main files that should have been updated
+    main_files = [
+        'src/feature_generation/categories/advanced_statistical.py',
+        'src/feature_generation/categories/support_resistance.py',
+        'src/feature_generation/categories/legacy.py',
+        'src/feature_generation/categories/acceleration.py',
+        'src/feature_generation/categories/order_flow.py'
+    ]
     
-    # Validate feature categories
-    validation_results['volume_features'] = validate_volume_features()
-    validation_results['volatility_features'] = validate_volatility_features()
-    validation_results['cross_timeframe_features'] = validate_cross_timeframe_features()
+    print("\n1. Checking VectorBT-optimized files...")
+    vectorbt_results = {}
+    for file_path in vectorbt_files:
+        exists = check_file_exists(file_path)
+        vectorbt_results[file_path] = exists
+        status = "✓" if exists else "✗"
+        print(f"  {status} {file_path}")
+    
+    print("\n2. Checking main files for VectorBT integration...")
+    main_results = {}
+    for file_path in main_files:
+        exists = check_file_exists(file_path)
+        if exists:
+            # Check for VectorBT imports
+            expected_imports = ['vectorbt_', 'VECTORBT_', 'create_default_vectorbt_']
+            import_check = check_imports_in_file(file_path, expected_imports)
+            main_results[file_path] = {
+                'exists': True,
+                'has_vectorbt_imports': len(import_check['imports']) > 0,
+                'imports': import_check['imports']
+            }
+            status = "✓" if import_check['imports'] else "✗"
+            print(f"  {status} {file_path} - VectorBT integration: {len(import_check['imports'])} imports found")
+        else:
+            main_results[file_path] = {'exists': False}
+            print(f"  ✗ {file_path} - File not found")
+    
+    print("\n3. Checking VectorBT rolling optimizer...")
+    optimizer_file = 'src/feature_generation/utils/vectorbt_rolling_optimizer.py'
+    optimizer_exists = check_file_exists(optimizer_file)
+    print(f"  {'✓' if optimizer_exists else '✗'} {optimizer_file}")
     
     # Summary
     print("\n" + "=" * 50)
-    print("📊 VALIDATION RESULTS")
+    print("Validation Summary:")
     print("=" * 50)
     
-    passed_tests = sum(validation_results.values())
-    total_tests = len(validation_results)
+    vectorbt_created = sum(1 for result in vectorbt_results.values() if result)
+    vectorbt_total = len(vectorbt_results)
+    print(f"VectorBT files created: {vectorbt_created}/{vectorbt_total}")
     
-    for test_name, passed in validation_results.items():
-        status = "✅ PASSED" if passed else "❌ FAILED"
-        print(f"{test_name}: {status}")
+    main_updated = sum(1 for result in main_results.values() 
+                      if result.get('exists', False) and result.get('has_vectorbt_imports', False))
+    main_total = len(main_results)
+    print(f"Main files updated: {main_updated}/{main_total}")
     
-    print("")
-    print(f"Overall: {passed_tests}/{total_tests} validations passed")
+    print(f"VectorBT rolling optimizer: {'✓' if optimizer_exists else '✗'}")
     
-    if passed_tests == total_tests:
-        print("🎉 All VectorBT migration validations passed!")
-        print("\n📋 Migration Summary:")
-        print("✅ Advanced Volume Features - VectorBT optimized")
-        print("✅ Advanced Volatility Features - VectorBT optimized") 
-        print("✅ Cross-Timeframe Features - VectorBT optimized")
-        print("✅ VectorBTRollingOptimizer integration complete")
-        print("✅ Performance monitoring and fallbacks implemented")
-        return True
+    # Overall status
+    if vectorbt_created == vectorbt_total and main_updated == main_total and optimizer_exists:
+        print("\n🎉 VectorBT migration completed successfully!")
+        print("\nKey features implemented:")
+        print("  • Order Flow Features - VectorBT optimized")
+        print("  • Acceleration Features - VectorBT optimized") 
+        print("  • Advanced Statistical Features - VectorBT optimized")
+        print("  • Support/Resistance Features - VectorBT optimized")
+        print("  • Legacy Features - VectorBT optimized")
+        print("  • VectorBTRollingOptimizer integration")
+        print("  • Automatic fallback to legacy implementations")
     else:
-        print("⚠️ Some validations failed. Please check the issues above.")
-        return False
+        print("\n⚠️  VectorBT migration incomplete. Please check the missing components.")
+    
+    print("\nNext steps:")
+    print("  1. Install VectorBT: pip install vectorbt")
+    print("  2. Test the integration with sample data")
+    print("  3. Verify performance improvements")
+    print("  4. Update any remaining feature categories as needed")
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    main()

@@ -23,6 +23,22 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from src.utils.ml_common.optimization import HyperparameterOptimizer
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 
+# VectorBT optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OptimizationStrategy
+    )
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    VECTORBT_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OptimizationStrategy = None
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
 # VectorBT optimization utilities
 from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
@@ -136,6 +152,19 @@ class RealParametersOptimizer:
         self.cv_validator = CVLSAValidator() if (CVLSAValidator and config.enable_cv_validation) else None
         self.hpo_optimizer = HyperparameterOptimizer()
         
+        # Initialize VectorBT optimization components
+        if VECTORBT_OPTIMIZATION_AVAILABLE:
+            self.vectorization_manager = get_unified_vectorization_manager()
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization
+            )
+            self.logger.info("✅ VectorBT optimization components initialized")
+        else:
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+            self.logger.warning("⚠️ VectorBT optimization not available, using standard methods")
         # Initialize VectorBT optimization utilities
         try:
             # Create VectorBT configuration
@@ -687,6 +716,22 @@ class RealParametersOptimizer:
     
     async def _evaluate_parameters(self, objective_function: Callable, parameters: Dict[str, Any]) -> float:
         """Evaluate objective function with given parameters using VectorBT optimization."""
+        try:
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
+                # Use unified vectorization manager for optimized evaluation
+                data = {'parameters': parameters, 'objective_function': objective_function}
+                config = self.vectorization_manager._create_default_config(
+                    OperationType.MODEL_TRAINING, data
+                )
+                
+                result = self.vectorization_manager.optimize_operation(
+                    OperationType.MODEL_TRAINING, data, config
+                )
+                score = result.result
+                self.logger.debug(f"VectorBT optimized evaluation: {result.performance_gain:.2f}x speedup")
+            else:
+                # Use hardware optimization if available
         start_time = time.time()
         self.performance_stats['total_evaluations'] += 1
         
@@ -739,6 +784,72 @@ class RealParametersOptimizer:
             self.logger.error(f"❌ Parameter evaluation failed: {e}")
             self.performance_stats['errors'] += 1
             raise
+    
+    async def _evaluate_parameters_with_rolling_optimization(self, objective_function: Callable, 
+                                                           parameters: Dict[str, Any],
+                                                           time_series_data: pd.DataFrame = None) -> float:
+        """Evaluate parameters with VectorBT rolling optimization for time-series data."""
+        try:
+            if not self.rolling_optimizer or time_series_data is None:
+                return await self._evaluate_parameters(objective_function, parameters)
+            
+            # Use VectorBT rolling optimizer for time-series parameter evaluation
+            self.logger.info("🔄 Using VectorBT rolling optimization for parameter evaluation")
+            
+            # Optimize rolling calculations in the objective function
+            optimized_data = self._optimize_time_series_data(time_series_data)
+            
+            # Evaluate with optimized data
+            score = await objective_function(parameters, optimized_data)
+            
+            return score
+            
+        except Exception as e:
+            self.logger.error(f"❌ Rolling optimization evaluation failed: {e}")
+            # Fallback to standard evaluation
+            return await self._evaluate_parameters(objective_function, parameters)
+    
+    def _optimize_time_series_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize time-series data using VectorBT rolling operations."""
+        try:
+            if not self.rolling_optimizer:
+                return data
+            
+            optimized_data = data.copy()
+            
+            # Optimize rolling calculations for common technical indicators
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            
+            for column in numeric_columns:
+                # Optimize rolling mean (SMA)
+                if f'{column}_sma_20' in data.columns:
+                    optimized_data[f'{column}_sma_20'] = self.rolling_optimizer.rolling_mean(
+                        data[column], window=20
+                    )
+                
+                # Optimize rolling standard deviation
+                if f'{column}_std_20' in data.columns:
+                    optimized_data[f'{column}_std_20'] = self.rolling_optimizer.rolling_std(
+                        data[column], window=20
+                    )
+                
+                # Optimize rolling min/max
+                if f'{column}_min_20' in data.columns:
+                    optimized_data[f'{column}_min_20'] = self.rolling_optimizer.rolling_min(
+                        data[column], window=20
+                    )
+                
+                if f'{column}_max_20' in data.columns:
+                    optimized_data[f'{column}_max_20'] = self.rolling_optimizer.rolling_max(
+                        data[column], window=20
+                    )
+            
+            self.logger.debug("✅ Time-series data optimized with VectorBT rolling operations")
+            return optimized_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Time-series optimization failed: {e}, using original data")
+            return data
     
     def _is_better_score(self, score: float, best_score: float) -> bool:
         """Check if score is better than current best."""

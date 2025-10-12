@@ -65,6 +65,23 @@ try:
 except ImportError:
     BASE_ENGINE_AVAILABLE = False
 
+# VectorBT optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OptimizationStrategy
+    )
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    VECTORBT_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OptimizationStrategy = None
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+
 # Output utilities
 from src.utils.tprint import tprint
 
@@ -320,6 +337,20 @@ class RealMonteCarloEngine:
         except Exception:
             self.hpo_optimizer = None
         
+        # Initialize VectorBT optimization components
+        if VECTORBT_OPTIMIZATION_AVAILABLE:
+            self.vectorization_manager = get_unified_vectorization_manager()
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization
+            )
+            tprint("✅ VectorBT optimization components initialized", "success")
+        else:
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+            tprint("⚠️ VectorBT optimization not available, using standard methods", "warning")
+        
         # Initialize base Monte Carlo engine if available
         if BASE_ENGINE_AVAILABLE:
             try:
@@ -516,7 +547,7 @@ class RealMonteCarloEngine:
             tprint(f"⚠️  Leakage detection failed: {e}", "warning")
     
     async def _bootstrap_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:
-        """Bootstrap simulation using historical returns."""
+        """Bootstrap simulation using historical returns with VectorBT optimization."""
         self.logger.info("🔄 Running bootstrap simulation")
         
         try:
@@ -524,8 +555,11 @@ class RealMonteCarloEngine:
             horizon = self.config.simulation_horizon
             sample_size = int(len(returns) * self.config.bootstrap_sample_size)
             
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
+                return await self._run_bootstrap_vectorbt_optimized(returns, portfolio_value, n_simulations, horizon, sample_size)
             # Use hardware optimization if available
-            if self.memory_optimizer:
+            elif self.memory_optimizer:
                 with self.memory_optimizer.optimize_for_workload("monte_carlo"):
                     return await self._run_bootstrap_optimized(returns, portfolio_value, n_simulations, horizon, sample_size)
             else:
@@ -534,6 +568,39 @@ class RealMonteCarloEngine:
         except Exception as e:
             self.logger.error(f"❌ Bootstrap simulation failed: {e}")
             raise
+    
+    async def _run_bootstrap_vectorbt_optimized(self, returns: pd.Series, portfolio_value: float, 
+                                              n_simulations: int, horizon: int, sample_size: int) -> List[float]:
+        """VectorBT-optimized bootstrap simulation using unified vectorization manager."""
+        try:
+            tprint("🚀 Using VectorBT optimization for bootstrap simulation", "info")
+            
+            # Use unified vectorization manager for optimized Monte Carlo simulation
+            data = {
+                'returns': returns,
+                'portfolio_value': portfolio_value,
+                'n_simulations': n_simulations,
+                'horizon': horizon,
+                'sample_size': sample_size
+            }
+            
+            config = self.vectorization_manager._create_default_config(
+                OperationType.VECTORBT_BACKTESTING, data
+            )
+            
+            result = self.vectorization_manager.optimize_operation(
+                OperationType.VECTORBT_BACKTESTING, data, config
+            )
+            
+            portfolio_values = result.result
+            tprint(f"✅ VectorBT bootstrap completed: {result.performance_gain:.2f}x speedup", "success")
+            
+            return portfolio_values
+            
+        except Exception as e:
+            self.logger.error(f"❌ VectorBT bootstrap simulation failed: {e}")
+            # Fallback to standard optimized method
+            return await self._run_bootstrap_optimized(returns, portfolio_value, n_simulations, horizon, sample_size)
     
     async def _run_bootstrap_optimized(self, returns: pd.Series, portfolio_value: float, 
                                     n_simulations: int, horizon: int, sample_size: int) -> List[float]:
@@ -608,10 +675,14 @@ class RealMonteCarloEngine:
             raise
     
     async def _parametric_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:
-        """Parametric simulation using fitted distributions."""
+        """Parametric simulation using fitted distributions with VectorBT optimization."""
         self.logger.info("📊 Running parametric simulation")
         
         try:
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
+                return await self._run_parametric_vectorbt_optimized(returns, portfolio_value)
+            
             # Fit distribution parameters
             if self.config.parametric_distribution == "normal":
                 mu, sigma = returns.mean(), returns.std()
@@ -630,6 +701,61 @@ class RealMonteCarloEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Parametric simulation failed: {e}")
+            raise
+    
+    async def _run_parametric_vectorbt_optimized(self, returns: pd.Series, portfolio_value: float) -> List[float]:
+        """VectorBT-optimized parametric simulation using unified vectorization manager."""
+        try:
+            tprint("🚀 Using VectorBT optimization for parametric simulation", "info")
+            
+            # Use unified vectorization manager for optimized parametric simulation
+            data = {
+                'returns': returns,
+                'portfolio_value': portfolio_value,
+                'distribution': self.config.parametric_distribution,
+                'n_simulations': self.config.n_simulations,
+                'horizon': self.config.simulation_horizon
+            }
+            
+            config = self.vectorization_manager._create_default_config(
+                OperationType.VECTORBT_BACKTESTING, data
+            )
+            
+            result = self.vectorization_manager.optimize_operation(
+                OperationType.VECTORBT_BACKTESTING, data, config
+            )
+            
+            portfolio_values = result.result
+            tprint(f"✅ VectorBT parametric simulation completed: {result.performance_gain:.2f}x speedup", "success")
+            
+            return portfolio_values
+            
+        except Exception as e:
+            self.logger.error(f"❌ VectorBT parametric simulation failed: {e}")
+            # Fallback to standard method
+            return await self._run_parametric_standard(returns, portfolio_value)
+    
+    async def _run_parametric_standard(self, returns: pd.Series, portfolio_value: float) -> List[float]:
+        """Standard parametric simulation."""
+        try:
+            # Fit distribution parameters
+            if self.config.parametric_distribution == "normal":
+                mu, sigma = returns.mean(), returns.std()
+                simulated_returns = np.random.normal(mu, sigma, (self.config.n_simulations, self.config.simulation_horizon))
+            elif self.config.parametric_distribution == "t":
+                from scipy import stats
+                df, loc, scale = stats.t.fit(returns)
+                simulated_returns = stats.t.rvs(df, loc, scale, size=(self.config.n_simulations, self.config.simulation_horizon))
+            else:
+                raise ValueError(f"Unknown parametric distribution: {self.config.parametric_distribution}")
+            
+            # Calculate portfolio values
+            portfolio_values = portfolio_value * np.prod(1 + simulated_returns, axis=1)
+            
+            return portfolio_values.tolist()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Standard parametric simulation failed: {e}")
             raise
     
     async def _historical_simulation(self, returns: pd.Series, portfolio_value: float) -> List[float]:

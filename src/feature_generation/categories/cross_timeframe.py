@@ -1392,15 +1392,19 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             feature_matrix = pd.concat(input_features, axis=1).fillna(0)
 
             # Simple autoencoder using PCA as proxy
-            if len(feature_matrix.columns) >= 2:
-                from sklearn.decomposition import PCA
-                pca = PCA(n_components=self.n_components)
-                projections = pca.fit_transform(feature_matrix)
-                return pd.Series(projections[:, 0], index=data.index, name=self.config.name)
-            else:
+            try:
+                if len(feature_matrix.columns) >= 2:
+                    from sklearn.decomposition import PCA
+                    pca = PCA(n_components=self.n_components)
+                    projections = pca.fit_transform(feature_matrix)
+                    return pd.Series(projections[:, 0], index=data.index, name=self.config.name)
+                else:
+                    return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
+            except Exception as e:
                 return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
-
-warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+        
+        except Exception as e:
+            return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
 
 # Optional GPU acceleration
 try:
@@ -1409,194 +1413,3 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                pca = PCA(n_components=min(2, len(feature_matrix.columns)))
-                encoded = pca.fit_transform(feature_matrix)
-
-                for i in range(encoded.shape[1]):
-                    features[f"autoencoder_component_{i+1}"] = encoded[:, i]
-
-        except Exception as e:
-            logger.warning(f"Error in autoencoder projection: {e}")
-
-        return features
-
-    def _generate_patchtst_projection_features(self, data: pd.DataFrame, timeframes: List[int]) -> Dict[str, np.ndarray]:
-        """Generate PatchTST projection features across timeframes."""
-        features = {}
-
-        try:
-            # Create patches for each timeframe
-            patch_length = 16
-            num_patches = 8
-
-            for tf in timeframes:
-                # Create patches from price sequence
-                price_sequence = data["close"].values
-                patches = self._create_patches(price_sequence, patch_length, num_patches)
-
-                if patches is not None:
-                    # Calculate patch statistics
-                    patch_means = patches.mean(axis=1)
-                    patch_stds = patches.std(axis=1)
-                    patch_trends = np.polyfit(np.arange(patch_length), patches.T, 1)[0]
-
-                    features[f"patchtst_mean_{tf}"] = patch_means
-                    features[f"patchtst_std_{tf}"] = patch_stds
-                    features[f"patchtst_trend_{tf}"] = patch_trends
-
-        except Exception as e:
-            logger.warning(f"Error in PatchTST projection: {e}")
-
-        return features
-
-    def _create_patches(self, sequence: np.ndarray, patch_length: int, num_patches: int) -> Optional[np.ndarray]:
-        """Create patches from price sequence."""
-        seq_len = len(sequence)
-        patch_size = patch_length * num_patches
-
-        if seq_len < patch_size:
-            return None
-
-        # Take the most recent data
-        recent_data = sequence[-patch_size:]
-        
-        # Reshape into patches
-        patches = recent_data.reshape(num_patches, patch_length)
-        return patches
-
-    def _generate_regime_aware_cross_timeframe_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate regime-aware cross-timeframe features."""
-        features = {}
-
-        # Detect market regimes using VectorBT
-        returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
-        vol_regime = rolling_std(returns, window=20)
-        
-        # Define regimes
-        low_vol_threshold = vol_regime.quantile(0.33)
-        high_vol_threshold = vol_regime.quantile(0.67)
-        
-        low_vol_regime = (vol_regime <= low_vol_threshold).astype(int)
-        high_vol_regime = (vol_regime >= high_vol_threshold).astype(int)
-
-        # Cross-timeframe features for each regime
-        timeframes = [5, 15, 30]
-        
-        for tf1 in timeframes:
-            for tf2 in timeframes:
-                if tf1 >= tf2:
-                    continue
-
-                # Calculate features using VectorBT
-                feature1 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf1)
-                feature2 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf2)
-
-                # Low volatility regime features
-                low_vol_mask = low_vol_regime == 1
-                if low_vol_mask.sum() > 0:
-                    low_vol_ratio = np.zeros(len(data))
-                    low_vol_ratio[low_vol_mask] = (feature1 / (feature2 + 1e-8))[low_vol_mask]
-                    features[f"regime_low_vol_ratio_{tf1}_{tf2}"] = low_vol_ratio
-
-                # High volatility regime features
-                high_vol_mask = high_vol_regime == 1
-                if high_vol_mask.sum() > 0:
-                    high_vol_ratio = np.zeros(len(data))
-                    high_vol_ratio[high_vol_mask] = (feature1 / (feature2 + 1e-8))[high_vol_mask]
-                    features[f"regime_high_vol_ratio_{tf1}_{tf2}"] = high_vol_ratio
-
-        return features
-
-    def _generate_multi_scale_correlation_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate multi-scale correlation features."""
-        features = {}
-
-        timeframes = [5, 10, 20, 50]
-        correlation_window = 20
-
-        for tf1 in timeframes:
-            for tf2 in timeframes:
-                if tf1 >= tf2:
-                    continue
-
-                # Calculate features using VectorBT
-                feature1 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf1)
-                feature2 = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf2)
-
-                # Rolling correlation using VectorBT
-                correlation = rolling_corr(feature1, feature2, window=correlation_window)
-                features[f"correlation_{tf1}_{tf2}_{correlation_window}"] = correlation.fillna(0).values
-
-                # Correlation stability
-                corr_std = self._vectorbt_rolling_operation(correlation, "std", correlation_window)
-                features[f"corr_stability_{tf1}_{tf2}_{correlation_window}"] = corr_std.fillna(0).values
-
-        return features
-
-
-# Export all generators
-__all__ = [
-    'CrossTimeframeFeatureGenerator',
-    'CrossTimeframeMomentumGenerator',
-    'CrossTimeframeVolatilityGenerator',
-    'CrossTimeframeVolumeGenerator',
-    'CrossTimeframeTrendGenerator',
-    'CrossTimeframeHighLowGenerator',
-    'CrossTimeframeRatioGenerator',
-    'CrossTimeframeCorrelationGenerator',
-    'CrossTimeframeDivergenceGenerator',
-    'CrossTimeframeFractionalChangeGenerator',
-    'CrossTimeframeAlignmentGenerator',
-    'CrossTimeframeLearnedProjectionGenerator',
-    'EnhancedCrossTimeframeFeatureGenerator',
-    'create_cross_timeframe_generators',
-    'create_default_cross_timeframe_generators'
-]
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

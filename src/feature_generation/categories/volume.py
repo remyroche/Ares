@@ -1588,11 +1588,6 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimization
 
         volume = data['volume']
         
-        # Use VectorBT for volume oscillator calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
-            try:
-                short_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.short_period)
-                long_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.long_period)
         """Generate Volume Oscillator using VectorBT."""
         volume = data['volume']
         
@@ -1658,8 +1653,6 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMi
 
         volume = data['volume']
         
-        # Use VectorBT for volume momentum calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
         """Generate Volume Momentum using VectorBT."""
         volume = data['volume']
         
@@ -2971,10 +2964,6 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
                     return 0.0
                 try:
                     from scipy.stats import linregress
-# Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
-from ..core.feature_bank import get_global_feature_bank
                     slope, _, _, _, _ = linregress(range(len(x)), x.values)
                     return slope
                 except:

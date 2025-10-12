@@ -424,28 +424,33 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
-            # Reshape for time series encoding
-            seq_len, feature_dim = features.shape
+def _encode_time_series(self, features: np.ndarray) -> np.ndarray:
+    """Encode time series features using PCA."""
+    try:
+        from sklearn.decomposition import PCA
+        
+        # Reshape for time series encoding
+        seq_len, feature_dim = features.shape
 
-            # Flatten for PCA
-            flattened = features.flatten().reshape(1, -1)
+        # Flatten for PCA
+        flattened = features.flatten().reshape(1, -1)
 
-            # Apply PCA for dimensionality reduction
-            if feature_dim >= self.encoding_dim:
-                pca = PCA(n_components=self.encoding_dim)
-                encoded = pca.fit_transform(flattened)
-            else:
-                # Pad if needed
-                encoded = np.pad(flattened, ((0, 0), (0, self.encoding_dim - feature_dim)), mode='constant')
+        # Apply PCA for dimensionality reduction
+        if feature_dim >= self.encoding_dim:
+            pca = PCA(n_components=self.encoding_dim)
+            encoded = pca.fit_transform(flattened)
+        else:
+            # Pad if needed
+            encoded = np.pad(flattened, ((0, 0), (0, self.encoding_dim - feature_dim)), mode='constant')
 
-            # Reshape back to sequence format
-            encoded_reshaped = encoded.reshape(seq_len, -1)
+        # Reshape back to sequence format
+        encoded_reshaped = encoded.reshape(seq_len, -1)
 
-            return encoded_reshaped
+        return encoded_reshaped
 
-        except ImportError:
-            # Fallback to simple averaging
-            return features.mean(axis=1, keepdims=True)
+    except ImportError:
+        # Fallback to simple averaging
+        return features.mean(axis=1, keepdims=True)
 
 
     

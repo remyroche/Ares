@@ -49,16 +49,36 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# VectorBT Rolling Optimizer
+# VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from ..utils.consolidated_rolling_optimizer import (
+        ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
+        get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
+        RollingOperationConfig,
+        RollingOperationType
+    )
+    from ..utils.statistical_calculations_optimizer import (
+        StatisticalCalculationsOptimizer as VectorizationOptimizer,
+        get_global_statistical_optimizer as get_vectorization_optimizer,
+        StatisticalOperationConfig,
+        StatisticalOperationType
+    )
     VECTORBT_OPTIMIZER_AVAILABLE = True
     ROLLING_OPTIMIZER_AVAILABLE = True
+    OPTIMIZATION_AVAILABLE = True
 except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
-    ROLLING_OPTIMIZER_AVAILABLE = False
-    get_vectorbt_rolling_optimizer = None
-    VectorBTRollingOptimizer = None
+    # Fallback to legacy if new version not available
+    try:
+        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        VECTORBT_OPTIMIZER_AVAILABLE = True
+        ROLLING_OPTIMIZER_AVAILABLE = True
+        OPTIMIZATION_AVAILABLE = False
+    except ImportError:
+        VECTORBT_OPTIMIZER_AVAILABLE = False
+        ROLLING_OPTIMIZER_AVAILABLE = False
+        OPTIMIZATION_AVAILABLE = False
+        get_vectorbt_rolling_optimizer = None
+        VectorBTRollingOptimizer = None
 
 # Unified Vectorization Manager
 try:

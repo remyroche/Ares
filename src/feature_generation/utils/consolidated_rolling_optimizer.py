@@ -16,10 +16,10 @@ import numpy as np
 import pandas as pd
 import time
 import logging
+import warnings
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from dataclasses import dataclass
 from enum import Enum
-import warnings
 
 # VectorBT imports
 try:

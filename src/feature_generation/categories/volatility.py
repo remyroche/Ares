@@ -50,7 +50,26 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# NEW: Unified VectorBT Optimization Components
+# VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
+try:
+    from ..utils.consolidated_rolling_optimizer import (
+        ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
+        get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
+        RollingOperationConfig,
+        RollingOperationType
+    )
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    # Fallback to legacy if new version not available
+    try:
+        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        ROLLING_OPTIMIZER_AVAILABLE = True
+    except ImportError:
+        ROLLING_OPTIMIZER_AVAILABLE = False
+        get_vectorbt_rolling_optimizer = None
+        VectorBTRollingOptimizer = None
+
+# Optimization utilities - NOW USING NEW OPTIMIZED VERSION
 try:
     from ..utils.unified_optimization_wrapper import (
         UnifiedOptimizationWrapper,
@@ -58,46 +77,25 @@ try:
         OptimizationMode,
         create_unified_optimizer
     )
-    from ..utils.consolidated_rolling_optimizer import (
-        RollingOperationConfig,
-        RollingOperationType,
-        get_global_rolling_optimizer
-    )
     from ..utils.statistical_calculations_optimizer import (
+        StatisticalCalculationsOptimizer as VectorizationOptimizer,
+        get_global_statistical_optimizer as get_vectorization_optimizer,
         StatisticalOperationConfig,
-        StatisticalOperationType,
-        get_global_statistical_optimizer
+        StatisticalOperationType
     )
-    UNIFIED_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    UNIFIED_OPTIMIZATION_AVAILABLE = False
-    UnifiedOptimizationWrapper = None
-    UnifiedOptimizationConfig = None
-    OptimizationMode = None
-    create_unified_optimizer = None
-    RollingOperationConfig = None
-    RollingOperationType = None
-    get_global_rolling_optimizer = None
-    StatisticalOperationConfig = None
-    StatisticalOperationType = None
-    get_global_statistical_optimizer = None
-
-# Legacy VectorBT Rolling Optimizer (fallback)
-try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
-    ROLLING_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    ROLLING_OPTIMIZER_AVAILABLE = False
-    get_vectorbt_rolling_optimizer = None
-    VectorBTRollingOptimizer = None
-
-# Legacy optimization utilities (fallback)
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
+    UNIFIED_OPTIMIZATION_AVAILABLE = True
 except ImportError:
-    OPTIMIZATION_AVAILABLE = False
+    # Fallback to legacy if new version not available
+    try:
+        from ..utils.vectorization_optimizer import get_vectorization_optimizer
+        from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+        OPTIMIZATION_AVAILABLE = True
+        UNIFIED_OPTIMIZATION_AVAILABLE = False
+    except ImportError:
+        OPTIMIZATION_AVAILABLE = False
+        UNIFIED_OPTIMIZATION_AVAILABLE = False
 
 from ..base_calculations import (
     BaseCalculator,
@@ -156,48 +154,43 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, 
                  base_calculation: Optional[BaseCalculationType] = None,
                  enable_gpu: bool = True, 
-                 enable_parallel: bool = True,
-                 optimization_mode: OptimizationMode = OptimizationMode.AUTO):
+                 enable_parallel: bool = True):
         self.period = period
         self.base_calculation = base_calculation
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
-        # Initialize NEW unified optimization components
+        # Initialize optimization components (now using new optimized versions with same names)
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
+        else:
+            self.rolling_optimizer = None
+        
+        # Initialize unified optimizer if available
         if UNIFIED_OPTIMIZATION_AVAILABLE:
             self.optimization_config = UnifiedOptimizationConfig(
-                mode=optimization_mode,
+                mode=OptimizationMode.AUTO,
                 enable_gpu=enable_gpu,
                 enable_parallel=enable_parallel,
                 performance_threshold=1000,
                 enable_performance_monitoring=True
             )
-            
             self.unified_optimizer = create_unified_optimizer(self.optimization_config)
-            self.rolling_optimizer = get_global_rolling_optimizer()
-            self.statistical_optimizer = get_global_statistical_optimizer()
-            
-            # Performance tracking
-            self.performance_stats = {
-                'total_features_generated': 0,
-                'optimized_operations': 0,
-                'fallback_operations': 0,
-                'gpu_operations': 0,
-                'batch_operations': 0,
-                'total_generation_time': 0.0,
-                'average_time_per_feature': 0.0,
-                'memory_usage_mb': 0.0
-            }
         else:
-            # Fallback to legacy optimizers
             self.unified_optimizer = None
-            self.rolling_optimizer = None
-            self.statistical_optimizer = None
-            self.performance_stats = {}
-            
-            if ROLLING_OPTIMIZER_AVAILABLE:
-                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        
+        # Performance tracking
+        self.performance_stats = {
+            'total_features_generated': 0,
+            'optimized_operations': 0,
+            'fallback_operations': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'total_generation_time': 0.0,
+            'average_time_per_feature': 0.0,
+            'memory_usage_mb': 0.0
+        }
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
@@ -222,7 +215,9 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate volatility feature using VectorBT optimization."""
+        """Generate volatility feature using comprehensive VectorBT optimization."""
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -238,33 +233,83 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         if len(returns) < self.period:
             return pd.Series(np.nan, index=data.index, name=f'volatility_{self.period}')
         
-        # Use VectorBT rolling optimizer if available
+        # Use optimized rolling optimizer (now using new consolidated version with same interface)
         if self.rolling_optimizer:
             try:
-                volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
-                self.performance_stats['vectorbt_operations'] += 1
+                # Check if it's the new consolidated optimizer
+                if hasattr(self.rolling_optimizer, 'single_rolling_operation'):
+                    # New consolidated optimizer
+                    config = RollingOperationConfig(
+                        operation=RollingOperationType.STD,
+                        window=self.period
+                    )
+                    volatility = self.rolling_optimizer.single_rolling_operation(returns, config)
+                else:
+                    # Legacy optimizer
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
+                
+                self.performance_stats['optimized_operations'] += 1
+                self.performance_stats['total_features_generated'] += 1
+                
                 # Align with original data index
                 volatility = volatility.reindex(data.index)
                 return volatility
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                self.logger.warning(f"Rolling optimizer failed: {e}, using fallback")
+                self.performance_stats['fallback_operations'] += 1
         
         # Fallback to VectorBT direct operations
-        if VECTORBT_AVAILABLE:
+        elif VECTORBT_AVAILABLE:
             try:
                 volatility = rolling_std(returns, window=self.period)
-                self.performance_stats['vectorbt_operations'] += 1
+                self.performance_stats['optimized_operations'] += 1
                 # Align with original data index
                 volatility = volatility.reindex(data.index)
                 return volatility
             except Exception as e:
                 self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                self.performance_stats['fallback_operations'] += 1
         
         # Final fallback to pandas
         volatility = returns.rolling(window=self.period).std()
         return volatility.reindex(data.index)
+
+    def get_performance_report(self) -> Dict[str, Any]:
+        """Get comprehensive performance report."""
+        report = {
+            'generator_stats': self.performance_stats.copy(),
+            'optimization_available': ROLLING_OPTIMIZER_AVAILABLE,
+            'unified_optimization_available': UNIFIED_OPTIMIZATION_AVAILABLE
+        }
+        
+        # Add rolling optimizer stats if available
+        if self.rolling_optimizer and hasattr(self.rolling_optimizer, 'get_performance_stats'):
+            report['rolling_optimizer_stats'] = self.rolling_optimizer.get_performance_stats()
+        
+        # Add unified optimizer stats if available
+        if self.unified_optimizer and hasattr(self.unified_optimizer, 'get_performance_report'):
+            report['unified_optimizer_stats'] = self.unified_optimizer.get_performance_report()
+        
+        return report
+    
+    def reset_performance_stats(self):
+        """Reset all performance statistics."""
+        self.performance_stats = {
+            'total_features_generated': 0,
+            'optimized_operations': 0,
+            'fallback_operations': 0,
+            'gpu_operations': 0,
+            'batch_operations': 0,
+            'total_generation_time': 0.0,
+            'average_time_per_feature': 0.0,
+            'memory_usage_mb': 0.0
+        }
+        
+        if self.rolling_optimizer and hasattr(self.rolling_optimizer, 'reset_performance_stats'):
+            self.rolling_optimizer.reset_performance_stats()
+        
+        if self.unified_optimizer and hasattr(self.unified_optimizer, 'reset_performance_stats'):
+            self.unified_optimizer.reset_performance_stats()
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
         if not data.empty:

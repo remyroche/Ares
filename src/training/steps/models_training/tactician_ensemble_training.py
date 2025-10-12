@@ -54,6 +54,19 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     TPRINT_AVAILABLE = False
 
+# Import VectorBT optimization utilities
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    from src.feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager, VectorizationConfig
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT optimization utilities not available: {e}")
+    VECTORBT_UTILS_AVAILABLE = False
+
 # NAS integration removed - NAS-TAS training pipelines have been removed
 
 # Enhanced training utilities integration
@@ -174,6 +187,42 @@ class TacticianEnsembleTrainingStep:
                 self.gpu_manager = None
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
+
+            # Initialize VectorBT optimization utilities
+            if VECTORBT_UTILS_AVAILABLE:
+                try:
+                    # Create optimized vectorization configuration for tactician ensemble training
+                    vectorization_config = VectorizationConfig(
+                        enable_vectorbt=True,
+                        enable_gpu=self.config.enable_gpu_acceleration,
+                        enable_parallel=self.config.enable_parallel_processing,
+                        memory_efficient=True,
+                        max_memory_gb=self.config.memory_limit_gb,
+                        chunk_size=1000,
+                        enable_monitoring=True,
+                        batch_size=10000,
+                        enable_batch_processing=True,
+                        rolling_optimization_threshold=1000,
+                        enable_rolling_optimization=True
+                    )
+                    
+                    self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+                    self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                        enable_gpu=self.config.enable_gpu_acceleration,
+                        enable_parallel=self.config.enable_parallel_processing,
+                        memory_efficient=True,
+                        chunk_size=1000,
+                        fast_fail=True,
+                        enable_logging=True
+                    )
+                    tprint_success("✅ VectorBT optimization utilities initialized for tactician ensemble training")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to initialize VectorBT utilities: {e}")
+                    self.vectorization_manager = None
+                    self.rolling_optimizer = None
+            else:
+                self.vectorization_manager = None
+                self.rolling_optimizer = None
 
             tprint_success("✅ TacticianEnsembleTrainingStep initialized successfully")
 
@@ -501,6 +550,119 @@ class TacticianEnsembleTrainingStep:
             tprint_error(f"❌ Direct ensemble training failed: {e}")
             return {'models': {}, 'metrics': {}, 'metadata': {}}
 
+    def optimize_tactician_ensemble_data(self, training_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize tactician ensemble training data using VectorBT utilities for better performance.
+        
+        Args:
+            training_data: Input training DataFrame
+            
+        Returns:
+            Optimized training DataFrame
+        """
+        if not VECTORBT_UTILS_AVAILABLE or self.vectorization_manager is None:
+            tprint_warning("⚠️ VectorBT utilities not available, returning original data")
+            return training_data
+        
+        try:
+            tprint_info("🔧 Optimizing tactician ensemble training data with VectorBT utilities...")
+            
+            # Optimize DataFrame for memory efficiency and VectorBT processing
+            optimized_data = self.vectorization_manager.optimize_dataframe(training_data)
+            
+            # Get performance statistics
+            stats = self.vectorization_manager.get_performance_stats()
+            memory_savings = stats.get('memory_savings', 0)
+            
+            if memory_savings > 0:
+                tprint_success(f"✅ Tactician ensemble data optimization completed: {memory_savings:.1f}% memory savings")
+            else:
+                tprint_success("✅ Tactician ensemble data optimization completed")
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Tactician ensemble data optimization failed: {e}, returning original data")
+            return training_data
+
+    def generate_tactician_ensemble_vectorbt_features(self, training_data: pd.DataFrame, 
+                                                    feature_columns: List[str]) -> pd.DataFrame:
+        """
+        Generate additional features using VectorBT rolling operations for tactician ensemble models.
+        
+        Args:
+            training_data: Input training DataFrame
+            feature_columns: List of feature column names
+            
+        Returns:
+            DataFrame with additional VectorBT-generated features
+        """
+        if not VECTORBT_UTILS_AVAILABLE or self.rolling_optimizer is None:
+            tprint_warning("⚠️ VectorBT rolling optimizer not available, returning original data")
+            return training_data
+        
+        try:
+            tprint_info("🔧 Generating VectorBT features for tactician ensemble models...")
+            
+            # Create a copy to avoid modifying original data
+            enhanced_data = training_data.copy()
+            
+            # Generate rolling features for numeric columns
+            numeric_columns = training_data[feature_columns].select_dtypes(include=[np.number]).columns
+            
+            for col in numeric_columns:
+                if col in training_data.columns:
+                    try:
+                        # Generate rolling features optimized for tactician ensemble timing decisions
+                        rolling_mean_5 = self.rolling_optimizer.rolling_mean(training_data[col], window=5)
+                        rolling_std_5 = self.rolling_optimizer.rolling_std(training_data[col], window=5)
+                        rolling_mean_15 = self.rolling_optimizer.rolling_mean(training_data[col], window=15)
+                        rolling_std_15 = self.rolling_optimizer.rolling_std(training_data[col], window=15)
+                        rolling_mean_30 = self.rolling_optimizer.rolling_mean(training_data[col], window=30)
+                        
+                        # Add new features
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_mean_5'] = rolling_mean_5
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_std_5'] = rolling_std_5
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_mean_15'] = rolling_mean_15
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_std_15'] = rolling_std_15
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_mean_30'] = rolling_mean_30
+                        
+                        # Generate rolling momentum and volatility features
+                        rolling_max_5 = self.rolling_optimizer.rolling_max(training_data[col], window=5)
+                        rolling_min_5 = self.rolling_optimizer.rolling_min(training_data[col], window=5)
+                        
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_max_5'] = rolling_max_5
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_min_5'] = rolling_min_5
+                        enhanced_data[f'{col}_tactician_ensemble_rolling_range_5'] = rolling_max_5 - rolling_min_5
+                        
+                        # Generate rolling correlation with other features
+                        if 'close' in col.lower() or 'price' in col.lower():
+                            for other_col in numeric_columns:
+                                if other_col != col and ('volume' in other_col.lower() or 'volatility' in other_col.lower()):
+                                    try:
+                                        rolling_corr = self.rolling_optimizer.rolling_corr(
+                                            training_data[col], training_data[other_col], window=5
+                                        )
+                                        enhanced_data[f'{col}_{other_col}_tactician_ensemble_rolling_corr_5'] = rolling_corr
+                                    except Exception as e:
+                                        tprint_debug(f"⚠️ Failed to generate correlation for {col}-{other_col}: {e}")
+                        
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to generate rolling features for {col}: {e}")
+                        continue
+            
+            # Get performance statistics
+            stats = self.rolling_optimizer.get_performance_stats()
+            vectorbt_ops = stats.get('vectorbt_operations', 0)
+            
+            tprint_success(f"✅ Generated tactician ensemble VectorBT features: {vectorbt_ops} operations completed")
+            
+            return enhanced_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Tactician ensemble VectorBT feature generation failed: {e}, returning original data")
+            return training_data
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the ensemble training step."""
         metrics = {
@@ -516,8 +678,27 @@ class TacticianEnsembleTrainingStep:
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'vectorization_manager': self.vectorization_manager is not None,
+                'rolling_optimizer': self.rolling_optimizer is not None,
+                'vectorbt_utils_available': VECTORBT_UTILS_AVAILABLE
             }
         }
+
+        # Add VectorBT performance stats if available
+        if self.vectorization_manager is not None:
+            try:
+                vectorbt_stats = self.vectorization_manager.get_performance_stats()
+                metrics['vectorbt_performance'] = {
+                    'total_operations': vectorbt_stats.get('total_operations', 0),
+                    'vectorbt_operations': vectorbt_stats.get('vectorbt_operations', 0),
+                    'memory_optimizations': vectorbt_stats.get('memory_optimizations', 0),
+                    'memory_savings': vectorbt_stats.get('memory_savings', 0),
+                    'cache_hit_rate': vectorbt_stats.get('cache_hit_rate', 0)
+                }
+            except Exception as e:
+                tprint_debug(f"⚠️ Failed to get VectorBT performance stats: {e}")
 
         return metrics
 

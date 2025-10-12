@@ -50,6 +50,10 @@ from src.utils.math_validation import (
 )
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
 
+# VectorBT optimizations
+from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+
 # Core decorators and validation
 from src.core.decorators import (
     handles_errors, validates, traced, log_execution_time, 
@@ -174,20 +178,32 @@ class ModelComparisonResult:
 
 
 class StatisticalAnalyzer:
-    """Comprehensive statistical analyzer for model comparison."""
+    """Comprehensive statistical analyzer for model comparison with VectorBT optimizations."""
     
     def __init__(self, config: StatisticalTestConfig):
-        """Initialize statistical analyzer."""
+        """Initialize statistical analyzer with VectorBT optimizations."""
         self.config = config
         self.logger = logger.getChild('StatisticalAnalyzer')
+        
+        # Initialize VectorBT optimizations
+        self.vectorbt_optimizer = VectorBTRollingOptimizer(
+            enable_parallel=True,
+            memory_efficient=True,
+            chunk_size=1000,
+            fast_fail=False,
+            enable_logging=True
+        )
+        
+        self.vectorbt_framework = VectorBTUnifiedFramework()
         
         # Suppress warnings for cleaner output
         warnings.filterwarnings('ignore', category=RuntimeWarning)
         
-        self.logger.info("🚀 StatisticalAnalyzer initialized")
+        self.logger.info("🚀 StatisticalAnalyzer initialized with VectorBT optimizations")
         self.logger.info(f"📊 Tests configured: {[t.value for t in config.tests]}")
         self.logger.info(f"📊 Alpha level: {config.alpha}")
         self.logger.info(f"📊 Confidence level: {config.confidence_level}")
+        self.logger.info("⚡ VectorBT rolling operations enabled for enhanced performance")
     
     @traced(span_name='statistical_analysis')
     async def analyze_models(self, model_results: List[Dict[str, Any]], 
@@ -497,8 +513,8 @@ class StatisticalAnalyzer:
     
     async def _calculate_effect_sizes(self, analysis_data: Dict[str, Dict[str, np.ndarray]], 
                                     metrics: List[str]) -> Dict[str, float]:
-        """Calculate effect sizes for all comparisons."""
-        self.logger.info("📏 Calculating effect sizes...")
+        """Calculate effect sizes for all comparisons using VectorBT optimizations."""
+        self.logger.info("📏 Calculating effect sizes with VectorBT optimizations...")
         
         effect_sizes = {}
         
@@ -516,17 +532,29 @@ class StatisticalAnalyzer:
                 if len(data1) < 2 or len(data2) < 2:
                     continue
                 
-                # Calculate effect sizes using different methods
-                for method in self.config.effect_size_methods:
-                    try:
-                        effect_size = self._calculate_single_effect_size(method, data1, data2)
-                        key = f"{method.value}_{model1_id}_vs_{model2_id}_{metric}"
-                        effect_sizes[key] = effect_size
-                        
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Could not calculate {method.value} for {model1_id} vs {model2_id} on {metric}: {e}")
+                # Use VectorBT for efficient effect size calculations
+                try:
+                    # Calculate rolling effect sizes for stability analysis
+                    if len(data1) > 20 and len(data2) > 20:
+                        rolling_effect_sizes = self._calculate_vectorbt_rolling_effect_sizes(
+                            data1, data2, model1_id, model2_id, metric
+                        )
+                        effect_sizes.update(rolling_effect_sizes)
+                    
+                    # Calculate effect sizes using different methods
+                    for method in self.config.effect_size_methods:
+                        try:
+                            effect_size = self._calculate_single_effect_size(method, data1, data2)
+                            key = f"{method.value}_{model1_id}_vs_{model2_id}_{metric}"
+                            effect_sizes[key] = effect_size
+                            
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Could not calculate {method.value} for {model1_id} vs {model2_id} on {metric}: {e}")
+                
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT effect size calculation failed for {model1_id} vs {model2_id} on {metric}: {e}")
         
-        self.logger.info(f"✅ Calculated {len(effect_sizes)} effect sizes")
+        self.logger.info(f"✅ Calculated {len(effect_sizes)} effect sizes with VectorBT optimizations")
         return effect_sizes
     
     def _calculate_single_effect_size(self, method: EffectSizeMethod, data1: np.ndarray, 
@@ -565,6 +593,80 @@ class StatisticalAnalyzer:
         
         else:
             raise ValueError(f"Unsupported effect size method: {method}")
+    
+    def _calculate_vectorbt_rolling_effect_sizes(self, data1: np.ndarray, data2: np.ndarray, 
+                                               model1_id: str, model2_id: str, metric: str) -> Dict[str, float]:
+        """Calculate rolling effect sizes using VectorBT for stability analysis."""
+        try:
+            rolling_effect_sizes = {}
+            
+            # Convert to pandas Series for VectorBT operations
+            series1 = pd.Series(data1)
+            series2 = pd.Series(data2)
+            
+            # Calculate rolling means and standard deviations
+            rolling_mean1 = self.vectorbt_optimizer.rolling_mean(series1, window=min(20, len(data1)))
+            rolling_mean2 = self.vectorbt_optimizer.rolling_mean(series2, window=min(20, len(data2)))
+            rolling_std1 = self.vectorbt_optimizer.rolling_std(series1, window=min(20, len(data1)))
+            rolling_std2 = self.vectorbt_optimizer.rolling_std(series2, window=min(20, len(data2)))
+            
+            # Calculate rolling Cohen's d
+            pooled_std = np.sqrt((rolling_std1**2 + rolling_std2**2) / 2)
+            rolling_cohens_d = (rolling_mean2 - rolling_mean1) / pooled_std
+            
+            # Calculate rolling correlation for stability
+            rolling_corr = self.vectorbt_optimizer.rolling_corr(series1, series2, window=min(20, len(data1)))
+            
+            # Store rolling statistics
+            rolling_effect_sizes[f"vectorbt_rolling_cohens_d_{model1_id}_vs_{model2_id}_{metric}"] = rolling_cohens_d.mean()
+            rolling_effect_sizes[f"vectorbt_rolling_correlation_{model1_id}_vs_{model2_id}_{metric}"] = rolling_corr.mean()
+            rolling_effect_sizes[f"vectorbt_effect_stability_{model1_id}_vs_{model2_id}_{metric}"] = 1 - rolling_cohens_d.std()
+            
+            return rolling_effect_sizes
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT rolling effect size calculation failed: {e}")
+            return {}
+    
+    def _calculate_vectorbt_correlation_matrix(self, analysis_data: Dict[str, Dict[str, np.ndarray]], 
+                                             metrics: List[str]) -> Dict[str, Any]:
+        """Calculate correlation matrix using VectorBT for all models and metrics."""
+        try:
+            correlation_results = {}
+            
+            for metric in metrics:
+                # Collect data for all models for this metric
+                model_data = {}
+                for model_id, data_dict in analysis_data.items():
+                    if metric in data_dict and len(data_dict[metric]) > 0:
+                        model_data[model_id] = data_dict[metric]
+                
+                if len(model_data) < 2:
+                    continue
+                
+                # Create DataFrame for correlation analysis
+                df_data = {}
+                for model_id, data in model_data.items():
+                    df_data[f"{model_id}_{metric}"] = data
+                
+                df = pd.DataFrame(df_data)
+                
+                # Use VectorBT for rolling correlation analysis
+                if len(df) > 20:
+                    rolling_corr = self.vectorbt_optimizer.rolling_correlation_matrix(
+                        df, window=min(20, len(df))
+                    )
+                    correlation_results[f"rolling_correlation_{metric}"] = rolling_corr.mean().to_dict()
+                
+                # Calculate overall correlation matrix
+                overall_corr = df.corr()
+                correlation_results[f"overall_correlation_{metric}"] = overall_corr.to_dict()
+            
+            return correlation_results
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT correlation matrix calculation failed: {e}")
+            return {}
     
     async def _perform_power_analysis(self, analysis_data: Dict[str, Dict[str, np.ndarray]], 
                                     metrics: List[str]) -> Dict[str, float]:

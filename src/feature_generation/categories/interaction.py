@@ -187,20 +187,6 @@ class InteractionFeatureGenerator(OptimizedInteractionFeatureGenerator):
 
 # Momentum Divergence Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class MomentumDivergenceGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum divergence between price and volume using VectorBT optimization."""
@@ -242,20 +228,6 @@ class MomentumDivergenceGenerator(OptimizedInteractionFeatureGenerator):
 
 # Momentum Volume Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class MomentumVolumeGenerator(FeatureGenerator):
     """Generator for momentum-volume interaction."""
@@ -298,20 +270,6 @@ class MomentumVolumeGenerator(FeatureGenerator):
 
 # Momentum Volatility Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum-volatility interaction using VectorBT optimization."""
@@ -692,20 +650,6 @@ class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
 
 # Momentum Trend Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class MomentumTrendGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum-trend interaction using VectorBT optimization."""
@@ -763,20 +707,6 @@ class MomentumTrendGenerator(OptimizedInteractionFeatureGenerator):
 
 # Volatility Volume Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class VolatilityVolumeGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-volume interaction using VectorBT optimization."""
@@ -819,20 +749,6 @@ class VolatilityVolumeGenerator(OptimizedInteractionFeatureGenerator):
 
 # Volatility Price Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class VolatilityPriceGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-price interaction using VectorBT optimization."""
@@ -877,20 +793,6 @@ class VolatilityPriceGenerator(OptimizedInteractionFeatureGenerator):
 
 # Volatility High-Low Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class VolatilityHighLowGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-high-low range interaction using VectorBT optimization."""
@@ -932,20 +834,6 @@ class VolatilityHighLowGenerator(OptimizedInteractionFeatureGenerator):
 
 # Volatility Momentum Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class VolatilityMomentumGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-momentum interaction using VectorBT optimization."""
@@ -988,20 +876,6 @@ class VolatilityMomentumGenerator(OptimizedInteractionFeatureGenerator):
 
 # Volatility Trend Generator
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class VolatilityTrendGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-trend interaction using VectorBT optimization."""
@@ -1095,20 +969,6 @@ def create_interaction_generators() -> List[FeatureGenerator]:
 # =============================
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class CrossTimeframeInteractionGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for cross-timeframe feature interactions using VectorBT optimization."""
@@ -1166,20 +1026,6 @@ class CrossTimeframeInteractionGenerator(OptimizedInteractionFeatureGenerator):
 
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class FeatureRatioGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for ratios between different features using VectorBT optimization."""
@@ -1220,20 +1066,6 @@ class FeatureRatioGenerator(OptimizedInteractionFeatureGenerator):
 
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class PolynomialFeatureGenerator(FeatureGenerator):
     """Generator for polynomial transformations of features."""
@@ -1335,20 +1167,6 @@ class PolynomialFeatureGenerator(FeatureGenerator):
 
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class CorrelationInteractionGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for correlation-based feature interactions using VectorBT optimization."""
@@ -1435,32 +1253,9 @@ __all__ = [
     # Note: RegimeDependentFeatureGenerator, CointegrationResidualGenerator,
     # StructuralRatioGenerator, PairwiseInteractionGenerator are not implemented yet
     # They are referenced but not defined - removed from exports to prevent import errors
+]
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
 try:
@@ -1469,52 +1264,10 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-]
-    def _should_use_vectorbt(self, data) -> bool:
+
+def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
                 VECTORBT_AVAILABLE)
     
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

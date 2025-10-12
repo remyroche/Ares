@@ -348,17 +348,32 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if len(vol) < lag + 1:
             return np.zeros(len(vol))
         
-        # OPTIMIZED: Use vectorized autocorrelation calculation
+        # OPTIMIZED: Use VectorBT rolling operations for better performance
         vol_series = pd.Series(vol)
         
         # Calculate volatility changes for autocorrelation
         vol_changes = vol_series.diff()
         
-        # Vectorized persistence using rolling autocorrelation
-        persistence = vol_changes.rolling(window=lag+1).apply(
-            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
-            raw=False
-        ).fillna(0).values
+        # Use VectorBT rolling apply for autocorrelation calculation
+        if self.vectorbt_optimizer:
+            try:
+                persistence = self.vectorbt_optimizer.rolling_apply(
+                    vol_changes, 
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                    window=lag+1
+                ).fillna(0).values
+            except Exception as e:
+                tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+                persistence = vol_changes.rolling(window=lag+1).apply(
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                    raw=False
+                ).fillna(0).values
+        else:
+            # Fallback to pandas
+            persistence = vol_changes.rolling(window=lag+1).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                raw=False
+            ).fillna(0).values
         
         return persistence
     
@@ -383,15 +398,30 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        # OPTIMIZED: Use vectorized squared returns autocorrelation
+        # OPTIMIZED: Use VectorBT rolling operations for better performance
         returns_series = pd.Series(returns)
         squared_returns = returns_series ** 2
         
-        # Vectorized clustering using rolling autocorrelation
-        clustering = squared_returns.rolling(window=window).apply(
-            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
-            raw=False
-        ).fillna(0).values
+        # Use VectorBT rolling apply for autocorrelation calculation
+        if self.vectorbt_optimizer:
+            try:
+                clustering = self.vectorbt_optimizer.rolling_apply(
+                    squared_returns, 
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                    window=window
+                ).fillna(0).values
+            except Exception as e:
+                tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+                clustering = squared_returns.rolling(window=window).apply(
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                    raw=False
+                ).fillna(0).values
+        else:
+            # Fallback to pandas
+            clustering = squared_returns.rolling(window=window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                raw=False
+            ).fillna(0).values
         
         return clustering
     
@@ -531,18 +561,33 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        # OPTIMIZED: Use vectorized persistence calculation
+        # OPTIMIZED: Use VectorBT rolling operations for better performance
         returns_series = pd.Series(returns)
         vol_window_size = max(1, window // 4)
         
         # Calculate rolling volatility
         rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
         
-        # Vectorized persistence using rolling autocorrelation
-        persistence = rolling_vol.rolling(window=window).apply(
-            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-            raw=False
-        ).fillna(0)
+        # Use VectorBT rolling apply for autocorrelation calculation
+        if self.vectorbt_optimizer:
+            try:
+                persistence = self.vectorbt_optimizer.rolling_apply(
+                    rolling_vol, 
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0, 
+                    window=window
+                ).fillna(0)
+            except Exception as e:
+                tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+                persistence = rolling_vol.rolling(window=window).apply(
+                    lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+                    raw=False
+                ).fillna(0)
+        else:
+            # Fallback to pandas
+            persistence = rolling_vol.rolling(window=window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
         
         return persistence.values
     def _should_use_vectorbt(self, data) -> bool:
@@ -568,6 +613,25 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
                     return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
                     return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    if func is not None:
+                        return self.vectorbt_optimizer.rolling_apply(data, func, window, **kwargs)
+                    else:
+                        raise ValueError("Function must be provided for rolling apply operation")
+                elif operation == 'corr':
+                    other = kwargs.get('other')
+                    if other is not None:
+                        return self.vectorbt_optimizer.rolling_corr(data, other, window, **kwargs)
+                    else:
+                        raise ValueError("Other series must be provided for rolling correlation")
+                elif operation == 'quantile':
+                    q = kwargs.get('q', 0.5)
+                    return self.vectorbt_optimizer.rolling_quantile(data, window, q=q, **kwargs)
+                elif operation == 'skew':
+                    return self.vectorbt_optimizer.rolling_skew(data, window, **kwargs)
+                elif operation == 'kurt':
+                    return self.vectorbt_optimizer.rolling_kurt(data, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
             except Exception as e:
@@ -579,17 +643,38 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
+        rolling_obj = data.rolling(window=window, **kwargs)
+        
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return rolling_obj.mean()
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return rolling_obj.std()
         elif operation == 'var':
-            return data.rolling(window=window).var()
+            return rolling_obj.var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return rolling_obj.min()
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return rolling_obj.max()
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return rolling_obj.sum()
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            if func is not None:
+                return rolling_obj.apply(func)
+            else:
+                raise ValueError("Function must be provided for rolling apply operation")
+        elif operation == 'corr':
+            other = kwargs.get('other')
+            if other is not None:
+                return rolling_obj.corr(other)
+            else:
+                raise ValueError("Other series must be provided for rolling correlation")
+        elif operation == 'quantile':
+            q = kwargs.get('q', 0.5)
+            return rolling_obj.quantile(q)
+        elif operation == 'skew':
+            return rolling_obj.skew()
+        elif operation == 'kurt':
+            return rolling_obj.kurt()
         else:
             raise ValueError(f"Unsupported operation: {operation}")

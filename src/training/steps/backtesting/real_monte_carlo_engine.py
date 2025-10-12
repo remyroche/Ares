@@ -39,6 +39,14 @@ from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
 from src.utils.ml_common.oof_generator import OOFGenerator
 from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
 
+# VectorBT optimization imports
+from src.utils.ml_common.unified_vectorization_manager import (
+    get_unified_vectorization_manager, VectorizationConfig, OperationType
+)
+from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+    get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+)
+
 # Math validation
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, validate_finite,
@@ -283,6 +291,38 @@ class RealMonteCarloEngine:
         except Exception:
             self.hpo_optimizer = None
         
+        # Initialize VectorBT optimization components
+        try:
+            # Unified vectorization manager for optimized operations
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=True,
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                chunk_size=config.chunk_size_mb * 1024,  # Convert MB to KB
+                enable_monitoring=True
+            )
+            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            tprint("✅ VectorBT vectorization manager initialized", "success")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT vectorization manager unavailable: {e}", "warning")
+            self.vectorization_manager = None
+        
+        try:
+            # VectorBT rolling optimizer for statistical calculations
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                chunk_size=config.chunk_size_mb * 1024,
+                fast_fail=True,
+                enable_logging=True
+            )
+            tprint("✅ VectorBT rolling optimizer initialized", "success")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT rolling optimizer unavailable: {e}", "warning")
+            self.rolling_optimizer = None
+        
         # Initialize base Monte Carlo engine if available
         if BASE_ENGINE_AVAILABLE:
             try:
@@ -486,10 +526,38 @@ class RealMonteCarloEngine:
     
     async def _run_bootstrap_optimized(self, returns: pd.Series, portfolio_value: float, 
                                     n_simulations: int, horizon: int, sample_size: int) -> List[float]:
-        """Optimized bootstrap simulation using matrix operations."""
+        """Optimized bootstrap simulation using VectorBT and matrix operations."""
         try:
-            # Use matrix operations for efficient sampling
+            # Use VectorBT vectorization manager if available
+            if self.vectorization_manager:
+                tprint("🎯 Using VectorBT vectorization for bootstrap simulation", "info")
+                
+                # Prepare data for VectorBT operations
+                returns_array = returns.values
+                
+                # Use VectorBT for efficient random sampling and portfolio calculation
+                data = {
+                    'returns': returns_array,
+                    'n_simulations': n_simulations,
+                    'horizon': horizon,
+                    'portfolio_value': portfolio_value
+                }
+                
+                # Use VectorBT backtesting operation for portfolio simulation
+                result = self.vectorization_manager.optimize_operation(
+                    OperationType.VECTORBT_BACKTESTING,
+                    data,
+                    prefer_vectorbt=True
+                )
+                
+                if hasattr(result, 'result'):
+                    portfolio_values = result.result
+                    if isinstance(portfolio_values, (list, np.ndarray)):
+                        return portfolio_values.tolist() if isinstance(portfolio_values, np.ndarray) else portfolio_values
+                
+            # Fallback to matrix operations
             if self.matrix_ops:
+                tprint("🔄 Using matrix operations for bootstrap simulation", "info")
                 # Generate random indices for bootstrap sampling
                 random_indices = np.random.randint(0, len(returns), size=(n_simulations, horizon))
                 
@@ -505,7 +573,8 @@ class RealMonteCarloEngine:
                 
         except Exception as e:
             self.logger.error(f"❌ Optimized bootstrap simulation failed: {e}")
-            raise
+            tprint(f"⚠️ VectorBT optimization failed, falling back to standard method: {e}", "warning")
+            return await self._run_bootstrap_standard(returns, portfolio_value, n_simulations, horizon, sample_size)
     
     async def _run_bootstrap_standard(self, returns: pd.Series, portfolio_value: float,
                                     n_simulations: int, horizon: int, sample_size: int) -> List[float]:

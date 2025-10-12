@@ -33,6 +33,23 @@ from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
 from .unified_config import UnifiedBacktestingConfig, ConfigurationBuilder, ExecutionMode
 
+# VectorBT optimization imports
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OptimizationStrategy
+    )
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    VECTORBT_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OptimizationStrategy = None
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+
 logger = system_logger.getChild('BacktestingSubPipeline')
 
 # ExecutionMode is now imported from unified_config
@@ -159,6 +176,20 @@ class BacktestingSubPipeline:
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+        
+        # Initialize VectorBT optimization components
+        if VECTORBT_OPTIMIZATION_AVAILABLE:
+            self.vectorization_manager = get_unified_vectorization_manager()
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.unified_config.hardware.enable_gpu_acceleration,
+                enable_parallel=config.unified_config.hardware.enable_parallel_processing,
+                memory_efficient=True
+            )
+            self.logger.info("✅ VectorBT optimization components initialized")
+        else:
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
+            self.logger.warning("⚠️ VectorBT optimization not available, using standard methods")
 
     def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
         try:
@@ -558,6 +589,11 @@ class BacktestingSubPipeline:
             # Import real backtesting engine
             from .real_backtesting_engine import RealBacktestingEngine
             
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
+                tprint_info("🚀 Using VectorBT optimization for backtesting pipeline")
+                return await self._execute_vectorbt_optimized_backtesting(config)
+            
             # Execute real backtest based on mode
             if config.mode == ExecutionMode.BLANK:
                 # Minimal real backtesting for testing
@@ -695,6 +731,233 @@ class BacktestingSubPipeline:
             
             # Re-raise the exception instead of returning mock data
             raise RuntimeError(f"Basic backtesting pre-pipeline failed: {e}") from e
+        
+        return artifacts
+    
+    async def _execute_vectorbt_optimized_backtesting(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Execute backtesting with VectorBT optimization."""
+        tprint_info("🚀 Executing VectorBT-optimized backtesting")
+        
+        artifacts = {
+            'basic_backtest_results': {},
+            'basic_performance_metrics': {},
+            'basic_trade_analysis': {},
+            'comparison_data': {},
+            'vectorbt_optimization_metrics': {}
+        }
+        
+        try:
+            # Use unified vectorization manager for optimized backtesting
+            data = {
+                'symbol': config.symbol,
+                'exchange': config.exchange,
+                'timeframe': config.timeframe,
+                'data_dir': config.data_dir,
+                'start_date': config.start_date or "2024-01-01",
+                'end_date': config.end_date or "2024-01-31",
+                'mode': config.mode.value
+            }
+            
+            # Create configuration for VectorBT backtesting
+            operation_config = self.vectorization_manager._create_default_config(
+                OperationType.VECTORBT_BACKTESTING, data
+            )
+            
+            # Execute optimized backtesting
+            result = self.vectorization_manager.optimize_operation(
+                OperationType.VECTORBT_BACKTESTING, data, operation_config
+            )
+            
+            # Extract results
+            backtest_results = result.result
+            artifacts['basic_backtest_results'] = backtest_results
+            
+            # Store VectorBT optimization metrics
+            artifacts['vectorbt_optimization_metrics'] = {
+                'strategy_used': result.strategy_used.value,
+                'computation_time': result.computation_time,
+                'memory_used_mb': result.memory_used_mb,
+                'performance_gain': result.performance_gain,
+                'metadata': result.metadata
+            }
+            
+            # Extract performance metrics
+            if 'performance_metrics' in backtest_results:
+                metrics = backtest_results['performance_metrics']
+                artifacts['basic_performance_metrics'] = {
+                    'start_date': config.start_date or '2024-01-01',
+                    'end_date': config.end_date or '2024-01-31',
+                    'duration_days': 30,
+                    'total_return_pct': metrics.get('total_return', 0) * 100,
+                    'annualized_return_pct': metrics.get('annualized_return', 0) * 100,
+                    'volatility_pct': metrics.get('volatility', 0) * 100,
+                    'max_drawdown_pct': abs(metrics.get('max_drawdown', 0)) * 100,
+                    'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                    'win_rate': metrics.get('win_rate', 0) * 100,
+                    'profit_factor': metrics.get('profit_factor', 0),
+                    'vectorbt_speedup': result.performance_gain
+                }
+            
+            # Extract trade analysis
+            if 'trade_log' in backtest_results:
+                trade_log = backtest_results['trade_log']
+                if trade_log:
+                    profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
+                    if profits:
+                        artifacts['basic_trade_analysis'] = {
+                            'total_trades': len(trade_log),
+                            'winning_trades': len([p for p in profits if p > 0]),
+                            'losing_trades': len([p for p in profits if p < 0]),
+                            'win_rate': len([p for p in profits if p > 0]) / len(profits) * 100,
+                            'avg_profit_per_trade': np.mean(profits),
+                            'largest_win': max(profits) if profits else 0,
+                            'largest_loss': min(profits) if profits else 0,
+                            'consecutive_wins': self._calculate_max_consecutive_wins(profits),
+                            'consecutive_losses': self._calculate_max_consecutive_losses(profits)
+                        }
+            
+            # Add comparison data
+            artifacts['comparison_data'] = {
+                'backtest_type': 'vectorbt_optimized',
+                'optimization_applied': True,
+                'parameters_source': 'vectorbt_optimized',
+                'comparison_notes': 'Backtesting results using VectorBT optimization for enhanced performance',
+                'vectorbt_strategy': result.strategy_used.value,
+                'performance_gain': f"{result.performance_gain:.2f}x"
+            }
+            
+            tprint_success(f"✅ VectorBT-optimized backtesting completed with {result.performance_gain:.2f}x speedup")
+            
+        except Exception as e:
+            tprint_error(f"❌ VectorBT-optimized backtesting failed: {e}")
+            # Fallback to standard backtesting
+            tprint_warning("⚠️ Falling back to standard backtesting")
+            return await self._execute_standard_backtesting(config)
+        
+        return artifacts
+    
+    async def _execute_standard_backtesting(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Execute standard backtesting without VectorBT optimization."""
+        tprint_info("🔄 Executing standard backtesting")
+        
+        artifacts = {
+            'basic_backtest_results': {},
+            'basic_performance_metrics': {},
+            'basic_trade_analysis': {},
+            'comparison_data': {}
+        }
+        
+        # Execute real backtest based on mode
+        if config.mode == ExecutionMode.BLANK:
+            # Minimal real backtesting for testing
+            self.logger.info("🧪 BLANK mode: Minimal real backtesting")
+            backtest_config = (ConfigurationBuilder()
+                             .set_mode(ExecutionMode.BLANK)
+                             .set_symbol(config.symbol)
+                             .set_exchange(config.exchange)
+                             .set_timeframe(config.timeframe)
+                             .set_data_dir(config.data_dir)
+                             .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                             .set_initial_capital(10000.0)
+                             .enable_gpu_acceleration(False)
+                             .enable_parallel_processing(False)
+                             .for_testing()
+                             .build())
+            
+            engine = RealBacktestingEngine(backtest_config)
+            data = await engine.load_market_data()
+            data = engine.calculate_technical_indicators(data)
+            signals = engine.generate_trading_signals(data)
+            backtest_results = await engine.execute_backtest(data, signals)
+            
+        elif config.mode == ExecutionMode.LIGHT:
+            # Light real backtesting for development
+            self.logger.info("💡 LIGHT mode: Light real backtesting")
+            backtest_config = (ConfigurationBuilder()
+                             .set_mode(ExecutionMode.LIGHT)
+                             .set_symbol(config.symbol)
+                             .set_exchange(config.exchange)
+                             .set_timeframe(config.timeframe)
+                             .set_data_dir(config.data_dir)
+                             .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                             .set_initial_capital(50000.0)
+                             .enable_gpu_acceleration(True)
+                             .enable_parallel_processing(True, max_workers=2)
+                             .for_development()
+                             .build())
+            
+            engine = RealBacktestingEngine(backtest_config)
+            data = await engine.load_market_data()
+            data = engine.calculate_technical_indicators(data)
+            signals = engine.generate_trading_signals(data)
+            backtest_results = await engine.execute_backtest(data, signals)
+            
+        else:  # FULL mode
+            # Complete real backtesting
+            self.logger.info("📊 FULL mode: Complete real backtesting")
+            backtest_config = (ConfigurationBuilder()
+                             .set_mode(ExecutionMode.FULL)
+                             .set_symbol(config.symbol)
+                             .set_exchange(config.exchange)
+                             .set_timeframe(config.timeframe)
+                             .set_data_dir(config.data_dir)
+                             .set_date_range(config.start_date or "2024-01-01", config.end_date or "2024-01-31")
+                             .set_initial_capital(100000.0)
+                             .enable_gpu_acceleration(True)
+                             .enable_parallel_processing(True, max_workers=config.max_workers)
+                             .for_production()
+                             .build())
+            
+            engine = RealBacktestingEngine(backtest_config)
+            data = await engine.load_market_data()
+            data = engine.calculate_technical_indicators(data)
+            signals = engine.generate_trading_signals(data)
+            backtest_results = await engine.execute_backtest(data, signals)
+        
+        # Store results
+        artifacts['basic_backtest_results'] = backtest_results
+        
+        # Extract performance metrics
+        if 'performance_metrics' in backtest_results:
+            metrics = backtest_results['performance_metrics']
+            artifacts['basic_performance_metrics'] = {
+                'start_date': config.start_date or '2024-01-01',
+                'end_date': config.end_date or '2024-01-31',
+                'duration_days': 30,
+                'total_return_pct': metrics.get('total_return', 0) * 100,
+                'annualized_return_pct': metrics.get('annualized_return', 0) * 100,
+                'volatility_pct': metrics.get('volatility', 0) * 100,
+                'max_drawdown_pct': abs(metrics.get('max_drawdown', 0)) * 100,
+                'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                'win_rate': metrics.get('win_rate', 0) * 100,
+                'profit_factor': metrics.get('profit_factor', 0)
+            }
+        
+        # Extract trade analysis
+        if 'trade_log' in backtest_results:
+            trade_log = backtest_results['trade_log']
+            if trade_log:
+                profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
+                if profits:
+                    artifacts['basic_trade_analysis'] = {
+                        'total_trades': len(trade_log),
+                        'winning_trades': len([p for p in profits if p > 0]),
+                        'losing_trades': len([p for p in profits if p < 0]),
+                        'win_rate': len([p for p in profits if p > 0]) / len(profits) * 100,
+                        'avg_profit_per_trade': np.mean(profits),
+                        'largest_win': max(profits) if profits else 0,
+                        'largest_loss': min(profits) if profits else 0,
+                        'consecutive_wins': self._calculate_max_consecutive_wins(profits),
+                        'consecutive_losses': self._calculate_max_consecutive_losses(profits)
+                    }
+        
+        # Add comparison data
+        artifacts['comparison_data'] = {
+            'backtest_type': 'standard',
+            'optimization_applied': False,
+            'parameters_source': 'default',
+            'comparison_notes': 'Standard backtesting results without VectorBT optimization'
+        }
         
         return artifacts
     

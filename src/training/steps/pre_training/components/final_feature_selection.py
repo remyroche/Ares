@@ -5,7 +5,6 @@ This component performs multi-stage feature selection (120→100→80→60) as t
 in the market analysis pipeline using VectorBT optimizations.
 """
 
-import dataclasses
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Mapping
@@ -170,6 +169,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
     def _initialize_utility_managers(self):
         """Initialize utility managers."""
+        tprint_debug("🛠️ Initializing utility managers")
         self.common_utils = CommonUtilities()
         self.json_serializer = JSONSerializer()
         self.pickle_serializer = PickleSerializer()
@@ -1086,7 +1086,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
             # Perform aggressive memory cleanup on exception
             try:
-                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=True)
+                cleanup_results = self._aggressive_memory_cleanup(force_cleanup=True)
                 self._log_info(
                     f'🧹 [FinalFeatureSelection] Aggressive memory cleanup performed after exception: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
                     event='final_feature_selection.aggressive_cleanup',

@@ -11,7 +11,6 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple, Any, Union
 from dataclasses import dataclass, field
-import logging
 import time
 import json
 import math
@@ -99,7 +98,6 @@ except Exception:
 
 # Import system utilities
 from src.utils.logger import get_logger
-from src.utils.matrix_operations import get_unified_matrix_operations
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
 )
@@ -304,6 +302,7 @@ class FeatureSelectionConfig(BaseFeatureSelectionConfig):
     
     def __post_init__(self):
         """Initialize sub-configurations."""
+        tprint_debug("🔧 Initializing feature selection configuration sub-configs")
         self.model_config = ModelSpecificConfig()
         self.quality_config = QualityThresholdsConfig()
         self.validation_config = ValidationConfig()
@@ -541,6 +540,7 @@ class MultiStageFeatureSelector:
 
     def _set_thread_limits(self):
         """Set thread limits to avoid oversubscription."""
+        tprint_debug("🔧 Setting thread limits to avoid oversubscription")
         # Set MKL and OpenMP threads
         os.environ['MKL_NUM_THREADS'] = str(min(4, os.cpu_count() // 2))
         os.environ['OMP_NUM_THREADS'] = str(min(4, os.cpu_count() // 2))
@@ -1497,6 +1497,7 @@ class MultiStageFeatureSelector:
 
     def _set_model_specific_parameters(self):
         """Set model-specific feature selection parameters."""
+        tprint_debug("🔧 Setting model-specific parameters")
         model_specific_params = {
             'AdvancedMambaHybrid': {
                 'model_correlation_threshold': 0.88,  # Allow more correlated features for multi-timeframe fusion
@@ -1778,6 +1779,7 @@ class MultiStageFeatureSelector:
 
     def _clear_cache(self):
         """Clear the computation cache with thread safety."""
+        tprint_debug("🧹 Clearing computation cache")
         with self._cache_lock:
             cache_size = len(self._cache)
             self._cache.clear()
@@ -2686,6 +2688,7 @@ class MultiStageFeatureSelector:
 
     def _train_lightgbm_model(self, X: pd.DataFrame, y: pd.Series):
         """Train LightGBM model with optimized parameters."""
+        tprint_debug("🚀 Training LightGBM model")
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
 
@@ -2715,6 +2718,7 @@ class MultiStageFeatureSelector:
 
     def _train_optimized_model(self, X: pd.DataFrame, y: pd.Series):
         """Train either LightGBM or RandomForest based on availability and performance."""
+        tprint_debug("🚀 Training optimized model")
         try:
             if LIGHTGBM_AVAILABLE and len(X.columns) > 50:
                 self.logger.info("🚀 Using LightGBM for faster training")
@@ -3458,7 +3462,7 @@ class MultiStageFeatureSelector:
     
     def _train_random_forest(self, X: pd.DataFrame, y: pd.Series):
         """Train RandomForest model."""
-
+        tprint_debug("🌲 Training RandomForest model")
         if self._is_classification(y):
             model = RandomForestClassifier(
                 n_estimators=self.config.rf_n_estimators,
@@ -3504,7 +3508,8 @@ class MultiStageFeatureSelector:
                         classes = getattr(model, "classes_", np.arange(proba.shape[1]))
                         signal = proba @ np.asarray(classes, dtype=float)
                     return pd.Series(signal, index=index, dtype=float)
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to get probability predictions: {e}")
             pass
 
         try:
@@ -4048,7 +4053,8 @@ class MultiStageFeatureSelector:
                 if hasattr(model, 'decision_function'):
                     scores = model.decision_function(X)
                     return 'average_precision', float(average_precision_score(y_array, scores))
-            except Exception:
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to calculate average precision: {e}")
                 pass
 
         try:
@@ -4129,6 +4135,7 @@ class MultiStageFeatureSelector:
     
     def _save_analysis(self):
         """Save analysis results."""
+        tprint_debug("💾 Saving analysis results")
         try:
             from datetime import datetime
 

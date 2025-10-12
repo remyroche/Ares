@@ -25,6 +25,34 @@ except ImportError:
     vbt = None
     Portfolio = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, 
+        get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean,
+        optimized_rolling_std,
+        optimized_rolling_corr
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+        OperationType,
+        OptimizationStrategy as UnifiedOptimizationStrategy
+    )
+    VECTORBT_UTILS_AVAILABLE = True
+except ImportError:
+    VECTORBT_UTILS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_corr = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    UnifiedOptimizationStrategy = None
+
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_info
 from src.utils.logger import get_logger
 from .utils.error_handling import safe_operation, get_error_handler
@@ -76,6 +104,12 @@ class VectorBTOptimizationConfig:
     # Memory settings
     memory_efficient: bool = True
     batch_size: int = 1000
+    
+    # Enhanced optimization settings
+    use_rolling_optimizer: bool = True
+    use_unified_vectorization: bool = True
+    rolling_optimizer_config: Optional[Dict[str, Any]] = None
+    unified_vectorization_config: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -114,7 +148,10 @@ class VectorBTOptimizer:
         # Initialize VectorBT components
         self._initialize_components()
         
-        tprint_success("✅ VectorBT Optimizer initialized")
+        # Initialize enhanced optimization components
+        self._initialize_enhanced_components()
+        
+        tprint_success("✅ VectorBT Optimizer initialized with enhanced optimizations")
     
     def _initialize_components(self):
         """Initialize all VectorBT components."""
@@ -167,6 +204,37 @@ class VectorBTOptimizer:
         except Exception as e:
             self.logger.error(f"Component initialization failed: {e}")
             raise
+    
+    def _initialize_enhanced_components(self):
+        """Initialize enhanced optimization components."""
+        try:
+            # Initialize VectorBT Rolling Optimizer
+            if self.config.use_rolling_optimizer and VECTORBT_UTILS_AVAILABLE:
+                rolling_config = self.config.rolling_optimizer_config or {}
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=rolling_config.get('enable_gpu', False),
+                    enable_parallel=rolling_config.get('enable_parallel', True),
+                    memory_efficient=rolling_config.get('memory_efficient', True)
+                )
+                self.logger.debug("VectorBT Rolling Optimizer initialized")
+            else:
+                self.rolling_optimizer = None
+                self.logger.warning("VectorBT Rolling Optimizer not available")
+            
+            # Initialize Unified Vectorization Manager
+            if self.config.use_unified_vectorization and VECTORBT_UTILS_AVAILABLE:
+                unified_config = self.config.unified_vectorization_config or {}
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.debug("Unified Vectorization Manager initialized")
+            else:
+                self.unified_manager = None
+                self.logger.warning("Unified Vectorization Manager not available")
+            
+            self.logger.debug("Enhanced optimization components initialized successfully")
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced component initialization failed: {e}")
+            # Don't raise - these are optional enhancements
     
     @safe_operation
     def optimize_feature_lookback(
@@ -339,7 +407,10 @@ class VectorBTOptimizer:
         lookback_periods: List[int]
     ) -> Dict[int, np.ndarray]:
         """Generate features for all lookback periods."""
-        if self.config.use_vectorbt_features and self.feature_generator:
+        # Use enhanced optimization if available
+        if self.rolling_optimizer and self.unified_manager:
+            return self._generate_features_enhanced(data, feature_name, lookback_periods)
+        elif self.config.use_vectorbt_features and self.feature_generator:
             # Use VectorBT feature generation
             return self.feature_generator.generate_features_vectorbt(
                 data, feature_name, lookback_periods
@@ -370,6 +441,103 @@ class VectorBTOptimizer:
         
         return features
     
+    def _generate_features_enhanced(
+        self, 
+        data: pd.DataFrame, 
+        feature_name: str, 
+        lookback_periods: List[int]
+    ) -> Dict[int, np.ndarray]:
+        """Generate features using enhanced VectorBT optimizations."""
+        try:
+            features = {}
+            
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                # Configure operation for feature generation
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(data),
+                    data_dimensions=(len(data), len(data.columns)),
+                    memory_budget_mb=1024.0,
+                    time_budget_seconds=60.0
+                )
+                
+                # Get optimal strategy
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected optimization strategy: {strategy}")
+            
+            # Generate features using VectorBTRollingOptimizer
+            for period in lookback_periods:
+                try:
+                    feature_values = self._generate_single_feature_enhanced(
+                        data, feature_name, period
+                    )
+                    if feature_values is not None and len(feature_values) > 0:
+                        features[period] = feature_values
+                except Exception as e:
+                    self.logger.warning(f"Enhanced feature generation failed for period {period}: {e}")
+            
+            return features
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced feature generation failed: {e}")
+            # Fallback to standard method
+            return self._generate_features_fallback(data, feature_name, lookback_periods)
+    
+    def _generate_single_feature_enhanced(
+        self, 
+        data: pd.DataFrame, 
+        feature_name: str, 
+        lookback_period: int
+    ) -> Optional[np.ndarray]:
+        """Generate a single feature using enhanced optimizations."""
+        try:
+            if 'close' not in data.columns:
+                return None
+            
+            close_prices = data['close'].values
+            
+            # Use VectorBTRollingOptimizer for rolling operations
+            if self.rolling_optimizer:
+                if 'sma' in feature_name.lower() or 'simple' in feature_name.lower():
+                    return self.rolling_optimizer.rolling_mean(
+                        pd.Series(close_prices), lookback_period
+                    ).values
+                elif 'std' in feature_name.lower() or 'volatility' in feature_name.lower():
+                    return self.rolling_optimizer.rolling_std(
+                        pd.Series(close_prices), lookback_period
+                    ).values
+                elif 'rsi' in feature_name.lower():
+                    # For RSI, we need to calculate price changes first
+                    price_changes = np.diff(close_prices)
+                    if len(price_changes) >= lookback_period:
+                        # Use rolling operations for RSI calculation
+                        gains = np.where(price_changes > 0, price_changes, 0)
+                        losses = np.where(price_changes < 0, -price_changes, 0)
+                        
+                        avg_gains = self.rolling_optimizer.rolling_mean(
+                            pd.Series(gains), lookback_period
+                        ).values
+                        avg_losses = self.rolling_optimizer.rolling_mean(
+                            pd.Series(losses), lookback_period
+                        ).values
+                        
+                        # Calculate RSI
+                        rs = avg_gains / (avg_losses + 1e-10)
+                        rsi = 100 - (100 / (1 + rs))
+                        return rsi
+                else:
+                    # Default to rolling mean for unknown features
+                    return self.rolling_optimizer.rolling_mean(
+                        pd.Series(close_prices), lookback_period
+                    ).values
+            
+            return None
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced single feature generation failed: {e}")
+            return None
+    
     def _get_target_values(self, data: pd.DataFrame, target_column: str) -> Optional[np.ndarray]:
         """Extract target values from data."""
         try:
@@ -389,7 +557,10 @@ class VectorBTOptimizer:
         """Score all lookback periods."""
         scores = {}
         
-        if self.config.use_vectorbt_scoring and self.scoring_system:
+        # Use enhanced scoring if available
+        if self.rolling_optimizer and self.unified_manager:
+            scores = self._score_lookbacks_enhanced(features_dict, target_values, lookback_periods)
+        elif self.config.use_vectorbt_scoring and self.scoring_system:
             # Use VectorBT scoring
             for period in lookback_periods:
                 if period in features_dict:
@@ -436,6 +607,94 @@ class VectorBTOptimizer:
                     self.logger.warning(f"Fallback scoring failed for period {period}: {e}")
         
         return scores
+    
+    def _score_lookbacks_enhanced(
+        self, 
+        features_dict: Dict[int, np.ndarray], 
+        target_values: np.ndarray, 
+        lookback_periods: List[int]
+    ) -> Dict[int, float]:
+        """Score lookback periods using enhanced VectorBT optimizations."""
+        scores = {}
+        
+        try:
+            # Use Unified Vectorization Manager for intelligent optimization
+            if self.unified_manager:
+                operation_config = self.unified_manager.create_operation_config(
+                    operation_type=OperationType.STATISTICAL_COMPUTATION,
+                    data_size=len(target_values),
+                    data_dimensions=(len(target_values),),
+                    memory_budget_mb=512.0,
+                    time_budget_seconds=30.0
+                )
+                
+                strategy = self.unified_manager.select_optimization_strategy(operation_config)
+                self.logger.debug(f"Selected scoring strategy: {strategy}")
+            
+            # Score each lookback period using VectorBTRollingOptimizer
+            for period in lookback_periods:
+                if period in features_dict:
+                    feature_values = features_dict[period]
+                    
+                    # Calculate rolling correlation using VectorBTRollingOptimizer
+                    if self.rolling_optimizer and len(feature_values) > 0:
+                        try:
+                            # Align feature and target values
+                            min_length = min(len(feature_values), len(target_values))
+                            if min_length > 10:
+                                feature_aligned = feature_values[:min_length]
+                                target_aligned = target_values[:min_length]
+                                
+                                # Remove NaN values
+                                valid_mask = ~(np.isnan(feature_aligned) | np.isnan(target_aligned))
+                                if np.any(valid_mask):
+                                    feature_clean = feature_aligned[valid_mask]
+                                    target_clean = target_aligned[valid_mask]
+                                    
+                                    # Use rolling correlation for more robust scoring
+                                    if len(feature_clean) >= period:
+                                        rolling_corr = self.rolling_optimizer.rolling_corr(
+                                            pd.Series(feature_clean), 
+                                            pd.Series(target_clean), 
+                                            window=min(period, len(feature_clean) // 2)
+                                        )
+                                        
+                                        # Use mean of rolling correlations as score
+                                        valid_corr = rolling_corr.dropna()
+                                        if len(valid_corr) > 0:
+                                            scores[period] = abs(valid_corr.mean())
+                                        else:
+                                            # Fallback to simple correlation
+                                            corr = np.corrcoef(feature_clean, target_clean)[0, 1]
+                                            scores[period] = abs(corr) if not np.isnan(corr) else 0.0
+                                    else:
+                                        # Fallback to simple correlation
+                                        corr = np.corrcoef(feature_clean, target_clean)[0, 1]
+                                        scores[period] = abs(corr) if not np.isnan(corr) else 0.0
+                        except Exception as e:
+                            self.logger.warning(f"Enhanced scoring failed for period {period}: {e}")
+                            # Fallback to simple correlation
+                            try:
+                                min_length = min(len(feature_values), len(target_values))
+                                feature_aligned = feature_values[:min_length]
+                                target_aligned = target_values[:min_length]
+                                
+                                valid_mask = ~(np.isnan(feature_aligned) | np.isnan(target_aligned))
+                                if np.any(valid_mask):
+                                    corr = np.corrcoef(
+                                        feature_aligned[valid_mask], 
+                                        target_aligned[valid_mask]
+                                    )[0, 1]
+                                    scores[period] = abs(corr) if not np.isnan(corr) else 0.0
+                            except Exception:
+                                scores[period] = 0.0
+            
+            return scores
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced scoring failed: {e}")
+            # Fallback to standard scoring
+            return self._score_lookbacks_fallback(features_dict, target_values, lookback_periods)
     
     def _apply_regularization(
         self, 
@@ -537,11 +796,20 @@ class VectorBTOptimizer:
             'correlation_calculator': self.correlation_calculator is not None,
             'scoring_system': self.scoring_system is not None,
             'feature_generator': self.feature_generator is not None,
-            'bootstrap_validator': self.bootstrap_validator is not None
+            'bootstrap_validator': self.bootstrap_validator is not None,
+            'vectorbt_utils_available': VECTORBT_UTILS_AVAILABLE,
+            'rolling_optimizer': self.rolling_optimizer is not None,
+            'unified_manager': self.unified_manager is not None
         }
         
         if self.feature_generator:
             metrics['feature_cache_stats'] = self.feature_generator.get_cache_stats()
+        
+        if self.rolling_optimizer:
+            metrics['rolling_optimizer_stats'] = self.rolling_optimizer.get_performance_stats()
+        
+        if self.unified_manager:
+            metrics['unified_manager_stats'] = self.unified_manager.get_performance_stats()
         
         return metrics
     
@@ -570,13 +838,17 @@ class VectorBTOptimizer:
 def create_vectorbt_optimizer(
     strategy: OptimizationStrategy = OptimizationStrategy.VECTORBT_ONLY,
     use_parallel_processing: bool = True,
-    scoring_method: ScoringMethod = ScoringMethod.COMPOSITE
+    scoring_method: ScoringMethod = ScoringMethod.COMPOSITE,
+    use_rolling_optimizer: bool = True,
+    use_unified_vectorization: bool = True
 ) -> VectorBTOptimizer:
     """Create a VectorBT optimizer with specified configuration."""
     config = VectorBTOptimizationConfig(
         strategy=strategy,
         use_parallel_processing=use_parallel_processing,
-        scoring_method=scoring_method
+        scoring_method=scoring_method,
+        use_rolling_optimizer=use_rolling_optimizer,
+        use_unified_vectorization=use_unified_vectorization
     )
     return VectorBTOptimizer(config)
 

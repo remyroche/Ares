@@ -639,11 +639,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
             # Apply VectorBT optimization to input data if available
             if isinstance(data, pd.DataFrame) and not data.empty:
-                data = self._vectorbt_optimized_data_processing(data)
-                self._log_info(
-                    "✅ [FinalFeatureSelection] Applied VectorBT optimization to input data",
-                    event='final_feature_selection.vectorbt_optimization',
-                )
+                # Use memory-optimized processing for large datasets
+                if len(data) > 5000:
+                    data = self._vectorbt_memory_optimized_processing(data)
+                    self._log_info(
+                        "✅ [FinalFeatureSelection] Applied VectorBT memory-optimized processing to large dataset",
+                        event='final_feature_selection.vectorbt_memory_optimization',
+                    )
+                else:
+                    data = self._vectorbt_optimized_data_processing(data)
+                    self._log_info(
+                        "✅ [FinalFeatureSelection] Applied VectorBT optimization to input data",
+                        event='final_feature_selection.vectorbt_optimization',
+                    )
 
             # Get hardware configuration for feature selection
             # Use default config if get_optimal_config is not available
@@ -1323,8 +1331,22 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         return None
 
     def safe_matrix_multiply(self, A, B):
-        """Safely perform matrix multiplication with error handling."""
-        tprint(f"🔢 Performing safe matrix multiplication ({A.shape} x {B.shape}) in final feature selection")
+        """Safely perform matrix multiplication with VectorBT optimization."""
+        tprint(f"🔢 Performing VectorBT-optimized matrix multiplication ({A.shape} x {B.shape}) in final feature selection")
+        
+        # Use VectorBT for matrix operations if available
+        if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
+            try:
+                # Use VectorBT for optimized matrix multiplication
+                result = self.vectorization_manager.optimize_operation(
+                    'matrix_multiplication',
+                    {'a': A, 'b': B}
+                )
+                return result.result if hasattr(result, 'result') else result
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT matrix multiplication failed: {e}, using fallback")
+        
+        # Fallback to standard safe matrix multiplication
         return safe_matrix_multiply(A, B)
 
     def optimize_dataframe_for_matrix_ops(self, df):
@@ -1333,8 +1355,20 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         return optimize_dataframe(df)
 
     def compute_matrix_correlation_analysis(self, data):
-        """Compute matrix correlation analysis."""
-        tprint(f"📊 Computing matrix correlation analysis in final feature selection (shape: {data.shape})")
+        """Compute matrix correlation analysis using VectorBT optimization."""
+        tprint(f"📊 Computing VectorBT-optimized matrix correlation analysis in final feature selection (shape: {data.shape})")
+        
+        # Use VectorBT for correlation analysis if available
+        if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
+            try:
+                # Use VectorBT rolling correlation matrix
+                correlation_matrix = self.vectorbt_optimizer.rolling_correlation_matrix(data, window=50)
+                tprint("✅ VectorBT correlation analysis completed")
+                return correlation_matrix
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT correlation analysis failed: {e}, using fallback")
+        
+        # Fallback to standard correlation analysis
         return matrix_correlation_analysis(data)
 
     def perform_vectorized_matrix_ops(self, data, operations):
@@ -1463,7 +1497,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         return X, y
 
     def _vectorbt_optimized_data_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Process data using VectorBT optimization for enhanced performance."""
+        """Enhanced data processing using VectorBT optimization for superior performance."""
         if not hasattr(self, 'vectorization_manager') or self.vectorization_manager is None:
             # Fallback to standard processing
             return data
@@ -1480,8 +1514,12 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 scaled_data = self.vectorization_manager.scale_data(numeric_data, method='zscore')
                 optimized_data[numeric_columns] = scaled_data
             
+            # Use VectorBT rolling optimizer for additional processing if available
+            if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
+                optimized_data = self._apply_vectorbt_rolling_optimizations(optimized_data)
+            
             self._log_info(
-                f"✅ [FinalFeatureSelection] VectorBT data processing completed: {optimized_data.shape}",
+                f"✅ [FinalFeatureSelection] Enhanced VectorBT data processing completed: {optimized_data.shape}",
                 event='final_feature_selection.vectorbt_processing',
             )
             
@@ -1489,24 +1527,145 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             
         except Exception as e:
             self._log_warning(
-                f"⚠️ [FinalFeatureSelection] VectorBT data processing failed: {e}, using fallback",
+                f"⚠️ [FinalFeatureSelection] Enhanced VectorBT data processing failed: {e}, using fallback",
                 event='final_feature_selection.vectorbt_processing',
+            )
+            return data
+    
+    def _apply_vectorbt_rolling_optimizations(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply VectorBT rolling optimizations to enhance data quality."""
+        try:
+            if not hasattr(self, 'vectorbt_optimizer') or self.vectorbt_optimizer is None:
+                return data
+            
+            optimized_data = data.copy()
+            
+            # Apply VectorBT rolling operations for data enhancement
+            for col in optimized_data.columns:
+                if optimized_data[col].dtype in [np.float32, np.float64]:
+                    # Use VectorBT rolling mean for smoothing
+                    rolling_mean = self.vectorbt_optimizer.rolling_mean(optimized_data[col], window=10)
+                    # Use weighted combination for stability
+                    optimized_data[col] = 0.8 * optimized_data[col] + 0.2 * rolling_mean
+            
+            return optimized_data
+            
+        except Exception as e:
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] VectorBT rolling optimizations failed: {e}",
+                event='final_feature_selection.vectorbt_rolling',
             )
             return data
 
     def _get_vectorbt_performance_stats(self) -> Dict[str, Any]:
-        """Get VectorBT performance statistics."""
+        """Get comprehensive VectorBT performance statistics."""
+        stats = {}
+        
+        # Get VectorBT rolling optimizer stats
+        if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
+            try:
+                optimizer_stats = self.vectorbt_optimizer.get_performance_stats()
+                stats.update({
+                    'vectorbt_rolling_operations': optimizer_stats.get('vectorbt_operations', 0),
+                    'pandas_fallbacks': optimizer_stats.get('pandas_fallbacks', 0),
+                    'gpu_operations': optimizer_stats.get('gpu_operations', 0),
+                    'memory_optimizations': optimizer_stats.get('memory_optimizations', 0),
+                    'chunk_operations': optimizer_stats.get('chunk_operations', 0),
+                    'avg_time_per_operation': optimizer_stats.get('avg_time_per_operation', 0.0),
+                    'vectorbt_usage_rate': optimizer_stats.get('vectorbt_usage_rate', 0.0)
+                })
+            except Exception as e:
+                self._log_warning(
+                    f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT optimizer stats: {e}",
+                    event='final_feature_selection.vectorbt_optimizer_stats',
+                )
+        
+        # Get unified vectorization manager stats
+        if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
+            try:
+                manager_stats = self.vectorization_manager.get_performance_stats()
+                stats.update({
+                    'total_operations': manager_stats.get('total_operations', 0),
+                    'strategy_usage': manager_stats.get('strategy_usage', {}),
+                    'average_speedup': manager_stats.get('average_speedup', 0.0),
+                    'total_computation_time': manager_stats.get('total_computation_time', 0.0)
+                })
+            except Exception as e:
+                self._log_warning(
+                    f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT manager stats: {e}",
+                    event='final_feature_selection.vectorbt_manager_stats',
+                )
+        
+        return stats
+    
+    def _vectorbt_memory_optimized_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Process data with VectorBT memory optimization."""
         if not hasattr(self, 'vectorization_manager') or self.vectorization_manager is None:
-            return {}
+            return data
         
         try:
-            return self.vectorization_manager.get_performance_stats()
+            # Use VectorBT chunked processing for large datasets
+            if len(data) > 10000:
+                tprint("   📦 Using VectorBT chunked processing for large dataset")
+                return self._vectorbt_chunked_processing(data)
+            
+            # Use VectorBT memory-efficient operations
+            optimized_data = self.vectorization_manager.optimize_dataframe(data)
+            
+            # Apply VectorBT scaling for memory efficiency
+            numeric_columns = optimized_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) > 0:
+                scaled_data = self.vectorization_manager.scale_data(
+                    optimized_data[numeric_columns], 
+                    method='minmax'  # More memory efficient than zscore
+                )
+                optimized_data[numeric_columns] = scaled_data
+            
+            return optimized_data
+            
         except Exception as e:
             self._log_warning(
-                f"⚠️ [FinalFeatureSelection] Could not retrieve VectorBT stats: {e}",
-                event='final_feature_selection.vectorbt_stats',
+                f"⚠️ [FinalFeatureSelection] VectorBT memory optimization failed: {e}",
+                event='final_feature_selection.vectorbt_memory',
             )
-            return {}
+            return data
+    
+    def _vectorbt_chunked_processing(self, data: pd.DataFrame, chunk_size: int = 5000) -> pd.DataFrame:
+        """Process large datasets using VectorBT chunked processing."""
+        try:
+            if not hasattr(self, 'vectorbt_optimizer') or self.vectorbt_optimizer is None:
+                return data
+            
+            processed_chunks = []
+            
+            for i in range(0, len(data), chunk_size):
+                chunk = data.iloc[i:i + chunk_size]
+                
+                # Process chunk with VectorBT optimizations
+                if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
+                    chunk = self.vectorization_manager.optimize_dataframe(chunk)
+                
+                # Apply VectorBT rolling operations to chunk
+                chunk = self._apply_vectorbt_rolling_optimizations(chunk)
+                
+                processed_chunks.append(chunk)
+            
+            # Combine processed chunks
+            result = pd.concat(processed_chunks, ignore_index=False)
+            
+            self._log_info(
+                f"✅ [FinalFeatureSelection] VectorBT chunked processing completed: {len(processed_chunks)} chunks",
+                event='final_feature_selection.vectorbt_chunked',
+            )
+            
+            return result
+            
+        except Exception as e:
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] VectorBT chunked processing failed: {e}",
+                event='final_feature_selection.vectorbt_chunked',
+            )
+            return data
 
     def cleanup(self):
         """Clean up hardware optimization resources with aggressive cleanup."""

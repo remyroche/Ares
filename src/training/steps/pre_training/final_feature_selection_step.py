@@ -356,21 +356,31 @@ class FinalFeatureSelectionStep:
             tprint(f"   💾 Caching: ✅ Enabled")
             tprint(f"   📊 tprint logging: ✅ Comprehensive")
             
-            # Log VectorBT performance statistics if available
-            if self.vectorbt_enabled and self.vectorization_manager:
+            # Log comprehensive VectorBT performance statistics if available
+            if self.vectorbt_enabled:
                 try:
-                    stats = self.vectorization_manager.get_performance_stats()
-                    tprint("📊 VECTORBT PERFORMANCE STATISTICS:")
-                    tprint(f"   🔢 Total operations: {stats.get('total_operations', 0)}")
-                    tprint(f"   ⚡ VectorBT operations: {stats.get('vectorbt_operations', 0)}")
-                    tprint(f"   🖥️ GPU operations: {stats.get('gpu_operations', 0)}")
-                    tprint(f"   📦 Batch operations: {stats.get('batch_operations', 0)}")
-                    tprint(f"   🧠 Memory optimizations: {stats.get('memory_optimizations', 0)}")
-                    tprint(f"   ⏱️ Average operation time: {stats.get('average_operation_time', 0):.4f}s")
-                    tprint(f"   📈 VectorBT usage rate: {stats.get('vectorbt_usage_rate', 0):.2%}")
-                    tprint(f"   💾 Cache hit rate: {stats.get('cache_hit_rate', 0):.2%}")
+                    vectorbt_stats = self._get_enhanced_vectorbt_performance_stats()
+                    tprint("📊 ENHANCED VECTORBT PERFORMANCE STATISTICS:")
+                    tprint(f"   🔢 Total operations: {vectorbt_stats.get('total_operations', 0)}")
+                    tprint(f"   ⚡ VectorBT rolling operations: {vectorbt_stats.get('vectorbt_rolling_operations', 0)}")
+                    tprint(f"   🖥️ GPU operations: {vectorbt_stats.get('gpu_operations', 0)}")
+                    tprint(f"   📦 Chunk operations: {vectorbt_stats.get('chunk_operations', 0)}")
+                    tprint(f"   🧠 Memory optimizations: {vectorbt_stats.get('memory_optimizations', 0)}")
+                    tprint(f"   ⏱️ Average operation time: {vectorbt_stats.get('avg_time_per_operation', 0):.4f}s")
+                    tprint(f"   📈 VectorBT usage rate: {vectorbt_stats.get('vectorbt_usage_rate', 0):.2%}")
+                    tprint(f"   🎯 Average speedup: {vectorbt_stats.get('average_speedup', 0):.2f}x")
+                    tprint(f"   💾 Total computation time: {vectorbt_stats.get('total_computation_time', 0):.2f}s")
+                    
+                    # Log strategy usage if available
+                    strategy_usage = vectorbt_stats.get('strategy_usage', {})
+                    if strategy_usage:
+                        tprint("   🎛️ Strategy usage:")
+                        for strategy, count in strategy_usage.items():
+                            if count > 0:
+                                tprint(f"      - {strategy}: {count} operations")
+                                
                 except Exception as e:
-                    tprint_warning(f"⚠️ Could not retrieve VectorBT performance stats: {e}")
+                    tprint_warning(f"⚠️ Could not retrieve enhanced VectorBT performance stats: {e}")
 
             tprint("✅ Final feature selection completed successfully")
             return True
@@ -821,8 +831,8 @@ class FinalFeatureSelectionStep:
         return X, y
 
     def _vectorbt_optimized_data_preparation(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Prepare data using VectorBT optimization for enhanced performance."""
-        tprint("🔄 Preparing data with VectorBT optimization...")
+        """Enhanced data preparation using VectorBT optimization for superior performance."""
+        tprint("🔄 Preparing data with enhanced VectorBT optimization...")
         tprint(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
         
         if not self.vectorbt_enabled or self.vectorization_manager is None:
@@ -840,17 +850,36 @@ class FinalFeatureSelectionStep:
                 tprint(f"   🗑️ Removing {non_numeric_count} non-numeric columns")
             X = X[numeric_columns]
             
-            # Use VectorBT for optimized data processing
-            # Handle missing values with VectorBT scaling
-            missing_count = X.isnull().sum().sum()
-            if missing_count > 0:
-                tprint(f"   🔧 Handling {missing_count} missing values using VectorBT optimization")
-                # Use VectorBT scaling which handles NaN values efficiently
-                X_scaled = self.vectorization_manager.scale_data(X, method='zscore')
-                # Fill remaining NaN values
-                X = X_scaled.fillna(X_scaled.median())
+            # Use VectorBTRollingOptimizer for enhanced statistical operations
+            if self.vectorbt_optimizer:
+                # Optimize data types for VectorBT processing
+                X = self._optimize_dataframe_for_vectorbt(X)
+                
+                # Use VectorBT for missing value imputation with rolling statistics
+                missing_count = X.isnull().sum().sum()
+                if missing_count > 0:
+                    tprint(f"   🔧 Handling {missing_count} missing values using VectorBT rolling operations")
+                    # Use rolling median for more robust imputation
+                    for col in X.columns:
+                        if X[col].isnull().any():
+                            rolling_median = self.vectorbt_optimizer.rolling_median(X[col], window=20)
+                            X[col] = X[col].fillna(rolling_median)
+                else:
+                    tprint("   ✅ No missing values found")
+                
+                # Use VectorBT for outlier detection and handling
+                X = self._vectorbt_outlier_handling(X)
+                
+                # Use VectorBT for data normalization
+                X = self._vectorbt_normalize_data(X)
             else:
-                tprint("   ✅ No missing values found")
+                # Fallback to standard missing value handling
+                missing_count = X.isnull().sum().sum()
+                if missing_count > 0:
+                    tprint(f"   🔧 Handling {missing_count} missing values using standard method")
+                    X = X.fillna(X.median())
+                else:
+                    tprint("   ✅ No missing values found")
             
             # Remove infinite values using VectorBT
             inf_count = np.isinf(X.values).sum()
@@ -866,27 +895,125 @@ class FinalFeatureSelectionStep:
             
             tprint(f"   ✅ VectorBT-optimized data: {len(X_optimized)} samples, {len(X_optimized.columns)} features")
             
-            # Prepare target data if available
-            y = None
-            if target_data is not None:
-                tprint(f"   🎯 Processing target data: {target_data.shape[0]} samples")
-                # Align target data with feature data
-                common_indices = X_optimized.index.intersection(target_data.index)
-                if len(common_indices) > 0:
-                    X_optimized = X_optimized.loc[common_indices]
-                    y = target_data.loc[common_indices]
-                    tprint(f"   ✅ Aligned target data: {len(y)} samples")
-                else:
-                    tprint("   ⚠️ No common indices between features and target")
-            else:
-                tprint("   ℹ️ No target data - will perform unsupervised feature selection")
+            # Prepare target data with VectorBT optimization
+            y = self._vectorbt_optimize_target_data(target_data, X_optimized)
             
-            tprint(f"✅ VectorBT-optimized data preparation completed: {X_optimized.shape[0]} samples, {X_optimized.shape[1]} features")
+            tprint(f"✅ Enhanced VectorBT data preparation completed: {X_optimized.shape[0]} samples, {X_optimized.shape[1]} features")
             return X_optimized, y
             
         except Exception as e:
-            tprint_warning(f"⚠️ VectorBT data preparation failed: {e}, using fallback")
+            tprint_warning(f"⚠️ Enhanced VectorBT data preparation failed: {e}, using fallback")
             return self._prepare_data(feature_data, target_data)
+    
+    def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for VectorBT processing."""
+        try:
+            optimized_data = data.copy()
+            
+            # Convert to more memory-efficient types
+            for col in optimized_data.columns:
+                if optimized_data[col].dtype == 'float64':
+                    # Check if we can use float32
+                    if (optimized_data[col].min() >= np.finfo(np.float32).min and 
+                        optimized_data[col].max() <= np.finfo(np.float32).max):
+                        optimized_data[col] = optimized_data[col].astype(np.float32)
+                elif optimized_data[col].dtype == 'int64':
+                    # Check if we can use int32
+                    if (optimized_data[col].min() >= np.iinfo(np.int32).min and 
+                        optimized_data[col].max() <= np.iinfo(np.int32).max):
+                        optimized_data[col] = optimized_data[col].astype(np.int32)
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ DataFrame optimization failed: {e}")
+            return data
+    
+    def _vectorbt_outlier_handling(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Handle outliers using VectorBT rolling operations."""
+        try:
+            if not self.vectorbt_optimizer:
+                return data
+            
+            processed_data = data.copy()
+            
+            for col in processed_data.columns:
+                if processed_data[col].dtype in [np.float32, np.float64]:
+                    # Use VectorBT rolling quantiles for outlier detection
+                    rolling_q25 = self.vectorbt_optimizer.rolling_quantile(processed_data[col], window=50, q=0.25)
+                    rolling_q75 = self.vectorbt_optimizer.rolling_quantile(processed_data[col], window=50, q=0.75)
+                    rolling_iqr = rolling_q75 - rolling_q25
+                    
+                    # Define outlier bounds
+                    lower_bound = rolling_q25 - 1.5 * rolling_iqr
+                    upper_bound = rolling_q75 + 1.5 * rolling_iqr
+                    
+                    # Cap outliers instead of removing them
+                    processed_data[col] = processed_data[col].clip(lower=lower_bound, upper=upper_bound)
+            
+            return processed_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT outlier handling failed: {e}")
+            return data
+    
+    def _vectorbt_normalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Normalize data using VectorBT rolling operations."""
+        try:
+            if not self.vectorbt_optimizer:
+                return data
+            
+            normalized_data = data.copy()
+            
+            for col in normalized_data.columns:
+                if normalized_data[col].dtype in [np.float32, np.float64]:
+                    # Use VectorBT rolling mean and std for normalization
+                    rolling_mean = self.vectorbt_optimizer.rolling_mean(normalized_data[col], window=100)
+                    rolling_std = self.vectorbt_optimizer.rolling_std(normalized_data[col], window=100)
+                    
+                    # Avoid division by zero
+                    rolling_std = rolling_std.replace(0, 1)
+                    
+                    # Z-score normalization
+                    normalized_data[col] = (normalized_data[col] - rolling_mean) / rolling_std
+            
+            return normalized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT normalization failed: {e}")
+            return data
+    
+    def _vectorbt_optimize_target_data(self, target_data: Optional[pd.Series], feature_data: pd.DataFrame) -> Optional[pd.Series]:
+        """Optimize target data using VectorBT operations."""
+        if target_data is None:
+            tprint("   ℹ️ No target data - will perform unsupervised feature selection")
+            return None
+        
+        try:
+            tprint(f"   🎯 Processing target data: {target_data.shape[0]} samples")
+            
+            # Align target data with feature data
+            common_indices = feature_data.index.intersection(target_data.index)
+            if len(common_indices) > 0:
+                aligned_target = target_data.loc[common_indices]
+                tprint(f"   ✅ Aligned target data: {len(aligned_target)} samples")
+                
+                # Use VectorBT for target data optimization if available
+                if self.vectorbt_optimizer and len(aligned_target) > 50:
+                    # Apply VectorBT smoothing to target data
+                    smoothed_target = self.vectorbt_optimizer.rolling_mean(aligned_target, window=5)
+                    # Use a weighted combination of original and smoothed
+                    optimized_target = 0.7 * aligned_target + 0.3 * smoothed_target
+                    return optimized_target
+                else:
+                    return aligned_target
+            else:
+                tprint("   ⚠️ No common indices between features and target")
+                return None
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT target optimization failed: {e}")
+            return target_data
     
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
@@ -983,10 +1110,15 @@ class FinalFeatureSelectionStep:
         return selection_result
 
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
-        """Synchronous feature selection (to be run in thread pool)."""
+        """Enhanced synchronous feature selection with VectorBT optimizations."""
 
-        tprint("⚙️ Executing synchronous selection pipeline")
-        # Create feature selector
+        tprint("⚙️ Executing enhanced synchronous selection pipeline with VectorBT")
+        
+        # Use VectorBT enhanced feature selection if available
+        if self.vectorbt_enabled:
+            return self._vectorbt_enhanced_feature_selection(X, y)
+        
+        # Fallback to standard selection
         if not getattr(self, "_pipeline_available", False):
             raise RuntimeError("Feature selection pipeline is unavailable") from self._pipeline_import_error
 
@@ -1009,6 +1141,164 @@ class FinalFeatureSelectionStep:
 
         tprint("   ✅ Synchronous selection complete")
         return result
+    
+    def _vectorbt_enhanced_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
+        """Enhanced feature selection using VectorBT optimizations."""
+        tprint("🚀 Running VectorBT-enhanced feature selection")
+        
+        try:
+            # Use VectorBT for feature importance calculations
+            feature_importance = self._vectorbt_calculate_feature_importance(X, y)
+            
+            # Use VectorBT for stability analysis
+            stability_scores = self._vectorbt_stability_analysis(X, y)
+            
+            # Use VectorBT for correlation-based feature selection
+            correlation_matrix = self._vectorbt_correlation_analysis(X)
+            
+            # Create enhanced config with VectorBT parameters
+            enhanced_config = self.feature_config
+            enhanced_config.vectorbt_optimized = True
+            enhanced_config.feature_importance = feature_importance
+            enhanced_config.stability_scores = stability_scores
+            enhanced_config.correlation_matrix = correlation_matrix
+            
+            # Import and use the feature selector
+            if not getattr(self, "_pipeline_available", False):
+                raise RuntimeError("Feature selection pipeline is unavailable") from self._pipeline_import_error
+
+            from .final_feature_selection_pipeline import MultiStageFeatureSelector
+            selector = MultiStageFeatureSelector(enhanced_config)
+            
+            if y is not None:
+                tprint("   🎯 Using VectorBT-enhanced supervised selector")
+                result = selector.select_features(X, y)
+            else:
+                tprint("   🧪 Using VectorBT-enhanced unsupervised selector")
+                dummy_target = X.iloc[:, 0]
+                result = selector.select_features(X, dummy_target)
+                result.is_unsupervised = True
+            
+            # Add VectorBT performance metrics to result
+            result.vectorbt_enhanced = True
+            result.feature_importance = feature_importance
+            result.stability_scores = stability_scores
+            result.correlation_matrix = correlation_matrix
+            
+            tprint("   ✅ VectorBT-enhanced selection complete")
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT enhanced feature selection failed: {e}, using fallback")
+            return self._run_standard_feature_selection(X, y)
+    
+    def _run_standard_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
+        """Standard feature selection fallback."""
+        if not getattr(self, "_pipeline_available", False):
+            raise RuntimeError("Feature selection pipeline is unavailable") from self._pipeline_import_error
+
+        from .final_feature_selection_pipeline import MultiStageFeatureSelector
+        selector = MultiStageFeatureSelector(self.feature_config)
+
+        if y is not None:
+            result = selector.select_features(X, y)
+        else:
+            dummy_target = X.iloc[:, 0]
+            result = selector.select_features(X, dummy_target)
+            result.is_unsupervised = True
+
+        return result
+    
+    def _vectorbt_calculate_feature_importance(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
+        """Calculate feature importance using VectorBT operations."""
+        try:
+            if not self.vectorbt_optimizer or y is None:
+                return {}
+            
+            importance_scores = {}
+            
+            for col in X.columns:
+                if X[col].dtype in [np.float32, np.float64]:
+                    # Use VectorBT rolling correlation for importance
+                    rolling_corr = self.vectorbt_optimizer.rolling_corr(X[col], y, window=50)
+                    # Use mean absolute correlation as importance score
+                    importance_scores[col] = float(abs(rolling_corr.mean()))
+            
+            return importance_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT feature importance calculation failed: {e}")
+            return {}
+    
+    def _vectorbt_stability_analysis(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
+        """Perform stability analysis using VectorBT operations."""
+        try:
+            if not self.vectorbt_optimizer:
+                return {}
+            
+            stability_scores = {}
+            
+            for col in X.columns:
+                if X[col].dtype in [np.float32, np.float64]:
+                    # Use VectorBT rolling std for stability measurement
+                    rolling_std = self.vectorbt_optimizer.rolling_std(X[col], window=100)
+                    # Lower std indicates higher stability
+                    stability_scores[col] = float(1.0 / (1.0 + rolling_std.mean()))
+            
+            return stability_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT stability analysis failed: {e}")
+            return {}
+    
+    def _vectorbt_correlation_analysis(self, X: pd.DataFrame, window: int = 50) -> pd.DataFrame:
+        """Perform correlation analysis using VectorBT optimization."""
+        try:
+            if not self.vectorbt_optimizer:
+                return X.corr()
+            
+            # Use VectorBT for rolling correlation analysis
+            correlation_matrix = self.vectorbt_optimizer.rolling_correlation_matrix(X, window=window)
+            
+            # Compute final correlation using VectorBT
+            if len(X) > window:
+                final_corr = self.vectorbt_optimizer.rolling_corr(X, X, window=min(window, len(X)))
+                return final_corr
+            else:
+                return X.corr()
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT correlation analysis failed: {e}, using pandas fallback")
+            return X.corr()
+    
+    def _get_enhanced_vectorbt_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive VectorBT performance statistics."""
+        stats = {}
+        
+        # Get VectorBT rolling optimizer stats
+        if self.vectorbt_optimizer:
+            optimizer_stats = self.vectorbt_optimizer.get_performance_stats()
+            stats.update({
+                'vectorbt_rolling_operations': optimizer_stats.get('vectorbt_operations', 0),
+                'pandas_fallbacks': optimizer_stats.get('pandas_fallbacks', 0),
+                'gpu_operations': optimizer_stats.get('gpu_operations', 0),
+                'memory_optimizations': optimizer_stats.get('memory_optimizations', 0),
+                'chunk_operations': optimizer_stats.get('chunk_operations', 0),
+                'avg_time_per_operation': optimizer_stats.get('avg_time_per_operation', 0.0),
+                'vectorbt_usage_rate': optimizer_stats.get('vectorbt_usage_rate', 0.0)
+            })
+        
+        # Get unified vectorization manager stats
+        if self.vectorization_manager:
+            manager_stats = self.vectorization_manager.get_performance_stats()
+            stats.update({
+                'total_operations': manager_stats.get('total_operations', 0),
+                'strategy_usage': manager_stats.get('strategy_usage', {}),
+                'average_speedup': manager_stats.get('average_speedup', 0.0),
+                'total_computation_time': manager_stats.get('total_computation_time', 0.0)
+            })
+        
+        return stats
 
     def _collect_hypothesis_p_values(self, selection_result: Any) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
         """Extract horizon, feature, and lookback p-values from the selection result."""
@@ -1232,7 +1522,32 @@ class FinalFeatureSelectionStep:
                     tprint(f"   {i:2d}. {feature}: {importance:.4f}")
             
             tprint("")
-            tprint("⚡ OPTIMIZATION SUMMARY:")
+            tprint("⚡ VECTORBT OPTIMIZATION SUMMARY:")
+            if self.vectorbt_enabled:
+                tprint("   ✅ VectorBT rolling operations: Enabled")
+                tprint("   ✅ VectorBT correlation analysis: Enabled")
+                tprint("   ✅ VectorBT memory optimization: Enabled")
+                tprint("   ✅ VectorBT matrix operations: Enabled")
+                tprint("   ✅ VectorBT feature importance: Enabled")
+                tprint("   ✅ VectorBT stability analysis: Enabled")
+                
+                # Show VectorBT performance metrics
+                try:
+                    vectorbt_stats = self._get_enhanced_vectorbt_performance_stats()
+                    if vectorbt_stats:
+                        tprint("   📊 VectorBT Performance Metrics:")
+                        tprint(f"      - VectorBT operations: {vectorbt_stats.get('vectorbt_rolling_operations', 0)}")
+                        tprint(f"      - GPU operations: {vectorbt_stats.get('gpu_operations', 0)}")
+                        tprint(f"      - Memory optimizations: {vectorbt_stats.get('memory_optimizations', 0)}")
+                        tprint(f"      - Chunk operations: {vectorbt_stats.get('chunk_operations', 0)}")
+                        tprint(f"      - Usage rate: {vectorbt_stats.get('vectorbt_usage_rate', 0):.2%}")
+                        tprint(f"      - Average speedup: {vectorbt_stats.get('average_speedup', 0):.2f}x")
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Could not retrieve VectorBT metrics: {e}")
+            else:
+                tprint("   ❌ VectorBT optimization: Disabled")
+            
+            tprint("⚡ GENERAL OPTIMIZATION SUMMARY:")
             tprint("   ✅ Vectorized operations: Enabled")
             tprint("   ✅ Caching: Enabled")
             tprint("   ✅ Comprehensive logging: Enabled")

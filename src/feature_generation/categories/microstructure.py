@@ -80,6 +80,18 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         self.vectorization_manager = get_unified_vectorization_manager() if OPTIMIZATION_AVAILABLE else None
         self.rolling_optimizer = get_vectorbt_rolling_optimizer() if OPTIMIZATION_AVAILABLE else None
         
+        # Initialize Unified Vectorization Manager
+        try:
+            from ...utils.ml_common.unified_vectorization_manager import (
+                get_unified_vectorization_manager, UnifiedVectorizationManager, 
+                OperationType, OptimizationStrategy, OperationConfig
+            )
+            self.unified_manager = get_unified_vectorization_manager()
+            self.UNIFIED_MANAGER_AVAILABLE = True
+        except ImportError:
+            self.unified_manager = None
+            self.UNIFIED_MANAGER_AVAILABLE = False
+        
         # Performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -139,6 +151,74 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
                 data, operations, windows, columns
             )
         return data
+    
+    def generate_optimized_microstructure_features(self, data: pd.DataFrame, 
+                                                 feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple microstructure features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated microstructure features
+        """
+        if hasattr(self, 'unified_manager') and self.unified_manager and len(data) > 100:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'microstructure_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_microstructure_features_individually(data, feature_configs)
+        else:
+            return self._process_microstructure_features_individually(data, feature_configs)
+    
+    def _process_microstructure_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process microstructure features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'microstructure')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'bid_ask_spread':
+                    window = params.get('window', 20)
+                    if 'bid' in data.columns and 'ask' in data.columns:
+                        spread = data['ask'] - data['bid']
+                        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                            results[feature_name] = self.rolling_optimizer.rolling_std(spread, window)
+                        else:
+                            results[feature_name] = spread.rolling(window).std()
+                    else:
+                        # Fallback to high-low spread
+                        spread = data['high'] - data['low']
+                        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                            results[feature_name] = self.rolling_optimizer.rolling_std(spread, window)
+                        else:
+                            results[feature_name] = spread.rolling(window).std()
+                
+            except Exception as e:
+                self.logger.warning(f"Microstructure feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 class BidAskSpreadGenerator(VectorizedFeatureGenerator):
     """Generator for bid-ask spread features."""

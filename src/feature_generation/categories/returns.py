@@ -173,18 +173,23 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         # Use Unified Vectorization Manager for optimized returns calculation
         if self.unified_manager and len(prices) > 50:
             try:
-                # Use the unified manager's rolling operation for percentage change
-                if period == 1:
-                    # For single period, use direct pct_change
-                    returns = prices_series.pct_change(periods=period).values
-                else:
-                    # For multiple periods, use rolling operations
-                    returns = self.unified_manager.rolling_operation(
-                        prices_series, 
-                        'apply', 
-                        window=period,
-                        func=lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan
-                    ).values
+                # Use Unified Vectorization Manager for optimized returns calculation
+                returns_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': prices_series,
+                        'operation': 'returns',
+                        'period': period,
+                        'indicator_configs': {'returns': {'period': period}}
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(prices_series),
+                        data_dimensions=prices_series.shape,
+                        memory_budget_mb=256.0
+                    )
+                )
+                returns = returns_result.result
                 
                 self.performance_stats['unified_manager_operations'] += 1
                 return returns
@@ -293,37 +298,51 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if self.unified_manager and len(data) > 100:
             try:
                 # Use Unified Vectorization Manager for batch processing
-                config = OperationConfig(
-                    operation_type=OperationType.FEATURE_ENGINEERING,
-                    data_size=len(data),
-                    data_dimensions=data.shape,
-                    memory_budget_mb=2048.0
-                )
-                
-                # Prepare data for batch processing
-                batch_data = {
-                    'data': data,
-                    'feature_configs': feature_configs,
-                    'feature_type': 'returns'
-                }
-                
-                result = self.unified_manager.optimize_operation(
+                batch_result = self.unified_manager.optimize_operation(
                     OperationType.FEATURE_ENGINEERING,
-                    batch_data,
-                    config
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'returns_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=2048.0
+                    )
                 )
-                
-                if hasattr(result, 'result') and result.result is not None:
-                    self.performance_stats['unified_manager_operations'] += 1
-                    return result.result
-                else:
-                    return self._fallback_batch_processing(data, feature_configs)
-                    
+                return batch_result.result
             except Exception as e:
                 self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
-                return self._fallback_batch_processing(data, feature_configs)
+                # Fallback to individual processing
+                return self._process_returns_features_individually(data, feature_configs)
         else:
             return self._fallback_batch_processing(data, feature_configs)
+    
+    def _process_returns_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process returns features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'returns')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'returns':
+                    period = params.get('period', 1)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        prices = data[column].values
+                        returns = self._calculate_returns(prices, period)
+                        results[feature_name] = pd.Series(returns, index=data.index)
+                
+            except Exception as e:
+                self.logger.warning(f"Returns feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
     
     def _fallback_batch_processing(self, data: pd.DataFrame, 
                                  feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:

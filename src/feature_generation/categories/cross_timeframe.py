@@ -116,6 +116,18 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
         else:
             self.vectorization_manager = None
         
+        # Initialize Unified Vectorization Manager from ml_common
+        try:
+            from ...utils.ml_common.unified_vectorization_manager import (
+                get_unified_vectorization_manager, UnifiedVectorizationManager, 
+                OperationType, OptimizationStrategy, OperationConfig
+            )
+            self.unified_manager = get_unified_vectorization_manager()
+            self.UNIFIED_MANAGER_AVAILABLE = True
+        except ImportError:
+            self.unified_manager = None
+            self.UNIFIED_MANAGER_AVAILABLE = False
+        
         # Enhanced performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -185,15 +197,41 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             # Optimize data for processing
             optimized_data = self.optimize_dataframe_processing(data)
             
-            # Generate features using VectorBT rolling optimizer
-            if self.rolling_optimizer:
-                features.update(self._generate_vectorbt_optimized_features(optimized_data, **kwargs))
-                self.performance_stats['vectorbt_operations'] += 1
-            
-            # Generate features using unified vectorization manager
-            if self.vectorization_manager:
-                features.update(self._generate_unified_vectorization_features(optimized_data, **kwargs))
-                self.performance_stats['unified_vectorization_operations'] += 1
+            # Use Unified Vectorization Manager for batch processing if available
+            if hasattr(self, 'unified_manager') and self.unified_manager and len(data) > 1000:
+                try:
+                    batch_result = self.unified_manager.optimize_operation(
+                        OperationType.FEATURE_ENGINEERING,
+                        {
+                            'data': optimized_data,
+                            'operation_type': 'cross_timeframe_batch',
+                            'timeframes': self.config.parameters.get("timeframes", [1, 5, 15, 30, 60]),
+                            'feature_types': self.config.parameters.get("feature_types", ["momentum", "volatility", "volume", "trend", "range"])
+                        },
+                        OperationConfig(
+                            operation_type=OperationType.FEATURE_ENGINEERING,
+                            data_size=len(optimized_data),
+                            data_dimensions=optimized_data.shape,
+                            memory_budget_mb=2048.0
+                        )
+                    )
+                    features.update(batch_result.result)
+                    self.performance_stats['unified_manager_operations'] = self.performance_stats.get('unified_manager_operations', 0) + 1
+                except Exception as e:
+                    logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                    # Fallback to individual processing
+                    features.update(self._generate_vectorbt_optimized_features(optimized_data, **kwargs))
+                    features.update(self._generate_unified_vectorization_features(optimized_data, **kwargs))
+            else:
+                # Generate features using VectorBT rolling optimizer
+                if self.rolling_optimizer:
+                    features.update(self._generate_vectorbt_optimized_features(optimized_data, **kwargs))
+                    self.performance_stats['vectorbt_operations'] += 1
+                
+                # Generate features using unified vectorization manager
+                if self.vectorization_manager:
+                    features.update(self._generate_unified_vectorization_features(optimized_data, **kwargs))
+                    self.performance_stats['unified_vectorization_operations'] += 1
             
             # Update performance stats
             self.performance_stats['total_execution_time'] += time.time() - start_time

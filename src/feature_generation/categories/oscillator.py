@@ -222,12 +222,25 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
     def _generate_with_unified_manager(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using UnifiedVectorizationManager."""
         try:
-            # Use the unified manager's rolling operation for oscillator calculation
+            # Use Unified Vectorization Manager for optimized oscillator calculation
             close_prices = data['close']
             
-            # Calculate oscillator using optimized rolling mean
-            rolling_mean = self.unified_manager.rolling_operation(close_prices, 'mean', window=14)
-            oscillator = rolling_mean - close_prices
+            oscillator_result = self.unified_manager.optimize_operation(
+                OperationType.TECHNICAL_INDICATORS,
+                {
+                    'data': close_prices,
+                    'operation': 'oscillator',
+                    'window': 14,
+                    'indicator_configs': {'oscillator': {'window': 14}}
+                },
+                OperationConfig(
+                    operation_type=OperationType.TECHNICAL_INDICATORS,
+                    data_size=len(close_prices),
+                    data_dimensions=close_prices.shape,
+                    memory_budget_mb=256.0
+                )
+            )
+            oscillator = oscillator_result.result
             
             # Update memory usage
             if hasattr(self.unified_manager, 'get_performance_stats'):
@@ -294,7 +307,21 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         if self.unified_manager and self._should_use_unified_manager(data['close']):
             try:
                 # Use Unified Vectorization Manager for batch processing
-                return self.unified_manager.batch_process_features(data, feature_configs)
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'oscillator_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
             except Exception as e:
                 self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using VectorBT fallback")
                 return self._generate_batch_with_vectorbt(data, feature_configs)
@@ -302,10 +329,66 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             try:
                 return self._generate_batch_with_vectorbt(data, feature_configs)
             except Exception as e:
-                self.logger.warning(f"VectorBT batch processing failed: {e}, using pandas fallback")
-                return self._generate_batch_with_pandas(data, feature_configs)
+                self.logger.warning(f"VectorBT batch processing failed: {e}, using individual processing")
+                return self._process_oscillator_features_individually(data, feature_configs)
         else:
-            return self._generate_batch_with_pandas(data, feature_configs)
+            return self._process_oscillator_features_individually(data, feature_configs)
+    
+    def _process_oscillator_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process oscillator features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'oscillator')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'oscillator':
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        
+                        if self.vectorbt_optimizer:
+                            rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window)
+                            oscillator = rolling_mean - series_data
+                        else:
+                            rolling_mean = series_data.rolling(window).mean()
+                            oscillator = rolling_mean - series_data
+                        
+                        results[feature_name] = oscillator
+                
+            except Exception as e:
+                self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _generate_batch_with_vectorbt(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using VectorBT rolling optimizer."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'oscillator')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'oscillator':
+                    window = params.get('window', 14)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window)
+                        oscillator = rolling_mean - series_data
+                        results[feature_name] = oscillator
+                
+            except Exception as e:
+                self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
     
     def _generate_batch_with_vectorbt(self, data: pd.DataFrame, 
                                     feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:

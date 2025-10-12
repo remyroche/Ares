@@ -246,22 +246,33 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         # Use Unified Vectorization Manager for optimized rolling operations
         if self.unified_manager and self._should_use_vectorbt(tr_series):
             try:
-                # Batch process multiple rolling operations for better performance
-                rolling_results = self.unified_manager.batch_process_features(
-                    pd.DataFrame({
-                        'dm_plus': dm_plus_series,
-                        'dm_minus': dm_minus_series,
-                        'tr': tr_series
-                    }),
-                    [
-                        {'name': 'dm_plus_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'dm_plus'}},
-                        {'name': 'dm_minus_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'dm_minus'}},
-                        {'name': 'tr_mean', 'type': 'rolling', 'params': {'operation': 'mean', 'window': period, 'column': 'tr'}}
-                    ]
+                # Use Unified Vectorization Manager for batch rolling operations
+                batch_data = pd.DataFrame({
+                    'dm_plus': dm_plus_series,
+                    'dm_minus': dm_minus_series,
+                    'tr': tr_series
+                })
+                
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': batch_data,
+                        'operation': 'batch_rolling_mean',
+                        'window': period,
+                        'columns': ['dm_plus', 'dm_minus', 'tr']
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(batch_data),
+                        data_dimensions=batch_data.shape,
+                        memory_budget_mb=256.0
+                    )
                 )
-                dm_plus_mean = rolling_results['dm_plus_mean']
-                dm_minus_mean = rolling_results['dm_minus_mean']
-                tr_mean = rolling_results['tr_mean']
+                
+                rolling_results = batch_result.result
+                dm_plus_mean = rolling_results['dm_plus']
+                dm_minus_mean = rolling_results['dm_minus']
+                tr_mean = rolling_results['tr']
             except Exception as e:
                 logger.warning(f"Unified Vectorization Manager ADX calculation failed: {e}, using VectorBT fallback")
                 if self.vectorbt_optimizer and self._should_use_vectorbt(tr_series):
@@ -387,8 +398,27 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             DataFrame with generated trend features
         """
         if self.unified_manager:
-            # Use Unified Vectorization Manager for batch processing
-            return self.unified_manager.batch_process_features(data, feature_configs)
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'trend_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_trend_features_individually(data, feature_configs)
         elif self.vectorbt_optimizer:
             # Fallback to individual VectorBT operations
             results = {}
@@ -470,6 +500,58 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                     results[feature_name] = pd.Series(np.nan, index=data.index)
             
             return pd.DataFrame(results, index=data.index)
+    
+    def _process_trend_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process trend features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'rolling')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'mean')
+                    window = params.get('window', self.period)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        
+                        if self.vectorbt_optimizer:
+                            if operation == 'mean':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_mean(series_data, window)
+                            elif operation == 'std':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_std(series_data, window)
+                            elif operation == 'var':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_var(series_data, window)
+                            elif operation == 'min':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_min(series_data, window)
+                            elif operation == 'max':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_max(series_data, window)
+                            elif operation == 'sum':
+                                results[feature_name] = self.vectorbt_optimizer.rolling_sum(series_data, window)
+                        else:
+                            # Fallback to pandas
+                            rolling_obj = series_data.rolling(window=window)
+                            if operation == 'mean':
+                                results[feature_name] = rolling_obj.mean()
+                            elif operation == 'std':
+                                results[feature_name] = rolling_obj.std()
+                            elif operation == 'var':
+                                results[feature_name] = rolling_obj.var()
+                            elif operation == 'min':
+                                results[feature_name] = rolling_obj.min()
+                            elif operation == 'max':
+                                results[feature_name] = rolling_obj.max()
+                            elif operation == 'sum':
+                                results[feature_name] = rolling_obj.sum()
+                
+            except Exception as e:
+                self.logger.warning(f"Trend feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:

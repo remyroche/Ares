@@ -277,6 +277,87 @@ class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
                 data, operations, windows, columns
             )
         return data
+    
+    def generate_optimized_support_resistance_features(self, data: pd.DataFrame, 
+                                                     feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple support/resistance features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated support/resistance features
+        """
+        # Initialize Unified Vectorization Manager if not already done
+        if not hasattr(self, 'unified_manager'):
+            try:
+                from ...utils.ml_common.unified_vectorization_manager import (
+                    get_unified_vectorization_manager, UnifiedVectorizationManager, 
+                    OperationType, OptimizationStrategy, OperationConfig
+                )
+                self.unified_manager = get_unified_vectorization_manager()
+                self.UNIFIED_MANAGER_AVAILABLE = True
+            except ImportError:
+                self.unified_manager = None
+                self.UNIFIED_MANAGER_AVAILABLE = False
+        
+        if hasattr(self, 'unified_manager') and self.unified_manager and len(data) > 100:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'support_resistance_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_support_resistance_features_individually(data, feature_configs)
+        else:
+            return self._process_support_resistance_features_individually(data, feature_configs)
+    
+    def _process_support_resistance_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process support/resistance features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'support_resistance')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'support_resistance':
+                    window = params.get('window', 20)
+                    if 'close' in data.columns:
+                        close = data['close']
+                        if self.rolling_optimizer:
+                            rolling_min = self.rolling_optimizer.rolling_min(close, window)
+                            rolling_max = self.rolling_optimizer.rolling_max(close, window)
+                            rolling_mean = self.rolling_optimizer.rolling_mean(close, window)
+                            sr_level = (rolling_min + rolling_max + rolling_mean) / 3
+                        else:
+                            rolling_min = close.rolling(window=window).min()
+                            rolling_max = close.rolling(window=window).max()
+                            rolling_mean = close.rolling(window=window).mean()
+                            sr_level = (rolling_min + rolling_max + rolling_mean) / 3
+                        results[feature_name] = sr_level
+                
+            except Exception as e:
+                self.logger.warning(f"Support/Resistance feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 class SupportLevelGenerator(VectorizedFeatureGenerator):
     """Generator for support level features with VectorBT optimization."""

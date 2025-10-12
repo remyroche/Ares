@@ -208,13 +208,23 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         # Use Unified Vectorization Manager for optimized momentum calculation
         if self.unified_manager and self._should_use_vectorbt(pd.DataFrame({'prices': prices_series})):
             try:
-                # Calculate momentum using optimized rolling operations
-                shifted_prices = prices_series.shift(period)
-                momentum_series = prices_series - shifted_prices
-                
-                # Use unified manager for any additional rolling operations if needed
-                # For momentum, we just need the difference, but we can use the manager for optimization
-                momentum = momentum_series.values
+                # Use Unified Vectorization Manager for optimized momentum calculation
+                momentum_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': prices_series,
+                        'operation': 'momentum',
+                        'period': period,
+                        'indicator_configs': {'momentum': {'period': period}}
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(prices_series),
+                        data_dimensions=prices_series.shape,
+                        memory_budget_mb=256.0
+                    )
+                )
+                momentum = momentum_result.result
                 
                 # Track performance
                 if hasattr(self, 'performance_stats'):
@@ -269,6 +279,71 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         else:
             momentum = prices - np.roll(prices, period)
             return momentum
+    
+    def generate_optimized_momentum_features(self, data: pd.DataFrame, 
+                                           feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple momentum features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated momentum features
+        """
+        if self.unified_manager:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'momentum_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_momentum_features_individually(data, feature_configs)
+        elif self.rolling_optimizer:
+            # Fallback to individual VectorBT operations
+            return self._process_momentum_features_individually(data, feature_configs)
+        else:
+            # Fallback to pandas operations
+            return self._process_momentum_features_individually(data, feature_configs)
+    
+    def _process_momentum_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process momentum features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'momentum')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'momentum':
+                    period = params.get('period', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        prices = data[column].values
+                        momentum = self._calculate_momentum(prices, period)
+                        results[feature_name] = pd.Series(momentum, index=data.index)
+                
+            except Exception as e:
+                self.logger.warning(f"Momentum feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 # Analyst Features - Cross-timeframe momentum generatorsclass AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
     """Generator for 5-minute timeframe momentum feature."""

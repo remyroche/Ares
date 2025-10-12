@@ -24,7 +24,7 @@ def get_enhanced_multi_timeframe_config() -> dict[str, Any]:
                 "min_diversity_score": 0.2,
             },
             "optimization_settings": {
-                "max_cross_timeframe_pairs": 20,
+                "max_cross_timeframe_pairs": 15,
                 "min_period_difference_ratio": 1.5,  # At least 50% difference
                 "diversity_selection_method": "greedy",
                 "quality_filtering": True,

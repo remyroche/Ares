@@ -247,7 +247,7 @@ class InteractiveFeatureGenerationConfig:
     interaction_features_max: int = 15
     interaction_features_target: int = 10
     cross_timeframe_features_min: int = 3
-    cross_timeframe_features_max: int = 10
+    cross_timeframe_features_max: int = 15
     cross_timeframe_features_target: int = 6
     gate_features_min: int = 2
     gate_features_max: int = 8

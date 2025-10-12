@@ -124,7 +124,7 @@ class TacticianTrainingConfig:
     max_lookback_periods: int = 20
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
-    max_cross_timeframe_features: int = 50
+    max_cross_timeframe_features: int = 15
 
     # Horizon labeling parameters
     profit_targets: Dict[str, float] = None

@@ -77,7 +77,7 @@ class OptimizedInteractionFeatureGenerator(VectorizedFeatureGenerator):
         )
     
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, window: int, **kwargs) -> pd.Series:
-        """Perform optimized rolling operation using VectorBTRollingOptimizer."""
+        """Perform optimized rolling operation using VectorBTRollingOptimizer with advanced features."""
         if self.rolling_optimizer:
             try:
                 if operation == 'mean':
@@ -98,6 +98,13 @@ class OptimizedInteractionFeatureGenerator(VectorizedFeatureGenerator):
                 elif operation == 'apply':
                     func = kwargs.get('func')
                     return self.rolling_optimizer.rolling_apply(data, func, window, **kwargs)
+                elif operation == 'quantile':
+                    q = kwargs.get('q', 0.5)
+                    return self.rolling_optimizer.rolling_quantile(data, window, q, **kwargs)
+                elif operation == 'skew':
+                    return self.rolling_optimizer.rolling_skew(data, window, **kwargs)
+                elif operation == 'kurt':
+                    return self.rolling_optimizer.rolling_kurt(data, window, **kwargs)
             except Exception as e:
                 self.logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
         
@@ -345,6 +352,343 @@ class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
         # Normalize momentum by volatility
         interaction = price_momentum / (volatility + 1e-8)  # Add small epsilon to prevent division by zero
         return interaction
+
+    def generate_advanced_interaction_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Generate advanced interaction features using VectorBT optimization.
+        
+        This method creates sophisticated interaction features that capture complex
+        relationships between different indicators and market conditions.
+        
+        Args:
+            data: OHLCV data with additional features
+            
+        Returns:
+            DataFrame of advanced interaction features
+        """
+        features = {}
+        
+        # Advanced momentum interactions
+        momentum_features = self._generate_advanced_momentum_interactions(data)
+        features.update(momentum_features)
+        
+        # Advanced volatility interactions
+        volatility_features = self._generate_advanced_volatility_interactions(data)
+        features.update(volatility_features)
+        
+        # Advanced volume interactions
+        if 'volume' in data.columns:
+            volume_features = self._generate_advanced_volume_interactions(data)
+            features.update(volume_features)
+        
+        # Advanced technical indicator interactions
+        tech_features = self._generate_advanced_technical_interactions(data)
+        features.update(tech_features)
+        
+        # Advanced regime interactions
+        regime_features = self._generate_advanced_regime_interactions(data)
+        features.update(regime_features)
+        
+        return pd.DataFrame(features, index=data.index)
+
+    def _generate_advanced_momentum_interactions(self, data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced momentum interaction features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+        
+        close = data['close']
+        
+        try:
+            # Multi-timeframe momentum analysis
+            timeframes = [5, 10, 20, 50]
+            momentum_series = {}
+            
+            for tf in timeframes:
+                if tf < len(close):
+                    momentum_series[tf] = close.pct_change(tf)
+            
+            # Momentum convergence/divergence analysis
+            if len(momentum_series) >= 3:
+                momentum_df = pd.DataFrame(momentum_series)
+                
+                # Momentum convergence score
+                momentum_corr = momentum_df.rolling(window=20).corr()
+                convergence_score = momentum_corr.mean().mean()
+                
+                if self._is_valid_feature(convergence_score):
+                    features['momentum_convergence_score'] = pd.Series(
+                        [convergence_score] * len(close), 
+                        index=close.index, 
+                        name='momentum_convergence_score'
+                    )
+                
+                # Momentum divergence detection
+                momentum_std = momentum_df.std(axis=1)
+                if self._is_valid_feature(momentum_std):
+                    features['momentum_divergence_std'] = momentum_std.rename('momentum_divergence_std')
+            
+            # Momentum acceleration
+            if len(momentum_series) >= 2:
+                short_momentum = momentum_series.get(5)
+                long_momentum = momentum_series.get(20)
+                
+                if short_momentum is not None and long_momentum is not None:
+                    momentum_acceleration = short_momentum.diff() - long_momentum.diff()
+                    if self._is_valid_feature(momentum_acceleration):
+                        features['momentum_acceleration'] = momentum_acceleration.rename('momentum_acceleration')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced momentum interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_volatility_interactions(self, data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced volatility interaction features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+        
+        close = data['close']
+        
+        try:
+            # Multi-timeframe volatility analysis
+            timeframes = [5, 10, 20, 50]
+            volatility_series = {}
+            
+            for tf in timeframes:
+                if tf < len(close):
+                    returns = close.pct_change()
+                    volatility_series[tf] = self._optimized_rolling_operation(returns, 'std', tf)
+            
+            # Volatility regime detection
+            if len(volatility_series) >= 2:
+                vol_df = pd.DataFrame(volatility_series)
+                
+                # Volatility clustering
+                vol_clustering = vol_df.rolling(window=10).corr().mean().mean()
+                if self._is_valid_feature(vol_clustering):
+                    features['volatility_clustering'] = pd.Series(
+                        [vol_clustering] * len(close), 
+                        index=close.index, 
+                        name='volatility_clustering'
+                    )
+                
+                # Volatility mean reversion
+                short_vol = volatility_series.get(5)
+                long_vol = volatility_series.get(20)
+                
+                if short_vol is not None and long_vol is not None:
+                    vol_mean_reversion = (short_vol - long_vol) / (long_vol + 1e-08)
+                    if self._is_valid_feature(vol_mean_reversion):
+                        features['volatility_mean_reversion'] = vol_mean_reversion.rename('volatility_mean_reversion')
+            
+            # Volatility of volatility
+            if len(volatility_series) >= 1:
+                main_vol = list(volatility_series.values())[0]
+                vol_of_vol = self._optimized_rolling_operation(main_vol, 'std', 20)
+                
+                if self._is_valid_feature(vol_of_vol):
+                    features['volatility_of_volatility'] = vol_of_vol.rename('volatility_of_volatility')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced volatility interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_volume_interactions(self, data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced volume interaction features."""
+        features = {}
+        
+        if 'close' not in data.columns or 'volume' not in data.columns:
+            return features
+        
+        close = data['close']
+        volume = data['volume']
+        
+        try:
+            # Price-Volume interaction analysis
+            price_change = close.pct_change()
+            volume_change = volume.pct_change()
+            
+            # Price-Volume correlation
+            price_volume_corr = self._optimized_rolling_operation(
+                price_change, 'corr', 20, other=volume_change
+            )
+            
+            if self._is_valid_feature(price_volume_corr):
+                features['price_volume_correlation'] = price_volume_corr.rename('price_volume_correlation')
+            
+            # Volume-weighted price momentum
+            vwap = (close * volume).rolling(window=20).sum() / volume.rolling(window=20).sum()
+            price_vwap_ratio = close / (vwap + 1e-08)
+            
+            if self._is_valid_feature(price_vwap_ratio):
+                features['price_vwap_ratio'] = price_vwap_ratio.rename('price_vwap_ratio')
+            
+            # Volume momentum divergence
+            price_momentum = close.pct_change(5)
+            volume_momentum = volume.pct_change(5)
+            volume_divergence = price_momentum - volume_momentum
+            
+            if self._is_valid_feature(volume_divergence):
+                features['volume_momentum_divergence'] = volume_divergence.rename('volume_momentum_divergence')
+            
+            # Volume volatility interaction
+            volume_volatility = self._optimized_rolling_operation(volume, 'std', 20)
+            price_volatility = self._optimized_rolling_operation(close.pct_change(), 'std', 20)
+            
+            vol_vol_interaction = volume_volatility * price_volatility
+            if self._is_valid_feature(vol_vol_interaction):
+                features['volume_volatility_interaction'] = vol_vol_interaction.rename('volume_volatility_interaction')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced volume interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_technical_interactions(self, data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced technical indicator interaction features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+        
+        close = data['close']
+        
+        try:
+            # RSI calculation
+            rsi_14 = self._calculate_rsi(close, 14)
+            
+            # MACD calculation
+            macd_line = self._calculate_macd(close, 12, 26)
+            
+            if rsi_14 is not None and macd_line is not None:
+                # RSI-MACD divergence
+                rsi_macd_divergence = rsi_14 - macd_line
+                if self._is_valid_feature(rsi_macd_divergence):
+                    features['rsi_macd_divergence'] = rsi_macd_divergence.rename('rsi_macd_divergence')
+                
+                # RSI-MACD momentum
+                rsi_macd_momentum = rsi_14 * macd_line
+                if self._is_valid_feature(rsi_macd_momentum):
+                    features['rsi_macd_momentum'] = rsi_macd_momentum.rename('rsi_macd_momentum')
+            
+            # Bollinger Bands analysis
+            bb_window = 20
+            bb_std = 2.0
+            
+            sma = self._optimized_rolling_operation(close, 'mean', bb_window)
+            std_dev = self._optimized_rolling_operation(close, 'std', bb_window)
+            
+            upper_band = sma + (std_dev * bb_std)
+            lower_band = sma - (std_dev * bb_std)
+            bb_width = upper_band - lower_band
+            bb_position = (close - lower_band) / (bb_width + 1e-08)
+            
+            # Bollinger Bands squeeze detection
+            bb_squeeze = bb_width < self._optimized_rolling_operation(bb_width, 'mean', 20) * 0.8
+            if self._is_valid_feature(bb_squeeze):
+                features['bollinger_squeeze'] = bb_squeeze.astype(float).rename('bollinger_squeeze')
+            
+            # Bollinger Bands position
+            if self._is_valid_feature(bb_position):
+                features['bollinger_position'] = bb_position.rename('bollinger_position')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced technical interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_regime_interactions(self, data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced regime interaction features."""
+        features = {}
+        
+        if 'close' not in data.columns:
+            return features
+        
+        close = data['close']
+        
+        try:
+            # Market regime detection
+            short_ma = self._optimized_rolling_operation(close, 'mean', 20)
+            long_ma = self._optimized_rolling_operation(close, 'mean', 50)
+            
+            # Trend regime
+            trend_regime = np.where(close > short_ma, 1, np.where(close < short_ma, -1, 0))
+            trend_regime_series = pd.Series(trend_regime, index=close.index)
+            
+            # Volatility regime
+            returns = close.pct_change()
+            volatility = self._optimized_rolling_operation(returns, 'std', 20)
+            vol_regime = np.where(volatility > volatility.rolling(50).mean(), 1, 0)
+            vol_regime_series = pd.Series(vol_regime, index=close.index)
+            
+            # Regime interaction
+            regime_interaction = trend_regime_series * vol_regime_series
+            if self._is_valid_feature(regime_interaction):
+                features['trend_volatility_regime_interaction'] = regime_interaction.rename('trend_volatility_regime_interaction')
+            
+            # Regime persistence
+            regime_persistence = trend_regime_series.rolling(window=10).apply(lambda x: len(set(x)) == 1, raw=False)
+            if self._is_valid_feature(regime_persistence):
+                features['regime_persistence'] = regime_persistence.rename('regime_persistence')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced regime interactions failed: {e}")
+        
+        return features
+
+    def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate RSI using optimized rolling operations."""
+        if len(prices) < period:
+            return pd.Series([50.0] * len(prices), index=prices.index)
+        
+        delta = prices.diff()
+        gains = np.where(delta > 0, delta, 0)
+        losses = np.where(delta < 0, -delta, 0)
+        
+        gains_series = pd.Series(gains, index=prices.index)
+        losses_series = pd.Series(losses, index=prices.index)
+        
+        avg_gains = gains_series.ewm(span=period, adjust=False).mean()
+        avg_losses = losses_series.ewm(span=period, adjust=False).mean()
+        
+        rs = avg_gains / (avg_losses + 1e-08)
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+
+    def _calculate_macd(self, prices: pd.Series, fast_period: int, slow_period: int) -> pd.Series:
+        """Calculate MACD using optimized rolling operations."""
+        if len(prices) < max(fast_period, slow_period):
+            return pd.Series([0.0] * len(prices), index=prices.index)
+        
+        fast_ema = prices.ewm(span=fast_period, adjust=False).mean()
+        slow_ema = prices.ewm(span=slow_period, adjust=False).mean()
+        
+        return fast_ema - slow_ema
+
+    def _is_valid_feature(self, series: pd.Series) -> bool:
+        """Check if a feature series is valid."""
+        if series is None or series.empty:
+            return False
+        
+        # Check for all NaN values
+        if series.isna().all():
+            return False
+        
+        # Check for infinite values
+        if np.isinf(series).any():
+            return False
+        
+        # Check for constant values (no variance)
+        if series.nunique() <= 1:
+            return False
+        
+        return True
 
 # Momentum Trend Generator
     

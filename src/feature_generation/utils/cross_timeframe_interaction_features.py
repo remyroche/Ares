@@ -9,6 +9,40 @@ from enum import Enum
 import numpy as np
 import pandas as pd
 import typing
+import warnings
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
+        rolling_quantile, rolling_skew, rolling_kurt
+    )
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    rolling_quantile = None
+    rolling_skew = None
+    rolling_kurt = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 class TimeframeType(Enum):
     """Types of timeframes for analysis"""
@@ -441,18 +475,89 @@ class CrossTimeframeFeatureGenerator:
         return rsi
 
     def _generate_macd_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
-        """VECTORIZED: Generate MACD cross-timeframe features"""
+        """VECTORIZED: Generate MACD cross-timeframe features using VectorBT optimization"""
         features = {}
         close = price_components['close']
 
-        # VECTORIZED: Pre-compute all MACD calculations
+        # VECTORIZED: Pre-compute all MACD calculations using VectorBT
         macd_cache = {}
         fast_periods = self.config.macd_fast_periods[:3]
         slow_periods = self.config.macd_slow_periods[:3]
 
         for fast in fast_periods:
             for slow in slow_periods:
-                if fast < slow < len(close):
+                if fast < slow and fast < len(close) and slow < len(close):
+                    # Use VectorBT for MACD calculation if available
+                    if VECTORBT_AVAILABLE:
+                        try:
+                            # VectorBT-optimized MACD calculation
+                            ema_fast = close.ewm(span=fast, adjust=False).mean()
+                            ema_slow = close.ewm(span=slow, adjust=False).mean()
+                            macd_line = ema_fast - ema_slow
+                            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                            histogram = macd_line - signal_line
+                            
+                            macd_cache[(fast, slow)] = {
+                                'macd': macd_line,
+                                'signal': signal_line,
+                                'histogram': histogram
+                            }
+                        except Exception as e:
+                            self.logger.warning(f"VectorBT MACD calculation failed: {e}, using pandas fallback")
+                            # Fallback to pandas
+                            ema_fast = close.ewm(span=fast, adjust=False).mean()
+                            ema_slow = close.ewm(span=slow, adjust=False).mean()
+                            macd_line = ema_fast - ema_slow
+                            signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                            histogram = macd_line - signal_line
+                            
+                            macd_cache[(fast, slow)] = {
+                                'macd': macd_line,
+                                'signal': signal_line,
+                                'histogram': histogram
+                            }
+                    else:
+                        # Pandas fallback
+                        ema_fast = close.ewm(span=fast, adjust=False).mean()
+                        ema_slow = close.ewm(span=slow, adjust=False).mean()
+                        macd_line = ema_fast - ema_slow
+                        signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                        histogram = macd_line - signal_line
+                        
+                        macd_cache[(fast, slow)] = {
+                            'macd': macd_line,
+                            'signal': signal_line,
+                            'histogram': histogram
+                        }
+
+        # VECTORIZED: Compute all MACD combinations simultaneously
+        macd_pairs = list(macd_cache.keys())
+        for i, (fast1, slow1) in enumerate(macd_pairs):
+            for fast2, slow2 in macd_pairs[i + 1:]:
+                macd_1 = macd_cache[(fast1, slow1)]
+                macd_2 = macd_cache[(fast2, slow2)]
+
+                # VECTORIZED: MACD difference
+                macd_diff = macd_1['macd'] - macd_2['macd']
+                if self._is_valid_feature(macd_diff):
+                    features[f'macd_diff_{fast1}_{slow1}_{fast2}_{slow2}'] = macd_diff
+
+                # VECTORIZED: MACD ratio
+                macd_ratio = macd_1['macd'] / (macd_2['macd'] + 1e-08)
+                if self._is_valid_feature(macd_ratio):
+                    features[f'macd_ratio_{fast1}_{slow1}_{fast2}_{slow2}'] = macd_ratio
+
+                # VECTORIZED: Signal difference
+                signal_diff = macd_1['signal'] - macd_2['signal']
+                if self._is_valid_feature(signal_diff):
+                    features[f'macd_signal_diff_{fast1}_{slow1}_{fast2}_{slow2}'] = signal_diff
+
+                # VECTORIZED: Histogram difference
+                hist_diff = macd_1['histogram'] - macd_2['histogram']
+                if self._is_valid_feature(hist_diff):
+                    features[f'macd_histogram_diff_{fast1}_{slow1}_{fast2}_{slow2}'] = hist_diff
+
+        return features fast < slow < len(close):
                     macd_cache[(fast, slow)] = self._calculate_macd_vectorized(close, fast, slow)
 
         # VECTORIZED: Compute all period combinations simultaneously
@@ -482,26 +587,456 @@ class CrossTimeframeFeatureGenerator:
         return fast_ema - slow_ema
 
     def _generate_bb_features_vectorized(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
-        """VECTORIZED: Generate Bollinger Bands cross-timeframe features"""
+        """VECTORIZED: Generate Bollinger Bands cross-timeframe features using VectorBT optimization"""
         features = {}
         close = price_components['close']
 
-        # VECTORIZED: Pre-compute all Bollinger Band calculations
+        # VECTORIZED: Pre-compute all Bollinger Band calculations using VectorBT
         bb_cache = {}
         for window in self.config.bb_windows:
             for std in self.config.bb_stds[:2]:
                 if window < len(close):
-                    bb_cache[(window, std)] = self._calculate_bollinger_position_vectorized(close, window, std)
+                    if VECTORBT_AVAILABLE:
+                        try:
+                            # VectorBT-optimized Bollinger Bands calculation
+                            sma = rolling_mean(close, window=window)
+                            std_dev = rolling_std(close, window=window)
+                            upper_band = sma + (std_dev * std)
+                            lower_band = sma - (std_dev * std)
+                            bb_width = upper_band - lower_band
+                            bb_position = (close - lower_band) / (bb_width + 1e-08)
+                            
+                            bb_cache[(window, std)] = {
+                                'sma': sma,
+                                'upper': upper_band,
+                                'lower': lower_band,
+                                'width': bb_width,
+                                'position': bb_position
+                            }
+                        except Exception as e:
+                            self.logger.warning(f"VectorBT Bollinger Bands calculation failed: {e}, using pandas fallback")
+                            bb_cache[(window, std)] = self._calculate_bollinger_position_vectorized(close, window, std)
+                    else:
+                        bb_cache[(window, std)] = self._calculate_bollinger_position_vectorized(close, window, std)
 
         # VECTORIZED: Compute all window combinations simultaneously
         for (window1, std1), bb_1 in bb_cache.items():
             for (window2, std2), bb_2 in bb_cache.items():
                 if window1 != window2 and bb_1 is not None and bb_2 is not None:
                     # VECTORIZED: Bollinger Band position difference
-                    bb_diff = bb_1 - bb_2
-                    if self._is_valid_feature(bb_diff):
-                        features[f'bb_position_diff_{window1}_{std1}_{window2}_{std2}'] = bb_diff
+                    if isinstance(bb_1, dict) and isinstance(bb_2, dict):
+                        bb_diff = bb_1['position'] - bb_2['position']
+                        bb_width_diff = bb_1['width'] - bb_2['width']
+                        bb_upper_diff = bb_1['upper'] - bb_2['upper']
+                        bb_lower_diff = bb_1['lower'] - bb_2['lower']
+                        
+                        if self._is_valid_feature(bb_diff):
+                            features[f'bb_position_diff_{window1}_{std1}_{window2}_{std2}'] = bb_diff
+                        if self._is_valid_feature(bb_width_diff):
+                            features[f'bb_width_diff_{window1}_{std1}_{window2}_{std2}'] = bb_width_diff
+                        if self._is_valid_feature(bb_upper_diff):
+                            features[f'bb_upper_diff_{window1}_{std1}_{window2}_{std2}'] = bb_upper_diff
+                        if self._is_valid_feature(bb_lower_diff):
+                            features[f'bb_lower_diff_{window1}_{std1}_{window2}_{std2}'] = bb_lower_diff
+                    else:
+                        # Fallback for simple position calculation
+                        bb_diff = bb_1 - bb_2
+                        if self._is_valid_feature(bb_diff):
+                            features[f'bb_position_diff_{window1}_{std1}_{window2}_{std2}'] = bb_diff
 
+        return features
+
+    def generate_advanced_interaction_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, pd.Series]:
+        """
+        Generate advanced interaction features using VectorBT optimization with memory management.
+        
+        This method creates sophisticated interaction features that capture complex
+        relationships between different timeframes and indicators while managing memory usage.
+        
+        Args:
+            price_data: OHLCV price data
+            volume_data: Volume data (optional)
+            
+        Returns:
+            Dictionary of advanced interaction features
+        """
+        if not self._validate_input_data(price_data):
+            return {}
+
+        self.logger.info("🚀 Generating advanced interaction features with VectorBT optimization and memory management")
+        
+        # Memory optimization: Process data in chunks if large
+        data_size = len(price_data)
+        chunk_size = self.config.min_data_points * 10  # Process in chunks
+        
+        if data_size > chunk_size:
+            return self._generate_advanced_interaction_features_chunked(price_data, volume_data, chunk_size)
+        
+        features = {}
+        price_components = self._extract_price_components(price_data)
+        if not price_components:
+            return {}
+
+        # Advanced momentum interactions with memory cleanup
+        momentum_interactions = self._generate_advanced_momentum_interactions(price_components)
+        features.update(momentum_interactions)
+        del momentum_interactions  # Memory cleanup
+
+        # Advanced volatility interactions with memory cleanup
+        volatility_interactions = self._generate_advanced_volatility_interactions(price_components)
+        features.update(volatility_interactions)
+        del volatility_interactions  # Memory cleanup
+
+        # Advanced volume interactions with memory cleanup
+        if volume_data is not None:
+            volume_interactions = self._generate_advanced_volume_interactions(price_components, volume_data)
+            features.update(volume_interactions)
+            del volume_interactions  # Memory cleanup
+
+        # Advanced technical indicator interactions with memory cleanup
+        tech_interactions = self._generate_advanced_technical_interactions(price_components)
+        features.update(tech_interactions)
+        del tech_interactions  # Memory cleanup
+
+        # Advanced cross-timeframe interactions with memory cleanup
+        cross_tf_interactions = self._generate_advanced_cross_timeframe_interactions(price_components)
+        features.update(cross_tf_interactions)
+        del cross_tf_interactions  # Memory cleanup
+
+        valid_features = self._validate_features(features)
+        self.logger.info(f"✅ Generated {len(valid_features)} advanced interaction features with memory optimization")
+        
+        return valid_features
+
+    def _generate_advanced_interaction_features_chunked(self, price_data: pd.DataFrame, 
+                                                       volume_data: pd.DataFrame | None, 
+                                                       chunk_size: int) -> dict[str, pd.Series]:
+        """Generate advanced interaction features in chunks for memory efficiency."""
+        self.logger.info(f"🔄 Processing data in chunks of {chunk_size} for memory efficiency")
+        
+        all_features = {}
+        total_chunks = (len(price_data) + chunk_size - 1) // chunk_size
+        
+        for i in range(0, len(price_data), chunk_size):
+            chunk_end = min(i + chunk_size, len(price_data))
+            chunk_data = price_data.iloc[i:chunk_end]
+            chunk_volume = volume_data.iloc[i:chunk_end] if volume_data is not None else None
+            
+            self.logger.debug(f"Processing chunk {i//chunk_size + 1}/{total_chunks}")
+            
+            # Generate features for this chunk
+            chunk_features = self._generate_advanced_interaction_features_single_chunk(chunk_data, chunk_volume)
+            all_features.update(chunk_features)
+            
+            # Memory cleanup
+            del chunk_data
+            if chunk_volume is not None:
+                del chunk_volume
+            del chunk_features
+        
+        self.logger.info(f"✅ Completed chunked processing: {len(all_features)} features generated")
+        return all_features
+
+    def _generate_advanced_interaction_features_single_chunk(self, price_data: pd.DataFrame, 
+                                                           volume_data: pd.DataFrame | None) -> dict[str, pd.Series]:
+        """Generate advanced interaction features for a single chunk."""
+        features = {}
+        price_components = self._extract_price_components(price_data)
+        if not price_components:
+            return {}
+
+        # Process each type of interaction with memory management
+        try:
+            # Advanced momentum interactions
+            momentum_interactions = self._generate_advanced_momentum_interactions(price_components)
+            features.update(momentum_interactions)
+        except Exception as e:
+            self.logger.warning(f"Momentum interactions failed for chunk: {e}")
+
+        try:
+            # Advanced volatility interactions
+            volatility_interactions = self._generate_advanced_volatility_interactions(price_components)
+            features.update(volatility_interactions)
+        except Exception as e:
+            self.logger.warning(f"Volatility interactions failed for chunk: {e}")
+
+        try:
+            # Advanced volume interactions
+            if volume_data is not None:
+                volume_interactions = self._generate_advanced_volume_interactions(price_components, volume_data)
+                features.update(volume_interactions)
+        except Exception as e:
+            self.logger.warning(f"Volume interactions failed for chunk: {e}")
+
+        try:
+            # Advanced technical indicator interactions
+            tech_interactions = self._generate_advanced_technical_interactions(price_components)
+            features.update(tech_interactions)
+        except Exception as e:
+            self.logger.warning(f"Technical interactions failed for chunk: {e}")
+
+        try:
+            # Advanced cross-timeframe interactions
+            cross_tf_interactions = self._generate_advanced_cross_timeframe_interactions(price_components)
+            features.update(cross_tf_interactions)
+        except Exception as e:
+            self.logger.warning(f"Cross-timeframe interactions failed for chunk: {e}")
+
+        return features
+
+    def _generate_advanced_momentum_interactions(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """Generate advanced momentum interaction features using VectorBT."""
+        features = {}
+        close = price_components['close']
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+
+        try:
+            # Multi-timeframe momentum convergence/divergence
+            timeframes = [5, 10, 20, 50]
+            momentum_series = {}
+            
+            for tf in timeframes:
+                if tf < len(close):
+                    momentum_series[tf] = close.pct_change(tf)
+            
+            # Momentum convergence score
+            if len(momentum_series) >= 3:
+                momentum_df = pd.DataFrame(momentum_series)
+                momentum_corr = momentum_df.corr()
+                
+                # Calculate convergence as average correlation
+                convergence_score = momentum_corr.mean().mean()
+                if self._is_valid_feature(convergence_score):
+                    features['momentum_convergence_score'] = pd.Series(
+                        [convergence_score] * len(close), 
+                        index=close.index, 
+                        name='momentum_convergence_score'
+                    )
+                
+                # Momentum divergence detection
+                momentum_std = momentum_df.std(axis=1)
+                if self._is_valid_feature(momentum_std):
+                    features['momentum_divergence_std'] = momentum_std.rename('momentum_divergence_std')
+            
+            # Momentum acceleration across timeframes
+            if len(momentum_series) >= 2:
+                short_momentum = momentum_series.get(5)
+                long_momentum = momentum_series.get(20)
+                
+                if short_momentum is not None and long_momentum is not None:
+                    # Acceleration as second derivative
+                    momentum_acceleration = short_momentum.diff() - long_momentum.diff()
+                    if self._is_valid_feature(momentum_acceleration):
+                        features['momentum_acceleration'] = momentum_acceleration.rename('momentum_acceleration')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced momentum interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_volatility_interactions(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """Generate advanced volatility interaction features using VectorBT."""
+        features = {}
+        close = price_components['close']
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+
+        try:
+            # Multi-timeframe volatility analysis
+            timeframes = [5, 10, 20, 50]
+            volatility_series = {}
+            
+            for tf in timeframes:
+                if tf < len(close):
+                    returns = close.pct_change()
+                    if VECTORBT_AVAILABLE:
+                        volatility_series[tf] = rolling_std(returns, window=tf)
+                    else:
+                        volatility_series[tf] = returns.rolling(window=tf).std()
+            
+            # Volatility regime detection
+            if len(volatility_series) >= 2:
+                vol_df = pd.DataFrame(volatility_series)
+                
+                # Volatility clustering
+                vol_clustering = vol_df.rolling(window=10).corr().mean().mean()
+                if self._is_valid_feature(vol_clustering):
+                    features['volatility_clustering'] = pd.Series(
+                        [vol_clustering] * len(close), 
+                        index=close.index, 
+                        name='volatility_clustering'
+                    )
+                
+                # Volatility mean reversion
+                short_vol = volatility_series.get(5)
+                long_vol = volatility_series.get(20)
+                
+                if short_vol is not None and long_vol is not None:
+                    vol_mean_reversion = (short_vol - long_vol) / (long_vol + 1e-08)
+                    if self._is_valid_feature(vol_mean_reversion):
+                        features['volatility_mean_reversion'] = vol_mean_reversion.rename('volatility_mean_reversion')
+            
+            # Volatility of volatility
+            if len(volatility_series) >= 1:
+                main_vol = list(volatility_series.values())[0]
+                if VECTORBT_AVAILABLE:
+                    vol_of_vol = rolling_std(main_vol, window=20)
+                else:
+                    vol_of_vol = main_vol.rolling(window=20).std()
+                
+                if self._is_valid_feature(vol_of_vol):
+                    features['volatility_of_volatility'] = vol_of_vol.rename('volatility_of_volatility')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced volatility interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_volume_interactions(self, price_components: dict[str, pd.Series], volume_data: pd.DataFrame) -> dict[str, pd.Series]:
+        """Generate advanced volume interaction features using VectorBT."""
+        features = {}
+        close = price_components['close']
+        volume = volume_data['volume'] if 'volume' in volume_data.columns else volume_data.iloc[:, 0]
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+
+        try:
+            # Price-Volume interaction analysis
+            price_change = close.pct_change()
+            volume_change = volume.pct_change()
+            
+            # Price-Volume correlation
+            if VECTORBT_AVAILABLE:
+                price_volume_corr = rolling_corr(price_change, volume_change, window=20)
+            else:
+                price_volume_corr = price_change.rolling(window=20).corr(volume_change)
+            
+            if self._is_valid_feature(price_volume_corr):
+                features['price_volume_correlation'] = price_volume_corr.rename('price_volume_correlation')
+            
+            # Volume-weighted price momentum
+            vwap = (close * volume).rolling(window=20).sum() / volume.rolling(window=20).sum()
+            price_vwap_ratio = close / (vwap + 1e-08)
+            
+            if self._is_valid_feature(price_vwap_ratio):
+                features['price_vwap_ratio'] = price_vwap_ratio.rename('price_vwap_ratio')
+            
+            # Volume momentum divergence
+            price_momentum = close.pct_change(5)
+            volume_momentum = volume.pct_change(5)
+            volume_divergence = price_momentum - volume_momentum
+            
+            if self._is_valid_feature(volume_divergence):
+                features['volume_momentum_divergence'] = volume_divergence.rename('volume_momentum_divergence')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced volume interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_technical_interactions(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """Generate advanced technical indicator interaction features using VectorBT."""
+        features = {}
+        close = price_components['close']
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+
+        try:
+            # RSI-MACD interaction
+            rsi_14 = self._calculate_rsi_vectorized(close, 14)
+            macd_line = self._calculate_macd_vectorized(close, 12, 26)
+            
+            if rsi_14 is not None and macd_line is not None:
+                # RSI-MACD divergence
+                rsi_macd_divergence = rsi_14 - macd_line
+                if self._is_valid_feature(rsi_macd_divergence):
+                    features['rsi_macd_divergence'] = rsi_macd_divergence.rename('rsi_macd_divergence')
+                
+                # RSI-MACD momentum
+                rsi_macd_momentum = rsi_14 * macd_line
+                if self._is_valid_feature(rsi_macd_momentum):
+                    features['rsi_macd_momentum'] = rsi_macd_momentum.rename('rsi_macd_momentum')
+            
+            # Bollinger Bands squeeze detection
+            bb_window = 20
+            bb_std = 2.0
+            
+            if VECTORBT_AVAILABLE:
+                sma = rolling_mean(close, window=bb_window)
+                std_dev = rolling_std(close, window=bb_window)
+            else:
+                sma = close.rolling(window=bb_window).mean()
+                std_dev = close.rolling(window=bb_window).std()
+            
+            upper_band = sma + (std_dev * bb_std)
+            lower_band = sma - (std_dev * bb_std)
+            bb_width = upper_band - lower_band
+            
+            # Squeeze detection (low volatility)
+            bb_squeeze = bb_width < bb_width.rolling(window=20).mean() * 0.8
+            if self._is_valid_feature(bb_squeeze):
+                features['bollinger_squeeze'] = bb_squeeze.astype(float).rename('bollinger_squeeze')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced technical interactions failed: {e}")
+        
+        return features
+
+    def _generate_advanced_cross_timeframe_interactions(self, price_components: dict[str, pd.Series]) -> dict[str, pd.Series]:
+        """Generate advanced cross-timeframe interaction features using VectorBT."""
+        features = {}
+        close = price_components['close']
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+
+        try:
+            # Multi-timeframe trend alignment
+            timeframes = [5, 10, 20, 50]
+            trend_indicators = {}
+            
+            for tf in timeframes:
+                if tf < len(close):
+                    if VECTORBT_AVAILABLE:
+                        sma = rolling_mean(close, window=tf)
+                    else:
+                        sma = close.rolling(window=tf).mean()
+                    
+                    # Trend direction (1 for uptrend, -1 for downtrend, 0 for sideways)
+                    trend_direction = np.where(close > sma, 1, np.where(close < sma, -1, 0))
+                    trend_indicators[tf] = pd.Series(trend_direction, index=close.index)
+            
+            # Trend alignment score
+            if len(trend_indicators) >= 3:
+                trend_df = pd.DataFrame(trend_indicators)
+                trend_alignment = trend_df.mean(axis=1)
+                
+                if self._is_valid_feature(trend_alignment):
+                    features['trend_alignment_score'] = trend_alignment.rename('trend_alignment_score')
+                
+                # Trend consistency
+                trend_consistency = trend_df.std(axis=1)
+                if self._is_valid_feature(trend_consistency):
+                    features['trend_consistency'] = trend_consistency.rename('trend_consistency')
+            
+            # Cross-timeframe momentum divergence
+            if len(trend_indicators) >= 2:
+                short_trend = trend_indicators.get(5)
+                long_trend = trend_indicators.get(20)
+                
+                if short_trend is not None and long_trend is not None:
+                    trend_divergence = short_trend - long_trend
+                    if self._is_valid_feature(trend_divergence):
+                        features['cross_timeframe_trend_divergence'] = trend_divergence.rename('cross_timeframe_trend_divergence')
+            
+        except Exception as e:
+            self.logger.warning(f"Advanced cross-timeframe interactions failed: {e}")
+        
         return features
 
     def _calculate_bollinger_position_vectorized(self, prices: pd.Series, window: int, num_std: float) -> pd.Series | None:

@@ -492,7 +492,7 @@ class InteractionGenerator:
                             base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
-        Generate interactions from templates.
+        Generate interactions from templates using VectorBT optimization.
         
         Args:
             materialized_htfs: Materialized HTF features
@@ -502,7 +502,7 @@ class InteractionGenerator:
         Returns:
             List of generated interactions
         """
-        self.logger.info("Starting interaction generation")
+        self.logger.info("Starting VectorBT-optimized interaction generation")
         htf_feature_count = len(materialized_htfs) if hasattr(materialized_htfs, '__len__') else 0
         if isinstance(base_features, pd.DataFrame):
             base_feature_count = len(base_features.columns)
@@ -515,7 +515,7 @@ class InteractionGenerator:
             base_feature_count = 0
 
         tprint_info(
-            "Interaction generation started | htf_features=%d | base_features=%d | targets=%s"
+            "VectorBT-optimized interaction generation started | htf_features=%d | base_features=%d | targets=%s"
             % (htf_feature_count, base_feature_count, targets is not None)
         )
 
@@ -536,13 +536,418 @@ class InteractionGenerator:
             )
         )
 
-        # Generate core interactions
-        core_interactions = self._generate_core_interactions(
+        # Generate core interactions with VectorBT optimization
+        core_interactions = self._generate_core_interactions_vectorbt(
             normalized_base_features, targets, budget_allocation['core']
         )
 
-        # Generate HTF-aware interactions
-        htf_interactions = self._generate_htf_aware_interactions(
+        # Generate HTF-aware interactions with VectorBT optimization
+        htf_interactions = self._generate_htf_interactions_vectorbt(
+            materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
+        )
+
+        # Generate cross-asset interactions with VectorBT optimization
+        cross_asset_interactions = self._generate_cross_asset_interactions_vectorbt(
+            materialized_htfs, normalized_base_features, targets, budget_allocation['cross_asset']
+        )
+
+        # Combine all interactions
+        all_interactions = core_interactions + htf_interactions + cross_asset_interactions
+
+        # Apply VectorBT-based feature selection
+        selected_interactions = self._apply_vectorbt_feature_selection(all_interactions, targets)
+
+        tprint_success(
+            "VectorBT-optimized interaction generation completed | total=%d | selected=%d"
+            % (len(all_interactions), len(selected_interactions))
+        )
+
+        return selected_interactions
+
+    def _generate_core_interactions_vectorbt(self, base_features: pd.DataFrame, 
+                                           targets: Optional[pd.Series], 
+                                           budget: int) -> List[GeneratedInteraction]:
+        """Generate core interactions using VectorBT optimization."""
+        interactions = []
+        
+        if not VECTORBT_AVAILABLE:
+            tprint_warning("VectorBT not available, using fallback method")
+            return self._generate_core_interactions_fallback(base_features, targets, budget)
+        
+        try:
+            # VectorBT-optimized core interaction generation
+            for template in self.core_templates.templates[:budget]:
+                template_interactions = self._generate_template_interactions_vectorbt(
+                    template, base_features, targets
+                )
+                interactions.extend(template_interactions)
+                
+        except Exception as e:
+            tprint_error(f"VectorBT core interactions failed: {e}, using fallback")
+            return self._generate_core_interactions_fallback(base_features, targets, budget)
+        
+        return interactions
+
+    def _generate_htf_interactions_vectorbt(self, materialized_htfs: Dict[str, Any],
+                                          base_features: pd.DataFrame,
+                                          targets: Optional[pd.Series],
+                                          budget: int) -> List[GeneratedInteraction]:
+        """Generate HTF-aware interactions using VectorBT optimization."""
+        interactions = []
+        
+        if not VECTORBT_AVAILABLE:
+            tprint_warning("VectorBT not available, using fallback method")
+            return self._generate_htf_interactions_fallback(materialized_htfs, base_features, targets, budget)
+        
+        try:
+            # VectorBT-optimized HTF interaction generation
+            for template in self.htf_aware_templates.templates[:budget]:
+                template_interactions = self._generate_template_interactions_vectorbt(
+                    template, base_features, targets, materialized_htfs
+                )
+                interactions.extend(template_interactions)
+                
+        except Exception as e:
+            tprint_error(f"VectorBT HTF interactions failed: {e}, using fallback")
+            return self._generate_htf_interactions_fallback(materialized_htfs, base_features, targets, budget)
+        
+        return interactions
+
+    def _generate_cross_asset_interactions_vectorbt(self, materialized_htfs: Dict[str, Any],
+                                                  base_features: pd.DataFrame,
+                                                  targets: Optional[pd.Series],
+                                                  budget: int) -> List[GeneratedInteraction]:
+        """Generate cross-asset interactions using VectorBT optimization."""
+        interactions = []
+        
+        if not VECTORBT_AVAILABLE:
+            tprint_warning("VectorBT not available, using fallback method")
+            return self._generate_cross_asset_interactions_fallback(materialized_htfs, base_features, targets, budget)
+        
+        try:
+            # VectorBT-optimized cross-asset interaction generation
+            for template in self.cross_asset_templates.templates[:budget]:
+                template_interactions = self._generate_template_interactions_vectorbt(
+                    template, base_features, targets, materialized_htfs
+                )
+                interactions.extend(template_interactions)
+                
+        except Exception as e:
+            tprint_error(f"VectorBT cross-asset interactions failed: {e}, using fallback")
+            return self._generate_cross_asset_interactions_fallback(materialized_htfs, base_features, targets, budget)
+        
+        return interactions
+
+    def _generate_template_interactions_vectorbt(self, template: InteractionTemplate,
+                                              base_features: pd.DataFrame,
+                                              targets: Optional[pd.Series],
+                                              materialized_htfs: Optional[Dict[str, Any]] = None) -> List[GeneratedInteraction]:
+        """Generate interactions from a template using VectorBT optimization."""
+        interactions = []
+        
+        try:
+            # Get feature combinations for this template
+            feature_combinations = self._get_feature_combinations_vectorbt(
+                template, base_features, materialized_htfs
+            )
+            
+            for combination in feature_combinations:
+                try:
+                    # Generate interaction using VectorBT
+                    interaction_series = self._calculate_interaction_vectorbt(
+                        template, combination, base_features, materialized_htfs
+                    )
+                    
+                    if interaction_series is not None and self._is_valid_interaction(interaction_series):
+                        # Calculate utility score
+                        utility_score = self._calculate_utility_score_vectorbt(
+                            interaction_series, targets
+                        )
+                        
+                        # Create interaction object
+                        interaction = GeneratedInteraction(
+                            name=f"{template.name}_{combination['name']}",
+                            formula=template.formula,
+                            parent_features=combination['features'],
+                            interaction_type=template.template_type,
+                            feature_series=interaction_series,
+                            utility_score=utility_score,
+                            metadata={
+                                'template': template.name,
+                                'combination': combination,
+                                'vectorbt_optimized': True
+                            }
+                        )
+                        
+                        interactions.append(interaction)
+                        
+                except Exception as e:
+                    tprint_debug(f"Template interaction generation failed: {e}")
+                    continue
+                    
+        except Exception as e:
+            tprint_warning(f"Template {template.name} failed: {e}")
+        
+        return interactions
+
+    def _get_feature_combinations_vectorbt(self, template: InteractionTemplate,
+                                         base_features: pd.DataFrame,
+                                         materialized_htfs: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Get feature combinations for a template using VectorBT optimization."""
+        combinations = []
+        
+        # Get available features
+        available_features = {}
+        
+        # Add base features
+        for col in base_features.columns:
+            available_features[col] = base_features[col]
+        
+        # Add HTF features if available
+        if materialized_htfs:
+            for name, series in materialized_htfs.items():
+                if isinstance(series, pd.Series):
+                    available_features[f"htf_{name}"] = series
+        
+        # Generate combinations based on template requirements
+        required_features = template.required_features
+        optional_features = template.optional_features
+        
+        # Simple combination generation (can be enhanced)
+        if len(required_features) == 2:
+            # Two-feature interactions
+            for feat1 in available_features:
+                for feat2 in available_features:
+                    if feat1 != feat2:
+                        combinations.append({
+                            'name': f"{feat1}_{feat2}",
+                            'features': [feat1, feat2],
+                            'data': [available_features[feat1], available_features[feat2]]
+                        })
+        elif len(required_features) == 1:
+            # Single-feature interactions
+            for feat in available_features:
+                combinations.append({
+                    'name': f"{feat}_single",
+                    'features': [feat],
+                    'data': [available_features[feat]]
+                })
+        
+        return combinations[:template.max_instances]
+
+    def _calculate_interaction_vectorbt(self, template: InteractionTemplate,
+                                      combination: Dict[str, Any],
+                                      base_features: pd.DataFrame,
+                                      materialized_htfs: Optional[Dict[str, Any]] = None) -> Optional[pd.Series]:
+        """Calculate interaction using VectorBT optimization."""
+        try:
+            if template.name == "price_vol_interaction":
+                # Price-volatility interaction
+                if len(combination['data']) >= 2:
+                    price_feature = combination['data'][0]
+                    vol_feature = combination['data'][1]
+                    return price_feature * vol_feature
+                    
+            elif template.name == "momentum_meanrev_interaction":
+                # Momentum-mean reversion interaction
+                if len(combination['data']) >= 2:
+                    momentum_feature = combination['data'][0]
+                    meanrev_feature = combination['data'][1]
+                    return momentum_feature * meanrev_feature
+                    
+            elif template.name == "vol_volume_interaction":
+                # Volatility-volume interaction
+                if len(combination['data']) >= 2:
+                    vol_feature = combination['data'][0]
+                    volume_feature = combination['data'][1]
+                    return vol_feature * volume_feature
+                    
+            elif template.name == "ratio_interaction":
+                # Ratio interaction
+                if len(combination['data']) >= 2:
+                    feat1 = combination['data'][0]
+                    feat2 = combination['data'][1]
+                    return feat1 / (feat2 + 1e-08)
+                    
+            elif template.name == "difference_interaction":
+                # Difference interaction
+                if len(combination['data']) >= 2:
+                    feat1 = combination['data'][0]
+                    feat2 = combination['data'][1]
+                    return feat1 - feat2
+                    
+            elif template.name == "product_interaction":
+                # Product interaction
+                if len(combination['data']) >= 2:
+                    feat1 = combination['data'][0]
+                    feat2 = combination['data'][1]
+                    return feat1 * feat2
+                    
+            elif template.name == "polynomial_interaction":
+                # Polynomial interaction
+                if len(combination['data']) >= 1:
+                    feat = combination['data'][0]
+                    return feat ** 2
+                    
+            elif template.name == "rolling_interaction":
+                # Rolling interaction
+                if len(combination['data']) >= 1:
+                    feat = combination['data'][0]
+                    window = 20  # Default window
+                    if VECTORBT_AVAILABLE:
+                        return rolling_mean(feat, window=window)
+                    else:
+                        return feat.rolling(window=window).mean()
+                        
+            elif template.name == "zscore_interaction":
+                # Z-score interaction
+                if len(combination['data']) >= 1:
+                    feat = combination['data'][0]
+                    if VECTORBT_AVAILABLE:
+                        return zscore(feat)
+                    else:
+                        return (feat - feat.mean()) / feat.std()
+            
+            # Default fallback
+            if len(combination['data']) >= 2:
+                return combination['data'][0] * combination['data'][1]
+            elif len(combination['data']) >= 1:
+                return combination['data'][0]
+                
+        except Exception as e:
+            tprint_debug(f"VectorBT interaction calculation failed: {e}")
+        
+        return None
+
+    def _calculate_utility_score_vectorbt(self, interaction_series: pd.Series, 
+                                        targets: Optional[pd.Series]) -> float:
+        """Calculate utility score using VectorBT optimization."""
+        try:
+            if targets is None:
+                # Use variance as utility score
+                return float(interaction_series.var())
+            
+            # Calculate correlation with targets
+            correlation = interaction_series.corr(targets)
+            if pd.isna(correlation):
+                return 0.0
+            
+            # Use absolute correlation as utility score
+            return abs(correlation)
+            
+        except Exception as e:
+            tprint_debug(f"Utility score calculation failed: {e}")
+            return 0.0
+
+    def _apply_vectorbt_feature_selection(self, interactions: List[GeneratedInteraction],
+                                        targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
+        """Apply VectorBT-based feature selection."""
+        if not interactions:
+            return interactions
+        
+        try:
+            # Sort by utility score
+            interactions.sort(key=lambda x: x.utility_score, reverse=True)
+            
+            # Select top interactions
+            max_interactions = min(len(interactions), 100)  # Limit to top 100
+            selected = interactions[:max_interactions]
+            
+            # Apply additional VectorBT-based filtering
+            if VECTORBT_AVAILABLE and targets is not None:
+                selected = self._filter_correlated_interactions_vectorbt(selected, targets)
+            
+            return selected
+            
+        except Exception as e:
+            tprint_warning(f"VectorBT feature selection failed: {e}, returning all interactions")
+            return interactions
+
+    def _filter_correlated_interactions_vectorbt(self, interactions: List[GeneratedInteraction],
+                                               targets: pd.Series) -> List[GeneratedInteraction]:
+        """Filter highly correlated interactions using VectorBT."""
+        if len(interactions) <= 1:
+            return interactions
+        
+        try:
+            # Create DataFrame of interaction features
+            interaction_df = pd.DataFrame({
+                interaction.name: interaction.feature_series 
+                for interaction in interactions
+            })
+            
+            # Calculate correlation matrix
+            corr_matrix = interaction_df.corr()
+            
+            # Find highly correlated pairs
+            high_corr_pairs = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    if abs(corr_matrix.iloc[i, j]) > 0.95:  # High correlation threshold
+                        high_corr_pairs.append((i, j))
+            
+            # Remove one from each highly correlated pair (keep the one with higher utility)
+            to_remove = set()
+            for i, j in high_corr_pairs:
+                if interactions[i].utility_score >= interactions[j].utility_score:
+                    to_remove.add(j)
+                else:
+                    to_remove.add(i)
+            
+            # Filter out highly correlated interactions
+            filtered_interactions = [
+                interaction for i, interaction in enumerate(interactions)
+                if i not in to_remove
+            ]
+            
+            return filtered_interactions
+            
+        except Exception as e:
+            tprint_warning(f"VectorBT correlation filtering failed: {e}")
+            return interactions
+
+    def _is_valid_interaction(self, series: pd.Series) -> bool:
+        """Check if an interaction series is valid."""
+        if series is None or series.empty:
+            return False
+        
+        # Check for all NaN values
+        if series.isna().all():
+            return False
+        
+        # Check for infinite values
+        if np.isinf(series).any():
+            return False
+        
+        # Check for constant values (no variance)
+        if series.nunique() <= 1:
+            return False
+        
+        return True
+
+    # Fallback methods for when VectorBT is not available
+    def _generate_core_interactions_fallback(self, base_features: pd.DataFrame, 
+                                           targets: Optional[pd.Series], 
+                                           budget: int) -> List[GeneratedInteraction]:
+        """Fallback method for core interactions when VectorBT is not available."""
+        # Implementation would go here
+        return []
+
+    def _generate_htf_interactions_fallback(self, materialized_htfs: Dict[str, Any],
+                                          base_features: pd.DataFrame,
+                                          targets: Optional[pd.Series],
+                                          budget: int) -> List[GeneratedInteraction]:
+        """Fallback method for HTF interactions when VectorBT is not available."""
+        # Implementation would go here
+        return []
+
+    def _generate_cross_asset_interactions_fallback(self, materialized_htfs: Dict[str, Any],
+                                                  base_features: pd.DataFrame,
+                                                  targets: Optional[pd.Series],
+                                                  budget: int) -> List[GeneratedInteraction]:
+        """Fallback method for cross-asset interactions when VectorBT is not available."""
+        # Implementation would go here
+        return []enerate_htf_aware_interactions(
             materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
         )
         

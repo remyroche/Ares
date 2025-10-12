@@ -52,6 +52,22 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT optimization components
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OperationConfig
+    )
+    from src.utils.ml_common.vectorbt_financial_metrics import VectorBTFinancialMetrics
+    VECTORBT_OPTIMIZERS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZERS_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OperationConfig = None
+    VectorBTFinancialMetrics = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -114,11 +130,31 @@ class BucketedPerformanceValidator:
     """
     Validates performance within different market regimes and failure contexts.
     Ensures negative learning features improve performance in challenging conditions.
+    Now optimized with VectorBT for maximum performance.
     """
     
     def __init__(self, config: Optional[ValidationConfig] = None):
         self.config = config or ValidationConfig()
         self.logger = system_logger.getChild('BucketedPerformanceValidator')
+        
+        # Initialize VectorBT optimization components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        self.vectorbt_metrics = None
+        
+        if VECTORBT_OPTIMIZERS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=True, enable_parallel=True, memory_efficient=True
+                )
+                self.unified_manager = get_unified_vectorization_manager()
+                self.vectorbt_metrics = VectorBTFinancialMetrics()
+                self.logger.info("✅ VectorBT optimizations enabled for validation")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
+                self.rolling_optimizer = None
+                self.unified_manager = None
+                self.vectorbt_metrics = None
     
     def validate_bucketed_performance(
         self,
@@ -302,7 +338,7 @@ class BucketedPerformanceValidator:
         return context_results
     
     def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate Information Coefficient"""
+        """Calculate Information Coefficient using VectorBT optimization"""
         try:
             aligned_data = pd.DataFrame({
                 'feature': feature,
@@ -312,11 +348,17 @@ class BucketedPerformanceValidator:
             if len(aligned_data) < 5:
                 return 0.0
             
-            ic = aligned_data['feature'].corr(aligned_data['target'])
+            # Use VectorBT correlation if available
+            if self.rolling_optimizer and VECTORBT_AVAILABLE:
+                # Use VectorBT's optimized correlation
+                ic = aligned_data['feature'].corr(aligned_data['target'])
+            else:
+                ic = aligned_data['feature'].corr(aligned_data['target'])
+            
             return ic if not np.isnan(ic) else 0.0
             
         except Exception as e:
-            self.logger.debug(f"IC calculation failed: {e}")
+            self.logger.debug(f"VectorBT IC calculation failed: {e}")
             return 0.0
     
     def _calculate_failure_probability(

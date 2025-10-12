@@ -357,6 +357,8 @@ class VolatilityAwareMultiHorizonLabeler:
         Returns:
             LabelingResult with comprehensive labeling and analysis
         """
+        tprint_info("🏷️ Starting volatility-aware profit label generation")
+        tprint_info(f"📊 Input data: {len(market_data)} rows, {len(market_data.columns)} columns")
         start_time = datetime.now()
         tprint_info("🔍 Generating volatility-aware profit labels")
         

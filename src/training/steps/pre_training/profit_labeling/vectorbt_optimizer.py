@@ -147,15 +147,18 @@ class VectorBTOptimizer:
     def _should_use_vectorbt(self, data: Union[pd.Series, pd.DataFrame, np.ndarray]) -> bool:
         """Determine if VectorBT should be used based on data characteristics."""
         if not self.config.enable_vectorbt or not VECTORBT_AVAILABLE:
+            tprint_info("🔧 VectorBT disabled or not available")
             return False
         
         # Check data size
         if hasattr(data, '__len__'):
             data_size = len(data)
         else:
+            tprint_info("🔧 Data has no length attribute")
             return False
         
         if data_size < self.config.vectorbt_threshold:
+            tprint_info(f"🔧 Data size {data_size} below VectorBT threshold {self.config.vectorbt_threshold}")
             return False
         
         # Check memory availability
@@ -166,10 +169,13 @@ class VectorBTOptimizer:
                 memory_limit = self.config.memory_limit_gb * 1024**3
                 
                 if estimated_memory > min(available_memory * 0.5, memory_limit):
+                    tprint_info(f"🔧 Insufficient memory: estimated {estimated_memory/1024**2:.1f}MB > available {min(available_memory * 0.5, memory_limit)/1024**2:.1f}MB")
                     return False
-            except Exception:
+            except Exception as e:
+                tprint_warning(f"⚠️ Memory check failed: {e}")
                 pass  # Continue if memory check fails
         
+        tprint_info(f"✅ VectorBT recommended for data size {data_size}")
         return True
     
     def _check_memory_availability(self, data_size: int) -> bool:
@@ -179,15 +185,21 @@ class VectorBTOptimizer:
             available_memory = psutil.virtual_memory().available
             memory_limit = self.config.memory_limit_gb * 1024**3
             
-            return estimated_memory < min(available_memory * 0.5, memory_limit)
-        except Exception:
+            is_available = estimated_memory < min(available_memory * 0.5, memory_limit)
+            tprint_info(f"🧠 Memory check: estimated {estimated_memory/1024**2:.1f}MB, available {min(available_memory * 0.5, memory_limit)/1024**2:.1f}MB, sufficient: {is_available}")
+            return is_available
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory availability check failed: {e}")
             return True  # Default to True if we can't check
     
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
-            return psutil.virtual_memory().used / 1024**2
-        except Exception:
+            memory_usage = psutil.virtual_memory().used / 1024**2
+            tprint_info(f"🧠 Current memory usage: {memory_usage:.1f}MB")
+            return memory_usage
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to get memory usage: {e}")
             return 0.0
     
     def _log_performance(self, operation_name: str, execution_time: float, 
@@ -208,6 +220,10 @@ class VectorBTOptimizer:
         )
         
         self.performance_stats.append(stats)
+        
+        # Log performance info
+        method = "VectorBT" if not fallback_used else "Pandas"
+        tprint_info(f"⚡ {operation_name}: {execution_time:.3f}s ({method}, {data_size} samples, {memory_used:.1f}MB)")
         
         # Keep only recent stats (last 1000 entries)
         if len(self.performance_stats) > 1000:
@@ -525,37 +541,45 @@ def get_vectorbt_optimizer(config: Optional[VectorBTConfig] = None) -> VectorBTO
     """Get global VectorBT optimizer instance."""
     global _global_optimizer
     if _global_optimizer is None:
+        tprint_info("🏭 Creating new global VectorBT optimizer instance")
         _global_optimizer = VectorBTOptimizer(config)
+    else:
+        tprint_info("♻️ Reusing existing global VectorBT optimizer instance")
     return _global_optimizer
 
 
 def reset_global_optimizer():
     """Reset global optimizer instance."""
     global _global_optimizer
+    tprint_info("🔄 Resetting global VectorBT optimizer instance")
     _global_optimizer = None
 
 
 # Convenience functions for easy usage
 def optimized_rolling_mean(data: pd.Series, window: int, **kwargs) -> pd.Series:
     """Convenience function for optimized rolling mean."""
+    tprint_info(f"📊 Computing optimized rolling mean (window={window})")
     optimizer = get_vectorbt_optimizer()
     return optimizer.rolling_mean(data, window, **kwargs)
 
 
 def optimized_rolling_std(data: pd.Series, window: int, **kwargs) -> pd.Series:
     """Convenience function for optimized rolling standard deviation."""
+    tprint_info(f"📊 Computing optimized rolling std (window={window})")
     optimizer = get_vectorbt_optimizer()
     return optimizer.rolling_std(data, window, **kwargs)
 
 
 def optimized_volatility(returns: pd.Series, window: int = 20, annualize: bool = True) -> pd.Series:
     """Convenience function for optimized volatility calculation."""
+    tprint_info(f"📊 Computing optimized volatility (window={window}, annualize={annualize})")
     optimizer = get_vectorbt_optimizer()
     return optimizer.calculate_volatility(returns, window, annualize)
 
 
 def optimized_returns(prices: pd.Series, method: str = 'pct_change') -> pd.Series:
     """Convenience function for optimized returns calculation."""
+    tprint_info(f"📊 Computing optimized returns (method={method})")
     optimizer = get_vectorbt_optimizer()
     return optimizer.calculate_returns(prices, method)
 

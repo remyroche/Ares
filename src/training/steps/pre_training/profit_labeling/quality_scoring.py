@@ -300,6 +300,8 @@ class LabelQualityScorer:
         Returns:
             Dictionary mapping target names to QualityMetrics
         """
+        tprint_info("📊 Starting label quality assessment")
+        tprint_info(f"📈 Processing {len(labels)} samples with {len(labels.columns)} target columns")
         start_time = datetime.now()
         tprint_info("📊 Assessing label quality")
         
@@ -999,8 +1001,8 @@ class LabelQualityScorer:
                         if not np.isnan(corr):
                             ic_scores.append(abs(corr))
                     except Exception as e:
-                        # Silent continue - this is expected for some features
-                        # Only log if this happens frequently
+                        # Log feature generation failures for debugging
+                        tprint_warning(f"⚠️ Feature generation failed for {feature_name}: {e}")
                         continue
             
             # Calculate average IC

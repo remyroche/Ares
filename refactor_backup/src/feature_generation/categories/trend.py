@@ -152,7 +152,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 return sma.values
             except Exception as e:
                 self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
-                return self._optimized_rolling_operation(prices_series, "mean", period).values
+                return prices_series.rolling(window=period).mean().values
                 self.performance_stats['pandas_fallbacks'] += 1
                 return self._calculate_sma_vectorized(prices_series, period).values
         else:
@@ -279,9 +279,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         # Calculate trend score
         trend_score = normalized_signal * adx
 
-        return trend_score
-    
-    def _should_use_vectorbt(self, data) -> bool:
+        return trend_score    def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (VECTORBT_AVAILABLE and 
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
@@ -319,7 +317,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         elif operation == 'std':
             return self._calculate_rolling_std_vectorized(data, window)
         elif operation == 'var':
-            return self._optimized_rolling_operation(data, "var", window)
+            return data.rolling(window=window).var()
         elif operation == 'min':
             return self._calculate_rolling_min_vectorized(data, window)
         elif operation == 'max':
@@ -460,10 +458,6 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
 # ADXGenerator moved to oscillator.py to avoid duplication
 # Import from oscillator module instead
 from .oscillator import ADXGenerator
-# Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
-from ..core.feature_bank import get_global_feature_bank
 class DirectionalSignalGenerator(VectorizedFeatureGenerator):
     """Generator for Directional Signal (EMA_8 - EMA_20)."""
 
@@ -1127,28 +1121,16 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             try:
                 # Calculate TRIMA using VectorBT rolling mean
                 half_period = self.period // 2
-                trima = self._optimized_rolling_operation(
-                    self.vectorbt_optimizer.rolling_mean(base_values, window=half_period), 
-                    "mean", 
-                    half_period
-                )
+                trima = self.vectorbt_optimizer.rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
                 return trima
             except Exception as e:
                 self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
                 half_period = self.period // 2
-                trima = self._optimized_rolling_operation(
-                    self._calculate_sma_vectorized(base_values, half_period), 
-                    "mean", 
-                    half_period
-                )
+                trima = self._calculate_sma_vectorized(base_values, half_period).rolling(window=half_period).mean()
                 return trima
         else:
             half_period = self.period // 2
-            trima = self._optimized_rolling_operation(
-                self._calculate_sma_vectorized(base_values, half_period), 
-                "mean", 
-                half_period
-            )
+            trima = self._calculate_sma_vectorized(base_values, half_period).rolling(window=half_period).mean()
             return trima
 
 # MAMA (MESA Adaptive Moving Average)class MAMAGenerator(VectorizedFeatureGenerator):
@@ -2134,74 +2116,6 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
 
 
-
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
-                                   window: int, **kwargs) -> pd.Series:
-        """Perform rolling operation using centralized VectorBTRollingOptimizer."""
-        if not hasattr(self, 'rolling_optimizer'):
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        
-        try:
-            if operation == 'mean':
-                return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
-            elif operation == 'std':
-                return self.rolling_optimizer.rolling_std(data, window, **kwargs)
-            elif operation == 'var':
-                return self.rolling_optimizer.rolling_var(data, window, **kwargs)
-            elif operation == 'min':
-                return self.rolling_optimizer.rolling_min(data, window, **kwargs)
-            elif operation == 'max':
-                return self.rolling_optimizer.rolling_max(data, window, **kwargs)
-            elif operation == 'sum':
-                return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT rolling operation failed: {e}, using fallback")
-            return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        rolling_obj = data.rolling(window=window, **kwargs)
-        
-        if operation == 'mean':
-            return rolling_obj.mean()
-        elif operation == 'std':
-            return rolling_obj.std()
-        elif operation == 'var':
-            return rolling_obj.var()
-        elif operation == 'min':
-            return rolling_obj.min()
-        elif operation == 'max':
-            return rolling_obj.max()
-        elif operation == 'sum':
-            return rolling_obj.sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
-        try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
-        except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
-    
-    def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Fallback normalization using pandas/numpy."""
-        if method == 'zscore':
-            return (data - data.mean()) / data.std()
-        elif method == 'minmax':
-            return (data - data.min()) / (data.max() - data.min())
-        elif method == 'robust':
-            median = data.median()
-            mad = (data - median).abs().median()
-            return (data - median) / mad
-        else:
-            return data
-
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
@@ -2241,7 +2155,7 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
         elif operation == 'std':
             return self._calculate_rolling_std_vectorized(data, window)
         elif operation == 'var':
-            return self._optimized_rolling_operation(data, "var", window)
+            return data.rolling(window=window).var()
         elif operation == 'min':
             return self._calculate_rolling_min_vectorized(data, window)
         elif operation == 'max':

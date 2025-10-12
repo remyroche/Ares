@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import warnings
 import logging
+import time
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -85,6 +86,35 @@ except ImportError:
 from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
 from ..core.feature_bank import get_global_feature_bank
+
+# Enhanced VectorBT integration
+try:
+    from .enhanced_vectorbt_volatility import (
+        EnhancedVectorBTVolatilityGenerator, 
+        VolatilityConfig, 
+        create_enhanced_volatility_generators,
+        create_default_enhanced_volatility_generators
+    )
+    ENHANCED_VECTORBT_AVAILABLE = True
+except ImportError:
+    ENHANCED_VECTORBT_AVAILABLE = False
+    EnhancedVectorBTVolatilityGenerator = None
+    VolatilityConfig = None
+    create_enhanced_volatility_generators = None
+    create_default_enhanced_volatility_generators = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy, OperationConfig
+    )
+    UNIFIED_MANAGER_AVAILABLE = True
+except ImportError:
+    UNIFIED_MANAGER_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
+    OperationConfig = None
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +741,10 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
     """Create default volatility feature generators with VectorBT optimization."""
     generators = []
     
+    # Use enhanced VectorBT generators if available
+    if ENHANCED_VECTORBT_AVAILABLE:
+        return create_default_enhanced_volatility_generators()
+    
     if VECTORBT_AVAILABLE:
         # VectorBT-optimized generators
         for period in [10, 14, 20, 30, 50]:
@@ -734,3 +768,238 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
             generators.append(VolatilityFeatureGenerator(period))
     
     return generators
+
+
+def create_comprehensive_vectorbt_volatility_generators(
+    periods: List[int] = [10, 14, 20, 30, 50],
+    std_devs: List[float] = [1.5, 2.0, 2.5],
+    enable_gpu: bool = False,
+    enable_parallel: bool = True,
+    use_unified_manager: bool = True
+) -> List[FeatureGenerator]:
+    """
+    Create comprehensive volatility generators with full VectorBT optimization.
+    
+    This function provides the most advanced volatility feature generation
+    with intelligent strategy selection and comprehensive VectorBT integration.
+    
+    Args:
+        periods: List of periods for volatility calculations
+        std_devs: List of standard deviations for Bollinger Bands
+        enable_gpu: Enable GPU acceleration
+        enable_parallel: Enable parallel processing
+        use_unified_manager: Use UnifiedVectorizationManager for optimization
+        
+    Returns:
+        List of optimized volatility feature generators
+    """
+    generators = []
+    
+    # Use enhanced VectorBT generators if available
+    if ENHANCED_VECTORBT_AVAILABLE:
+        return create_enhanced_volatility_generators(
+            periods=periods,
+            std_devs=std_devs,
+            enable_gpu=enable_gpu,
+            enable_parallel=enable_parallel
+        )
+    
+    # Fallback to standard VectorBT generators
+    if VECTORBT_AVAILABLE:
+        # Basic volatility generators
+        for period in periods:
+            generators.append(VectorBTVolatilityFeatureGenerator(period))
+            generators.append(VectorBTAverageTrueRangeGenerator(period))
+            
+        # Bollinger Bands with different parameters
+        for period in [20, 30] if 20 in periods or 30 in periods else periods:
+            for std_dev in std_devs:
+                generators.append(VectorBTBollingerBandsGenerator(period, std_dev))
+        
+        # Advanced volatility indicators
+        for period in periods:
+            generators.append(VectorBTGarmanKlassVolatilityGenerator(period))
+            generators.append(VectorBTParkinsonVolatilityGenerator(period))
+            generators.append(VectorBTRogersSatchellVolatilityGenerator(period))
+            generators.append(VectorBTYangZhangVolatilityGenerator(period))
+    else:
+        # Fallback to original generators
+        for period in periods:
+            generators.append(VolatilityFeatureGenerator(period))
+    
+    return generators
+
+
+def create_optimized_volatility_pipeline(
+    data: pd.DataFrame,
+    periods: List[int] = [10, 14, 20, 30, 50],
+    std_devs: List[float] = [1.5, 2.0, 2.5],
+    enable_gpu: bool = False,
+    enable_parallel: bool = True,
+    use_unified_manager: bool = True
+) -> pd.DataFrame:
+    """
+    Create an optimized volatility feature pipeline using VectorBT.
+    
+    This function provides a high-level interface for generating comprehensive
+    volatility features with automatic optimization strategy selection.
+    
+    Args:
+        data: Input DataFrame with OHLCV data
+        periods: List of periods for volatility calculations
+        std_devs: List of standard deviations for Bollinger Bands
+        enable_gpu: Enable GPU acceleration
+        enable_parallel: Enable parallel processing
+        use_unified_manager: Use UnifiedVectorizationManager for optimization
+        
+    Returns:
+        DataFrame with comprehensive volatility features
+    """
+    if ENHANCED_VECTORBT_AVAILABLE:
+        # Use enhanced VectorBT pipeline
+        config = VolatilityConfig(
+            period=max(periods),
+            std_dev=max(std_devs),
+            enable_gpu=enable_gpu,
+            enable_parallel=enable_parallel,
+            use_unified_manager=use_unified_manager
+        )
+        
+        generator = EnhancedVectorBTVolatilityGenerator(config)
+        return generator.generate_comprehensive_volatility_features(data)
+    
+    # Fallback to individual generators
+    generators = create_comprehensive_vectorbt_volatility_generators(
+        periods=periods,
+        std_devs=std_devs,
+        enable_gpu=enable_gpu,
+        enable_parallel=enable_parallel,
+        use_unified_manager=use_unified_manager
+    )
+    
+    # Generate features using all generators
+    features = {}
+    for generator in generators:
+        try:
+            feature_result = generator._generate_feature(data)
+            if isinstance(feature_result, pd.Series):
+                features[feature_result.name] = feature_result
+        except Exception as e:
+            logger.warning(f"Generator {generator.__class__.__name__} failed: {e}")
+    
+    return pd.DataFrame(features, index=data.index)
+
+
+def benchmark_volatility_optimizations(
+    data: pd.DataFrame,
+    periods: List[int] = [10, 20, 30],
+    trials: int = 3
+) -> Dict[str, Any]:
+    """
+    Benchmark different volatility optimization approaches.
+    
+    Args:
+        data: Input DataFrame with OHLCV data
+        periods: List of periods to test
+        trials: Number of trials for each approach
+        
+    Returns:
+        Dictionary with benchmarking results
+    """
+    results = {
+        'enhanced_vectorbt': {},
+        'standard_vectorbt': {},
+        'pandas_fallback': {},
+        'unified_manager': {}
+    }
+    
+    # Test enhanced VectorBT if available
+    if ENHANCED_VECTORBT_AVAILABLE:
+        try:
+            config = VolatilityConfig(period=20, enable_gpu=False, enable_parallel=True)
+            generator = EnhancedVectorBTVolatilityGenerator(config)
+            
+            times = []
+            for _ in range(trials):
+                start_time = time.time()
+                _ = generator._generate_feature(data)
+                times.append(time.time() - start_time)
+            
+            results['enhanced_vectorbt'] = {
+                'avg_time': np.mean(times),
+                'std_time': np.std(times),
+                'min_time': np.min(times),
+                'max_time': np.max(times)
+            }
+        except Exception as e:
+            logger.warning(f"Enhanced VectorBT benchmark failed: {e}")
+    
+    # Test standard VectorBT
+    if VECTORBT_AVAILABLE:
+        try:
+            generator = VectorBTVolatilityFeatureGenerator(period=20)
+            
+            times = []
+            for _ in range(trials):
+                start_time = time.time()
+                _ = generator._generate_feature(data)
+                times.append(time.time() - start_time)
+            
+            results['standard_vectorbt'] = {
+                'avg_time': np.mean(times),
+                'std_time': np.std(times),
+                'min_time': np.min(times),
+                'max_time': np.max(times)
+            }
+        except Exception as e:
+            logger.warning(f"Standard VectorBT benchmark failed: {e}")
+    
+    # Test pandas fallback
+    try:
+        generator = VolatilityFeatureGenerator(period=20)
+        
+        times = []
+        for _ in range(trials):
+            start_time = time.time()
+            _ = generator._generate_feature(data)
+            times.append(time.time() - start_time)
+        
+        results['pandas_fallback'] = {
+            'avg_time': np.mean(times),
+            'std_time': np.std(times),
+            'min_time': np.min(times),
+            'max_time': np.max(times)
+        }
+    except Exception as e:
+        logger.warning(f"Pandas fallback benchmark failed: {e}")
+    
+    # Test unified manager if available
+    if UNIFIED_MANAGER_AVAILABLE:
+        try:
+            manager = UnifiedVectorizationManager()
+            config = OperationConfig(
+                operation_type=OperationType.FEATURE_ENGINEERING,
+                data_size=len(data),
+                data_dimensions=data.shape
+            )
+            
+            times = []
+            for _ in range(trials):
+                start_time = time.time()
+                _ = manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {'close': data['close'], 'period': 20},
+                    config
+                )
+                times.append(time.time() - start_time)
+            
+            results['unified_manager'] = {
+                'avg_time': np.mean(times),
+                'std_time': np.std(times),
+                'min_time': np.min(times),
+                'max_time': np.max(times)
+            }
+        except Exception as e:
+            logger.warning(f"Unified manager benchmark failed: {e}")
+    
+    return results

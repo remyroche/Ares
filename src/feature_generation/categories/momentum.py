@@ -1996,3 +1996,680 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     generators.append(AnalystMomentumAlignmentGenerator())
 
     return generators
+
+
+class OptimizedMomentumFeatureGenerator(VectorizedFeatureGenerator):
+    """Optimized momentum feature generator with comprehensive VectorBT batch processing."""
+    
+    def __init__(self, config: Optional[FeatureConfig] = None):
+        if config is None:
+            config = self._create_default_config()
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        # Initialize VectorBTRollingOptimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=True,
+                    enable_parallel=True,
+                    memory_efficient=True
+                )
+                self.logger.info("✅ VectorBTRollingOptimizer initialized for momentum features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
+        
+        # Initialize UnifiedVectorizationManager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ UnifiedVectorizationManager initialized for momentum features")
+            except Exception as e:
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
+        
+        # Performance tracking
+        self.performance_stats = {
+            'batch_operations': 0,
+            'rolling_optimizer_operations': 0,
+            'unified_manager_operations': 0,
+            'fallback_operations': 0,
+            'total_features_generated': 0
+        }
+    
+    @classmethod
+    def _create_default_config(cls) -> FeatureConfig:
+        return FeatureConfig(
+            name="optimized_momentum_features",
+            category=FeatureCategory.MOMENTUM,
+            description="Optimized momentum features with VectorBT batch processing",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=20,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={
+                "rsi_periods": [14, 21, 30],
+                "macd_fast": [12, 21],
+                "macd_slow": [26, 50],
+                "stochastic_periods": [14, 21],
+                "williams_periods": [14, 21],
+                "momentum_windows": [10, 20, 30]
+            },
+            matrix_optimized=True,
+            gpu_accelerated=True
+        )
+    
+    def generate_momentum_indicators_batch(self, data: pd.DataFrame,
+                                         rsi_periods: List[int] = None,
+                                         macd_configs: List[Dict[str, int]] = None,
+                                         stochastic_periods: List[int] = None,
+                                         williams_periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate comprehensive momentum indicators in batch using VectorBTRollingOptimizer.
+        
+        Args:
+            data: OHLCV data
+            rsi_periods: List of RSI periods
+            macd_configs: List of MACD configurations [{'fast': 12, 'slow': 26, 'signal': 9}]
+            stochastic_periods: List of Stochastic periods
+            williams_periods: List of Williams %R periods
+            
+        Returns:
+            DataFrame with momentum indicators
+        """
+        if rsi_periods is None:
+            rsi_periods = [14, 21, 30]
+        if macd_configs is None:
+            macd_configs = [{'fast': 12, 'slow': 26, 'signal': 9}, {'fast': 21, 'slow': 50, 'signal': 9}]
+        if stochastic_periods is None:
+            stochastic_periods = [14, 21]
+        if williams_periods is None:
+            williams_periods = [14, 21]
+        
+        tprint_debug(f"🔄 Generating momentum indicators batch: RSI={len(rsi_periods)}, MACD={len(macd_configs)}, Stochastic={len(stochastic_periods)}, Williams={len(williams_periods)}")
+        
+        feature_configs = []
+        
+        # RSI features
+        for period in rsi_periods:
+            feature_configs.append({
+                'name': f'rsi_{period}',
+                'type': 'rsi',
+                'params': {'period': period, 'column': 'close'}
+            })
+        
+        # MACD features
+        for i, config in enumerate(macd_configs):
+            fast = config['fast']
+            slow = config['slow']
+            signal = config.get('signal', 9)
+            feature_configs.append({
+                'name': f'macd_{fast}_{slow}_{signal}',
+                'type': 'macd',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+            feature_configs.append({
+                'name': f'macd_signal_{fast}_{slow}_{signal}',
+                'type': 'macd_signal',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+            feature_configs.append({
+                'name': f'macd_histogram_{fast}_{slow}_{signal}',
+                'type': 'macd_histogram',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+        
+        # Stochastic features
+        for period in stochastic_periods:
+            feature_configs.append({
+                'name': f'stoch_k_{period}',
+                'type': 'stochastic_k',
+                'params': {'period': period, 'k_period': 3, 'd_period': 3}
+            })
+            feature_configs.append({
+                'name': f'stoch_d_{period}',
+                'type': 'stochastic_d',
+                'params': {'period': period, 'k_period': 3, 'd_period': 3}
+            })
+        
+        # Williams %R features
+        for period in williams_periods:
+            feature_configs.append({
+                'name': f'williams_r_{period}',
+                'type': 'williams_r',
+                'params': {'period': period}
+            })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def generate_rsi_features_batch(self, data: pd.DataFrame,
+                                  periods: List[int] = None,
+                                  columns: List[str] = None) -> pd.DataFrame:
+        """
+        Generate RSI features in batch for multiple periods and columns.
+        
+        Args:
+            data: OHLCV data
+            periods: List of RSI periods
+            columns: List of columns to calculate RSI for
+            
+        Returns:
+            DataFrame with RSI features
+        """
+        if periods is None:
+            periods = [14, 21, 30]
+        if columns is None:
+            columns = ['close']
+        
+        tprint_debug(f"🔄 Generating RSI features batch: {len(periods)} periods, {len(columns)} columns")
+        
+        feature_configs = []
+        
+        for period in periods:
+            for column in columns:
+                if column in data.columns:
+                    feature_configs.append({
+                        'name': f'rsi_{column}_{period}',
+                        'type': 'rsi',
+                        'params': {'period': period, 'column': column}
+                    })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def generate_macd_features_batch(self, data: pd.DataFrame,
+                                   macd_configs: List[Dict[str, int]] = None) -> pd.DataFrame:
+        """
+        Generate MACD features in batch for multiple configurations.
+        
+        Args:
+            data: OHLCV data
+            macd_configs: List of MACD configurations
+            
+        Returns:
+            DataFrame with MACD features
+        """
+        if macd_configs is None:
+            macd_configs = [
+                {'fast': 12, 'slow': 26, 'signal': 9},
+                {'fast': 21, 'slow': 50, 'signal': 9},
+                {'fast': 5, 'slow': 35, 'signal': 5}
+            ]
+        
+        tprint_debug(f"🔄 Generating MACD features batch: {len(macd_configs)} configurations")
+        
+        feature_configs = []
+        
+        for i, config in enumerate(macd_configs):
+            fast = config['fast']
+            slow = config['slow']
+            signal = config.get('signal', 9)
+            
+            # MACD line
+            feature_configs.append({
+                'name': f'macd_{fast}_{slow}',
+                'type': 'macd',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+            
+            # Signal line
+            feature_configs.append({
+                'name': f'macd_signal_{fast}_{slow}',
+                'type': 'macd_signal',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+            
+            # Histogram
+            feature_configs.append({
+                'name': f'macd_histogram_{fast}_{slow}',
+                'type': 'macd_histogram',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+            
+            # MACD percentage
+            feature_configs.append({
+                'name': f'macd_pct_{fast}_{slow}',
+                'type': 'macd_percentage',
+                'params': {'fast': fast, 'slow': slow, 'signal': signal, 'column': 'close'}
+            })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def generate_stochastic_features_batch(self, data: pd.DataFrame,
+                                         periods: List[int] = None,
+                                         k_periods: List[int] = None,
+                                         d_periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate Stochastic features in batch for multiple configurations.
+        
+        Args:
+            data: OHLCV data
+            periods: List of Stochastic periods
+            k_periods: List of K periods
+            d_periods: List of D periods
+            
+        Returns:
+            DataFrame with Stochastic features
+        """
+        if periods is None:
+            periods = [14, 21]
+        if k_periods is None:
+            k_periods = [3, 5]
+        if d_periods is None:
+            d_periods = [3, 5]
+        
+        tprint_debug(f"🔄 Generating Stochastic features batch: {len(periods)} periods, {len(k_periods)} K periods, {len(d_periods)} D periods")
+        
+        feature_configs = []
+        
+        for period in periods:
+            for k_period in k_periods:
+                for d_period in d_periods:
+                    # %K
+                    feature_configs.append({
+                        'name': f'stoch_k_{period}_{k_period}_{d_period}',
+                        'type': 'stochastic_k',
+                        'params': {'period': period, 'k_period': k_period, 'd_period': d_period}
+                    })
+                    
+                    # %D
+                    feature_configs.append({
+                        'name': f'stoch_d_{period}_{k_period}_{d_period}',
+                        'type': 'stochastic_d',
+                        'params': {'period': period, 'k_period': k_period, 'd_period': d_period}
+                    })
+                    
+                    # Stochastic RSI
+                    feature_configs.append({
+                        'name': f'stoch_rsi_{period}_{k_period}_{d_period}',
+                        'type': 'stochastic_rsi',
+                        'params': {'period': period, 'k_period': k_period, 'd_period': d_period}
+                    })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def generate_williams_r_features_batch(self, data: pd.DataFrame,
+                                         periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate Williams %R features in batch for multiple periods.
+        
+        Args:
+            data: OHLCV data
+            periods: List of Williams %R periods
+            
+        Returns:
+            DataFrame with Williams %R features
+        """
+        if periods is None:
+            periods = [14, 21, 30]
+        
+        tprint_debug(f"🔄 Generating Williams %R features batch: {len(periods)} periods")
+        
+        feature_configs = []
+        
+        for period in periods:
+            feature_configs.append({
+                'name': f'williams_r_{period}',
+                'type': 'williams_r',
+                'params': {'period': period}
+            })
+            
+            # Williams %R smoothed
+            feature_configs.append({
+                'name': f'williams_r_smooth_{period}',
+                'type': 'williams_r_smooth',
+                'params': {'period': period, 'smooth_period': 3}
+            })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def generate_momentum_oscillators_batch(self, data: pd.DataFrame,
+                                          periods: List[int] = None,
+                                          columns: List[str] = None) -> pd.DataFrame:
+        """
+        Generate momentum oscillators in batch.
+        
+        Args:
+            data: OHLCV data
+            periods: List of periods for momentum calculations
+            columns: List of columns to calculate momentum for
+            
+        Returns:
+            DataFrame with momentum oscillators
+        """
+        if periods is None:
+            periods = [10, 20, 30]
+        if columns is None:
+            columns = ['close']
+        
+        tprint_debug(f"🔄 Generating momentum oscillators batch: {len(periods)} periods, {len(columns)} columns")
+        
+        feature_configs = []
+        
+        for period in periods:
+            for column in columns:
+                if column in data.columns:
+                    # Rate of Change
+                    feature_configs.append({
+                        'name': f'roc_{column}_{period}',
+                        'type': 'rate_of_change',
+                        'params': {'period': period, 'column': column}
+                    })
+                    
+                    # Momentum
+                    feature_configs.append({
+                        'name': f'momentum_{column}_{period}',
+                        'type': 'momentum',
+                        'params': {'period': period, 'column': column}
+                    })
+                    
+                    # Price Oscillator
+                    feature_configs.append({
+                        'name': f'price_oscillator_{column}_{period}',
+                        'type': 'price_oscillator',
+                        'params': {'period': period, 'column': column}
+                    })
+        
+        return self.generate_optimized_momentum_features(data, feature_configs)
+    
+    def _process_momentum_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process momentum features individually as fallback when batch processing fails."""
+        tprint_warning("⚠️ Using individual momentum feature processing")
+        
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'momentum')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'rsi':
+                    results[feature_name] = self._calculate_rsi(data, params)
+                elif feature_type == 'macd':
+                    results[feature_name] = self._calculate_macd(data, params)
+                elif feature_type == 'macd_signal':
+                    results[feature_name] = self._calculate_macd_signal(data, params)
+                elif feature_type == 'macd_histogram':
+                    results[feature_name] = self._calculate_macd_histogram(data, params)
+                elif feature_type == 'stochastic_k':
+                    results[feature_name] = self._calculate_stochastic_k(data, params)
+                elif feature_type == 'stochastic_d':
+                    results[feature_name] = self._calculate_stochastic_d(data, params)
+                elif feature_type == 'williams_r':
+                    results[feature_name] = self._calculate_williams_r(data, params)
+                elif feature_type == 'rate_of_change':
+                    results[feature_name] = self._calculate_rate_of_change(data, params)
+                elif feature_type == 'momentum':
+                    results[feature_name] = self._calculate_momentum(data, params)
+                else:
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+                
+                self.performance_stats['fallback_operations'] += 1
+                
+            except Exception as e:
+                self.logger.warning(f"⚠️ Feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        self.performance_stats['total_features_generated'] += len(results)
+        return pd.DataFrame(results, index=data.index)
+    
+    def _calculate_rsi(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate RSI using VectorBTRollingOptimizer if available."""
+        period = params.get('period', 14)
+        column = params.get('column', 'close')
+        
+        if column not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        series = data[column]
+        
+        if self.rolling_optimizer and len(series) > period * 2:
+            try:
+                delta = series.diff()
+                gain = delta.where(delta > 0, 0)
+                loss = -delta.where(delta < 0, 0)
+                
+                avg_gain = self.rolling_optimizer.rolling_mean(gain, period)
+                avg_loss = self.rolling_optimizer.rolling_mean(loss, period)
+                
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+                
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return rsi
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer RSI calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        delta = series.diff()
+        gain = delta.where(delta > 0, 0)
+        loss = -delta.where(delta < 0, 0)
+        
+        avg_gain = gain.rolling(window=period).mean()
+        avg_loss = loss.rolling(window=period).mean()
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    def _calculate_macd(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate MACD line."""
+        fast = params.get('fast', 12)
+        slow = params.get('slow', 26)
+        column = params.get('column', 'close')
+        
+        if column not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        series = data[column]
+        
+        if self.rolling_optimizer and len(series) > slow * 2:
+            try:
+                ema_fast = self.rolling_optimizer.rolling_ema(series, fast)
+                ema_slow = self.rolling_optimizer.rolling_ema(series, slow)
+                macd = ema_fast - ema_slow
+                
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return macd
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer MACD calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        ema_fast = series.ewm(span=fast).mean()
+        ema_slow = series.ewm(span=slow).mean()
+        macd = ema_fast - ema_slow
+        
+        return macd
+    
+    def _calculate_macd_signal(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate MACD signal line."""
+        fast = params.get('fast', 12)
+        slow = params.get('slow', 26)
+        signal = params.get('signal', 9)
+        column = params.get('column', 'close')
+        
+        if column not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        series = data[column]
+        macd = self._calculate_macd(data, params)
+        
+        if self.rolling_optimizer and len(macd) > signal * 2:
+            try:
+                signal_line = self.rolling_optimizer.rolling_ema(macd, signal)
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return signal_line
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer MACD signal calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        signal_line = macd.ewm(span=signal).mean()
+        return signal_line
+    
+    def _calculate_macd_histogram(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate MACD histogram."""
+        macd = self._calculate_macd(data, params)
+        signal = self._calculate_macd_signal(data, params)
+        histogram = macd - signal
+        return histogram
+    
+    def _calculate_stochastic_k(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate Stochastic %K."""
+        period = params.get('period', 14)
+        k_period = params.get('k_period', 3)
+        
+        if 'high' not in data.columns or 'low' not in data.columns or 'close' not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        if self.rolling_optimizer and len(close) > period * 2:
+            try:
+                lowest_low = self.rolling_optimizer.rolling_min(low, period)
+                highest_high = self.rolling_optimizer.rolling_max(high, period)
+                
+                stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+                
+                # Smooth %K
+                if k_period > 1:
+                    stoch_k = self.rolling_optimizer.rolling_mean(stoch_k, k_period)
+                
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return stoch_k
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer Stochastic K calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        lowest_low = low.rolling(window=period).min()
+        highest_high = high.rolling(window=period).max()
+        
+        stoch_k = 100 * (close - lowest_low) / (highest_high - lowest_low)
+        
+        # Smooth %K
+        if k_period > 1:
+            stoch_k = stoch_k.rolling(window=k_period).mean()
+        
+        return stoch_k
+    
+    def _calculate_stochastic_d(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate Stochastic %D."""
+        d_period = params.get('d_period', 3)
+        stoch_k = self._calculate_stochastic_k(data, params)
+        
+        if self.rolling_optimizer and len(stoch_k) > d_period * 2:
+            try:
+                stoch_d = self.rolling_optimizer.rolling_mean(stoch_k, d_period)
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return stoch_d
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer Stochastic D calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        stoch_d = stoch_k.rolling(window=d_period).mean()
+        return stoch_d
+    
+    def _calculate_williams_r(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate Williams %R."""
+        period = params.get('period', 14)
+        
+        if 'high' not in data.columns or 'low' not in data.columns or 'close' not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        if self.rolling_optimizer and len(close) > period * 2:
+            try:
+                highest_high = self.rolling_optimizer.rolling_max(high, period)
+                lowest_low = self.rolling_optimizer.rolling_min(low, period)
+                
+                williams_r = -100 * (highest_high - close) / (highest_high - lowest_low)
+                
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return williams_r
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer Williams %R calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        highest_high = high.rolling(window=period).max()
+        lowest_low = low.rolling(window=period).min()
+        
+        williams_r = -100 * (highest_high - close) / (highest_high - lowest_low)
+        return williams_r
+    
+    def _calculate_rate_of_change(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate Rate of Change."""
+        period = params.get('period', 10)
+        column = params.get('column', 'close')
+        
+        if column not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        series = data[column]
+        
+        if self.rolling_optimizer and len(series) > period * 2:
+            try:
+                roc = self.rolling_optimizer.rolling_apply(
+                    series, period, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] * 100
+                )
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return roc
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer ROC calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        roc = series.pct_change(period) * 100
+        return roc
+    
+    def _calculate_momentum(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.Series:
+        """Calculate Momentum."""
+        period = params.get('period', 10)
+        column = params.get('column', 'close')
+        
+        if column not in data.columns:
+            return pd.Series(np.nan, index=data.index)
+        
+        series = data[column]
+        
+        if self.rolling_optimizer and len(series) > period * 2:
+            try:
+                momentum = self.rolling_optimizer.rolling_apply(
+                    series, period, lambda x: x.iloc[-1] - x.iloc[0]
+                )
+                self.performance_stats['rolling_optimizer_operations'] += 1
+                return momentum
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBTRollingOptimizer Momentum calculation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        momentum = series - series.shift(period)
+        return momentum
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        return self.performance_stats.copy()
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics."""
+        self.performance_stats = {
+            'batch_operations': 0,
+            'rolling_optimizer_operations': 0,
+            'unified_manager_operations': 0,
+            'fallback_operations': 0,
+            'total_features_generated': 0
+        }

@@ -504,54 +504,285 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
     def _process_trend_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Process trend features individually as fallback when batch processing fails."""
         results = {}
+        
+        # Group features by operation type for better optimization
+        rolling_features = []
+        scaling_features = []
+        custom_features = []
+        
         for config in feature_configs:
-            feature_name = config['name']
             feature_type = config.get('type', 'rolling')
-            params = config.get('params', {})
-            
+            if feature_type == 'rolling':
+                rolling_features.append(config)
+            elif feature_type == 'scaling':
+                scaling_features.append(config)
+            else:
+                custom_features.append(config)
+        
+        # Process rolling features in batch using VectorBTRollingOptimizer
+        if rolling_features and self.vectorbt_optimizer:
+            results.update(self._process_rolling_features_batch(data, rolling_features))
+        
+        # Process scaling features using UnifiedVectorizationManager
+        if scaling_features and self.unified_manager:
+            results.update(self._process_scaling_features_batch(data, scaling_features))
+        
+        # Process custom features individually
+        for config in custom_features:
+            feature_name = config['name']
             try:
-                if feature_type == 'rolling':
-                    operation = params.get('operation', 'mean')
-                    window = params.get('window', self.period)
-                    column = params.get('column', 'close')
-                    
-                    if column in data.columns:
-                        series_data = data[column]
-                        
-                        if self.vectorbt_optimizer:
-                            if operation == 'mean':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_mean(series_data, window)
-                            elif operation == 'std':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_std(series_data, window)
-                            elif operation == 'var':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_var(series_data, window)
-                            elif operation == 'min':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_min(series_data, window)
-                            elif operation == 'max':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_max(series_data, window)
-                            elif operation == 'sum':
-                                results[feature_name] = self.vectorbt_optimizer.rolling_sum(series_data, window)
-                        else:
-                            # Fallback to pandas
-                            rolling_obj = series_data.rolling(window=window)
-                            if operation == 'mean':
-                                results[feature_name] = rolling_obj.mean()
-                            elif operation == 'std':
-                                results[feature_name] = rolling_obj.std()
-                            elif operation == 'var':
-                                results[feature_name] = rolling_obj.var()
-                            elif operation == 'min':
-                                results[feature_name] = rolling_obj.min()
-                            elif operation == 'max':
-                                results[feature_name] = rolling_obj.max()
-                            elif operation == 'sum':
-                                results[feature_name] = rolling_obj.sum()
-                
+                results[feature_name] = self._process_custom_feature(data, config)
             except Exception as e:
-                self.logger.warning(f"Trend feature {feature_name} failed: {e}")
+                self.logger.warning(f"Custom feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
         
         return pd.DataFrame(results, index=data.index)
+    
+    def _process_rolling_features_batch(self, data: pd.DataFrame, rolling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process rolling features in batch using VectorBTRollingOptimizer for better performance."""
+        results = {}
+        
+        # Group by column and window for batch processing
+        column_groups = {}
+        for config in rolling_configs:
+            column = config['params'].get('column', 'close')
+            window = config['params'].get('window', self.period)
+            operation = config['params'].get('operation', 'mean')
+            
+            if column not in column_groups:
+                column_groups[column] = {}
+            if window not in column_groups[column]:
+                column_groups[column][window] = []
+            
+            column_groups[column][window].append((config['name'], operation))
+        
+        # Process each column-window combination
+        for column, window_groups in column_groups.items():
+            if column not in data.columns:
+                continue
+                
+            series_data = data[column]
+            
+            for window, operations in window_groups.items():
+                try:
+                    # Use VectorBTRollingOptimizer for batch operations
+                    for feature_name, operation in operations:
+                        if operation == 'mean':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_mean(series_data, window)
+                        elif operation == 'std':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_std(series_data, window)
+                        elif operation == 'var':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_var(series_data, window)
+                        elif operation == 'min':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_min(series_data, window)
+                        elif operation == 'max':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_max(series_data, window)
+                        elif operation == 'sum':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_sum(series_data, window)
+                        elif operation == 'quantile':
+                            q = config['params'].get('q', 0.5)
+                            results[feature_name] = self.vectorbt_optimizer.rolling_quantile(series_data, window, q=q)
+                        elif operation == 'skew':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_skew(series_data, window)
+                        elif operation == 'kurt':
+                            results[feature_name] = self.vectorbt_optimizer.rolling_kurt(series_data, window)
+                        elif operation == 'corr':
+                            other_column = config['params'].get('other_column')
+                            if other_column and other_column in data.columns:
+                                results[feature_name] = self.vectorbt_optimizer.rolling_corr(
+                                    series_data, data[other_column], window
+                                )
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        elif operation == 'cov':
+                            other_column = config['params'].get('other_column')
+                            if other_column and other_column in data.columns:
+                                results[feature_name] = self.vectorbt_optimizer.rolling_cov(
+                                    series_data, data[other_column], window
+                                )
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        else:
+                            # Fallback to pandas for unsupported operations
+                            rolling_obj = series_data.rolling(window=window)
+                            if hasattr(rolling_obj, operation):
+                                results[feature_name] = getattr(rolling_obj, operation)()
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                                
+                except Exception as e:
+                    self.logger.warning(f"Batch rolling operation failed for {column} window {window}: {e}")
+                    # Fallback to individual processing
+                    for feature_name, operation in operations:
+                        try:
+                            rolling_obj = series_data.rolling(window=window)
+                            if hasattr(rolling_obj, operation):
+                                results[feature_name] = getattr(rolling_obj, operation)()
+                            else:
+                                results[feature_name] = pd.Series(np.nan, index=data.index)
+                        except Exception as e2:
+                            self.logger.warning(f"Fallback rolling operation failed for {feature_name}: {e2}")
+                            results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return results
+    
+    def _process_scaling_features_batch(self, data: pd.DataFrame, scaling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process scaling features in batch using UnifiedVectorizationManager."""
+        results = {}
+        
+        for config in scaling_configs:
+            feature_name = config['name']
+            method = config['params'].get('method', 'zscore')
+            column = config['params'].get('column', 'close')
+            
+            if column not in data.columns:
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+                continue
+            
+            try:
+                # Use UnifiedVectorizationManager for scaling
+                results[feature_name] = self.unified_manager.scale_data(
+                    data[column], method=method, **config['params']
+                )
+            except Exception as e:
+                self.logger.warning(f"Scaling feature {feature_name} failed: {e}")
+                # Fallback to manual scaling
+                if method == 'zscore':
+                    results[feature_name] = (data[column] - data[column].mean()) / data[column].std()
+                elif method == 'minmax':
+                    results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+                else:
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return results
+    
+    def _process_custom_feature(self, data: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
+        """Process custom features that don't fit standard patterns."""
+        feature_name = config['name']
+        feature_type = config.get('type', 'custom')
+        params = config.get('params', {})
+        
+        if feature_type == 'custom' and 'function' in params:
+            # Execute custom function
+            func = params['function']
+            if callable(func):
+                return func(data, **params)
+            else:
+                raise ValueError(f"Custom function for {feature_name} is not callable")
+        else:
+            raise ValueError(f"Unsupported custom feature type: {feature_type}")
+    
+    def generate_moving_averages_batch(self, data: pd.DataFrame, windows: List[int], 
+                                     columns: List[str] = None, operation: str = 'mean') -> pd.DataFrame:
+        """
+        Generate multiple moving averages in batch using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            windows: List of window sizes for moving averages
+            columns: List of columns to calculate moving averages for (default: ['close'])
+            operation: Rolling operation type ('mean', 'std', 'var', 'min', 'max', 'sum')
+            
+        Returns:
+            DataFrame with moving average features
+        """
+        if columns is None:
+            columns = ['close']
+        
+        # Validate columns exist in data
+        valid_columns = [col for col in columns if col in data.columns]
+        if not valid_columns:
+            raise ValueError(f"None of the specified columns {columns} found in data")
+        
+        # Create feature configurations for batch processing
+        feature_configs = []
+        for window in windows:
+            for column in valid_columns:
+                feature_configs.append({
+                    'name': f'{operation}_{column}_{window}',
+                    'type': 'rolling',
+                    'params': {
+                        'operation': operation,
+                        'window': window,
+                        'column': column
+                    }
+                })
+        
+        # Use batch processing if available
+        if self.unified_manager:
+            try:
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified manager batch processing failed: {e}, using individual processing")
+        
+        # Fallback to individual processing
+        return self._process_trend_features_individually(data, feature_configs)
+    
+    def generate_trend_indicators_batch(self, data: pd.DataFrame, 
+                                      sma_windows: List[int] = None,
+                                      ema_windows: List[int] = None,
+                                      adx_periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate comprehensive trend indicators in batch.
+        
+        Args:
+            data: Input DataFrame with OHLCV data
+            sma_windows: List of SMA window sizes (default: [5, 10, 20, 50])
+            ema_windows: List of EMA window sizes (default: [12, 26])
+            adx_periods: List of ADX periods (default: [14])
+            
+        Returns:
+            DataFrame with trend indicator features
+        """
+        if sma_windows is None:
+            sma_windows = [5, 10, 20, 50]
+        if ema_windows is None:
+            ema_windows = [12, 26]
+        if adx_periods is None:
+            adx_periods = [14]
+        
+        feature_configs = []
+        
+        # Add SMA features
+        for window in sma_windows:
+            feature_configs.append({
+                'name': f'sma_{window}',
+                'type': 'rolling',
+                'params': {'operation': 'mean', 'window': window, 'column': 'close'}
+            })
+        
+        # Add EMA features (custom implementation)
+        for window in ema_windows:
+            feature_configs.append({
+                'name': f'ema_{window}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, w=window: self._calculate_ema(df['close'].values, w),
+                    'window': window
+                }
+            })
+        
+        # Add ADX features (custom implementation)
+        for period in adx_periods:
+            feature_configs.append({
+                'name': f'adx_{period}',
+                'type': 'custom',
+                'params': {
+                    'function': lambda df, p=period: self._calculate_adx(
+                        df['high'].values, df['low'].values, df['close'].values, p
+                    ),
+                    'period': period
+                }
+            })
+        
+        # Process all features
+        if self.unified_manager:
+            try:
+                return self.unified_manager.batch_process_features(data, feature_configs)
+            except Exception as e:
+                self.logger.warning(f"Unified manager batch processing failed: {e}, using individual processing")
+        
+        return self._process_trend_features_individually(data, feature_configs)
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:

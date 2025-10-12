@@ -92,7 +92,10 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate momentum using VectorBT operations with full optimization."""
+        tprint(f"Generating VectorBT momentum feature with period {self.period} and base calculation {self.base_calculation.value}")
+        
         if data.empty:
+            tprint("Warning: Empty data provided for momentum calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
         
         base_values = self.base_calculator.calculate(data)
@@ -197,7 +200,10 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration using VectorBT operations."""
+        tprint(f"Generating VectorBT acceleration feature with period {self.period} and base calculation {self.base_calculation.value}")
+        
         if data.empty:
+            tprint("Warning: Empty data provided for acceleration calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}')
         
         base_values = self.base_calculator.calculate(data)
@@ -247,7 +253,10 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate jerk using VectorBT operations."""
+        tprint(f"Generating VectorBT jerk feature with period {self.period} and base calculation {self.base_calculation.value}")
+        
         if data.empty:
+            tprint("Warning: Empty data provided for jerk calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_jerk_{self.period}_{self.base_calculation.value}')
         
         base_values = self.base_calculator.calculate(data)

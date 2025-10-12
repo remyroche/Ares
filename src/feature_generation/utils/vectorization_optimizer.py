@@ -351,6 +351,10 @@ class VectorizationOptimizer:
         """Get available memory in MB."""
         try:
             import psutil
+            memory = psutil.virtual_memory()
+            return memory.available / (1024 * 1024)
+        except ImportError:
+            return 0.0
 
 # VectorBT imports for native optimization
 try:
@@ -385,10 +389,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            memory = psutil.virtual_memory()
-            return memory.available / (1024 * 1024)
-        except ImportError:
-            return 0.0
     
     def _split_dataframe(self, df: pd.DataFrame, chunk_size: int) -> List[pd.DataFrame]:
         """Split DataFrame into chunks."""

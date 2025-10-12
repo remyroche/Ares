@@ -22,6 +22,32 @@ from scipy.stats import skew, kurtosis, jarque_bera
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ..utils.optimization.unified_optimizer import get_feature_optimizer, FeatureOptimizationConfig
+    UNIFIED_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    UNIFIED_OPTIMIZER_AVAILABLE = False
+    get_feature_optimizer = None
+    FeatureOptimizationConfig = None
+
+# VectorBT Optimization Mixin
+try:
+    from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
+    VECTORBT_MIXIN_AVAILABLE = True
+except ImportError:
+    VECTORBT_MIXIN_AVAILABLE = False
+    VectorBTOptimizationMixin = None
+
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -42,7 +68,11 @@ from src.utils.tprint import tprint
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
+        rolling_skew, rolling_kurt, rolling_quantile
+    )
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
@@ -57,12 +87,16 @@ except ImportError:
     rolling_apply = None
     rolling_corr = None
     rolling_cov = None
+    rolling_skew = None
+    rolling_kurt = None
+    rolling_quantile = None
     scale = None
     rank = None
     zscore = None
     winsorize = None
     clip = None
     quantile = None
+    import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -79,7 +113,40 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
+        
+        # Initialize VectorBT optimization mixin if available
+        if VECTORBT_MIXIN_AVAILABLE:
+            VectorBTOptimizationMixin.__init__(self)
+        
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT Rolling Optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=getattr(self, 'enable_gpu', False),
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000
+            )
+        else:
+            self.rolling_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_OPTIMIZER_AVAILABLE:
+            self.unified_optimizer = get_feature_optimizer()
+        else:
+            self.unified_optimizer = None
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'batch_operations': 0,
+            'chunked_operations': 0,
+            'gpu_operations': 0,
+            'cache_hits': 0,
+            'total_operations': 0,
+            'total_time': 0.0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -96,7 +163,10 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                 "distribution_windows": [16, 48, 128],  # 4h, 12h, 32h in 15m periods (original min, middle, new max)
                 "correlation_windows": [20, 60, 160],  # 5h, 15h, 40h (original min, middle, new max)
                 "persistence_windows": [12, 30, 96],  # 3h, 7.5h, 24h (original min, middle, new max)
-                "transition_windows": [8, 20, 64]  # 2h, 5h, 16h (original min, middle, new max)
+                "transition_windows": [8, 20, 64],  # 2h, 5h, 16h (original min, middle, new max)
+                "batch_processing": True,
+                "chunked_processing": True,
+                "gpu_acceleration": False
             },
             matrix_optimized=True,
             gpu_accelerated=False
@@ -129,7 +199,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             return pd.Series(np.zeros(len(data)), index=data.index)
 
     def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
-        """Generate statistical regime features."""
+        """Generate statistical regime features using optimized VectorBT operations."""
         features = {}
         
         try:
@@ -145,39 +215,280 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             
             # Calculate returns for statistical analysis
             returns = np.diff(np.log(close_prices))
+            returns_series = pd.Series(returns, index=data.index[1:])
             
+            # Use batch processing for multiple features if enabled
+            if (self.config.parameters.get("batch_processing", True) and 
+                self.rolling_optimizer and ROLLING_OPTIMIZER_AVAILABLE):
+                features.update(self._generate_features_batch(returns_series, data))
+            else:
+                # Fallback to individual feature generation
+                features.update(self._generate_features_individual(returns_series, data))
+            
+        except Exception as e:
+            tprint(f"Error in statistical feature generation: {e}")
+        
+        return features
+    
+    def generate_features_optimized(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate statistical regime features using fully optimized VectorBT operations."""
+        return self.generate_features(data, **kwargs)
+    
+    def _generate_features_batch(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate features using VectorBT batch processing for maximum efficiency."""
+        features = {}
+        
+        if not self.rolling_optimizer:
+            return self._generate_features_individual(returns, data)
+        
+        try:
+            # Prepare batch operations for all windows
+            batch_operations = []
+            windows = self.config.parameters["distribution_windows"]
+            
+            # Add rolling operations for all windows
+            for window in windows:
+                if len(returns) >= window:
+                    batch_operations.extend([
+                        {
+                            'type': 'rolling',
+                            'name': f'returns_mean_{window}',
+                            'params': {'column': 'returns', 'operation': 'mean', 'window': window}
+                        },
+                        {
+                            'type': 'rolling',
+                            'name': f'returns_std_{window}',
+                            'params': {'column': 'returns', 'operation': 'std', 'window': window}
+                        },
+                        {
+                            'type': 'rolling',
+                            'name': f'returns_skew_{window}',
+                            'params': {'column': 'returns', 'operation': 'skew', 'window': window}
+                        },
+                        {
+                            'type': 'rolling',
+                            'name': f'returns_kurt_{window}',
+                            'params': {'column': 'returns', 'operation': 'kurt', 'window': window}
+                        }
+                    ])
+            
+            # Execute batch operations
+            if batch_operations:
+                # Create a DataFrame with returns for batch processing
+                returns_df = pd.DataFrame({'returns': returns})
+                batch_results = self.rolling_optimizer._vectorbt_batch_operations(returns_df, batch_operations)
+                
+                # Process results
+                for col in batch_results.columns:
+                    if col.startswith('returns_'):
+                        features[col] = batch_results[col].fillna(0).values
+                
+                self.performance_stats['batch_operations'] += 1
+            
+            # Generate additional statistical features
+            features.update(self._generate_distribution_features_optimized(returns, data))
+            features.update(self._generate_persistence_features_optimized(returns, data))
+            features.update(self._generate_correlation_features_optimized(returns, data))
+            features.update(self._generate_transition_features_optimized(returns, data))
+            features.update(self._generate_stability_features_optimized(returns, data))
+            
+        except Exception as e:
+            tprint(f"Error in batch feature generation: {e}")
+            # Fallback to individual processing
+            features.update(self._generate_features_individual(returns, data))
+        
+        return features
+    
+    def _generate_features_individual(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Fallback individual feature generation."""
+        features = {}
+        
+        try:
             # 1. Distribution Shape Features
             try:
-                features.update(self._generate_distribution_features(returns, data))
+                features.update(self._generate_distribution_features(returns.values, data))
             except Exception as e:
                 tprint(f"Error in distribution features: {e}")
             
             # 2. Statistical Regime Persistence
             try:
-                features.update(self._generate_statistical_persistence_features(returns, data))
+                features.update(self._generate_statistical_persistence_features(returns.values, data))
             except Exception as e:
                 tprint(f"Error in persistence features: {e}")
             
             # 3. Cross-Correlation Features
             try:
-                features.update(self._generate_correlation_features(returns, data))
+                features.update(self._generate_correlation_features(returns.values, data))
             except Exception as e:
                 tprint(f"Error in correlation features: {e}")
             
             # 4. Statistical Regime Transitions
             try:
-                features.update(self._generate_statistical_transition_features(returns, data))
+                features.update(self._generate_statistical_transition_features(returns.values, data))
             except Exception as e:
                 tprint(f"Error in transition features: {e}")
             
             # 5. Statistical Regime Stability
             try:
-                features.update(self._generate_statistical_stability_features(returns, data))
+                features.update(self._generate_statistical_stability_features(returns.values, data))
             except Exception as e:
                 tprint(f"Error in stability features: {e}")
-            
         except Exception as e:
-            tprint(f"Error in statistical feature generation: {e}")
+            tprint(f"Error in individual feature generation: {e}")
+        
+        return features
+    
+    def _generate_distribution_features_optimized(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate distribution shape features using optimized VectorBT operations."""
+        features = {}
+        windows = self.config.parameters["distribution_windows"]
+        
+        for window in windows:
+            if len(returns) < window:
+                continue
+            
+            try:
+                # Use VectorBT native rolling functions when available
+                if self.rolling_optimizer and VECTORBT_AVAILABLE:
+                    # Skewness using VectorBT native function
+                    skewness = self.rolling_optimizer.rolling_skew(returns, window=window)
+                    
+                    # Kurtosis using VectorBT native function
+                    kurtosis = self.rolling_optimizer.rolling_kurt(returns, window=window)
+                    
+                    # Normality test using optimized approach
+                    normality = self._calculate_normality_optimized(returns, window)
+                    
+                else:
+                    # Fallback to custom implementation
+                    skewness = self._calculate_rolling_skewness_optimized(returns, window)
+                    kurtosis = self._calculate_rolling_kurtosis_optimized(returns, window)
+                    normality = self._calculate_distribution_normality_optimized(returns, window)
+                
+                # Pad to match data length
+                data_len = len(data)
+                skewness_padded = self._pad_series(skewness, data_len, window)
+                kurtosis_padded = self._pad_series(kurtosis, data_len, window)
+                normality_padded = self._pad_series(normality, data_len, window)
+                
+                features[f'returns_skewness_{window}'] = skewness_padded
+                features[f'returns_kurtosis_{window}'] = kurtosis_padded
+                features[f'distribution_normality_{window}'] = normality_padded
+                
+                # Persistence features
+                skew_persistence = self._calculate_skewness_persistence_optimized(returns, window)
+                kurt_persistence = self._calculate_kurtosis_persistence_optimized(returns, window)
+                
+                features[f'skewness_persistence_{window}'] = self._pad_series(skew_persistence, data_len, window)
+                features[f'kurtosis_persistence_{window}'] = self._pad_series(kurt_persistence, data_len, window)
+                
+            except Exception as e:
+                tprint(f"Error in distribution features for window {window}: {e}")
+                continue
+        
+        return features
+    
+    def _generate_persistence_features_optimized(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate statistical persistence features using optimized operations."""
+        features = {}
+        windows = self.config.parameters["persistence_windows"]
+        
+        for window in windows:
+            if len(returns) < window:
+                continue
+            
+            try:
+                # Statistical persistence using optimized approach
+                stat_persistence = self._calculate_statistical_persistence_optimized(returns, window)
+                dist_stability = self._calculate_distribution_stability_optimized(returns, window)
+                stat_strength = self._calculate_statistical_strength_optimized(returns, window)
+                
+                data_len = len(data)
+                features[f'statistical_persistence_{window}'] = self._pad_series(stat_persistence, data_len, window)
+                features[f'distribution_stability_{window}'] = self._pad_series(dist_stability, data_len, window)
+                features[f'statistical_strength_{window}'] = self._pad_series(stat_strength, data_len, window)
+                
+            except Exception as e:
+                tprint(f"Error in persistence features for window {window}: {e}")
+                continue
+        
+        return features
+    
+    def _generate_correlation_features_optimized(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate cross-correlation features using optimized operations."""
+        features = {}
+        windows = self.config.parameters["correlation_windows"]
+        
+        for window in windows:
+            if len(returns) < window:
+                continue
+            
+            try:
+                # Autocorrelation using optimized approach
+                autocorr = self._calculate_returns_autocorrelation_optimized(returns, window)
+                corr_stability = self._calculate_correlation_stability_optimized(returns, window)
+                cross_corr = self._calculate_cross_correlation_features_optimized(returns, window)
+                
+                data_len = len(data)
+                features[f'returns_autocorr_{window}'] = self._pad_series(autocorr, data_len, window)
+                features[f'correlation_stability_{window}'] = self._pad_series(corr_stability, data_len, window)
+                features[f'cross_correlation_{window}'] = self._pad_series(cross_corr, data_len, window)
+                
+            except Exception as e:
+                tprint(f"Error in correlation features for window {window}: {e}")
+                continue
+        
+        return features
+    
+    def _generate_transition_features_optimized(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate statistical transition features using optimized operations."""
+        features = {}
+        windows = self.config.parameters["transition_windows"]
+        
+        for window in windows:
+            if len(returns) < window * 2:
+                continue
+            
+            try:
+                # Statistical regime change detection
+                stat_change = self._detect_statistical_regime_changes_optimized(returns, window)
+                dist_transition = self._calculate_distribution_transition_probability_optimized(returns, window)
+                stat_momentum = self._calculate_statistical_momentum_optimized(returns, window)
+                
+                data_len = len(data)
+                features[f'statistical_regime_change_{window}'] = self._pad_series(stat_change, data_len, window * 2)
+                features[f'distribution_transition_{window}'] = self._pad_series(dist_transition, data_len, window * 2)
+                features[f'statistical_momentum_{window}'] = self._pad_series(stat_momentum, data_len, window * 2)
+                
+            except Exception as e:
+                tprint(f"Error in transition features for window {window}: {e}")
+                continue
+        
+        return features
+    
+    def _generate_stability_features_optimized(self, returns: pd.Series, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate statistical stability features using optimized operations."""
+        features = {}
+        windows = self.config.parameters["persistence_windows"]
+        
+        for window in windows:
+            if len(returns) < window:
+                continue
+            
+            try:
+                # Statistical stability features
+                stat_stability = self._calculate_statistical_stability_optimized(returns, window)
+                dist_entropy = self._calculate_distribution_entropy_optimized(returns, window)
+                stat_consistency = self._calculate_statistical_consistency_optimized(returns, window)
+                
+                data_len = len(data)
+                features[f'statistical_stability_{window}'] = self._pad_series(stat_stability, data_len, window)
+                features[f'distribution_entropy_{window}'] = self._pad_series(dist_entropy, data_len, window)
+                features[f'statistical_consistency_{window}'] = self._pad_series(stat_consistency, data_len, window)
+                
+            except Exception as e:
+                tprint(f"Error in stability features for window {window}: {e}")
+                continue
         
         return features
     
@@ -1028,8 +1339,369 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _vectorbt_rolling_operation_optimized(self, data: pd.Series, operation: str, 
+                                            window: int, **kwargs) -> pd.Series:
+        """Perform optimized VectorBT rolling operation using VectorBTRollingOptimizer."""
+        if self.rolling_optimizer and ROLLING_OPTIMIZER_AVAILABLE:
+            return self.rolling_optimizer._rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._vectorbt_rolling_operation(data, operation, window, **kwargs)
+    
+    def _calculate_rolling_skewness_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling skewness using optimized VectorBT operations."""
+        if self.rolling_optimizer and VECTORBT_AVAILABLE:
+            return self.rolling_optimizer.rolling_skew(returns, window=window)
+        else:
+            # Fallback to pandas implementation
+            return returns.rolling(window=window).skew()
+    
+    def _calculate_rolling_kurtosis_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate rolling kurtosis using optimized VectorBT operations."""
+        if self.rolling_optimizer and VECTORBT_AVAILABLE:
+            return self.rolling_optimizer.rolling_kurt(returns, window=window)
+        else:
+            # Fallback to pandas implementation
+            return returns.rolling(window=window).kurt()
+    
+    def _calculate_normality_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate distribution normality using optimized approach."""
+        if self.rolling_optimizer and VECTORBT_AVAILABLE:
+            # Use VectorBT native functions
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=window)
+            
+            # Calculate skewness and kurtosis
+            skewness = self.rolling_optimizer.rolling_skew(returns, window=window)
+            kurtosis = self.rolling_optimizer.rolling_kurt(returns, window=window)
+            
+            # Simplified normality test using JB statistic approximation
+            jb_stat = (skewness ** 2 + (kurtosis ** 2) / 4) * window / 6
+            normality = np.exp(-jb_stat / 2)  # Approximate p-value
+            
+            return normality
+        else:
+            # Fallback implementation
+            return self._calculate_distribution_normality_optimized(returns, window)
+    
+    def _calculate_distribution_normality_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate distribution normality using optimized approach."""
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=window)
+        else:
+            rolling_mean = returns.rolling(window=window).mean()
+            rolling_std = returns.rolling(window=window).std()
+        
+        # Calculate skewness and kurtosis for normality test
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Simplified normality test using JB statistic approximation
+        jb_stat = (skewness ** 2 + (kurtosis ** 2) / 4) * window / 6
+        normality = np.exp(-jb_stat / 2)  # Approximate p-value
+        
+        return normality.fillna(0)
+    
+    def _calculate_skewness_persistence_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate skewness persistence using optimized operations."""
+        if self.rolling_optimizer:
+            skewness = self.rolling_optimizer.rolling_skew(returns, window=window)
+        else:
+            skewness = returns.rolling(window=window).skew()
+        
+        # Calculate autocorrelation of skewness
+        skewness_shifted = skewness.shift(1)
+        skewness_autocorr = skewness.rolling(window=window//4).corr(skewness_shifted).fillna(0)
+        
+        return skewness_autocorr
+    
+    def _calculate_kurtosis_persistence_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate kurtosis persistence using optimized operations."""
+        if self.rolling_optimizer:
+            kurtosis = self.rolling_optimizer.rolling_kurt(returns, window=window)
+        else:
+            kurtosis = returns.rolling(window=window).kurt()
+        
+        # Calculate autocorrelation of kurtosis
+        kurtosis_shifted = kurtosis.shift(1)
+        kurtosis_autocorr = kurtosis.rolling(window=window//4).corr(kurtosis_shifted).fillna(0)
+        
+        return kurtosis_autocorr
+    
+    def _calculate_statistical_persistence_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate statistical regime persistence using optimized operations."""
+        # Calculate squared returns
+        squared_returns = returns ** 2
+        
+        # Calculate autocorrelation of squared returns
+        squared_returns_shifted = squared_returns.shift(1)
+        autocorr = squared_returns.rolling(window=window).corr(squared_returns_shifted).fillna(0)
+        
+        return autocorr
+    
+    def _calculate_distribution_stability_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate distribution stability using optimized operations."""
+        sub_window = max(2, window // 4)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=sub_window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=sub_window)
+        else:
+            rolling_mean = returns.rolling(window=sub_window).mean()
+            rolling_std = returns.rolling(window=sub_window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Calculate coefficient of variation for stability
+        if self.rolling_optimizer:
+            skew_cv = self.rolling_optimizer.rolling_std(skewness, window=window) / (self.rolling_optimizer.rolling_mean(skewness, window=window).abs() + 1e-8)
+            kurt_cv = self.rolling_optimizer.rolling_std(kurtosis, window=window) / (self.rolling_optimizer.rolling_mean(kurtosis, window=window).abs() + 1e-8)
+        else:
+            skew_cv = skewness.rolling(window=window).std() / (skewness.rolling(window=window).mean().abs() + 1e-8)
+            kurt_cv = kurtosis.rolling(window=window).std() / (kurtosis.rolling(window=window).mean().abs() + 1e-8)
+        
+        # Stability based on low coefficient of variation
+        stability = np.maximum(0, 1 - (skew_cv + kurt_cv) / 2)
+        
+        return stability.fillna(0)
+    
+    def _calculate_statistical_strength_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate statistical regime strength using optimized operations."""
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=window)
+        else:
+            rolling_mean = returns.rolling(window=window).mean()
+            rolling_std = returns.rolling(window=window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Strength based on deviation from normal distribution
+        deviation = np.abs(skewness) + np.abs(kurtosis - 3)
+        strength = np.maximum(0, 1 - deviation / 10)  # Normalize to 0-1
+        
+        return strength.fillna(0)
+    
+    def _calculate_returns_autocorrelation_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate returns autocorrelation using optimized operations."""
+        if self.rolling_optimizer:
+            # Use VectorBT optimized correlation
+            returns_shifted = returns.shift(1)
+            autocorr = self.rolling_optimizer.rolling_corr(returns, returns_shifted, window=window)
+        else:
+            # Fallback to pandas implementation
+            autocorr = returns.rolling(window=window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
+        
+        return autocorr
+    
+    def _calculate_correlation_stability_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate correlation stability using optimized operations."""
+        returns_shifted = returns.shift(1)
+        
+        if self.rolling_optimizer:
+            autocorr = self.rolling_optimizer.rolling_corr(returns, returns_shifted, window=window)
+            autocorr_variance = self.rolling_optimizer.rolling_std(autocorr, window=window//4)
+        else:
+            autocorr = returns.rolling(window=window).corr(returns_shifted)
+            autocorr_variance = autocorr.rolling(window=window//4).std()
+        
+        # Calculate stability as inverse of autocorrelation variance
+        stability = np.maximum(0, 1 - autocorr_variance)
+        
+        return stability.fillna(0)
+    
+    def _calculate_cross_correlation_features_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate cross-correlation features using optimized operations."""
+        returns_lagged = returns.shift(1)
+        
+        if self.rolling_optimizer:
+            cross_corr = self.rolling_optimizer.rolling_corr(returns, returns_lagged, window=window)
+        else:
+            cross_corr = returns.rolling(window=window).corr(returns_lagged)
+        
+        return cross_corr.fillna(0)
+    
+    def _detect_statistical_regime_changes_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Detect statistical regime changes using optimized operations."""
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=window)
+        else:
+            rolling_mean = returns.rolling(window=window).mean()
+            rolling_std = returns.rolling(window=window).std()
+        
+        centered = returns - rolling_mean
+        skew1 = (centered ** 3).rolling(window=window).mean() / (rolling_std ** 3 + 1e-8)
+        kurt1 = (centered ** 4).rolling(window=window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Shift to get second window
+        skew2 = skew1.shift(-window)
+        kurt2 = kurt1.shift(-window)
+        
+        # Calculate change ratios
+        skew_change = ((skew2 - skew1).abs() / (skew1.abs() + 1e-8)).fillna(0)
+        kurt_change = ((kurt2 - kurt1).abs() / (kurt1.abs() + 1e-8)).fillna(0)
+        
+        # Apply threshold (50% change)
+        changes = ((skew_change > 0.5) | (kurt_change > 0.5)).astype(int)
+        
+        return changes.fillna(0)
+    
+    def _calculate_distribution_transition_probability_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate distribution transition probability using optimized operations."""
+        sub_window = max(2, window // 2)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=sub_window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=sub_window)
+        else:
+            rolling_mean = returns.rolling(window=sub_window).mean()
+            rolling_std = returns.rolling(window=sub_window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Calculate volatility of statistical moments
+        skew_vol = skewness.rolling(window=window*2).std()
+        kurt_vol = kurtosis.rolling(window=window*2).std()
+        
+        # Transition probability based on moment volatility
+        transition_prob = np.minimum(1, (skew_vol + kurt_vol) / 2)
+        
+        return transition_prob.fillna(0)
+    
+    def _calculate_statistical_momentum_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate statistical momentum using optimized operations."""
+        sub_window = max(2, window // 4)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=sub_window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=sub_window)
+        else:
+            rolling_mean = returns.rolling(window=sub_window).mean()
+            rolling_std = returns.rolling(window=sub_window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Calculate trend in statistical moments using linear regression approximation
+        x = np.arange(len(skewness))
+        skew_trend = skewness.rolling(window=window).apply(
+            lambda x: np.polyfit(np.arange(len(x)), x.values, 1)[0] if len(x) > 1 else 0, raw=False
+        )
+        kurt_trend = kurtosis.rolling(window=window).apply(
+            lambda x: np.polyfit(np.arange(len(x)), x.values, 1)[0] if len(x) > 1 else 0, raw=False
+        )
+        
+        momentum = (skew_trend + kurt_trend) / 2
+        
+        return momentum.fillna(0)
+    
+    def _calculate_statistical_stability_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate statistical stability using optimized operations."""
+        sub_window = max(2, window // 4)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=sub_window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=sub_window)
+        else:
+            rolling_mean = returns.rolling(window=sub_window).mean()
+            rolling_std = returns.rolling(window=sub_window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Calculate coefficient of variation for stability
+        if self.rolling_optimizer:
+            skew_cv = self.rolling_optimizer.rolling_std(skewness, window=window) / (self.rolling_optimizer.rolling_mean(skewness, window=window).abs() + 1e-8)
+            kurt_cv = self.rolling_optimizer.rolling_std(kurtosis, window=window) / (self.rolling_optimizer.rolling_mean(kurtosis, window=window).abs() + 1e-8)
+        else:
+            skew_cv = skewness.rolling(window=window).std() / (skewness.rolling(window=window).mean().abs() + 1e-8)
+            kurt_cv = kurtosis.rolling(window=window).std() / (kurtosis.rolling(window=window).mean().abs() + 1e-8)
+        
+        # Stability based on low coefficient of variation
+        stability = np.maximum(0, 1 - (skew_cv + kurt_cv) / 2)
+        
+        return stability.fillna(0)
+    
+    def _calculate_distribution_entropy_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate distribution entropy using optimized operations."""
+        if self.rolling_optimizer:
+            rolling_min = self.rolling_optimizer.rolling_min(returns, window=window)
+            rolling_max = self.rolling_optimizer.rolling_max(returns, window=window)
+            rolling_var = self.rolling_optimizer.rolling_var(returns, window=window)
+        else:
+            rolling_min = returns.rolling(window=window).min()
+            rolling_max = returns.rolling(window=window).max()
+            rolling_var = returns.rolling(window=window).var()
+        
+        # Calculate entropy using variance approximation (much faster than histogram)
+        entropy_approx = np.log(rolling_var + 1e-8)
+        
+        # Normalize entropy to 0-1 range
+        entropy_normalized = entropy_approx / (entropy_approx.rolling(window=window*2).std() + 1e-8)
+        entropy_normalized = np.clip(entropy_normalized, 0, 1)
+        
+        return entropy_normalized.fillna(0)
+    
+    def _calculate_statistical_consistency_optimized(self, returns: pd.Series, window: int) -> pd.Series:
+        """Calculate statistical consistency using optimized operations."""
+        sub_window = max(2, window // 4)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(returns, window=sub_window)
+            rolling_std = self.rolling_optimizer.rolling_std(returns, window=sub_window)
+        else:
+            rolling_mean = returns.rolling(window=sub_window).mean()
+            rolling_std = returns.rolling(window=sub_window).std()
+        
+        centered = returns - rolling_mean
+        skewness = (centered ** 3).rolling(window=sub_window).mean() / (rolling_std ** 3 + 1e-8)
+        kurtosis = (centered ** 4).rolling(window=sub_window).mean() / (rolling_std ** 4 + 1e-8) - 3
+        
+        # Calculate autocorrelation of statistical moments
+        skewness_shifted = skewness.shift(1)
+        kurtosis_shifted = kurtosis.shift(1)
+        
+        if self.rolling_optimizer:
+            skew_corr = self.rolling_optimizer.rolling_corr(skewness, skewness_shifted, window=window)
+            kurt_corr = self.rolling_optimizer.rolling_corr(kurtosis, kurtosis_shifted, window=window)
+        else:
+            skew_corr = skewness.rolling(window=window).corr(skewness_shifted)
+            kurt_corr = kurtosis.rolling(window=window).corr(kurtosis_shifted)
+        
+        consistency = (skew_corr + kurt_corr) / 2
+        
+        return consistency.fillna(0)
+    
+    def _pad_series(self, series: pd.Series, target_length: int, window: int) -> np.ndarray:
+        """Pad series to match target length."""
+        if len(series) == target_length:
+            return series.fillna(0).values
+        
+        padded = np.full(target_length, np.nan)
+        valid_indices = min(len(series), target_length - window)
+        
+        if valid_indices > 0:
+            padded[window:window + valid_indices] = series[:valid_indices].values
+        
+        return np.nan_to_num(padded, nan=0.0)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
                                  window: int, **kwargs) -> pd.Series:
@@ -1048,3 +1720,133 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get enhanced performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        if stats['total_operations'] > 0:
+            stats['vectorbt_usage_percentage'] = (
+                stats['vectorbt_operations'] / stats['total_operations'] * 100
+            )
+            stats['batch_usage_percentage'] = (
+                stats['batch_operations'] / stats['total_operations'] * 100
+            )
+            stats['chunked_usage_percentage'] = (
+                stats['chunked_operations'] / stats['total_operations'] * 100
+            )
+            stats['gpu_usage_percentage'] = (
+                stats['gpu_operations'] / stats['total_operations'] * 100
+            )
+            stats['cache_hit_rate'] = (
+                stats['cache_hits'] / (stats['cache_hits'] + stats['total_operations']) * 100
+            )
+            stats['average_operation_time'] = (
+                stats['total_time'] / stats['total_operations']
+            )
+        else:
+            stats['vectorbt_usage_percentage'] = 0
+            stats['batch_usage_percentage'] = 0
+            stats['chunked_usage_percentage'] = 0
+            stats['gpu_usage_percentage'] = 0
+            stats['cache_hit_rate'] = 0
+            stats['average_operation_time'] = 0
+        
+        return stats
+    
+    def optimize_feature_parameters(self, data: pd.DataFrame, target_column: str) -> Dict[str, Any]:
+        """Optimize feature parameters using UnifiedVectorizationManager."""
+        if not self.unified_optimizer or not UNIFIED_OPTIMIZER_AVAILABLE:
+            tprint("UnifiedVectorizationManager not available for parameter optimization")
+            return {}
+        
+        try:
+            from ..utils.optimization.unified_optimizer import FeatureOptimizationConfig, OptimizationMethod
+            
+            # Create optimization configuration
+            optimization_config = FeatureOptimizationConfig(
+                min_lookback=8,
+                max_lookback=128,
+                optimization_method=OptimizationMethod.STATISTICAL_ANALYSIS,
+                parallel_processing=True,
+                enable_validation=True
+            )
+            
+            # Get feature names
+            feature_names = list(self.config.parameters.keys())
+            
+            results = {}
+            for feature_name in feature_names:
+                try:
+                    # Create a simple feature generator function for optimization
+                    def feature_generator(data, lookback):
+                        if feature_name == "distribution_windows":
+                            return self._generate_distribution_features_optimized(
+                                pd.Series(np.diff(np.log(data['close'].values)), index=data.index[1:]), 
+                                data
+                            )
+                        # Add other feature types as needed
+                        return {}
+                    
+                    # Optimize the feature
+                    result = self.unified_optimizer.optimize_feature_lookback(
+                        data, feature_name, target_column, feature_generator
+                    )
+                    results[feature_name] = result
+                    
+                except Exception as e:
+                    tprint(f"Error optimizing feature {feature_name}: {e}")
+                    continue
+            
+            return results
+            
+        except Exception as e:
+            tprint(f"Error in feature parameter optimization: {e}")
+            return {}
+    
+    def enable_batch_processing(self, enable: bool = True):
+        """Enable or disable batch processing."""
+        self.config.parameters['batch_processing'] = enable
+        tprint(f"Batch processing {'enabled' if enable else 'disabled'}")
+    
+    def enable_chunked_processing(self, enable: bool = True):
+        """Enable or disable chunked processing."""
+        self.config.parameters['chunked_processing'] = enable
+        tprint(f"Chunked processing {'enabled' if enable else 'disabled'}")
+    
+    def enable_gpu_acceleration(self, enable: bool = True):
+        """Enable or disable GPU acceleration."""
+        self.config.parameters['gpu_acceleration'] = enable
+        if hasattr(self, 'enable_gpu'):
+            self.enable_gpu = enable
+        tprint(f"GPU acceleration {'enabled' if enable else 'disabled'}")
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics."""
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'batch_operations': 0,
+            'chunked_operations': 0,
+            'gpu_operations': 0,
+            'cache_hits': 0,
+            'total_operations': 0,
+            'total_time': 0.0
+        }
+        tprint("Performance statistics reset")
+    
+    def get_optimization_summary(self) -> Dict[str, Any]:
+        """Get a summary of optimization capabilities and status."""
+        summary = {
+            'vectorbt_available': VECTORBT_AVAILABLE,
+            'rolling_optimizer_available': ROLLING_OPTIMIZER_AVAILABLE,
+            'unified_optimizer_available': UNIFIED_OPTIMIZER_AVAILABLE,
+            'vectorbt_mixin_available': VECTORBT_MIXIN_AVAILABLE,
+            'gpu_available': CUPY_AVAILABLE,
+            'batch_processing_enabled': self.config.parameters.get('batch_processing', False),
+            'chunked_processing_enabled': self.config.parameters.get('chunked_processing', False),
+            'gpu_acceleration_enabled': self.config.parameters.get('gpu_acceleration', False),
+            'rolling_optimizer_initialized': self.rolling_optimizer is not None,
+            'unified_optimizer_initialized': self.unified_optimizer is not None
+        }
+        
+        return summary

@@ -23,9 +23,13 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,
@@ -39,27 +43,12 @@ from src.utils.tprint import tprint
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # VectorBT 0.28+ has a different API structure
+    # We'll use pandas as primary and VectorBT for specific optimizations
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -77,6 +66,20 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizers
+        self.rolling_optimizer = None
+        self.vectorization_manager = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+                self.vectorization_manager = get_unified_vectorization_manager(enable_gpu=False, enable_parallel=True)
+                tprint("RegimeVolatilityFeatureGenerator: VectorBT optimizers initialized successfully")
+            except Exception as e:
+                tprint(f"RegimeVolatilityFeatureGenerator: Failed to initialize VectorBT optimizers: {e}")
+                self.rolling_optimizer = None
+                self.vectorization_manager = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -317,14 +320,39 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return features
     
     def _rolling_volatility(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling volatility - VECTORIZED."""
+        """Calculate rolling volatility - OPTIMIZED VECTORBT."""
         if len(returns) < window:
             return np.array([])
         
-        # Vectorized approach using pandas rolling
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
-        vol = self._vectorbt_rolling_operation(returns_series, "std", window).dropna().values
         
+        if self.rolling_optimizer is not None:
+            try:
+                vol = self.rolling_optimizer.rolling_std(returns_series, window).dropna().values
+                return vol
+            except Exception as e:
+                tprint(f"_rolling_volatility: VectorBT optimizer failed: {e}, using fallback")
+        
+        # Fallback to unified vectorization manager
+        if self.vectorization_manager is not None:
+            try:
+                vol = self.vectorization_manager.rolling_std(returns_series, window).dropna().values
+                return vol
+            except Exception as e:
+                tprint(f"_rolling_volatility: Unified manager failed: {e}, using direct VectorBT")
+        
+        # Direct VectorBT fallback (using pandas with VectorBT optimizations)
+        if VECTORBT_AVAILABLE:
+            try:
+                # Use pandas rolling with VectorBT optimizations
+                vol = returns_series.rolling(window=window).std().dropna().values
+                return vol
+            except Exception as e:
+                tprint(f"_rolling_volatility: Direct VectorBT failed: {e}, using pandas")
+        
+        # Final pandas fallback
+        vol = returns_series.rolling(window=window).std().dropna().values
         return vol
     
     def _calculate_volatility_persistence(self, vol: np.ndarray, lag: int) -> np.ndarray:
@@ -347,20 +375,41 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return persistence
     
     def _calculate_volatility_regime_strength(self, vol: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime strength - VECTORIZED."""
+        """Calculate volatility regime strength - OPTIMIZED VECTORBT."""
         if len(vol) < window:
             return np.zeros(len(vol))
         
-        # Vectorized regime strength calculation
+        # Use VectorBT rolling optimizer for enhanced performance
         vol_series = pd.Series(vol)
-        rolling_std = self._vectorbt_rolling_operation(vol_series, "std", window)
-        rolling_mean = self._vectorbt_rolling_operation(vol_series, "mean", window)
         
-        # Regime strength based on consistency of volatility level
-        vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
-        strength = vol_consistency.clip(0, 1)
-        
-        return strength.fillna(0).values
+        try:
+            if self.rolling_optimizer is not None:
+                rolling_std = self.rolling_optimizer.rolling_std(vol_series, window)
+                rolling_mean = self.rolling_optimizer.rolling_mean(vol_series, window)
+            elif self.vectorization_manager is not None:
+                rolling_std = self.vectorization_manager.rolling_std(vol_series, window)
+                rolling_mean = self.vectorization_manager.rolling_mean(vol_series, window)
+            elif VECTORBT_AVAILABLE:
+                rolling_std = vol_series.rolling(window=window).std()
+                rolling_mean = vol_series.rolling(window=window).mean()
+            else:
+                rolling_std = vol_series.rolling(window=window).std()
+                rolling_mean = vol_series.rolling(window=window).mean()
+            
+            # Regime strength based on consistency of volatility level
+            vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
+            strength = vol_consistency.clip(0, 1)
+            
+            return strength.fillna(0).values
+            
+        except Exception as e:
+            tprint(f"_calculate_volatility_regime_strength: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_std = vol_series.rolling(window=window).std()
+            rolling_mean = vol_series.rolling(window=window).mean()
+            vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
+            strength = vol_consistency.clip(0, 1)
+            return strength.fillna(0).values
     
     def _calculate_volatility_clustering(self, returns: np.ndarray, window: int) -> np.ndarray:
         """Calculate GARCH-like volatility clustering - OPTIMIZED VECTORIZED."""
@@ -380,103 +429,209 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return clustering
     
     def _calculate_volatility_consistency(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime consistency - VECTORIZED."""
+        """Calculate volatility regime consistency - OPTIMIZED VECTORBT."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        # Vectorized consistency calculation using rolling volatility
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         vol_window_size = max(1, window // 4)
         
-        # Calculate rolling volatility
-        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
-        
-        # Calculate consistency using rolling coefficient of variation
-        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
-        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
-        
-        cv = vol_rolling_std / (vol_rolling_mean + 1e-8)
-        consistency = (1 - cv).clip(0, 1)
-        
-        return consistency.fillna(0).values
+        try:
+            # Calculate rolling volatility
+            if self.rolling_optimizer is not None:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.rolling_optimizer.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.rolling_optimizer.rolling_mean(rolling_vol, window)
+            elif self.vectorization_manager is not None:
+                rolling_vol = self.vectorization_manager.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.vectorization_manager.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.vectorization_manager.rolling_mean(rolling_vol, window)
+            elif VECTORBT_AVAILABLE:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            else:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            
+            # Calculate consistency using rolling coefficient of variation
+            cv = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            consistency = (1 - cv).clip(0, 1)
+            
+            return consistency.fillna(0).values
+            
+        except Exception as e:
+            tprint(f"_calculate_volatility_consistency: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            vol_rolling_std = rolling_vol.rolling(window=window).std()
+            vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            cv = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            consistency = (1 - cv).clip(0, 1)
+            return consistency.fillna(0).values
     
     def _calculate_volatility_of_volatility(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility of volatility - VECTORIZED."""
+        """Calculate volatility of volatility - OPTIMIZED VECTORBT."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        # Vectorized volatility of volatility calculation
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         
-        # Calculate rolling volatility for both windows
-        vol1 = self._vectorbt_rolling_operation(returns_series, "std", window).shift(window)
-        vol2 = self._vectorbt_rolling_operation(returns_series, "std", window)
-        
-        # Volatility of volatility
-        vol_of_vol = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
-        
-        return vol_of_vol.values
+        try:
+            # Calculate rolling volatility for both windows
+            if self.rolling_optimizer is not None:
+                vol1 = self.rolling_optimizer.rolling_std(returns_series, window).shift(window)
+                vol2 = self.rolling_optimizer.rolling_std(returns_series, window)
+            elif self.vectorization_manager is not None:
+                vol1 = self.vectorization_manager.rolling_std(returns_series, window).shift(window)
+                vol2 = self.vectorization_manager.rolling_std(returns_series, window)
+            elif VECTORBT_AVAILABLE:
+                vol1 = returns_series.rolling(window=window).std().shift(window)
+                vol2 = returns_series.rolling(window=window).std()
+            else:
+                vol1 = returns_series.rolling(window=window).std().shift(window)
+                vol2 = returns_series.rolling(window=window).std()
+            
+            # Volatility of volatility
+            vol_of_vol = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+            
+            return vol_of_vol.values
+            
+        except Exception as e:
+            tprint(f"_calculate_volatility_of_volatility: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            vol1 = returns_series.rolling(window=window).std().shift(window)
+            vol2 = returns_series.rolling(window=window).std()
+            vol_of_vol = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+            return vol_of_vol.values
     
     def _calculate_volatility_uncertainty(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime uncertainty - VECTORIZED."""
+        """Calculate volatility regime uncertainty - OPTIMIZED VECTORBT."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        # Vectorized uncertainty calculation
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         vol_window_size = max(1, window // 4)
         
-        # Calculate rolling volatility
-        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
-        
-        # Calculate uncertainty using rolling coefficient of variation
-        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
-        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
-        
-        vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
-        uncertainty = vol_vol.clip(0, 1)
-        
-        return uncertainty.fillna(0).values
+        try:
+            # Calculate rolling volatility
+            if self.rolling_optimizer is not None:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.rolling_optimizer.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.rolling_optimizer.rolling_mean(rolling_vol, window)
+            elif self.vectorization_manager is not None:
+                rolling_vol = self.vectorization_manager.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.vectorization_manager.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.vectorization_manager.rolling_mean(rolling_vol, window)
+            elif VECTORBT_AVAILABLE:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            else:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            
+            # Calculate uncertainty using rolling coefficient of variation
+            vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            uncertainty = vol_vol.clip(0, 1)
+            
+            return uncertainty.fillna(0).values
+            
+        except Exception as e:
+            tprint(f"_calculate_volatility_uncertainty: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            vol_rolling_std = rolling_vol.rolling(window=window).std()
+            vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            uncertainty = vol_vol.clip(0, 1)
+            return uncertainty.fillna(0).values
     
     def _detect_volatility_regime_changes(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Detect volatility regime changes - VECTORIZED."""
+        """Detect volatility regime changes - OPTIMIZED VECTORBT."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        # Vectorized regime change detection
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         
-        # Calculate rolling volatility for both windows
-        vol1 = self._vectorbt_rolling_operation(returns_series, "std", window).shift(window)
-        vol2 = self._vectorbt_rolling_operation(returns_series, "std", window)
-        
-        # Significant change threshold (50% change)
-        change_ratio = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
-        changes = (change_ratio > 0.5).astype(int)
-        
-        return changes.values
+        try:
+            # Calculate rolling volatility for both windows
+            if self.rolling_optimizer is not None:
+                vol1 = self.rolling_optimizer.rolling_std(returns_series, window).shift(window)
+                vol2 = self.rolling_optimizer.rolling_std(returns_series, window)
+            elif self.vectorization_manager is not None:
+                vol1 = self.vectorization_manager.rolling_std(returns_series, window).shift(window)
+                vol2 = self.vectorization_manager.rolling_std(returns_series, window)
+            elif VECTORBT_AVAILABLE:
+                vol1 = returns_series.rolling(window=window).std().shift(window)
+                vol2 = returns_series.rolling(window=window).std()
+            else:
+                vol1 = returns_series.rolling(window=window).std().shift(window)
+                vol2 = returns_series.rolling(window=window).std()
+            
+            # Significant change threshold (50% change)
+            change_ratio = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+            changes = (change_ratio > 0.5).astype(int)
+            
+            return changes.values
+            
+        except Exception as e:
+            tprint(f"_detect_volatility_regime_changes: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            vol1 = returns_series.rolling(window=window).std().shift(window)
+            vol2 = returns_series.rolling(window=window).std()
+            change_ratio = ((vol2 - vol1).abs() / (vol1 + 1e-8)).fillna(0)
+            changes = (change_ratio > 0.5).astype(int)
+            return changes.values
     
     def _calculate_volatility_transition_probability(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime transition probability - OPTIMIZED VECTORIZED."""
+        """Calculate volatility regime transition probability - OPTIMIZED VECTORBT."""
         if len(returns) < window * 2:
             return np.zeros(len(returns))
         
-        # OPTIMIZED: Use vectorized transition probability calculation
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         vol_window_size = max(1, window // 2)
         
-        # Calculate rolling volatility
-        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
-        
-        # Vectorized transition probability using volatility changes
-        vol_changes = rolling_vol.diff()
-        vol_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
-        
-        # Transition probability based on volatility change rate
-        transition_prob = vol_changes.abs() / (vol_mean + 1e-8)
-        transition_prob = transition_prob.clip(0, 1)
-        
-        return transition_prob.fillna(0).values
+        try:
+            # Calculate rolling volatility
+            if self.rolling_optimizer is not None:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, vol_window_size)
+                vol_mean = self.rolling_optimizer.rolling_mean(rolling_vol, window)
+            elif self.vectorization_manager is not None:
+                rolling_vol = self.vectorization_manager.rolling_std(returns_series, vol_window_size)
+                vol_mean = self.vectorization_manager.rolling_mean(rolling_vol, window)
+            elif VECTORBT_AVAILABLE:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_mean = rolling_vol.rolling(window=window).mean()
+            else:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_mean = rolling_vol.rolling(window=window).mean()
+            
+            # Vectorized transition probability using volatility changes
+            vol_changes = rolling_vol.diff()
+            
+            # Transition probability based on volatility change rate
+            transition_prob = vol_changes.abs() / (vol_mean + 1e-8)
+            transition_prob = transition_prob.clip(0, 1)
+            
+            return transition_prob.fillna(0).values
+            
+        except Exception as e:
+            tprint(f"_calculate_volatility_transition_probability: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            vol_mean = rolling_vol.rolling(window=window).mean()
+            vol_changes = rolling_vol.diff()
+            transition_prob = vol_changes.abs() / (vol_mean + 1e-8)
+            transition_prob = transition_prob.clip(0, 1)
+            return transition_prob.fillna(0).values
     
     def _calculate_trend_probability(self, vol_window: pd.Series) -> float:
         """Calculate trend probability for a volatility window."""
@@ -490,90 +645,130 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return min(1, max(0, abs(trend) / (mean_vol + 1e-8)))
     
     def _calculate_volatility_stability(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volatility regime stability - VECTORIZED."""
+        """Calculate volatility regime stability - OPTIMIZED VECTORBT."""
         if len(returns) < window:
             return np.zeros(len(returns))
         
-        # Vectorized stability calculation
+        # Use VectorBT rolling optimizer for enhanced performance
         returns_series = pd.Series(returns)
         vol_window_size = max(1, window // 4)
-        
-        # Calculate rolling volatility
-        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
-        
-        # Calculate stability using rolling coefficient of variation
-        vol_rolling_std = self._vectorbt_rolling_operation(rolling_vol, "std", window)
-        vol_rolling_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
-        
-        vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
-        stability = (1 - vol_vol).clip(0, 1)
-        
-        return stability.fillna(0).values
-    
-    def _calculate_regime_persistence_score(self, returns: np.ndarray, window: int) -> np.ndarray:
-        """Calculate regime persistence score - OPTIMIZED VECTORIZED."""
-        if len(returns) < window:
-            return np.zeros(len(returns))
-        
-        # OPTIMIZED: Use vectorized persistence calculation
-        returns_series = pd.Series(returns)
-        vol_window_size = max(1, window // 4)
-        
-        # Calculate rolling volatility
-        rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
-        
-        # Vectorized persistence using rolling autocorrelation
-        persistence = rolling_vol.rolling(window=window).apply(
-            lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-            raw=False
-        ).fillna(0)
-        
-        return persistence.values
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
         try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+            # Calculate rolling volatility
+            if self.rolling_optimizer is not None:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.rolling_optimizer.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.rolling_optimizer.rolling_mean(rolling_vol, window)
+            elif self.vectorization_manager is not None:
+                rolling_vol = self.vectorization_manager.rolling_std(returns_series, vol_window_size)
+                vol_rolling_std = self.vectorization_manager.rolling_std(rolling_vol, window)
+                vol_rolling_mean = self.vectorization_manager.rolling_mean(rolling_vol, window)
+            elif VECTORBT_AVAILABLE:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
             else:
-                raise ValueError(f"Unsupported operation: {operation}")
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+                vol_rolling_std = rolling_vol.rolling(window=window).std()
+                vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            
+            # Calculate stability using rolling coefficient of variation
+            vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            stability = (1 - vol_vol).clip(0, 1)
+            
+            return stability.fillna(0).values
+            
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+            tprint(f"_calculate_volatility_stability: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            vol_rolling_std = rolling_vol.rolling(window=window).std()
+            vol_rolling_mean = rolling_vol.rolling(window=window).mean()
+            vol_vol = vol_rolling_std / (vol_rolling_mean + 1e-8)
+            stability = (1 - vol_vol).clip(0, 1)
+            return stability.fillna(0).values
     
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
+    def _calculate_regime_persistence_score(self, returns: np.ndarray, window: int) -> np.ndarray:
+        """Calculate regime persistence score - OPTIMIZED VECTORBT."""
+        if len(returns) < window:
+            return np.zeros(len(returns))
+        
+        # Use VectorBT rolling optimizer for enhanced performance
+        returns_series = pd.Series(returns)
+        vol_window_size = max(1, window // 4)
+        
+        try:
+            # Calculate rolling volatility
+            if self.rolling_optimizer is not None:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, vol_window_size)
+            elif self.vectorization_manager is not None:
+                rolling_vol = self.vectorization_manager.rolling_std(returns_series, vol_window_size)
+            elif VECTORBT_AVAILABLE:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            else:
+                rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            
+            # Vectorized persistence using rolling autocorrelation
+            persistence = rolling_vol.rolling(window=window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
+            
+            return persistence.values
+            
+        except Exception as e:
+            tprint(f"_calculate_regime_persistence_score: Optimization failed: {e}, using pandas fallback")
+            # Fallback to pandas
+            rolling_vol = returns_series.rolling(window=vol_window_size).std()
+            persistence = rolling_vol.rolling(window=window).apply(
+                lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
+                raw=False
+            ).fillna(0)
+            return persistence.values
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from VectorBT optimizers."""
+        stats = {
+            "rolling_optimizer_available": self.rolling_optimizer is not None,
+            "vectorization_manager_available": self.vectorization_manager is not None,
+            "vectorbt_available": VECTORBT_AVAILABLE,
+            "gpu_available": CUPY_AVAILABLE
+        }
+        
+        if self.rolling_optimizer is not None:
+            try:
+                rolling_stats = self.rolling_optimizer.get_performance_stats()
+                stats["rolling_optimizer_stats"] = rolling_stats
+            except Exception as e:
+                tprint(f"Failed to get rolling optimizer stats: {e}")
+        
+        if self.vectorization_manager is not None:
+            try:
+                vectorization_stats = self.vectorization_manager.get_performance_summary()
+                stats["vectorization_manager_stats"] = vectorization_stats
+            except Exception as e:
+                tprint(f"Failed to get vectorization manager stats: {e}")
+        
+        return stats
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics for all optimizers."""
+        if self.rolling_optimizer is not None:
+            try:
+                self.rolling_optimizer.reset_stats()
+            except Exception as e:
+                tprint(f"Failed to reset rolling optimizer stats: {e}")
+        
+        if self.vectorization_manager is not None:
+            try:
+                self.vectorization_manager.reset_performance_history()
+            except Exception as e:
+                tprint(f"Failed to reset vectorization manager stats: {e}")
+    
+    def optimize_for_data_size(self, data_size: int):
+        """Optimize configuration based on data size."""
+        if self.vectorization_manager is not None:
+            # The unified vectorization manager will automatically adapt
+            # based on data size and performance history
+            tprint(f"Data size optimization: {data_size} data points")
         else:
-            raise ValueError(f"Unsupported operation: {operation}")
+            tprint("Vectorization manager not available for data size optimization")

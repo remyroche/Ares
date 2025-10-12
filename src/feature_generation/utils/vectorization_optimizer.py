@@ -351,31 +351,19 @@ class VectorizationOptimizer:
         """Get available memory in MB."""
         try:
             import psutil
+            return psutil.virtual_memory().available / (1024 * 1024)  # Convert to MB
+        except ImportError:
+            return 1000.0  # Default fallback
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # VectorBT 0.28+ has a different API structure
     VECTORBT_AVAILABLE = True
 except ImportError:
+    import warnings
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -385,10 +373,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            memory = psutil.virtual_memory()
-            return memory.available / (1024 * 1024)
-        except ImportError:
-            return 0.0
     
     def _split_dataframe(self, df: pd.DataFrame, chunk_size: int) -> List[pd.DataFrame]:
         """Split DataFrame into chunks."""

@@ -1408,31 +1408,19 @@ def get_memory_usage() -> float:
     """
     try:
         import psutil
+        return psutil.Process().memory_info().rss
+    except ImportError:
+        return 0
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # VectorBT 0.28+ has a different API structure
     VECTORBT_AVAILABLE = True
 except ImportError:
+    import warnings
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -1442,10 +1430,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        return psutil.Process().memory_info().rss
-    except ImportError:
-        logger.warning("⚠️ psutil not available for memory monitoring")
-        return 0.0
 
 
 def validate_file_path(file_path: Union[str, Path]) -> bool:

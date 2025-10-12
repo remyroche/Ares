@@ -375,6 +375,11 @@ def load_data(filepath):
 # M1 utilities - using available hardware optimizations
 try:
     from src.utils.hardware.m1_optimizations import M1MemoryOptimizer, M1DataManager
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+    M1MemoryOptimizer = None
+    M1DataManager = None
 
 # VectorBT imports for native optimization
 try:
@@ -383,6 +388,7 @@ try:
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
+    import warnings
     VECTORBT_AVAILABLE = False
     vbt = None
     rolling_mean = None

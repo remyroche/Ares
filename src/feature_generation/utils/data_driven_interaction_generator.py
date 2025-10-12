@@ -770,7 +770,7 @@ class DataDrivenInteractionGenerator:
                                    feature_combo: Tuple[str, ...],
                                    interaction_type: InteractionType,
                                    targets: Optional[pd.Series]) -> Optional[InteractionResult]:
-        """Generate a single interaction feature with enhanced optimization."""
+        """Generate a single interaction feature with enhanced optimization and early termination."""
         start_time = time.time()
         
         try:
@@ -782,24 +782,57 @@ class DataDrivenInteractionGenerator:
                     self.performance_stats['cached_operations'] += 1
                     return cached_result
             
-            # Extract feature data
-            feature_data = [features[feat] for feat in feature_combo]
+            # Early termination: Check if we already have enough high-quality interactions
+            if hasattr(self, '_current_interaction_count') and hasattr(self, '_high_quality_threshold'):
+                if (self._current_interaction_count >= self.config.max_interactions and 
+                    self._high_quality_interactions >= self._high_quality_threshold):
+                    return None
             
-            # Generate interaction
-            if len(feature_combo) == 1:
-                # Single feature interaction
-                result_series = interaction_type.function(feature_data[0])
-            else:
-                # Multi-feature interaction
-                result_series = interaction_type.function(*feature_data)
+            # Extract feature data with early validation
+            feature_data = []
+            for feat in feature_combo:
+                if feat not in features.columns:
+                    return None
+                series = features[feat]
+                
+                # Early termination: Skip if feature has insufficient data
+                if series.isna().sum() > len(series) * 0.5:  # More than 50% missing
+                    return None
+                
+                # Early termination: Skip if feature has no variance
+                if series.nunique() <= 1:
+                    return None
+                
+                feature_data.append(series)
+            
+            # Early termination: Check feature correlation for multi-feature interactions
+            if len(feature_combo) > 1:
+                corr_matrix = pd.DataFrame(feature_data).T.corr()
+                max_corr = corr_matrix.abs().max().max()
+                if max_corr > self.config.correlation_threshold:
+                    return None  # Features too correlated
+            
+            # Generate interaction with optimized calculation
+            result_series = self._generate_interaction_optimized(
+                feature_data, interaction_type, feature_combo
+            )
             
             if result_series is None or result_series.empty:
                 return None
             
-            # Calculate utility score
+            # Early termination: Quick utility check before expensive calculations
+            quick_utility = self._calculate_quick_utility_score(result_series, targets)
+            if quick_utility < self.config.utility_threshold * 0.8:  # 20% buffer for early termination
+                return None
+            
+            # Calculate full utility score
             utility_score = self._calculate_utility_score(result_series, targets)
             
             if utility_score < self.config.utility_threshold:
+                return None
+            
+            # Early termination: Check if result is too similar to existing interactions
+            if self._is_duplicate_interaction(result_series, utility_score):
                 return None
             
             # Create feature name
@@ -820,12 +853,24 @@ class DataDrivenInteractionGenerator:
                     'vectorbt_optimized': interaction_type.vectorbt_optimized,
                     'batch_processable': interaction_type.batch_processable,
                     'memory_efficient': interaction_type.memory_efficient,
-                    'parameters': interaction_type.parameters
+                    'parameters': interaction_type.parameters,
+                    'quick_utility': quick_utility,
+                    'early_termination_checks': True
                 },
                 processing_time=processing_time,
                 memory_usage=memory_usage,
                 optimization_method='vectorbt' if interaction_type.vectorbt_optimized else 'pandas'
             )
+            
+            # Update counters for early termination
+            if not hasattr(self, '_current_interaction_count'):
+                self._current_interaction_count = 0
+                self._high_quality_interactions = 0
+                self._high_quality_threshold = self.config.max_interactions * 0.7
+            
+            self._current_interaction_count += 1
+            if utility_score > self.config.utility_threshold * 1.5:  # High quality threshold
+                self._high_quality_interactions += 1
             
             # Cache result
             if self._cache_enabled:
@@ -836,6 +881,148 @@ class DataDrivenInteractionGenerator:
         except Exception as e:
             logger.debug(f"⚠️ Single interaction generation failed: {e}")
             return None
+    
+    def _generate_interaction_optimized(self, 
+                                       feature_data: List[pd.Series],
+                                       interaction_type: InteractionType,
+                                       feature_combo: Tuple[str, ...]) -> Optional[pd.Series]:
+        """Generate interaction with optimized calculations and early termination."""
+        try:
+            # Early termination: Check for obvious failures
+            if not feature_data or any(series is None for series in feature_data):
+                return None
+            
+            # Use VectorBT optimization when available
+            if (interaction_type.vectorbt_optimized and 
+                self.vectorization_manager and 
+                len(feature_data) <= 2):  # Most interactions are 1-2 features
+                
+                return self._generate_vectorbt_optimized_interaction(
+                    feature_data, interaction_type, feature_combo
+                )
+            
+            # Fallback to standard generation
+            if len(feature_combo) == 1:
+                return interaction_type.function(feature_data[0])
+            else:
+                return interaction_type.function(*feature_data)
+                
+        except Exception as e:
+            logger.debug(f"⚠️ Optimized interaction generation failed: {e}")
+            return None
+    
+    def _generate_vectorbt_optimized_interaction(self, 
+                                               feature_data: List[pd.Series],
+                                               interaction_type: InteractionType,
+                                               feature_combo: Tuple[str, ...]) -> Optional[pd.Series]:
+        """Generate interaction using VectorBT optimization."""
+        try:
+            if len(feature_data) == 1:
+                # Single feature interaction
+                feat = feature_data[0]
+                
+                if interaction_type.name == 'quadratic':
+                    return feat ** 2
+                elif interaction_type.name == 'skewness':
+                    return self.vectorization_manager.rolling_operation(feat, 'skew', 20)
+                elif interaction_type.name == 'kurtosis':
+                    return self.vectorization_manager.rolling_operation(feat, 'kurt', 20)
+                elif interaction_type.name == 'rolling_quantile':
+                    q = interaction_type.parameters.get('q', 0.5) if interaction_type.parameters else 0.5
+                    return self.vectorization_manager.rolling_operation(feat, 'quantile', 20, q=q)
+                elif interaction_type.name == 'rolling_rank':
+                    return self.vectorization_manager.rolling_operation(feat, 'rank', 20)
+                else:
+                    return interaction_type.function(feat)
+            
+            elif len(feature_data) == 2:
+                # Two feature interaction
+                feat1, feat2 = feature_data
+                
+                if interaction_type.name in ['scaled_sum', 'scaled_difference', 'scaled_product', 'scaled_ratio']:
+                    # Use optimized scaling
+                    scaled1 = self.vectorization_manager.scale_data(feat1, method='zscore')
+                    scaled2 = self.vectorization_manager.scale_data(feat2, method='zscore')
+                    
+                    if interaction_type.name == 'scaled_sum':
+                        return scaled1 + scaled2
+                    elif interaction_type.name == 'scaled_difference':
+                        return scaled1 - scaled2
+                    elif interaction_type.name == 'scaled_product':
+                        return scaled1 * scaled2
+                    elif interaction_type.name == 'scaled_ratio':
+                        return scaled1 / (scaled2 + 1e-08)
+                
+                elif interaction_type.name in ['correlation', 'covariance']:
+                    # Use optimized rolling operations
+                    window = interaction_type.parameters.get('window', 20) if interaction_type.parameters else 20
+                    if interaction_type.name == 'correlation':
+                        return self.vectorization_manager.rolling_operation(feat1, 'corr', window, other=feat2)
+                    else:
+                        return self.vectorization_manager.rolling_operation(feat1, 'cov', window, other=feat2)
+                
+                else:
+                    return interaction_type.function(feat1, feat2)
+            
+            else:
+                # Multi-feature interaction (fallback)
+                return interaction_type.function(*feature_data)
+                
+        except Exception as e:
+            logger.debug(f"⚠️ VectorBT optimized interaction failed: {e}")
+            return None
+    
+    def _calculate_quick_utility_score(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate a quick utility score for early termination."""
+        try:
+            # Quick variance check
+            variance = series.var()
+            if pd.isna(variance) or variance < self.config.utility_threshold * 0.1:
+                return 0.0
+            
+            # Quick correlation check (sample-based for speed)
+            if targets is not None and len(series) > 100:
+                # Sample every 10th point for speed
+                sample_indices = series.dropna().index[::10]
+                if len(sample_indices) > 10:
+                    sample_series = series.loc[sample_indices]
+                    sample_targets = targets.loc[sample_indices]
+                    corr = sample_series.corr(sample_targets)
+                    if not pd.isna(corr):
+                        return abs(corr)
+            
+            # Fallback to variance-based score
+            return min(1.0, variance)
+            
+        except:
+            return 0.0
+    
+    def _is_duplicate_interaction(self, series: pd.Series, utility_score: float) -> bool:
+        """Check if interaction is too similar to existing ones."""
+        if not hasattr(self, '_interaction_signatures'):
+            self._interaction_signatures = {}
+        
+        # Create a simple signature based on statistics
+        signature = (
+            float(series.mean()),
+            float(series.std()),
+            float(series.skew()),
+            len(series.dropna())
+        )
+        
+        # Check against existing signatures
+        for existing_sig, existing_score in self._interaction_signatures.items():
+            if (abs(signature[0] - existing_sig[0]) < 1e-6 and  # Mean
+                abs(signature[1] - existing_sig[1]) < 1e-6 and  # Std
+                abs(signature[2] - existing_sig[2]) < 1e-6 and  # Skew
+                signature[3] == existing_sig[3]):  # Length
+                # If similar signature and similar score, consider duplicate
+                if abs(utility_score - existing_score) < 0.01:
+                    return True
+        
+        # Store this signature
+        self._interaction_signatures[signature] = utility_score
+        return False
     
     def _calculate_utility_score(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
         """Calculate utility score for a feature."""

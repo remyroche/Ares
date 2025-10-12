@@ -311,44 +311,33 @@ class BaseScaler(ABC):
                 tprint(f"❌ {error_msg}", color="red", bold=True)
             raise ValueError(error_msg)
     
-    def _log_info(self, message: str, use_tprint: bool = True) -> None:
-        """
-        Log info message using tprint if available, otherwise standard logging.
-        
-        Args:
-            message: Message to log
-            use_tprint: Whether to use tprint (if available)
-        """
-        if use_tprint and TPRINT_AVAILABLE:
+    def _log_info(self, message: str) -> None:
+        """Log info message using tprint if available, otherwise standard logging."""
+        if TPRINT_AVAILABLE:
             tprint(message, color="cyan")
         else:
             logger.info(message)
     
-    def _log_success(self, message: str, use_tprint: bool = True) -> None:
-        """
-        Log success message using tprint if available.
-        
-        Args:
-            message: Message to log
-            use_tprint: Whether to use tprint (if available)
-        """
-        if use_tprint and TPRINT_AVAILABLE:
+    def _log_success(self, message: str) -> None:
+        """Log success message using tprint if available."""
+        if TPRINT_AVAILABLE:
             tprint(message, color="green")
         else:
             logger.info(message)
     
-    def _log_warning(self, message: str, use_tprint: bool = True) -> None:
-        """
-        Log warning message using tprint if available.
-        
-        Args:
-            message: Message to log
-            use_tprint: Whether to use tprint (if available)
-        """
-        if use_tprint and TPRINT_AVAILABLE:
+    def _log_warning(self, message: str) -> None:
+        """Log warning message using tprint if available."""
+        if TPRINT_AVAILABLE:
             tprint(message, color="yellow")
         else:
             logger.warning(message)
+    
+    def _log_error(self, message: str) -> None:
+        """Log error message using tprint if available."""
+        if TPRINT_AVAILABLE:
+            tprint(message, color="red")
+        else:
+            logger.error(message)
     
     def _validate_numeric_input(self, data: pd.Series, name: str = "input") -> None:
         """
@@ -494,7 +483,8 @@ class SimpleScaler(BaseScaler):
     
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit mean/std and transform data with enhanced logging and validation."""
-        self._log_info(f"🔧 [SimpleScaler] Fitting on {len(data)} samples")
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [SimpleScaler] Fitting on {len(data)} samples", color="cyan")
         
         # Validate input
         self._validate_numeric_input(data, "input data")
@@ -503,37 +493,61 @@ class SimpleScaler(BaseScaler):
         clean_data = data.dropna()
         
         if len(clean_data) == 0:
-            self._log_warning("⚠️  No valid data to fit, using defaults")
-            self.mean = 0.0
-            self.std = 1.0
-        else:
+            error_msg = "No valid data to fit scaler"
+            self._log_error(f"❌ [SimpleScaler] {error_msg}")
+            raise ValueError(error_msg)
+        
+        try:
             self.mean = float(clean_data.mean())
             self.std = float(clean_data.std())
             
             # Prevent division by zero
-            if self.std == 0 or np.isnan(self.std):
-                self._log_warning("⚠️  Zero std detected, using 1.0")
-                self.std = 1.0
-        
-        self.fitted = True
-        self._log_success(f"✅ [SimpleScaler] Fitted: mean={self.mean:.4f}, std={self.std:.4f}")
-        
-        transformed = self.transform(data)
-        
-        # Validate output
-        self._check_output_validity(transformed, "transformed data")
-        
-        return transformed
+            if self.std == 0 or np.isnan(self.std) or np.isinf(self.std):
+                error_msg = f"Invalid std value: {self.std}"
+                self._log_error(f"❌ [SimpleScaler] {error_msg}")
+                raise ValueError(error_msg)
+            
+            self.fitted = True
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [SimpleScaler] Fitted: mean={self.mean:.4f}, std={self.std:.4f}", color="green")
+            
+            transformed = self.transform(data)
+            
+            # Validate output
+            self._check_output_validity(transformed, "transformed data")
+            
+            return transformed
+            
+        except Exception as e:
+            error_msg = f"Failed to fit scaler: {e}"
+            self._log_error(f"❌ [SimpleScaler] {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform data using fitted mean/std with safe division."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [SimpleScaler] Transforming {len(data)} samples", color="cyan")
+        
         self._validate_fitted()
         
         if self.mean is None or self.std is None:
-            raise ValueError("Scaler state is invalid")
+            error_msg = "Scaler state is invalid - mean or std is None"
+            self._log_error(f"❌ [SimpleScaler] {error_msg}")
+            raise ValueError(error_msg)
         
-        # Use safe division
-        return self._safe_divide(data - self.mean, self.std, default=0.0)
+        try:
+            # Use safe division
+            result = self._safe_divide(data - self.mean, self.std, default=0.0)
+            
+            if TPRINT_AVAILABLE:
+                tprint("✅ [SimpleScaler] Transform completed successfully", color="green")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to transform data: {e}"
+            self._log_error(f"❌ [SimpleScaler] {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def get_state(self) -> Dict[str, Any]:
         """Get state for persistence."""
@@ -603,86 +617,28 @@ def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = T
         
     Returns:
         Best available batch scaler instance with optimization
+        
+    Raises:
+        ImportError: If VectorBT batch scaler is not available and fallback fails
     """
+    if TPRINT_AVAILABLE:
+        tprint(f"🔧 [create_optimized_batch_scaler] Creating batch scaler with method={method}", color="cyan")
+    
     if use_vectorbt and VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
         try:
-            return VectorBTBatchScaler(method, use_optimizer=use_optimizer, 
-                                     use_unified_manager=use_unified_manager, **kwargs)
+            scaler = VectorBTBatchScaler(method, use_optimizer=use_optimizer, 
+                                       use_unified_manager=use_unified_manager, **kwargs)
+            if TPRINT_AVAILABLE:
+                tprint("✅ [create_optimized_batch_scaler] VectorBT batch scaler created successfully", color="green")
+            return scaler
         except Exception as e:
-            logger.warning(f"Failed to create VectorBT batch scaler: {e}, using fallback")
+            error_msg = f"Failed to create VectorBT batch scaler: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [create_optimized_batch_scaler] {error_msg}", color="red")
+            raise ImportError(error_msg) from e
     
-    # Fallback: create individual scalers for each column with optimization
-    return _FallbackBatchScaler(method, use_optimizer=use_optimizer, 
-                              use_unified_manager=use_unified_manager, **kwargs)
-
-
-class _FallbackBatchScaler:
-    """Fallback batch scaler that creates individual scalers for each column."""
-    
-    def __init__(self, method: str = 'zscore', use_optimizer: bool = True, 
-                 use_unified_manager: bool = True, **kwargs):
-        if TPRINT_AVAILABLE:
-            tprint(f"🔧 [_FallbackBatchScaler] Initializing fallback batch scaler with method={method}", color="cyan")
-        
-        self.method = method
-        self.kwargs = kwargs
-        self.use_optimizer = use_optimizer
-        self.use_unified_manager = use_unified_manager
-        self.scalers = {}
-    
-    def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
-        if TPRINT_AVAILABLE:
-            tprint(f"🔧 [_FallbackBatchScaler] Starting fit_transform on {data.shape[0]}x{data.shape[1]} data", color="cyan")
-        
-        result = data.copy()
-        for col in data.columns:
-            scaler = create_optimized_scaler(self.method, use_optimizer=self.use_optimizer,
-                                           use_unified_manager=self.use_unified_manager, **self.kwargs)
-            result[col] = scaler.fit_transform(data[col])
-            self.scalers[col] = scaler
-        
-        if TPRINT_AVAILABLE:
-            tprint(f"✅ [_FallbackBatchScaler] Fit_transform completed for {len(self.scalers)} columns", color="green")
-        
-        return result
-    
-    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
-        if TPRINT_AVAILABLE:
-            tprint(f"🔧 [_FallbackBatchScaler] Starting transform on {data.shape[0]}x{data.shape[1]} data", color="cyan")
-        
-        result = data.copy()
-        for col in data.columns:
-            if col in self.scalers:
-                result[col] = self.scalers[col].transform(data[col])
-            else:
-                if TPRINT_AVAILABLE:
-                    tprint(f"⚠️  [_FallbackBatchScaler] No scaler found for column '{col}', keeping original", color="yellow")
-                result[col] = data[col]
-        
-        if TPRINT_AVAILABLE:
-            tprint(f"✅ [_FallbackBatchScaler] Transform completed", color="green")
-        
-        return result
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """Get aggregated performance statistics from all scalers."""
-        if TPRINT_AVAILABLE:
-            tprint("🔧 [_FallbackBatchScaler] Getting aggregated performance statistics", color="cyan")
-        
-        stats = {
-            'total_operations': 0,
-            'vectorbt_operations': 0,
-            'optimizer_operations': 0,
-            'unified_manager_operations': 0,
-            'pandas_fallbacks': 0,
-            'memory_optimizations': 0
-        }
-        
-        for scaler in self.scalers.values():
-            if hasattr(scaler, 'get_performance_stats'):
-                scaler_stats = scaler.get_performance_stats()
-                for key, value in scaler_stats.items():
-                    if key in stats:
-                        stats[key] += value
-        
-        return stats
+    # If VectorBT is not available, raise error instead of silent fallback
+    error_msg = "VectorBT batch scaler not available and no fallback implemented"
+    if TPRINT_AVAILABLE:
+        tprint(f"❌ [create_optimized_batch_scaler] {error_msg}", color="red")
+    raise ImportError(error_msg)

@@ -399,40 +399,41 @@ class VectorBTScaler(BaseScaler):
         clean_data = data.dropna()
         
         if len(clean_data) == 0:
+            error_msg = "No valid data for fallback scaling"
             if TPRINT_AVAILABLE:
-                tprint("⚠️  [VectorBTScaler] No valid data for fallback, returning NaN", color="yellow")
-            return pd.Series(np.nan, index=data.index)
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise ValueError(error_msg)
         
         try:
             if self.method == 'zscore':
                 mean = clean_data.mean()
                 std = clean_data.std()
-                if std == 0 or np.isnan(std):
+                if std == 0 or np.isnan(std) or np.isinf(std):
+                    error_msg = f"Invalid std value for zscore: {std}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Zero std in zscore fallback, using zeros", color="yellow")
-                    result = pd.Series(0, index=data.index)
-                else:
-                    result = (data - mean) / std
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
+                result = (data - mean) / std
                 self.scaling_params = {'mean': mean, 'std': std}
             elif self.method == 'minmax':
                 min_val = clean_data.min()
                 max_val = clean_data.max()
-                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val):
+                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val) or np.isinf(max_val) or np.isinf(min_val):
+                    error_msg = f"Invalid min/max values for minmax: min={min_val}, max={max_val}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Invalid min/max in minmax fallback, using zeros", color="yellow")
-                    result = pd.Series(0, index=data.index)
-                else:
-                    result = (data - min_val) / (max_val - min_val)
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
+                result = (data - min_val) / (max_val - min_val)
                 self.scaling_params = {'min': min_val, 'max': max_val}
             elif self.method == 'robust':
                 median = clean_data.median()
                 mad = (clean_data - median).abs().median()
-                if mad == 0 or np.isnan(mad):
+                if mad == 0 or np.isnan(mad) or np.isinf(mad):
+                    error_msg = f"Invalid MAD value for robust scaling: {mad}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Zero MAD in robust fallback, using zeros", color="yellow")
-                    result = pd.Series(0, index=data.index)
-                else:
-                    result = (data - median) / mad
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
+                result = (data - median) / mad
                 self.scaling_params = {'median': median, 'mad': mad}
             else:
                 # For other methods, use simple z-score as fallback
@@ -440,10 +441,12 @@ class VectorBTScaler(BaseScaler):
                     tprint(f"⚠️  [VectorBTScaler] Unsupported method {self.method}, using zscore fallback", color="yellow")
                 mean = clean_data.mean()
                 std = clean_data.std()
-                if std == 0 or np.isnan(std):
-                    result = pd.Series(0, index=data.index)
-                else:
-                    result = (data - mean) / std
+                if std == 0 or np.isnan(std) or np.isinf(std):
+                    error_msg = f"Invalid std value for zscore fallback: {std}"
+                    if TPRINT_AVAILABLE:
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
+                result = (data - mean) / std
                 self.scaling_params = {'mean': mean, 'std': std}
             
             self.fitted = True
@@ -452,10 +455,10 @@ class VectorBTScaler(BaseScaler):
             return result
             
         except Exception as e:
+            error_msg = f"Fallback fit_transform failed: {e}"
             if TPRINT_AVAILABLE:
-                tprint(f"❌ [VectorBTScaler] Fallback fit_transform failed: {e}", color="red")
-            # Ultimate fallback - return zeros
-            return pd.Series(0, index=data.index)
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
     
     def _fallback_transform(self, data: pd.Series) -> pd.Series:
         """Fallback transform using fitted parameters."""
@@ -466,26 +469,29 @@ class VectorBTScaler(BaseScaler):
             if self.method == 'zscore':
                 mean = self.scaling_params.get('mean', 0)
                 std = self.scaling_params.get('std', 1)
-                if std == 0 or np.isnan(std):
+                if std == 0 or np.isnan(std) or np.isinf(std):
+                    error_msg = f"Invalid std value for zscore transform: {std}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Zero std in zscore fallback transform, using zeros", color="yellow")
-                    return pd.Series(0, index=data.index)
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
                 return (data - mean) / std
             elif self.method == 'minmax':
                 min_val = self.scaling_params.get('min', 0)
                 max_val = self.scaling_params.get('max', 1)
-                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val):
+                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val) or np.isinf(max_val) or np.isinf(min_val):
+                    error_msg = f"Invalid min/max values for minmax transform: min={min_val}, max={max_val}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Invalid min/max in minmax fallback transform, using zeros", color="yellow")
-                    return pd.Series(0, index=data.index)
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
                 return (data - min_val) / (max_val - min_val)
             elif self.method == 'robust':
                 median = self.scaling_params.get('median', 0)
                 mad = self.scaling_params.get('mad', 1)
-                if mad == 0 or np.isnan(mad):
+                if mad == 0 or np.isnan(mad) or np.isinf(mad):
+                    error_msg = f"Invalid MAD value for robust transform: {mad}"
                     if TPRINT_AVAILABLE:
-                        tprint("⚠️  [VectorBTScaler] Zero MAD in robust fallback transform, using zeros", color="yellow")
-                    return pd.Series(0, index=data.index)
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
                 return (data - median) / mad
             else:
                 # Fallback to z-score
@@ -493,14 +499,17 @@ class VectorBTScaler(BaseScaler):
                     tprint(f"⚠️  [VectorBTScaler] Unsupported method {self.method} in fallback transform, using zscore", color="yellow")
                 mean = self.scaling_params.get('mean', 0)
                 std = self.scaling_params.get('std', 1)
-                if std == 0 or np.isnan(std):
-                    return pd.Series(0, index=data.index)
+                if std == 0 or np.isnan(std) or np.isinf(std):
+                    error_msg = f"Invalid std value for zscore fallback transform: {std}"
+                    if TPRINT_AVAILABLE:
+                        tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
                 return (data - mean) / std
         except Exception as e:
+            error_msg = f"Fallback transform failed: {e}"
             if TPRINT_AVAILABLE:
-                tprint(f"❌ [VectorBTScaler] Fallback transform failed: {e}", color="red")
-            # Ultimate fallback - return zeros
-            return pd.Series(0, index=data.index)
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
     
     def get_state(self) -> Dict[str, Any]:
         """Get current state for persistence."""
@@ -796,32 +805,58 @@ class VectorBTBatchScaler:
     
     def _fallback_fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Fallback batch fit_transform using standard methods."""
-        result = data.copy()
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTBatchScaler] Using fallback batch fit_transform for method={self.method}", color="yellow")
         
-        for col in data.columns:
-            scaler = VectorBTScaler(self.method, **self.kwargs)
-            result[col] = scaler.fit_transform(data[col])
-            self.scalers[col] = scaler.scaling_params
-        
-        return result
+        try:
+            result = data.copy()
+            
+            for col in data.columns:
+                scaler = VectorBTScaler(self.method, **self.kwargs)
+                result[col] = scaler.fit_transform(data[col])
+                self.scalers[col] = scaler.scaling_params
+            
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTBatchScaler] Fallback batch fit_transform completed", color="green")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Fallback batch fit_transform failed: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTBatchScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
     
     def _fallback_transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Fallback batch transform using fitted parameters."""
-        result = data.copy()
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTBatchScaler] Using fallback batch transform for method={self.method}", color="yellow")
         
-        for col in data.columns:
-            if col in self.scalers:
-                scaler = VectorBTScaler(self.method, **self.kwargs)
-                scaler.scaling_params = self.scalers[col]
-                scaler.fitted = True
-                result[col] = scaler.transform(data[col])
-            else:
-                result[col] = data[col]  # Keep original if not fitted
-        
-        return result
-
-
-# These functions are now available through the base_scaler module's create_optimized_scaler functions
+        try:
+            result = data.copy()
+            
+            for col in data.columns:
+                if col in self.scalers:
+                    scaler = VectorBTScaler(self.method, **self.kwargs)
+                    scaler.scaling_params = self.scalers[col]
+                    scaler.fitted = True
+                    result[col] = scaler.transform(data[col])
+                else:
+                    error_msg = f"No scaler found for column '{col}'"
+                    if TPRINT_AVAILABLE:
+                        tprint(f"❌ [VectorBTBatchScaler] {error_msg}", color="red")
+                    raise ValueError(error_msg)
+            
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTBatchScaler] Fallback batch transform completed", color="green")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Fallback batch transform failed: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTBatchScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
 
 
 # Available scaling methods
@@ -833,11 +868,24 @@ VECTORBT_SCALING_METHODS = [
 
 
 def get_available_scaling_methods() -> List[str]:
-    """Get list of available scaling methods."""
+    """
+    Get list of available scaling methods.
+    
+    Returns:
+        List of available scaling method names
+        
+    Raises:
+        RuntimeError: If no scaling methods are available
+    """
+    if TPRINT_AVAILABLE:
+        tprint("🔧 [get_available_scaling_methods] Getting available scaling methods", color="cyan")
+    
     if VECTORBT_AVAILABLE:
+        if TPRINT_AVAILABLE:
+            tprint(f"✅ [get_available_scaling_methods] Found {len(VECTORBT_SCALING_METHODS)} VectorBT methods", color="green")
         return VECTORBT_SCALING_METHODS
     else:
-        return ['zscore', 'minmax', 'robust']  # Fallback methods
-
-
-# Performance stats functions are now available through the scaler instances directly
+        fallback_methods = ['zscore', 'minmax', 'robust']
+        if TPRINT_AVAILABLE:
+            tprint(f"⚠️  [get_available_scaling_methods] VectorBT not available, using {len(fallback_methods)} fallback methods", color="yellow")
+        return fallback_methods

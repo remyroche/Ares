@@ -13,3 +13,5 @@ __all__ = ['BaseFeatureRegistry']
 
 if TPRINT_AVAILABLE:
     tprint("🔧 [registry] Module initialized with BaseFeatureRegistry", color="cyan")
+else:
+    print("🔧 [registry] Module initialized with BaseFeatureRegistry")

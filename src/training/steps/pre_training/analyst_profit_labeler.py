@@ -15,14 +15,12 @@ Key Features:
 - Per-regime/cluster optimization support
 """
 
-import asyncio
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
@@ -31,44 +29,27 @@ from src.utils.common_operations import (
     validate_dataframe_columns,
     safe_dataframe_operation,
     validate_positive,
-    validate_range,
     safe_int,
-    safe_float,
     get_dataframe_info,
     create_data_quality_report,
     ensure_directory,
     safe_json_dump,
-    safe_json_load,
     format_bytes,
-    timed_operation,
     memory_checkpoint,
     optimize_memory,
-    check_disk_space,
-    integrate_with_m1_optimizers,
-    get_m1_gpu_manager,
-    get_m1_memory_optimizer
+    integrate_with_m1_optimizers
 )
 from src.utils.common_utilities import (
     analyze_nan_values_detailed,
-    format_nan_analysis_report,
-    create_data_quality_report as create_detailed_quality_report,
-    get_dataframe_info as get_detailed_dataframe_info
+    format_nan_analysis_report
 )
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
-    get_vectorized_processing_core,
-    get_enhanced_matrix_operations,
     optimize_dataframe,
-    vectorized_rolling_features,
-    matrix_correlation_analysis,
-    safe_correlation_matrix,
-    compute_trading_indicators,
     get_hardware_performance_report
 )
 from src.utils.ml_common.optimization.grid_utils import (
-    generate_grid,
-    build_coarse_grid_from_search_space,
-    GridSearchOptimizer
+    generate_grid
 )
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.training.steps.pre_training.components.contracts import PipelineState
@@ -358,8 +339,6 @@ class AnalystProfitLabeler:
         # Initialize matrix operations for enhanced data processing
         try:
             self.matrix_ops = get_unified_matrix_operations()
-            self.vectorized_core = get_vectorized_processing_core()
-            self.enhanced_matrix_ops = get_enhanced_matrix_operations()
             tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
         except Exception as e:
             tprint_error(f"❌ Failed to initialize matrix operations: {e}")
@@ -616,7 +595,7 @@ class AnalystProfitLabeler:
 
             # Log memory usage and data quality with matrix operations info
             try:
-                memory_info = optimize_memory()
+                optimize_memory()  # Optimize memory without storing result
                 data_info = get_dataframe_info(data)
                 hardware_report = get_hardware_performance_report()
                 tprint_info(f"📊 Data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")

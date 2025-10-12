@@ -54,6 +54,29 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     TPRINT_AVAILABLE = False
 
+# Import VectorBT Rolling Optimizer for enhanced performance
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
+        optimized_rolling_apply, optimized_rolling_corr, optimized_rolling_cov
+    )
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT Rolling Optimizer not available: {e}")
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+
+# Import Unified Vectorization Manager
+try:
+    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
+        VectorBTUnifiedFramework, create_vectorbt_unified_framework
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+
 # NAS integration removed - NAS-TAS training pipelines have been removed
 
 # Enhanced training utilities integration
@@ -175,11 +198,105 @@ class TacticianEnsembleTrainingStep:
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
 
+            # Initialize VectorBT Rolling Optimizer for enhanced performance
+            if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=2000,  # Larger chunks for ensemble operations
+                    fast_fail=False,  # Use fallbacks for robustness
+                    enable_logging=True
+                )
+                tprint_success("✅ VectorBT Rolling Optimizer initialized for ensemble training")
+            else:
+                self.vectorbt_optimizer = None
+                tprint_warning("⚠️ VectorBT Rolling Optimizer not available for ensemble training")
+
+            # Initialize Unified Vectorization Manager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = create_vectorbt_unified_framework()
+                tprint_success("✅ Unified Vectorization Manager initialized for ensemble training")
+            else:
+                self.vectorization_manager = None
+                tprint_warning("⚠️ Unified Vectorization Manager not available for ensemble training")
+
             tprint_success("✅ TacticianEnsembleTrainingStep initialized successfully")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize TacticianEnsembleTrainingStep: {e}")
             raise
+
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+                                   window: int, **kwargs) -> pd.Series:
+        """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
+        if self.vectorbt_optimizer is not None:
+            try:
+                if operation == 'mean':
+                    return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
+                elif operation == 'std':
+                    return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
+                elif operation == 'var':
+                    return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
+                elif operation == 'min':
+                    return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
+                elif operation == 'max':
+                    return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
+                elif operation == 'sum':
+                    return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    return self.vectorbt_optimizer.rolling_apply(data, func, window=window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT Rolling Optimizer failed for {operation}: {e}, using fallback")
+                return self._fallback_rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._fallback_rolling_operation(data, operation, window, **kwargs)
+    
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            return data.rolling(window=window).apply(func, **kwargs)
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _optimize_feature_vectorization(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Optimize feature vectorization using Unified Vectorization Manager."""
+        if self.vectorization_manager is not None:
+            try:
+                # Convert DataFrame to numpy arrays for vectorization
+                X = features.values
+                feature_names = features.columns.tolist()
+                
+                # Use unified vectorization for feature optimization
+                # This could include feature selection, scaling, or other optimizations
+                tprint_debug("🔧 Applying unified vectorization optimization to features")
+                
+                # For now, return the original features
+                # In a full implementation, this would apply VectorBT optimizations
+                return features
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified vectorization failed: {e}, using original features")
+                return features
+        else:
+            return features
 
     async def train_tactician_ensemble(
         self,

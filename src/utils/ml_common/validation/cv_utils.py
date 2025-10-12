@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+import time
+import logging
 
 import numpy as np
 
@@ -152,6 +154,8 @@ class TemporalCrossValidator:
         try:
             import vectorbt as vbt
             import pandas as pd
+            from ..vectorbt_memory_optimizer import get_memory_manager, memory_managed_operation
+            from ..vectorbt_performance_monitor import monitor_operation
             
             # Convert to pandas for VectorBT processing with memory optimization
             if y is not None:
@@ -166,11 +170,20 @@ class TemporalCrossValidator:
             # Use VectorBT's advanced time series splitting with portfolio-style validation
             n = len(data)
             
-            # Enhanced splitting strategy based on data characteristics
-            if n > 10000:  # Large dataset - use VectorBT chunked processing
-                yield from self._vectorbt_chunked_split(data, n)
-            else:
-                yield from self._vectorbt_standard_split(data, n)
+            # Enhanced splitting strategy based on data characteristics with memory management
+            with memory_managed_operation(
+                n * 8 / (1024**3),  # Estimate memory usage
+                f"vectorbt_cv_split_{int(time.time())}",
+                "cross_validation"
+            ):
+                with monitor_operation(
+                    "vectorbt_temporal_splitting",
+                    metadata={'n_samples': n, 'n_splits': self.n_splits}
+                ):
+                    if n > 10000:  # Large dataset - use VectorBT chunked processing
+                        yield from self._vectorbt_chunked_split(data, n)
+                    else:
+                        yield from self._vectorbt_standard_split(data, n)
                     
         except ImportError:
             # Fallback to standard splitting if VectorBT not available
@@ -181,12 +194,13 @@ class TemporalCrossValidator:
             yield from self._standard_temporal_split(X, y)
     
     def _vectorbt_chunked_split(self, data: pd.DataFrame, n: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
-        """VectorBT chunked splitting for very large datasets."""
+        """VectorBT chunked splitting for very large datasets with portfolio-style validation."""
         import vectorbt as vbt
         
         # Use VectorBT's chunked processing for memory efficiency
         chunk_size = min(self.chunk_size, n // self.n_splits)
         
+        # Enhanced splitting with VectorBT portfolio analysis
         for i in range(self.n_splits):
             # Calculate split boundaries with gap consideration
             start_test = i * (n // self.n_splits)
@@ -210,7 +224,56 @@ class TemporalCrossValidator:
                 test_idx = test_idx[test_idx >= 0]
                 
                 if len(train_idx) > 0 and len(test_idx) > 0:
+                    # Enhanced validation with VectorBT portfolio analysis
+                    if 'target' in data.columns and len(train_data) > 100:
+                        # Use VectorBT for portfolio-style validation
+                        try:
+                            portfolio_metrics = self._vectorbt_portfolio_validation(
+                                train_data, test_data, data.columns
+                            )
+                            # Log portfolio metrics for monitoring
+                            logger.debug(f"Portfolio validation metrics for fold {i}: {portfolio_metrics}")
+                        except Exception as e:
+                            logger.debug(f"Portfolio validation failed for fold {i}: {e}")
+                    
                     yield train_idx, test_idx
+    
+    def _vectorbt_portfolio_validation(self, train_data: pd.DataFrame, test_data: pd.DataFrame, 
+                                     columns: List[str]) -> Dict[str, float]:
+        """Perform VectorBT portfolio-style validation for CV splits."""
+        try:
+            import vectorbt as vbt
+            
+            # Create portfolio from train/test data
+            if 'target' in columns:
+                # Use target as returns for portfolio analysis
+                train_returns = train_data['target'].pct_change().dropna()
+                test_returns = test_data['target'].pct_change().dropna()
+                
+                if len(train_returns) > 0 and len(test_returns) > 0:
+                    # Create VectorBT portfolio
+                    train_portfolio = vbt.Portfolio.from_returns(train_returns, freq='1min')
+                    test_portfolio = vbt.Portfolio.from_returns(test_returns, freq='1min')
+                    
+                    # Calculate portfolio metrics
+                    train_stats = train_portfolio.stats()
+                    test_stats = test_portfolio.stats()
+                    
+                    return {
+                        'train_sharpe': train_stats.get('Sharpe Ratio', 0),
+                        'test_sharpe': test_stats.get('Sharpe Ratio', 0),
+                        'train_max_dd': train_stats.get('Max. Drawdown [%]', 0) / 100,
+                        'test_max_dd': test_stats.get('Max. Drawdown [%]', 0) / 100,
+                        'train_volatility': train_stats.get('Annualized Volatility [%]', 0) / 100,
+                        'test_volatility': test_stats.get('Annualized Volatility [%]', 0) / 100,
+                        'stability_ratio': abs(train_stats.get('Sharpe Ratio', 0) - test_stats.get('Sharpe Ratio', 0))
+                    }
+            
+            return {}
+            
+        except Exception as e:
+            logger.debug(f"Portfolio validation failed: {e}")
+            return {}
     
     def _vectorbt_standard_split(self, data: pd.DataFrame, n: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         """VectorBT standard splitting for smaller datasets."""
@@ -541,7 +604,7 @@ class VectorBTCrossValidator:
     def evaluate_with_portfolio_analysis(self, X: np.ndarray, y: np.ndarray, 
                                        model: Any) -> Dict[str, float]:
         """
-        Evaluate model using VectorBT portfolio analysis.
+        Evaluate model using VectorBT portfolio analysis with enhanced metrics.
         
         Args:
             X: Feature matrix
@@ -556,26 +619,53 @@ class VectorBTCrossValidator:
             return {}
         
         try:
+            from ..vectorbt_financial_metrics import VectorBTFinancialMetrics
+            from ..vectorbt_performance_monitor import monitor_operation
+            
             # Generate predictions
             predictions = model.predict(X)
             
-            # Create portfolio using VectorBT
-            returns = np.diff(predictions) / predictions[:-1]
-            prices = predictions
-            
-            # Use VectorBT portfolio analysis
-            portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
-            
-            # Calculate portfolio metrics
-            stats = portfolio.stats()
-            
-            return {
-                'sharpe_ratio': stats.get('Sharpe Ratio', 0),
-                'max_drawdown': stats.get('Max. Drawdown [%]', 0) / 100,
-                'total_return': stats.get('Total Return [%]', 0) / 100,
-                'volatility': stats.get('Annualized Volatility [%]', 0) / 100,
-                'win_rate': stats.get('Win Rate [%]', 0) / 100
-            }
+            # Create portfolio using VectorBT with enhanced analysis
+            with monitor_operation(
+                "vectorbt_portfolio_evaluation",
+                metadata={'n_samples': len(X), 'n_features': X.shape[1]}
+            ):
+                # Create returns from predictions
+                returns = np.diff(predictions) / predictions[:-1]
+                prices = predictions
+                
+                # Use VectorBT portfolio analysis
+                portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+                
+                # Calculate basic portfolio metrics
+                stats = portfolio.stats()
+                
+                # Enhanced metrics using VectorBT financial metrics
+                financial_metrics = VectorBTFinancialMetrics()
+                enhanced_metrics = financial_metrics.calculate_comprehensive_metrics(
+                    portfolio_values=prices,
+                    returns=returns
+                )
+                
+                # Combine basic and enhanced metrics
+                portfolio_metrics = {
+                    'sharpe_ratio': stats.get('Sharpe Ratio', 0),
+                    'max_drawdown': stats.get('Max. Drawdown [%]', 0) / 100,
+                    'total_return': stats.get('Total Return [%]', 0) / 100,
+                    'volatility': stats.get('Annualized Volatility [%]', 0) / 100,
+                    'win_rate': stats.get('Win Rate [%]', 0) / 100,
+                    'sortino_ratio': enhanced_metrics.get('sortino_ratio', 0),
+                    'calmar_ratio': enhanced_metrics.get('calmar_ratio', 0),
+                    'information_ratio': enhanced_metrics.get('information_ratio', 0),
+                    'var_95': enhanced_metrics.get('var_95', 0),
+                    'cvar_95': enhanced_metrics.get('cvar_95', 0),
+                    'skewness': enhanced_metrics.get('skewness', 0),
+                    'kurtosis': enhanced_metrics.get('kurtosis', 0),
+                    'profit_factor': enhanced_metrics.get('profit_factor', 0),
+                    'expectancy': enhanced_metrics.get('expectancy', 0)
+                }
+                
+                return portfolio_metrics
             
         except Exception as e:
             logger.error(f"Portfolio analysis failed: {e}")

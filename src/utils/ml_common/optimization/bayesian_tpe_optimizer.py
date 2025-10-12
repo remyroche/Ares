@@ -93,6 +93,14 @@ class OptimizationConfig:
     vectorbt_memory_limit_gb: float = 4.0
     vectorbt_use_gpu: bool = True
     vectorbt_enable_parallel: bool = True
+    
+    # VectorBT portfolio optimization for financial ML
+    enable_portfolio_optimization: bool = True
+    portfolio_optimization_strategy: str = 'sharpe_ratio'  # 'sharpe_ratio', 'sortino_ratio', 'calmar_ratio'
+    portfolio_risk_free_rate: float = 0.02
+    portfolio_benchmark_symbol: Optional[str] = None
+    enable_regime_aware_optimization: bool = True
+    regime_detection_window: int = 20
 
     # Adaptive grid refinement settings
     enable_adaptive_grid_refinement: bool = True
@@ -194,6 +202,10 @@ class BayesianTPEOptimizer:
         # Initialize VectorBT optimization if available
         if VECTORBT_AVAILABLE and self.config.enable_vectorbt_optimization:
             self._initialize_vectorbt_optimization()
+        
+        # Initialize VectorBT portfolio optimization if available
+        if VECTORBT_AVAILABLE and self.config.enable_portfolio_optimization:
+            self._initialize_vectorbt_portfolio_optimization()
 
         # Optimization state
         self.study = None
@@ -317,6 +329,117 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT optimization initialization failed: {e}")
             self.vectorbt_manager = None
+
+    def _initialize_vectorbt_portfolio_optimization(self):
+        """Initialize VectorBT portfolio optimization components for financial ML."""
+        try:
+            from ..vectorbt_financial_metrics import VectorBTFinancialMetrics
+            from ..vectorbt_backtesting_engine import VectorBTBacktestingEngine
+            
+            # Initialize VectorBT financial metrics calculator
+            self.vectorbt_financial_metrics = VectorBTFinancialMetrics()
+            
+            # Initialize VectorBT backtesting engine for portfolio evaluation
+            from ..vectorbt_backtesting_engine import VectorBTBacktestConfig
+            backtest_config = VectorBTBacktestConfig(
+                risk_free_rate=self.config.portfolio_risk_free_rate,
+                benchmark_symbol=self.config.portfolio_benchmark_symbol,
+                enable_gpu=self.config.vectorbt_use_gpu,
+                enable_parallel=self.config.vectorbt_enable_parallel
+            )
+            self.vectorbt_backtesting_engine = VectorBTBacktestingEngine(backtest_config)
+            
+            # Portfolio optimization strategy mapping
+            self.portfolio_strategies = {
+                'sharpe_ratio': 'sharpe_ratio',
+                'sortino_ratio': 'sortino_ratio', 
+                'calmar_ratio': 'calmar_ratio',
+                'information_ratio': 'information_ratio',
+                'max_drawdown': 'max_drawdown'
+            }
+            
+            self.logger.info("✅ VectorBT portfolio optimization components initialized")
+            self.logger.info(f"   → Portfolio strategy: {self.config.portfolio_optimization_strategy}")
+            self.logger.info(f"   → Risk-free rate: {self.config.portfolio_risk_free_rate:.2%}")
+            self.logger.info(f"   → Regime-aware optimization: {self.config.enable_regime_aware_optimization}")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT portfolio optimization initialization failed: {e}")
+            self.vectorbt_financial_metrics = None
+            self.vectorbt_backtesting_engine = None
+
+    def _create_portfolio_aware_objective(self, objective: Callable, X: np.ndarray, y: np.ndarray) -> Callable:
+        """Create a portfolio-aware objective function for financial ML optimization."""
+        if not self.config.enable_portfolio_optimization or not self.vectorbt_financial_metrics:
+            return objective
+        
+        def portfolio_objective(trial):
+            # Get original objective value
+            original_value = objective(trial)
+            
+            # If original objective failed, return it
+            if original_value is None or np.isnan(original_value):
+                return original_value
+            
+            try:
+                # Get model predictions for portfolio analysis
+                # This assumes the objective function trains a model and returns predictions
+                # We need to extract the model from the trial or re-train it
+                model = getattr(trial, 'user_attrs', {}).get('model')
+                if model is None:
+                    return original_value
+                
+                # Generate predictions
+                predictions = model.predict(X)
+                
+                # Create portfolio returns
+                returns = np.diff(predictions) / predictions[:-1]
+                returns = returns[~np.isnan(returns)]  # Remove NaN values
+                
+                if len(returns) < 10:  # Need minimum data for portfolio analysis
+                    return original_value
+                
+                # Calculate portfolio metrics
+                portfolio_metrics = self.vectorbt_financial_metrics.calculate_comprehensive_metrics(
+                    portfolio_values=predictions,
+                    returns=returns
+                )
+                
+                # Get the optimization strategy metric
+                strategy_metric = self.config.portfolio_optimization_strategy
+                portfolio_value = portfolio_metrics.get(strategy_metric, 0)
+                
+                # Combine original objective with portfolio optimization
+                # Weight the portfolio metric based on the strategy
+                portfolio_weight = 0.3  # 30% weight for portfolio optimization
+                original_weight = 1.0 - portfolio_weight
+                
+                # Normalize portfolio value (assuming we want to maximize)
+                if strategy_metric == 'max_drawdown':
+                    # For max drawdown, we want to minimize (closer to 0 is better)
+                    portfolio_value = -abs(portfolio_value)
+                elif strategy_metric in ['sharpe_ratio', 'sortino_ratio', 'calmar_ratio', 'information_ratio']:
+                    # For these metrics, higher is better
+                    portfolio_value = portfolio_value
+                else:
+                    portfolio_value = 0
+                
+                # Combine metrics
+                combined_value = (original_weight * original_value + 
+                                portfolio_weight * portfolio_value)
+                
+                # Store portfolio metrics in trial for analysis
+                trial.set_user_attr('portfolio_metrics', portfolio_metrics)
+                trial.set_user_attr('portfolio_value', portfolio_value)
+                trial.set_user_attr('combined_value', combined_value)
+                
+                return combined_value
+                
+            except Exception as e:
+                self.logger.debug(f"Portfolio analysis failed in trial: {e}")
+                return original_value
+        
+        return portfolio_objective
 
     def optimize(self, objective: Callable, search_space: Dict[str, Any],
                 **kwargs) -> Dict[str, Any]:

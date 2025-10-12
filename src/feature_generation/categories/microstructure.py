@@ -13,9 +13,14 @@ from typing import Any, Dict, List, Optional, Union
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    get_vectorbt_rolling_optimizer = None
 
 from ..core.feature_generator import (
     FeatureGenerator,
@@ -70,6 +75,10 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize unified vectorization manager
+        self.vectorization_manager = get_unified_vectorization_manager() if OPTIMIZATION_AVAILABLE else None
+        self.rolling_optimizer = get_vectorbt_rolling_optimizer() if OPTIMIZATION_AVAILABLE else None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -163,7 +172,11 @@ class BidAskSpreadGenerator(VectorizedFeatureGenerator):
                 spread = ask - bid
             else:
                 base_values = self.base_calculator.calculate(data)
-                spread = base_values.rolling(window=self.window).std()
+                # Use VectorBT rolling operations if available
+                if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                    spread = self.rolling_optimizer.rolling_std(base_values, window=self.window)
+                else:
+                    spread = base_values.rolling(window=self.window).std()
         else:
             # Fallback: use high-low spread as proxy for bid-ask spread
             self.logger.warning(f"⚠️ Bid/ask columns not available, using high-low spread as proxy")
@@ -171,7 +184,11 @@ class BidAskSpreadGenerator(VectorizedFeatureGenerator):
                 spread = data['high'] - data['low']
             else:
                 base_values = self.base_calculator.calculate(data)
-                spread = base_values.rolling(window=self.window).std()
+                # Use VectorBT rolling operations if available
+                if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                    spread = self.rolling_optimizer.rolling_std(base_values, window=self.window)
+                else:
+                    spread = base_values.rolling(window=self.window).std()
 
         # Validate that all values are finite and provide detailed information
         try:
@@ -255,7 +272,16 @@ class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
         """Generate order flow imbalance."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        order_flow_imbalance = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        order_flow_imbalance = numerator / denominator
         return order_flow_imbalance
 
 # Trade Size Imbalance Generator
@@ -309,7 +335,16 @@ class TradeSizeImbalanceGenerator(VectorizedFeatureGenerator):
         """Generate trade size imbalance."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        trade_size_imbalance = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        trade_size_imbalance = numerator / denominator
         return trade_size_imbalance
 
 # Price Impact Generator
@@ -363,7 +398,16 @@ class PriceImpactGenerator(VectorizedFeatureGenerator):
         """Generate price impact."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        price_impact = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        price_impact = numerator / denominator
         return price_impact
 
 # Volume Weighted Price Generator
@@ -417,7 +461,16 @@ class VolumeWeightedPriceGenerator(VectorizedFeatureGenerator):
         """Generate volume weighted price."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        volume_weighted_price = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        volume_weighted_price = numerator / denominator
         return volume_weighted_price
 
 # Trade Intensity Generator
@@ -471,7 +524,16 @@ class TradeIntensityGenerator(VectorizedFeatureGenerator):
         """Generate trade intensity."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        trade_intensity = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        trade_intensity = numerator / denominator
         return trade_intensity
 
 # Liquidity Proxy Generator
@@ -525,7 +587,16 @@ class LiquidityProxyGenerator(VectorizedFeatureGenerator):
         """Generate liquidity proxy."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        liquidity_proxy = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        liquidity_proxy = numerator / denominator
         return liquidity_proxy
 
 # Market Depth Generator
@@ -579,18 +650,28 @@ class MarketDepthGenerator(VectorizedFeatureGenerator):
         """Generate market depth."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        market_depth = (base_values * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling operations if available
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            numerator = self.rolling_optimizer.rolling_sum(base_values * volume, window=self.window)
+            denominator = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+        else:
+            numerator = (base_values * volume).rolling(window=self.window).sum()
+            denominator = volume.rolling(window=self.window).sum()
+        
+        market_depth = numerator / denominator
         return market_depth
 
 def create_default_microstructure_generators() -> List[FeatureGenerator]:
-    """Create default microstructure feature generators."""
+    """Create default microstructure feature generators with VectorBT optimization."""
     windows = [5, 10, 20]
     
     generators = []
     
     # Create generators for each window
     for window in windows:
-        generators.extend([
+        # Create generators and add VectorBT optimization
+        generator_list = [
             BidAskSpreadGenerator(window),
             OrderFlowImbalanceGenerator(window),
             TradeSizeImbalanceGenerator(window),
@@ -599,7 +680,15 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             TradeIntensityGenerator(window),
             LiquidityProxyGenerator(window),
             MarketDepthGenerator(window),
-        ])
+        ]
+        
+        # Add VectorBT optimization to each generator
+        for generator in generator_list:
+            if OPTIMIZATION_AVAILABLE:
+                generator.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                generator.vectorization_manager = get_unified_vectorization_manager()
+        
+        generators.extend(generator_list)
 
     # Analyst Features - Microstructure generators
     class AnalystSpreadNormalizedGenerator(VectorizedFeatureGenerator):
@@ -632,7 +721,12 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             high_close = np.abs(data['high'] - data['close'].shift(1))
             low_close = np.abs(data['low'] - data['close'].shift(1))
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-            atr = true_range.rolling(14).mean()
+            
+            # Use VectorBT rolling operations if available
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                atr = self.rolling_optimizer.rolling_mean(true_range, window=14)
+            else:
+                atr = true_range.rolling(14).mean()
 
             spread_normalized = spread / atr.replace(0, 1)
             return spread_normalized
@@ -663,15 +757,27 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             price_changes = data['close'].diff()
 
             # Count upticks vs downticks in rolling window
-            upticks = (price_changes > 0).rolling(self.lookback).sum()
-            downticks = (price_changes < 0).rolling(self.lookback).sum()
+            # Use VectorBT rolling operations if available
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                upticks = self.rolling_optimizer.rolling_sum((price_changes > 0).astype(int), window=self.lookback)
+                downticks = self.rolling_optimizer.rolling_sum((price_changes < 0).astype(int), window=self.lookback)
+            else:
+                upticks = (price_changes > 0).rolling(self.lookback).sum()
+                downticks = (price_changes < 0).rolling(self.lookback).sum()
+            
             total_ticks = upticks + downticks
 
             tick_imbalance = (upticks - downticks) / total_ticks.replace(0, 1)
             return tick_imbalance
 
-    generators.append(AnalystSpreadNormalizedGenerator())
-    generators.append(AnalystTickImbalanceGenerator())
+    # Add VectorBT optimization to analyst features
+    analyst_generators = [AnalystSpreadNormalizedGenerator(), AnalystTickImbalanceGenerator()]
+    for generator in analyst_generators:
+        if OPTIMIZATION_AVAILABLE:
+            generator.rolling_optimizer = get_vectorbt_rolling_optimizer()
+            generator.vectorization_manager = get_unified_vectorization_manager()
+    
+    generators.extend(analyst_generators)
 
     # New microstructure interaction features
     class CorwinSchultzSpreadMomentumGenerator(VectorizedFeatureGenerator):
@@ -746,10 +852,18 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             
             # Amihud illiquidity: |returns| / volume
             amihud_illiquidity = np.abs(returns) / volume
-            amihud_illiquidity = amihud_illiquidity.rolling(window=self.illiquidity_window).mean()
             
-            # Calculate VWAP
-            vwap = (close * volume).rolling(window=self.vwap_window).sum() / volume.rolling(window=self.vwap_window).sum()
+            # Use VectorBT rolling operations if available
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                amihud_illiquidity = self.rolling_optimizer.rolling_mean(amihud_illiquidity, window=self.illiquidity_window)
+                # Calculate VWAP
+                vwap_numerator = self.rolling_optimizer.rolling_sum(close * volume, window=self.vwap_window)
+                vwap_denominator = self.rolling_optimizer.rolling_sum(volume, window=self.vwap_window)
+                vwap = vwap_numerator / vwap_denominator
+            else:
+                amihud_illiquidity = amihud_illiquidity.rolling(window=self.illiquidity_window).mean()
+                # Calculate VWAP
+                vwap = (close * volume).rolling(window=self.vwap_window).sum() / volume.rolling(window=self.vwap_window).sum()
             
             # VWAP distance: (close - vwap) / vwap
             vwap_distance = (close - vwap) / vwap
@@ -790,12 +904,18 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             
             # Roll's λ: signed autocovariance of returns
             # λ = -2 * cov(returns_t, returns_{t-1})
-            roll_lambda = -2 * returns.rolling(window=self.roll_window).apply(
-                lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0, raw=False
-            )
-            
-            # Realized volatility (short-term)
-            rv_short = returns.rolling(window=self.rv_window).std()
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                roll_lambda = -2 * self.rolling_optimizer.rolling_apply(
+                    returns, lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0, window=self.roll_window
+                )
+                # Realized volatility (short-term)
+                rv_short = self.rolling_optimizer.rolling_std(returns, window=self.rv_window)
+            else:
+                roll_lambda = -2 * returns.rolling(window=self.roll_window).apply(
+                    lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0, raw=False
+                )
+                # Realized volatility (short-term)
+                rv_short = returns.rolling(window=self.rv_window).std()
             
             # Interaction: Roll's λ × rv_short
             interaction = roll_lambda * rv_short
@@ -835,7 +955,12 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             range_volume_ratio = (high - low) / volume
             
             # Z-score of range/volume ratio
-            range_volume_z = (range_volume_ratio - range_volume_ratio.rolling(window=self.range_volume_window).mean()) / range_volume_ratio.rolling(window=self.range_volume_window).std()
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                range_volume_mean = self.rolling_optimizer.rolling_mean(range_volume_ratio, window=self.range_volume_window)
+                range_volume_std = self.rolling_optimizer.rolling_std(range_volume_ratio, window=self.range_volume_window)
+                range_volume_z = (range_volume_ratio - range_volume_mean) / range_volume_std
+            else:
+                range_volume_z = (range_volume_ratio - range_volume_ratio.rolling(window=self.range_volume_window).mean()) / range_volume_ratio.rolling(window=self.range_volume_window).std()
             
             # Open30: 30-period open price change
             open30 = open_price.pct_change(self.open30_window)
@@ -845,13 +970,20 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             
             return interaction
 
-    # Add new generators to the list
-    generators.extend([
+    # Add VectorBT optimization to interaction features
+    interaction_generators = [
         CorwinSchultzSpreadMomentumGenerator(),
         AmihudIlliquidityVWAPDistanceGenerator(),
         RollLambdaRVShortGenerator(),
         RangeVolumeShockOpen30Generator()
-    ])
+    ]
+    
+    for generator in interaction_generators:
+        if OPTIMIZATION_AVAILABLE:
+            generator.rolling_optimizer = get_vectorbt_rolling_optimizer()
+            generator.vectorization_manager = get_unified_vectorization_manager()
+    
+    generators.extend(interaction_generators)
 
     return generators
     def _should_use_vectorbt(self, data) -> bool:

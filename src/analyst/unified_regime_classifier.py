@@ -20,6 +20,13 @@ try:
 except ImportError:
     FEATURE_ENGINEER_AVAILABLE = False
 
+# Import centralized indicators
+try:
+    from src.training.steps.feature_engineering import calculate_rsi, calculate_macd
+    CENTRALIZED_INDICATORS_AVAILABLE = True
+except ImportError:
+    CENTRALIZED_INDICATORS_AVAILABLE = False
+
 try:
     from src.core.decorators import handles_errors
 except ImportError:
@@ -497,10 +504,21 @@ except ImportError:
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_rsi')
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
-        """Calculate RSI indicator using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            df['rsi'] = self.feature_engineer._calculate_rsi(df['close'], period)
-        else:
+        """Calculate RSI indicator using centralized system."""
+        try:
+            if CENTRALIZED_INDICATORS_AVAILABLE:
+                df['rsi'] = calculate_rsi(df, period=period, price_column='close')
+            elif self.feature_engineer is not None:
+                df['rsi'] = self.feature_engineer._calculate_rsi(df['close'], period)
+            else:
+                # Fallback implementation
+                close_diff = df['close'].diff()
+                gain = close_diff.where(close_diff > 0, 0).rolling(window = period).mean()
+                loss = (-close_diff.where(close_diff < 0, 0)).rolling(window = period).mean()
+                rs = gain / loss
+                df['rsi'] = 100 - 100 / (1 + rs)
+        except Exception as e:
+            self.logger.warning(f"RSI calculation failed: {e}")
             # Fallback implementation
             close_diff = df['close'].diff()
             gain = close_diff.where(close_diff > 0, 0).rolling(window = period).mean()
@@ -511,13 +529,28 @@ except ImportError:
 
     @handles_errors(exceptions=(Exception,), default_return = None, context='UnifiedRegimeClassifier._calculate_macd')
     def _calculate_macd(self, df: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
-        """Calculate MACD indicator using existing FeatureEngineer."""
-        if self.feature_engineer is not None:
-            macd_line, signal_line, histogram = self.feature_engineer._calculate_macd(df['close'], fast, slow, signal)
-            df['macd'] = macd_line
-            df['macd_signal'] = signal_line
-            df['macd_histogram'] = histogram
-        else:
+        """Calculate MACD indicator using centralized system."""
+        try:
+            if CENTRALIZED_INDICATORS_AVAILABLE:
+                macd_data = calculate_macd(df, fast=fast, slow=slow, signal=signal, price_column='close')
+                df['macd'] = macd_data['macd']
+                df['macd_signal'] = macd_data['signal']
+                df['macd_histogram'] = macd_data['histogram']
+            elif self.feature_engineer is not None:
+                macd_line, signal_line, histogram = self.feature_engineer._calculate_macd(df['close'], fast, slow, signal)
+                df['macd'] = macd_line
+                df['macd_signal'] = signal_line
+                df['macd_histogram'] = histogram
+            else:
+                # Fallback implementation
+                close_diff = df['close'].diff()
+                exp1 = close_diff.ewm(span = fast).mean()
+                exp2 = close_diff.ewm(span = slow).mean()
+                df['macd'] = exp1 - exp2
+                df['macd_signal'] = df['macd'].ewm(span = signal).mean()
+                df['macd_histogram'] = df['macd'] - df['macd_signal']
+        except Exception as e:
+            self.logger.warning(f"MACD calculation failed: {e}")
             # Fallback implementation
             close_diff = df['close'].diff()
             exp1 = close_diff.ewm(span = fast).mean()

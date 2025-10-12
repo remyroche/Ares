@@ -31,6 +31,15 @@ from ..core.feature_generator import FeatureConfig, FeatureCategory
 from ..base_calculations import BaseCalculationType, create_base_calculator
 from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
 logger = logging.getLogger(__name__)
 
 class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
@@ -41,6 +50,12 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
             config = self._create_default_config(window)
         super().__init__(config)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer for enhanced performance
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     @classmethod
     def _create_default_config(cls, window: int = 20) -> FeatureConfig:
@@ -72,9 +87,18 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
         # Simulate taker buy ratio based on price movement and volume
         buy_pressure = (price_change > 0).astype(int) * volume
         
-        # Use VectorBT rolling operations
-        total_volume = self._vectorbt_rolling_operation(volume, 'sum', window=self.window)
-        buy_volume = self._vectorbt_rolling_operation(buy_pressure, 'sum', window=self.window)
+        # Use VectorBT rolling optimizer if available, otherwise fallback to base class method
+        if self.rolling_optimizer:
+            try:
+                total_volume = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+                buy_volume = self.rolling_optimizer.rolling_sum(buy_pressure, window=self.window)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using base class method")
+                total_volume = self._vectorbt_rolling_operation(volume, 'sum', window=self.window)
+                buy_volume = self._vectorbt_rolling_operation(buy_pressure, 'sum', window=self.window)
+        else:
+            total_volume = self._vectorbt_rolling_operation(volume, 'sum', window=self.window)
+            buy_volume = self._vectorbt_rolling_operation(buy_pressure, 'sum', window=self.window)
         
         # Calculate ratio with safe division
         ratio = safe_divide(buy_volume, total_volume)
@@ -722,6 +746,167 @@ def create_default_vectorbt_order_flow_generators() -> List[VectorBTFeatureGener
     return create_vectorbt_order_flow_generators()
 
 
+class VectorBTOrderFlowBatchProcessor:
+    """Batch processor for VectorBT order flow features with unified vectorization management."""
+    
+    def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True):
+        """Initialize batch processor with VectorBT rolling optimizer."""
+        self.enable_gpu = enable_gpu
+        self.enable_parallel = enable_parallel
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=enable_gpu, 
+                enable_parallel=enable_parallel
+            )
+        else:
+            self.rolling_optimizer = None
+            logger.warning("VectorBT rolling optimizer not available, using pandas fallback")
+        
+        # Performance tracking
+        self.batch_stats = {
+            'total_batches': 0,
+            'total_features': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'processing_time': 0.0
+        }
+    
+    def process_batch_rolling_operations(self, data: pd.DataFrame, 
+                                       operations_config: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Process multiple rolling operations in batch for efficiency.
+        
+        Args:
+            data: Input OHLCV data
+            operations_config: List of operation configurations
+            
+        Returns:
+            DataFrame with all computed features
+        """
+        import time
+        start_time = time.time()
+        
+        results = {}
+        
+        if self.rolling_optimizer:
+            try:
+                # Use VectorBT rolling optimizer for batch processing
+                for config in operations_config:
+                    feature_name = config['name']
+                    operation = config['operation']
+                    window = config['window']
+                    column = config.get('column', 'close')
+                    
+                    if column not in data.columns:
+                        logger.warning(f"Column {column} not found for feature {feature_name}")
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+                        continue
+                    
+                    try:
+                        if operation == 'mean':
+                            result = self.rolling_optimizer.rolling_mean(data[column], window=window)
+                        elif operation == 'std':
+                            result = self.rolling_optimizer.rolling_std(data[column], window=window)
+                        elif operation == 'sum':
+                            result = self.rolling_optimizer.rolling_sum(data[column], window=window)
+                        elif operation == 'min':
+                            result = self.rolling_optimizer.rolling_min(data[column], window=window)
+                        elif operation == 'max':
+                            result = self.rolling_optimizer.rolling_max(data[column], window=window)
+                        else:
+                            logger.warning(f"Unknown operation: {operation}")
+                            result = pd.Series(np.nan, index=data.index)
+                        
+                        results[feature_name] = result
+                        self.batch_stats['vectorbt_operations'] += 1
+                        
+                    except Exception as e:
+                        logger.warning(f"VectorBT operation {operation} failed: {e}, using pandas fallback")
+                        # Fallback to pandas
+                        result = self._pandas_rolling_operation(data[column], operation, window)
+                        results[feature_name] = result
+                        self.batch_stats['pandas_fallbacks'] += 1
+                
+            except Exception as e:
+                logger.error(f"VectorBT batch processing failed: {e}, using pandas fallback")
+                # Fallback to pandas for all operations
+                for config in operations_config:
+                    feature_name = config['name']
+                    operation = config['operation']
+                    window = config['window']
+                    column = config.get('column', 'close')
+                    
+                    if column in data.columns:
+                        result = self._pandas_rolling_operation(data[column], operation, window)
+                        results[feature_name] = result
+                        self.batch_stats['pandas_fallbacks'] += 1
+                    else:
+                        results[feature_name] = pd.Series(np.nan, index=data.index)
+        else:
+            # Use pandas fallback
+            for config in operations_config:
+                feature_name = config['name']
+                operation = config['operation']
+                window = config['window']
+                column = config.get('column', 'close')
+                
+                if column in data.columns:
+                    result = self._pandas_rolling_operation(data[column], operation, window)
+                    results[feature_name] = result
+                    self.batch_stats['pandas_fallbacks'] += 1
+                else:
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        # Update statistics
+        self.batch_stats['total_batches'] += 1
+        self.batch_stats['total_features'] += len(operations_config)
+        self.batch_stats['processing_time'] += time.time() - start_time
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, window: int) -> pd.Series:
+        """Fallback pandas rolling operation."""
+        rolling_obj = data.rolling(window=window)
+        
+        if operation == 'mean':
+            return rolling_obj.mean()
+        elif operation == 'std':
+            return rolling_obj.std()
+        elif operation == 'sum':
+            return rolling_obj.sum()
+        elif operation == 'min':
+            return rolling_obj.min()
+        elif operation == 'max':
+            return rolling_obj.max()
+        else:
+            return pd.Series(np.nan, index=data.index)
+    
+    def get_batch_stats(self) -> Dict[str, Any]:
+        """Get batch processing statistics."""
+        stats = self.batch_stats.copy()
+        if stats['total_batches'] > 0:
+            stats['avg_time_per_batch'] = stats['processing_time'] / stats['total_batches']
+            stats['avg_features_per_batch'] = stats['total_features'] / stats['total_batches']
+        return stats
+    
+    def reset_stats(self):
+        """Reset batch processing statistics."""
+        self.batch_stats = {
+            'total_batches': 0,
+            'total_features': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'processing_time': 0.0
+        }
+
+
+def create_unified_vectorization_manager(enable_gpu: bool = False, enable_parallel: bool = True) -> VectorBTOrderFlowBatchProcessor:
+    """Create a unified vectorization manager for order flow features."""
+    return VectorBTOrderFlowBatchProcessor(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
+
+
 # Export all generators
 __all__ = [
     'VectorBTTakerBuyRatioGenerator',
@@ -738,6 +923,8 @@ __all__ = [
     'VectorBTOrderFlowAccelerationGenerator',
     'VectorBTOrderFlowJerkGenerator',
     'VectorBTOrderFlowRegimeGenerator',
+    'VectorBTOrderFlowBatchProcessor',
     'create_vectorbt_order_flow_generators',
-    'create_default_vectorbt_order_flow_generators'
+    'create_default_vectorbt_order_flow_generators',
+    'create_unified_vectorization_manager'
 ]

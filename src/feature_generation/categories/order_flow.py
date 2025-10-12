@@ -1,7 +1,12 @@
 """Order Flow features"""
 import pandas as pd
-from typing import List, Optional
+import numpy as np
+import logging
+import warnings
+from typing import List, Optional, Dict, Any
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
+
+logger = logging.getLogger(__name__)
 
 # Optimization utilities
 try:
@@ -38,6 +43,15 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -51,6 +65,7 @@ try:
     from .vectorbt_order_flow import (
         create_vectorbt_order_flow_generators,
         create_default_vectorbt_order_flow_generators,
+        create_unified_vectorization_manager,
         VectorBTTakerBuyRatioGenerator,
         VectorBTTakerSellRatioGenerator,
         VectorBTMarketAggressionIndexGenerator,
@@ -64,7 +79,8 @@ try:
         VectorBTOrderFlowConsistencyGenerator,
         VectorBTOrderFlowAccelerationGenerator,
         VectorBTOrderFlowJerkGenerator,
-        VectorBTOrderFlowRegimeGenerator
+        VectorBTOrderFlowRegimeGenerator,
+        VectorBTOrderFlowBatchProcessor
     )
     VECTORBT_ORDER_FLOW_AVAILABLE = True
 except ImportError:
@@ -83,6 +99,12 @@ class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -95,8 +117,19 @@ class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
         # Simulate taker buy ratio based on price movement and volume
         price_change = close.pct_change()
         buy_pressure = (price_change > 0).astype(int) * volume
-        total_volume = volume.rolling(window=self.window).sum()
-        buy_volume = buy_pressure.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer:
+            try:
+                total_volume = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+                buy_volume = self.rolling_optimizer.rolling_sum(buy_pressure, window=self.window)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas fallback")
+                total_volume = volume.rolling(window=self.window).sum()
+                buy_volume = buy_pressure.rolling(window=self.window).sum()
+        else:
+            total_volume = volume.rolling(window=self.window).sum()
+            buy_volume = buy_pressure.rolling(window=self.window).sum()
         
         return buy_volume / total_volume.replace(0, 1)
 
@@ -129,6 +162,12 @@ class TakerSellRatioGenerator(FeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -141,8 +180,19 @@ class TakerSellRatioGenerator(FeatureGenerator):
         # Simulate taker sell ratio based on price movement and volume
         price_change = close.pct_change()
         sell_pressure = (price_change < 0).astype(int) * volume
-        total_volume = volume.rolling(window=self.window).sum()
-        sell_volume = sell_pressure.rolling(window=self.window).sum()
+        
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer:
+            try:
+                total_volume = self.rolling_optimizer.rolling_sum(volume, window=self.window)
+                sell_volume = self.rolling_optimizer.rolling_sum(sell_pressure, window=self.window)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas fallback")
+                total_volume = volume.rolling(window=self.window).sum()
+                sell_volume = sell_pressure.rolling(window=self.window).sum()
+        else:
+            total_volume = volume.rolling(window=self.window).sum()
+            sell_volume = sell_pressure.rolling(window=self.window).sum()
         
         return sell_volume / total_volume.replace(0, 1)
 
@@ -175,6 +225,12 @@ class MarketAggressionIndexGenerator(FeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -188,7 +244,15 @@ class MarketAggressionIndexGenerator(FeatureGenerator):
         price_velocity = close.pct_change().abs()
         aggression = price_velocity * volume
         
-        return aggression.rolling(window=self.window).mean()
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer:
+            try:
+                return self.rolling_optimizer.rolling_mean(aggression, window=self.window)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas fallback")
+                return aggression.rolling(window=self.window).mean()
+        else:
+            return aggression.rolling(window=self.window).mean()
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -219,6 +283,12 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
+        
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.rolling_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -233,8 +303,18 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
         buy_volume = (price_change > 0).astype(int) * volume
         sell_volume = (price_change < 0).astype(int) * volume
         
-        buy_sum = buy_volume.rolling(window=self.window).sum()
-        sell_sum = sell_volume.rolling(window=self.window).sum()
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer:
+            try:
+                buy_sum = self.rolling_optimizer.rolling_sum(buy_volume, window=self.window)
+                sell_sum = self.rolling_optimizer.rolling_sum(sell_volume, window=self.window)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using pandas fallback")
+                buy_sum = buy_volume.rolling(window=self.window).sum()
+                sell_sum = sell_volume.rolling(window=self.window).sum()
+        else:
+            buy_sum = buy_volume.rolling(window=self.window).sum()
+            sell_sum = sell_volume.rolling(window=self.window).sum()
         
         return (buy_sum - sell_sum) / (buy_sum + sell_sum).replace(0, 1)
 
@@ -263,22 +343,69 @@ def create_default_order_flow_generators() -> List[FeatureGenerator]:
 
     return generators
 
+
+def create_unified_order_flow_processor(enable_gpu: bool = False, enable_parallel: bool = True) -> VectorBTOrderFlowBatchProcessor:
+    """Create a unified order flow processor with VectorBT optimization."""
+    if VECTORBT_ORDER_FLOW_AVAILABLE:
+        return create_unified_vectorization_manager(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
+    else:
+        raise ImportError("VectorBT order flow features not available. Install VectorBT for batch processing.")
+
+
+def process_order_flow_features_batch(data: pd.DataFrame, 
+                                    feature_configs: List[Dict[str, Any]],
+                                    enable_gpu: bool = False,
+                                    enable_parallel: bool = True) -> pd.DataFrame:
+    """
+    Process multiple order flow features in batch with VectorBT optimization.
+    
+    Args:
+        data: Input OHLCV data
+        feature_configs: List of feature configuration dictionaries
+        enable_gpu: Enable GPU acceleration
+        enable_parallel: Enable parallel processing
+        
+    Returns:
+        DataFrame with all computed features
+    """
+    if VECTORBT_ORDER_FLOW_AVAILABLE:
+        processor = create_unified_order_flow_processor(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
+        return processor.process_batch_rolling_operations(data, feature_configs)
+    else:
+        # Fallback to individual generators
+        logger.warning("VectorBT not available, using individual generators (slower)")
+        results = {}
+        
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'taker_buy_ratio')
+            window = config.get('window', 20)
+            
+            try:
+                if feature_type == 'taker_buy_ratio':
+                    generator = TakerBuyRatioGenerator(window)
+                elif feature_type == 'taker_sell_ratio':
+                    generator = TakerSellRatioGenerator(window)
+                elif feature_type == 'market_aggression_index':
+                    generator = MarketAggressionIndexGenerator(window)
+                elif feature_type == 'order_flow_imbalance':
+                    generator = OrderFlowImbalanceGenerator(window)
+                else:
+                    logger.warning(f"Unknown feature type: {feature_type}")
+                    results[feature_name] = pd.Series(np.nan, index=data.index)
+                    continue
+                
+                result = generator._generate_feature(data)
+                results[feature_name] = result
+                
+            except Exception as e:
+                logger.warning(f"Feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+
+
 # Analyst Features - Order flow generators
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class AnalystBidAskImbalanceGenerator(FeatureGenerator):
     """Generator for bid-ask imbalance feature."""

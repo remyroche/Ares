@@ -1408,6 +1408,9 @@ def get_memory_usage() -> float:
     """
     try:
         import psutil
+        return psutil.virtual_memory().used
+    except ImportError:
+        return 0
 
 # VectorBT imports for native optimization
 try:

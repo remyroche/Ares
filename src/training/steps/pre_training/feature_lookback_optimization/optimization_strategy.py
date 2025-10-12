@@ -14,27 +14,11 @@ import numpy as np
 
 from .constants import OPTIMIZATION_CONSTANTS
 
-# Import tprint for enhanced logging
-try:
-    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-
-    def tprint(*args, **kwargs):
-        print(*args, **kwargs)
-
-    def tprint_error(*args, **kwargs):
-        print("ERROR:", *args, **kwargs)
-
-    def tprint_success(*args, **kwargs):
-        print("SUCCESS:", *args, **kwargs)
-
-    def tprint_warning(*args, **kwargs):
-        print("WARNING:", *args, **kwargs)
-
-    def tprint_debug(*args, **kwargs):
-        print("DEBUG:", *args, **kwargs)
+# Import centralized tprint utilities
+from .utils.tprint_utils import (
+    tprint, tprint_error, tprint_success, tprint_warning, tprint_debug,
+    TPRINT_AVAILABLE
+)
 
 
 def log_info(message: str) -> None:
@@ -95,38 +79,8 @@ except ImportError:
             return default
 
 
-class OptimizationMethod(Enum):
-    """Available optimization methods."""
-    GRID_SEARCH = "grid_search"
-    BAYESIAN = "bayesian"
-    GENETIC_ALGORITHM = "genetic_algorithm"
-    TWO_STEP_GRID_TPE = "two_step_grid_tpe"
-    MRMR = "mrmr"
-    RANDOM_SEARCH = "random_search"
-
-
-@dataclass
-class OptimizationResult:
-    """Standardized optimization result."""
-    best_lookback_period: int
-    best_score: float
-    optimization_method: str
-    total_trials: int
-    optimization_time: float
-    convergence_achieved: bool
-    metadata: Dict[str, Any]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary."""
-        return {
-            'best_lookback_period': self.best_lookback_period,
-            'best_score': self.best_score,
-            'optimization_method': self.optimization_method,
-            'total_trials': self.total_trials,
-            'optimization_time': self.optimization_time,
-            'convergence_achieved': self.convergence_achieved,
-            'metadata': self.metadata
-        }
+# Import centralized types
+from .types import OptimizationMethod, OptimizationResult
 
 
 class OptimizationStrategy(ABC):

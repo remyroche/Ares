@@ -13,16 +13,11 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-# Import tprint for enhanced logging
-try:
-    from src.utils.tprint import tprint, tprint_warning, tprint_debug, tprint_info
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+# Import centralized tprint utilities
+from .tprint_utils import (
+    tprint, tprint_warning, tprint_debug, tprint_info,
+    TPRINT_AVAILABLE
+)
 
 
 @dataclass
@@ -371,9 +366,15 @@ def get_memory_monitor() -> MemoryMonitor:
 
 def monitor_memory(operation_name: str, caches: Optional[List[Any]] = None):
     """Decorator for monitoring memory usage during operations."""
+    from .tprint_utils import tprint_debug
+    tprint_debug(f"🔍 Setting up memory monitoring for operation: {operation_name}")
+    
     def decorator(func):
         def wrapper(*args, **kwargs):
+            tprint_debug(f"📊 Starting memory monitoring for {operation_name}")
             monitor = get_memory_monitor()
-            return monitor.monitor_memory_usage(operation_name, caches)
+            result = monitor.monitor_memory_usage(operation_name, caches)
+            tprint_debug(f"✅ Memory monitoring completed for {operation_name}")
+            return result
         return wrapper
     return decorator

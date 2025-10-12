@@ -64,6 +64,24 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer for enhanced performance
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    ROLLING_OPTIMIZER_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    VectorBTRollingOptimizer = None
+
+# Unified Optimization System for comprehensive optimization
+try:
+    from ..utils.unified_optimization_system import get_unified_optimization_system, UnifiedOptimizationSystem
+    UNIFIED_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_OPTIMIZATION_AVAILABLE = False
+    get_unified_optimization_system = None
+    UnifiedOptimizationSystem = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -79,6 +97,18 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT Rolling Optimizer for enhanced performance
+        self.rolling_optimizer = None
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            tprint("✅ VectorBTRollingOptimizer initialized for regime volume features")
+        
+        # Initialize Unified Optimization System for comprehensive optimization
+        self.unified_optimizer = None
+        if UNIFIED_OPTIMIZATION_AVAILABLE:
+            self.unified_optimizer = get_unified_optimization_system()
+            tprint("✅ UnifiedOptimizationSystem initialized for regime volume features")
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -102,8 +132,18 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         )
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
+        # Optimize DataFrame for processing using Unified Optimization System
+        if self.unified_optimizer:
+            try:
+                optimization_result = self.unified_optimizer.process_features_unified(data)
+                if optimization_result.success:
+                    data = optimization_result.data
+                    tprint("✅ Data optimized using UnifiedOptimizationSystem")
+                else:
+                    tprint(f"⚠️ UnifiedOptimizationSystem failed: {optimization_result.error_message}")
+            except Exception as e:
+                tprint(f"⚠️ UnifiedOptimizationSystem error: {e}")
+        elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         """Generate a single volume regime feature as required by the base class."""
@@ -348,54 +388,71 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return features
     
     def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean - VECTORIZED."""
+        """Calculate rolling mean using VectorBTRollingOptimizer."""
         if len(data) < window:
             return np.array([])
         
-        # Vectorized approach using pandas rolling
-        data_series = pd.Series(data)
-        result = self._vectorbt_rolling_operation(data_series, "mean", window).dropna().values
-        
-        return result
+        # Use VectorBTRollingOptimizer for enhanced performance
+        if self.rolling_optimizer:
+            data_series = pd.Series(data)
+            result = self.rolling_optimizer.rolling_mean(data_series, window).dropna().values
+            return result
+        else:
+            # Fallback to basic pandas rolling
+            data_series = pd.Series(data)
+            result = data_series.rolling(window=window).mean().dropna().values
+            return result
     
     def _rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling standard deviation - VECTORIZED."""
+        """Calculate rolling standard deviation using VectorBTRollingOptimizer."""
         if len(data) < window:
             return np.array([])
         
-        # Vectorized approach using pandas rolling
-        data_series = pd.Series(data)
-        result = self._vectorbt_rolling_operation(data_series, "std", window).dropna().values
-        
-        return result
+        # Use VectorBTRollingOptimizer for enhanced performance
+        if self.rolling_optimizer:
+            data_series = pd.Series(data)
+            result = self.rolling_optimizer.rolling_std(data_series, window).dropna().values
+            return result
+        else:
+            # Fallback to basic pandas rolling
+            data_series = pd.Series(data)
+            result = data_series.rolling(window=window).std().dropna().values
+            return result
     
     def _calculate_volume_persistence(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume persistence using autocorrelation - OPTIMIZED VECTORIZED."""
+        """Calculate volume persistence using autocorrelation with VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized autocorrelation calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         persistence = np.zeros(len(volume))
-        
-        # Calculate autocorrelation using vectorized operations
         vol_series = pd.Series(volume)
-        
-        # Vectorized autocorrelation using rolling correlation with shifted series
         vol_shifted = vol_series.shift(1)
-        autocorr = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
+        
+        if self.rolling_optimizer:
+            # Use VectorBTRollingOptimizer for rolling correlation
+            autocorr = self.rolling_optimizer.rolling_corr(vol_series, vol_shifted, window).fillna(0)
+        else:
+            # Fallback to basic pandas rolling
+            autocorr = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
         
         persistence[window:] = autocorr[window:]
         return persistence
     
     def _calculate_volume_regime_strength(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime strength - VECTORIZED."""
+        """Calculate volume regime strength using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # Vectorized regime strength calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         vol_series = pd.Series(volume)
-        rolling_std = self._vectorbt_rolling_operation(vol_series, "std", window)
-        rolling_mean = self._vectorbt_rolling_operation(vol_series, "mean", window)
+        
+        if self.rolling_optimizer:
+            rolling_std = self.rolling_optimizer.rolling_std(vol_series, window)
+            rolling_mean = self.rolling_optimizer.rolling_mean(vol_series, window)
+        else:
+            rolling_std = vol_series.rolling(window=window).std()
+            rolling_mean = vol_series.rolling(window=window).mean()
         
         # Regime strength based on consistency of volume level
         vol_consistency = 1.0 - (rolling_std / (rolling_mean + 1e-8))
@@ -404,14 +461,19 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return strength.fillna(0).values
     
     def _calculate_volume_consistency(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime consistency - VECTORIZED."""
+        """Calculate volume regime consistency using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # Vectorized consistency calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         vol_series = pd.Series(volume)
-        rolling_std = self._vectorbt_rolling_operation(vol_series, "std", window)
-        rolling_mean = self._vectorbt_rolling_operation(vol_series, "mean", window)
+        
+        if self.rolling_optimizer:
+            rolling_std = self.rolling_optimizer.rolling_std(vol_series, window)
+            rolling_mean = self.rolling_optimizer.rolling_mean(vol_series, window)
+        else:
+            rolling_std = vol_series.rolling(window=window).std()
+            rolling_mean = vol_series.rolling(window=window).mean()
         
         # Consistency based on low coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -420,16 +482,20 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return consistency.fillna(0).values
     
     def _calculate_volume_clustering(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume clustering - OPTIMIZED VECTORIZED."""
+        """Calculate volume clustering using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized autocorrelation calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         vol_series = pd.Series(volume)
-        
-        # Vectorized autocorrelation using rolling correlation with shifted series
         vol_shifted = vol_series.shift(1)
-        clustering = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
+        
+        if self.rolling_optimizer:
+            # Use VectorBTRollingOptimizer for rolling correlation
+            clustering = self.rolling_optimizer.rolling_corr(vol_series, vol_shifted, window).fillna(0)
+        else:
+            # Fallback to basic pandas rolling
+            clustering = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
         
         return clustering.values
     
@@ -474,13 +540,17 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return (np.tanh(trend / (mean_vol + 1e-8)) + 1) / 2
     
     def _calculate_volume_intensity(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime intensity - VECTORIZED."""
+        """Calculate volume regime intensity using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # Vectorized intensity calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         vol_series = pd.Series(volume)
-        rolling_mean = self._vectorbt_rolling_operation(vol_series, "mean", window)
+        
+        if self.rolling_optimizer:
+            rolling_mean = self.rolling_optimizer.rolling_mean(vol_series, window)
+        else:
+            rolling_mean = vol_series.rolling(window=window).mean()
         
         # Intensity based on volume relative to historical average
         intensity = (vol_series / (rolling_mean + 1e-8)).clip(0, 2)
@@ -488,25 +558,29 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return intensity.fillna(0).values
     
     def _calculate_volume_price_correlation(self, volume: np.ndarray, prices: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume-price correlation - VECTORIZED."""
+        """Calculate volume-price correlation using VectorBTRollingOptimizer."""
         if len(volume) < window or len(prices) < window:
             return np.zeros(len(volume))
         
-        # Vectorized correlation calculation
+        # Use VectorBTRollingOptimizer for enhanced performance
         vol_series = pd.Series(volume)
         price_series = pd.Series(prices)
         
-        # Fix: corr() method expects a Series, not a Rolling object
-        correlation = vol_series.rolling(window=window).corr(price_series).fillna(0)
+        if self.rolling_optimizer:
+            # Use VectorBTRollingOptimizer for rolling correlation
+            correlation = self.rolling_optimizer.rolling_corr(vol_series, price_series, window).fillna(0)
+        else:
+            # Fallback to basic pandas rolling
+            correlation = vol_series.rolling(window=window).corr(price_series).fillna(0)
         
         return correlation.values
     
     def _calculate_volume_weighted_price_change(self, volume: np.ndarray, prices: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume-weighted price change - OPTIMIZED VECTORIZED."""
+        """Calculate volume-weighted price change using VectorBTRollingOptimizer."""
         if len(volume) < window or len(prices) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         prices_series = pd.Series(prices)
         
@@ -514,9 +588,12 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         price_changes = prices_series.diff()
         
         # Vectorized volume-weighted calculation
-        # Calculate rolling volume sums and price change sums
-        vol_sum = self._vectorbt_rolling_operation(volume_series, "sum", window)
-        vol_price_sum = (volume_series * price_changes).rolling(window=window).sum()
+        if self.rolling_optimizer:
+            vol_sum = self.rolling_optimizer.rolling_sum(volume_series, window)
+            vol_price_sum = (volume_series * price_changes).rolling(window=window).sum()
+        else:
+            vol_sum = volume_series.rolling(window=window).sum()
+            vol_price_sum = (volume_series * price_changes).rolling(window=window).sum()
         
         # Volume-weighted price change
         weighted_change = vol_price_sum / (vol_sum + 1e-8)
@@ -542,11 +619,11 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return 0.0
     
     def _calculate_volume_price_impact(self, volume: np.ndarray, prices: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume price impact - OPTIMIZED VECTORIZED."""
+        """Calculate volume price impact using VectorBTRollingOptimizer."""
         if len(volume) < window or len(prices) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         prices_series = pd.Series(prices)
         
@@ -555,8 +632,12 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         vol_changes = volume_series.diff()
         
         # Vectorized impact calculation
-        # Calculate rolling correlation between volume changes and price changes
-        impact = vol_changes.rolling(window=window).corr(price_changes).fillna(0)
+        if self.rolling_optimizer:
+            # Use VectorBTRollingOptimizer for rolling correlation
+            impact = self.rolling_optimizer.rolling_corr(vol_changes, price_changes, window).fillna(0)
+        else:
+            # Fallback to basic pandas rolling
+            impact = vol_changes.rolling(window=window).corr(price_changes).fillna(0)
         
         return impact.values
     
@@ -584,15 +665,19 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return 0.0
     
     def _detect_volume_regime_changes(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Detect volume regime changes - VECTORIZED."""
+        """Detect volume regime changes using VectorBTRollingOptimizer."""
         if len(volume) < window * 2:
             return np.zeros(len(volume))
         
-        # Vectorized approach using pandas rolling
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate rolling means for both windows
-        vol1 = self._vectorbt_rolling_operation(volume_series, "mean", window)
+        if self.rolling_optimizer:
+            vol1 = self.rolling_optimizer.rolling_mean(volume_series, window)
+        else:
+            vol1 = volume_series.rolling(window=window).mean()
+        
         vol2 = vol1.shift(-window)  # Second window
         
         # Calculate change ratios
@@ -604,17 +689,22 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         return changes.fillna(0).values
     
     def _calculate_volume_transition_probability(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime transition probability - OPTIMIZED VECTORIZED."""
+        """Calculate volume regime transition probability using VectorBTRollingOptimizer."""
         if len(volume) < window * 2:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate rolling volume changes for transition probability
         vol_changes = volume_series.diff()
-        vol_volatility = self._vectorbt_rolling_operation(vol_changes, "std", window)
-        vol_mean = self._vectorbt_rolling_operation(volume_series, "mean", window)
+        
+        if self.rolling_optimizer:
+            vol_volatility = self.rolling_optimizer.rolling_std(vol_changes, window)
+            vol_mean = self.rolling_optimizer.rolling_mean(volume_series, window)
+        else:
+            vol_volatility = vol_changes.rolling(window=window).std()
+            vol_mean = volume_series.rolling(window=window).mean()
         
         # Vectorized transition probability
         transition_prob = vol_volatility / (vol_mean + 1e-8)
@@ -640,19 +730,22 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
             return 0.0
     
     def _calculate_volume_momentum(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume momentum - OPTIMIZED VECTORIZED."""
+        """Calculate volume momentum using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate volume changes for momentum
         vol_changes = volume_series.diff()
-        vol_mean = self._vectorbt_rolling_operation(volume_series, "mean", window)
         
-        # Vectorized momentum calculation
-        momentum = self._vectorbt_rolling_operation(vol_changes, "mean", window) / (vol_mean + 1e-8)
+        if self.rolling_optimizer:
+            vol_mean = self.rolling_optimizer.rolling_mean(volume_series, window)
+            momentum = self.rolling_optimizer.rolling_mean(vol_changes, window) / (vol_mean + 1e-8)
+        else:
+            vol_mean = volume_series.rolling(window=window).mean()
+            momentum = vol_changes.rolling(window=window).mean() / (vol_mean + 1e-8)
         
         return momentum.fillna(0).values
     
@@ -674,16 +767,20 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
             return 0.0
     
     def _calculate_volume_stability(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime stability - OPTIMIZED VECTORIZED."""
+        """Calculate volume regime stability using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate rolling statistics for stability
-        rolling_std = self._vectorbt_rolling_operation(volume_series, "std", window)
-        rolling_mean = self._vectorbt_rolling_operation(volume_series, "mean", window)
+        if self.rolling_optimizer:
+            rolling_std = self.rolling_optimizer.rolling_std(volume_series, window)
+            rolling_mean = self.rolling_optimizer.rolling_mean(volume_series, window)
+        else:
+            rolling_std = volume_series.rolling(window=window).std()
+            rolling_mean = volume_series.rolling(window=window).mean()
         
         # Vectorized stability calculation using coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -705,19 +802,23 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
             return 0.0
     
     def _calculate_volume_persistence_score(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume persistence score - OPTIMIZED VECTORIZED."""
+        """Calculate volume persistence score using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate volume changes for autocorrelation
         vol_changes = volume_series.diff()
-        
-        # Vectorized persistence using rolling correlation with shifted series
         vol_changes_shifted = vol_changes.shift(1)
-        persistence = vol_changes.rolling(window=window).corr(vol_changes_shifted).fillna(0)
+        
+        if self.rolling_optimizer:
+            # Use VectorBTRollingOptimizer for rolling correlation
+            persistence = self.rolling_optimizer.rolling_corr(vol_changes, vol_changes_shifted, window).fillna(0)
+        else:
+            # Fallback to basic pandas rolling
+            persistence = vol_changes.rolling(window=window).corr(vol_changes_shifted).fillna(0)
         
         return persistence.values
     
@@ -734,24 +835,53 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
             return 0.0
     
     def _calculate_volume_entropy(self, volume: np.ndarray, window: int) -> np.ndarray:
-        """Calculate volume regime entropy - OPTIMIZED VECTORIZED."""
+        """Calculate volume regime entropy using VectorBTRollingOptimizer."""
         if len(volume) < window:
             return np.zeros(len(volume))
         
-        # OPTIMIZED: Use vectorized operations instead of rolling apply
+        # Use VectorBTRollingOptimizer for enhanced performance
         volume_series = pd.Series(volume)
         
         # Calculate volume changes for entropy
         vol_changes = volume_series.diff()
         
-        # Vectorized entropy using rolling coefficient of variation
-        rolling_std = self._vectorbt_rolling_operation(vol_changes, "std", window)
-        rolling_mean = self._vectorbt_rolling_operation(vol_changes, "mean", window).abs()
+        if self.rolling_optimizer:
+            rolling_std = self.rolling_optimizer.rolling_std(vol_changes, window)
+            rolling_mean = self.rolling_optimizer.rolling_mean(vol_changes, window).abs()
+        else:
+            rolling_std = vol_changes.rolling(window=window).std()
+            rolling_mean = vol_changes.rolling(window=window).mean().abs()
         
         # Entropy proxy using coefficient of variation
         entropy = rolling_std / (rolling_mean + 1e-8)
         
         return entropy.fillna(0).values
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from VectorBTRollingOptimizer."""
+        stats = {
+            'rolling_optimizer_available': self.rolling_optimizer is not None,
+            'unified_optimizer_available': self.unified_optimizer is not None,
+            'vectorbt_available': VECTORBT_AVAILABLE,
+            'rolling_optimizer_available_flag': ROLLING_OPTIMIZER_AVAILABLE,
+            'unified_optimization_available_flag': UNIFIED_OPTIMIZATION_AVAILABLE
+        }
+        
+        if self.rolling_optimizer:
+            rolling_stats = self.rolling_optimizer.get_performance_stats()
+            stats['rolling_optimizer_stats'] = rolling_stats
+        
+        if self.unified_optimizer:
+            unified_stats = self.unified_optimizer.get_performance_report()
+            stats['unified_optimizer_stats'] = unified_stats
+        
+        return stats
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics."""
+        if self.rolling_optimizer:
+            self.rolling_optimizer.reset_stats()
+        tprint("🔄 Performance statistics reset for regime volume features")
     
     def _calculate_entropy_window(self, vol_window: pd.Series) -> float:
         """Helper function for volume entropy calculation."""
@@ -770,51 +900,68 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
             return entropy
         except:
             return 0.0
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    def cleanup(self):
+        """Cleanup resources and reset performance statistics."""
+        if self.rolling_optimizer:
+            # Note: VectorBTRollingOptimizer doesn't have a cleanup method, but we can reset stats
+            self.rolling_optimizer.reset_stats()
         
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        if self.unified_optimizer:
+            self.unified_optimizer.cleanup()
+        
+        tprint("🧹 RegimeVolumeFeatureGenerator cleanup completed")
+
+
+def create_optimized_regime_volume_generator(config: Optional[FeatureConfig] = None) -> RegimeVolumeFeatureGenerator:
+    """
+    Create an optimized RegimeVolumeFeatureGenerator with full VectorBT integration.
     
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
+    Args:
+        config: Optional feature configuration
+        
+    Returns:
+        Optimized RegimeVolumeFeatureGenerator instance
+    """
+    generator = RegimeVolumeFeatureGenerator(config)
+    
+    # Log optimization status
+    stats = generator.get_performance_stats()
+    tprint(f"🚀 Optimized RegimeVolumeFeatureGenerator created:")
+    tprint(f"   - VectorBTRollingOptimizer: {'✅' if stats['rolling_optimizer_available'] else '❌'}")
+    tprint(f"   - UnifiedOptimizationSystem: {'✅' if stats['unified_optimizer_available'] else '❌'}")
+    tprint(f"   - VectorBT Available: {'✅' if stats['vectorbt_available'] else '❌'}")
+    
+    return generator
+
+
+# Example usage and testing
+if __name__ == "__main__":
+    # Create sample data
+    dates = pd.date_range('2020-01-01', periods=1000, freq='15min')
+    np.random.seed(42)
+    
+    # Generate sample data
+    data = pd.DataFrame({
+        'close': 100 + np.cumsum(np.random.randn(1000) * 0.01),
+        'volume': np.random.lognormal(10, 1, 1000),
+        'high': 100 + np.cumsum(np.random.randn(1000) * 0.01) + np.random.uniform(0, 0.5, 1000),
+        'low': 100 + np.cumsum(np.random.randn(1000) * 0.01) - np.random.uniform(0, 0.5, 1000),
+        'open': 100 + np.cumsum(np.random.randn(1000) * 0.01)
+    }, index=dates)
+    
+    # Test optimized generator
+    print("Testing optimized RegimeVolumeFeatureGenerator...")
+    
+    generator = create_optimized_regime_volume_generator()
+    
+    # Test feature generation
+    features = generator.generate_features(data)
+    print(f"Generated {len(features)} volume regime features")
+    
+    # Test performance stats
+    stats = generator.get_performance_stats()
+    print(f"Performance stats: {stats}")
+    
+    # Test cleanup
+    generator.cleanup()
+    print("✅ Testing completed successfully")

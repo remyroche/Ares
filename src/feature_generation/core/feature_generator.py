@@ -18,6 +18,13 @@ import pandas as pd
 import numpy as np
 import warnings
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -149,6 +156,7 @@ class FeatureGenerator(ABC):
         Args:
             config: Feature configuration with VectorBT settings
         """
+        tprint(f"Initializing {self.__class__.__name__} with config: {config.name}")
         self.config = config
         self.logger = logger.getChild(f'{self.__class__.__name__}')
         
@@ -386,6 +394,7 @@ class FeatureGenerator(ABC):
         Returns:
             FeatureResult with the generated feature and metadata
         """
+        tprint(f"Generating feature {self.config.name} with data shape: {data.shape}")
         start_time = time.time()
 
         # Allow state injection through kwargs for compatibility
@@ -418,6 +427,7 @@ class FeatureGenerator(ABC):
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=True)
 
+            tprint(f"Successfully generated {self.config.name} in {computation_time:.3f}s")
             self.logger.debug(f"Successfully generated {self.config.name} in {computation_time:.3f}s")
 
             serialized_state = self._serialize_state()
@@ -442,6 +452,7 @@ class FeatureGenerator(ABC):
             self._update_performance_stats(computation_time, success=False)
 
             error_msg = f"Failed to generate {self.config.name}: {str(e)}"
+            tprint(f"ERROR: {error_msg}")
             self.logger.error(error_msg)
 
             failure_metadata = {

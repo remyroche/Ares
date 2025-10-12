@@ -20,6 +20,13 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Union
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin

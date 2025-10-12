@@ -14,6 +14,13 @@ import warnings
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
 
@@ -396,7 +403,10 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         alignment = ((np.sign(mom_5m) == np.sign(mom_15m)) &
                     (np.sign(mom_15m) == np.sign(mom_1h))).astype(int)
 
-        return alignmentclass RSIGenerator(VectorizedFeatureGenerator):
+        return alignment
+
+
+class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
 
     def __init__(self,
@@ -411,6 +421,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
             **base_kwargs: Additional parameters for base calculation
         """
+        tprint(f"Initializing RSIGenerator with period: {period}, base_calculation: {base_calculation}")
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
@@ -439,11 +450,11 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate RSI based on the specified base calculation."""
+        tprint(f"Generating RSI feature with period {self.period} and base calculation {self.base_calculation}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-
-        """Generate RSI based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             close = data['close']
             
@@ -497,7 +508,10 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             rs = gain / loss.replace(0, 1)
             rsi = 100 - (100 / (1 + rs))
             
-            return rsiclass MACDGenerator(VectorizedFeatureGenerator):
+            return rsi
+
+
+class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
     def __init__(self,
@@ -516,6 +530,7 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
             **base_kwargs: Additional parameters for base calculation
         """
+        tprint(f"Initializing MACDGenerator with fast: {fast}, slow: {slow}, signal: {signal}, base_calculation: {base_calculation}")
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
         
@@ -548,11 +563,12 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate MACD based on the specified base calculation."""
+        tprint(f"Generating MACD feature with fast: {self.fast}, slow: {self.slow}, signal: {self.signal}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate MACD based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
@@ -561,7 +577,10 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         ema_slow = base_values.ewm(span=self.slow).mean()
         macd = ema_fast - ema_slow
         
-        return macdclass StochasticGenerator(VectorizedFeatureGenerator):
+        return macd
+
+
+class StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -1657,6 +1676,7 @@ class VectorBTRSIGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized RSI generator."""
     
     def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
+        tprint(f"Initializing VectorBTRSIGenerator with period: {period}")
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
@@ -1680,6 +1700,7 @@ class VectorBTRSIGenerator(VectorBTFeatureGenerator):
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate RSI using VectorBT."""
+        tprint(f"Generating VectorBT RSI feature with period {self.period}")
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rsi_{self.period}')
         

@@ -18,6 +18,13 @@ import numpy as np
 from typing import List, Optional
 from ..core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -83,6 +90,7 @@ except ImportError:
 
 class LegacyRSIGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
+        tprint(f"Initializing LegacyRSIGenerator with period: {period}")
         config = FeatureConfig(
             name=f"legacy_rsi_{period}",
             category=FeatureCategory.LEGACY,
@@ -100,6 +108,7 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         self.unified_manager = get_unified_vectorization_manager() if UNIFIED_MANAGER_AVAILABLE else None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy RSI feature with period {self.period}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -108,11 +117,14 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         
         # Use UnifiedVectorizationManager for intelligent optimization if available
         if self.unified_manager and len(close) >= 100:
+            tprint("Using UnifiedVectorizationManager for RSI calculation")
             return self._calculate_rsi_unified(close)
         # Use VectorBTRollingOptimizer for optimized RSI calculation
         elif VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint("Using VectorBT for RSI calculation")
             return self._calculate_rsi_vectorbt(close)
         else:
+            tprint("Using pandas fallback for RSI calculation")
             return self._calculate_rsi_pandas(close)
     
     def _calculate_rsi_unified(self, close: pd.Series) -> pd.Series:
@@ -142,8 +154,8 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
             avg_gain = self.rolling_optimizer.rolling_mean(gain, window=self.period)
             avg_loss = self.rolling_optimizer.rolling_mean(loss, window=self.period)
             
-            # Calculate RSI
-            rs = avg_gain / avg_loss
+            # Calculate RSI with safe division
+            rs = avg_gain / avg_loss.replace(0, 1e-8)  # Avoid division by zero
             rsi = 100 - (100 / (1 + rs))
             
             return rsi.rename(f'legacy_rsi_{self.period}')
@@ -299,8 +311,12 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
         for i in range(1, len(prices)):
             ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
         
-        return emaclass LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
+        return ema
+
+
+class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20, std_dev: float = 2.0):
+        tprint(f"Initializing LegacyBollingerBandsGenerator with period: {period}, std_dev: {std_dev}")
         config = FeatureConfig(
             name=f"legacy_bollinger_{period}_{std_dev}",
             category=FeatureCategory.LEGACY,
@@ -315,6 +331,7 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
         self.std_dev = std_dev
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        tprint(f"Generating legacy Bollinger Bands feature with period {self.period} and std_dev {self.std_dev}")
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -323,8 +340,10 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
         
         # Use VectorBT for optimized Bollinger Bands calculation if available
         if VECTORBT_AVAILABLE and len(close) >= 1000:
+            tprint("Using VectorBT for Bollinger Bands calculation")
             return self._calculate_bollinger_bands_vectorbt(close)
         else:
+            tprint("Using pandas fallback for Bollinger Bands calculation")
             return self._calculate_bollinger_bands_pandas(close)
     
     def _calculate_bollinger_bands_vectorbt(self, close: pd.Series) -> pd.Series:

@@ -98,7 +98,16 @@ class TechnicalIndicatorCalculator:
     @staticmethod
     @handles_errors(fallback = pd.Series())
     def calculate_rsi(prices: pd.Series, window: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index."""
+        """Calculate Relative Strength Index using VectorBT for optimization."""
+        if VECTORBT_AVAILABLE and len(prices) >= 1000:  # Use VectorBT for large datasets
+            try:
+                # Use VectorBT native RSI calculation
+                rsi_result = vbt.RSI.run(prices, window=window)
+                return rsi_result.rsi
+            except Exception as e:
+                logger.warning(f"VectorBT RSI failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas implementation
         delta = prices.diff()
         gain = delta.where(delta > 0, 0).rolling(window = window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window = window).mean()
@@ -109,7 +118,16 @@ class TechnicalIndicatorCalculator:
     @staticmethod
     @handles_errors(fallback = pd.Series())
     def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD (Moving Average Convergence Divergence)."""
+        """Calculate MACD using VectorBT for optimization."""
+        if VECTORBT_AVAILABLE and len(prices) >= 1000:  # Use VectorBT for large datasets
+            try:
+                # Use VectorBT native MACD calculation
+                macd_result = vbt.MACD.run(prices, fast=fast, slow=slow, signal=signal)
+                return macd_result.macd
+            except Exception as e:
+                logger.warning(f"VectorBT MACD failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas implementation
         ema_fast = prices.ewm(span = fast).mean()
         ema_slow = prices.ewm(span = slow).mean()
         macd = ema_fast - ema_slow
@@ -118,7 +136,16 @@ class TechnicalIndicatorCalculator:
     @staticmethod
     @handles_errors(fallback = pd.Series())
     def calculate_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
-        """Calculate Average True Range (ATR)."""
+        """Calculate Average True Range using VectorBT for optimization."""
+        if VECTORBT_AVAILABLE and len(df) >= 1000:  # Use VectorBT for large datasets
+            try:
+                # Use VectorBT native ATR calculation
+                atr_result = vbt.ATR.run(df['high'], df['low'], df['close'], window=window)
+                return atr_result.atr
+            except Exception as e:
+                logger.warning(f"VectorBT ATR failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas implementation
         high = df['high']
         low = df['low']
         close = df['close']
@@ -132,7 +159,23 @@ class TechnicalIndicatorCalculator:
     @staticmethod
     @handles_errors(fallback = pd.DataFrame())
     def calculate_bollinger_bands(prices: pd.Series, window: int = 20, num_std: float = 2) -> pd.DataFrame:
-        """Calculate Bollinger Bands."""
+        """Calculate Bollinger Bands using VectorBT for optimization."""
+        if VECTORBT_AVAILABLE and len(prices) >= 1000:  # Use VectorBT for large datasets
+            try:
+                # Use VectorBT native Bollinger Bands calculation
+                bb_result = vbt.BBANDS.run(prices, window=window, alpha=num_std)
+                bb_features = pd.DataFrame({
+                    'bb_upper': bb_result.upper, 
+                    'bb_middle': bb_result.middle, 
+                    'bb_lower': bb_result.lower, 
+                    'bb_width': bb_result.width, 
+                    'bb_position': bb_result.percent
+                })
+                return bb_features
+            except Exception as e:
+                logger.warning(f"VectorBT Bollinger Bands failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas implementation
         sma = prices.rolling(window = window).mean()
         std = prices.rolling(window = window).std()
         bb_upper = sma + std * num_std
@@ -181,10 +224,18 @@ class VolatilityCalculator:
 
     @handles_errors(fallback = pd.Series())
     def calculate_parkinson_volatility(self, price_data: pd.DataFrame) -> pd.Series:
-        """Calculate Parkinson volatility estimator."""
+        """Calculate Parkinson volatility estimator using VectorBT optimization."""
         try:
             high_low_ratio = np.log(price_data["high"] / price_data["low"]) ** 2
             parkinson_vol = np.sqrt(high_low_ratio / (4 * np.log(2)))
+            
+            # Use VectorBT rolling mean for optimization
+            if VECTORBT_AVAILABLE and len(parkinson_vol) >= 1000:
+                try:
+                    return rolling_mean(parkinson_vol, window=20)
+                except Exception as e:
+                    self.logger.debug(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+            
             return parkinson_vol.rolling(20).mean()
         except (ValueError, TypeError, IndexError) as e:
             self.logger.debug(f"Error calculating Parkinson volatility: {e}")
@@ -192,13 +243,21 @@ class VolatilityCalculator:
 
     @handles_errors(fallback = pd.Series())
     def calculate_garman_klass_volatility(self, price_data: pd.DataFrame) -> pd.Series:
-        """Calculate Garman-Klass volatility estimator."""
+        """Calculate Garman-Klass volatility estimator using VectorBT optimization."""
         try:
             c = np.log(price_data["close"] / price_data["close"].shift(1))
             h = np.log(price_data["high"] / price_data["close"].shift(1))
             l = np.log(price_data["low"] / price_data["close"].shift(1))
 
             gk_vol = np.sqrt(0.5 * (h - l) ** 2 - (2 * np.log(2) - 1) * c**2)
+            
+            # Use VectorBT rolling mean for optimization
+            if VECTORBT_AVAILABLE and len(gk_vol) >= 1000:
+                try:
+                    return rolling_mean(gk_vol, window=20)
+                except Exception as e:
+                    self.logger.debug(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+            
             return gk_vol.rolling(20).mean()
         except (ValueError, TypeError, IndexError) as e:
             self.logger.debug(f"Error calculating Garman-Klass volatility: {e}")
@@ -227,20 +286,40 @@ class MomentumCalculator:
         self.logger = logger
 
     def calculate_momentum_features(self, price_data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate comprehensive momentum features."""
+        """Calculate comprehensive momentum features using VectorBT optimization."""
         try:
             returns = price_data["close"].pct_change().dropna()
             
-            # Momentum indicators
-            momentum_5 = returns.rolling(5).mean()
-            momentum_20 = returns.rolling(20).mean()
-            momentum_50 = returns.rolling(50).mean()
-            
-            # Momentum acceleration
-            momentum_accel = momentum_5 - momentum_20
-            
-            # Momentum strength
-            momentum_strength = momentum_5 / momentum_20.std()
+            # Use VectorBT rolling operations for optimization
+            if VECTORBT_AVAILABLE and len(returns) >= 1000:
+                try:
+                    # Momentum indicators using VectorBT
+                    momentum_5 = rolling_mean(returns, window=5)
+                    momentum_20 = rolling_mean(returns, window=20)
+                    momentum_50 = rolling_mean(returns, window=50)
+                    
+                    # Momentum acceleration
+                    momentum_accel = momentum_5 - momentum_20
+                    
+                    # Momentum strength using VectorBT rolling std
+                    momentum_20_std = rolling_std(returns, window=20)
+                    momentum_strength = momentum_5 / momentum_20_std
+                    
+                except Exception as e:
+                    self.logger.debug(f"VectorBT momentum calculations failed: {e}, using pandas fallback")
+                    # Fallback to pandas
+                    momentum_5 = returns.rolling(5).mean()
+                    momentum_20 = returns.rolling(20).mean()
+                    momentum_50 = returns.rolling(50).mean()
+                    momentum_accel = momentum_5 - momentum_20
+                    momentum_strength = momentum_5 / momentum_20.std()
+            else:
+                # Use pandas for smaller datasets
+                momentum_5 = returns.rolling(5).mean()
+                momentum_20 = returns.rolling(20).mean()
+                momentum_50 = returns.rolling(50).mean()
+                momentum_accel = momentum_5 - momentum_20
+                momentum_strength = momentum_5 / momentum_20.std()
             
             # Momentum divergence
             price_momentum = price_data["close"].pct_change(5)
@@ -321,13 +400,25 @@ class CorrelationCalculator:
         self.logger = logger
 
     def calculate_correlation_features(self, price_data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate correlation features."""
+        """Calculate correlation features using VectorBT optimization."""
         try:
             returns = price_data["close"].pct_change().dropna()
             
-            # Rolling correlations
-            corr_5 = returns.rolling(5).corr(returns.shift(1))
-            corr_20 = returns.rolling(20).corr(returns.shift(1))
+            # Use VectorBT rolling correlation for optimization
+            if VECTORBT_AVAILABLE and len(returns) >= 1000:
+                try:
+                    # Rolling correlations using VectorBT
+                    corr_5 = rolling_corr(returns, returns.shift(1), window=5)
+                    corr_20 = rolling_corr(returns, returns.shift(1), window=20)
+                except Exception as e:
+                    self.logger.debug(f"VectorBT correlation calculations failed: {e}, using pandas fallback")
+                    # Fallback to pandas
+                    corr_5 = returns.rolling(5).corr(returns.shift(1))
+                    corr_20 = returns.rolling(20).corr(returns.shift(1))
+            else:
+                # Use pandas for smaller datasets
+                corr_5 = returns.rolling(5).corr(returns.shift(1))
+                corr_20 = returns.rolling(20).corr(returns.shift(1))
             
             # Cross-timeframe correlations
             returns_5m = returns.resample("5T").last()
@@ -360,25 +451,53 @@ class MicrostructureCalculator:
         price_data: pd.DataFrame,
         volume_data: pd.DataFrame,
     ) -> Dict[str, float]:
-        """Calculate price impact metrics."""
+        """Calculate price impact metrics using VectorBT optimization."""
         try:
             # Calculate price changes
             price_changes = price_data["close"].pct_change()
             
-            # Calculate volume-weighted price impact
-            volume_weighted_impact = (
-                (price_changes * volume_data["volume"]).rolling(20).mean()
-            )
-            
-            # Calculate Kyle's lambda (price impact parameter)
-            kyle_lambda = (
-                np.abs(price_changes).rolling(50).mean()
-                / volume_data["volume"].rolling(50).mean()
-            )
-            
-            # Calculate Amihud illiquidity measure
-            amihud_illiquidity = np.abs(price_changes) / volume_data["volume"]
-            amihud_illiquidity = amihud_illiquidity.rolling(20).mean()
+            # Use VectorBT rolling operations for optimization
+            if VECTORBT_AVAILABLE and len(price_changes) >= 1000:
+                try:
+                    # Calculate volume-weighted price impact using VectorBT
+                    volume_weighted_impact = rolling_mean(
+                        price_changes * volume_data["volume"], window=20
+                    )
+                    
+                    # Calculate Kyle's lambda using VectorBT
+                    kyle_lambda = (
+                        rolling_mean(np.abs(price_changes), window=50) /
+                        rolling_mean(volume_data["volume"], window=50)
+                    )
+                    
+                    # Calculate Amihud illiquidity measure using VectorBT
+                    amihud_illiquidity = rolling_mean(
+                        np.abs(price_changes) / volume_data["volume"], window=20
+                    )
+                    
+                except Exception as e:
+                    self.logger.debug(f"VectorBT microstructure calculations failed: {e}, using pandas fallback")
+                    # Fallback to pandas
+                    volume_weighted_impact = (
+                        (price_changes * volume_data["volume"]).rolling(20).mean()
+                    )
+                    kyle_lambda = (
+                        np.abs(price_changes).rolling(50).mean()
+                        / volume_data["volume"].rolling(50).mean()
+                    )
+                    amihud_illiquidity = np.abs(price_changes) / volume_data["volume"]
+                    amihud_illiquidity = amihud_illiquidity.rolling(20).mean()
+            else:
+                # Use pandas for smaller datasets
+                volume_weighted_impact = (
+                    (price_changes * volume_data["volume"]).rolling(20).mean()
+                )
+                kyle_lambda = (
+                    np.abs(price_changes).rolling(50).mean()
+                    / volume_data["volume"].rolling(50).mean()
+                )
+                amihud_illiquidity = np.abs(price_changes) / volume_data["volume"]
+                amihud_illiquidity = amihud_illiquidity.rolling(20).mean()
             
             return {
                 "price_impact": volume_weighted_impact.iloc[-1]
@@ -516,6 +635,322 @@ def initialization_error(message: str) -> str:
 def print_message(message: str) -> None:
     """Print message with proper formatting."""
     tprint(message)
+
+
+class VectorBTOptimizedFeatureCalculator:
+    """
+    VectorBT-optimized feature calculator that provides high-performance
+    feature generation using VectorBT's native implementations.
+    """
+    
+    def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True):
+        """Initialize VectorBT optimized calculator."""
+        self.enable_gpu = enable_gpu
+        self.enable_parallel = enable_parallel
+        self.logger = system_logger.getChild('VectorBTOptimizedFeatureCalculator')
+        
+        # Performance tracking
+        self.stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_accelerations': 0,
+            'total_operations': 0
+        }
+    
+    def calculate_batch_technical_indicators(self, data: pd.DataFrame, 
+                                           indicators: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Calculate multiple technical indicators in batch using VectorBT.
+        
+        Args:
+            data: OHLCV data
+            indicators: List of indicator configurations
+            
+        Returns:
+            DataFrame with calculated indicators
+        """
+        if not VECTORBT_AVAILABLE:
+            self.logger.warning("VectorBT not available, using pandas fallback")
+            return self._pandas_batch_indicators(data, indicators)
+        
+        results = {}
+        
+        try:
+            for indicator_config in indicators:
+                name = indicator_config['name']
+                indicator_type = indicator_config['type']
+                params = indicator_config.get('params', {})
+                
+                if indicator_type == 'rsi':
+                    result = vbt.RSI.run(data['close'], **params).rsi
+                elif indicator_type == 'macd':
+                    macd_result = vbt.MACD.run(data['close'], **params)
+                    result = macd_result.macd
+                elif indicator_type == 'atr':
+                    result = vbt.ATR.run(data['high'], data['low'], data['close'], **params).atr
+                elif indicator_type == 'bbands_upper':
+                    bb_result = vbt.BBANDS.run(data['close'], **params)
+                    result = bb_result.upper
+                elif indicator_type == 'bbands_lower':
+                    bb_result = vbt.BBANDS.run(data['close'], **params)
+                    result = bb_result.lower
+                elif indicator_type == 'stoch_k':
+                    stoch_result = vbt.STOCH.run(data['high'], data['low'], data['close'], **params)
+                    result = stoch_result.stoch_k
+                elif indicator_type == 'willr':
+                    result = vbt.WILLR.run(data['high'], data['low'], data['close'], **params).willr
+                elif indicator_type == 'cci':
+                    result = vbt.CCI.run(data['high'], data['low'], data['close'], **params).cci
+                elif indicator_type == 'mfi':
+                    result = vbt.MFI.run(data['high'], data['low'], data['close'], data['volume'], **params).mfi
+                elif indicator_type == 'adx':
+                    result = vbt.ADX.run(data['high'], data['low'], data['close'], **params).adx
+                elif indicator_type == 'roc':
+                    result = vbt.ROC.run(data['close'], **params).roc
+                elif indicator_type == 'mom':
+                    result = vbt.MOM.run(data['close'], **params).mom
+                elif indicator_type == 'obv':
+                    result = vbt.OBV.run(data['close'], data['volume'], **params).obv
+                else:
+                    self.logger.warning(f"Unknown indicator type: {indicator_type}")
+                    continue
+                
+                results[name] = result
+                self.stats['vectorbt_operations'] += 1
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT batch indicators failed: {e}, using pandas fallback")
+            return self._pandas_batch_indicators(data, indicators)
+        
+        self.stats['total_operations'] += len(indicators)
+        return pd.DataFrame(results, index=data.index)
+    
+    def calculate_batch_rolling_features(self, data: pd.DataFrame, 
+                                       features: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Calculate multiple rolling features in batch using VectorBT.
+        
+        Args:
+            data: Input data
+            features: List of rolling feature configurations
+            
+        Returns:
+            DataFrame with calculated features
+        """
+        if not VECTORBT_AVAILABLE:
+            return self._pandas_batch_rolling(data, features)
+        
+        results = {}
+        
+        try:
+            for feature_config in features:
+                name = feature_config['name']
+                column = feature_config.get('column', 'close')
+                operation = feature_config.get('operation', 'mean')
+                window = feature_config.get('window', 20)
+                
+                if column not in data.columns:
+                    self.logger.warning(f"Column {column} not found for feature {name}")
+                    continue
+                
+                if operation == 'mean':
+                    result = rolling_mean(data[column], window=window)
+                elif operation == 'std':
+                    result = rolling_std(data[column], window=window)
+                elif operation == 'var':
+                    result = rolling_var(data[column], window=window)
+                elif operation == 'min':
+                    result = rolling_min(data[column], window=window)
+                elif operation == 'max':
+                    result = rolling_max(data[column], window=window)
+                elif operation == 'sum':
+                    result = rolling_sum(data[column], window=window)
+                else:
+                    self.logger.warning(f"Unknown rolling operation: {operation}")
+                    continue
+                
+                results[name] = result
+                self.stats['vectorbt_operations'] += 1
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT batch rolling failed: {e}, using pandas fallback")
+            return self._pandas_batch_rolling(data, features)
+        
+        self.stats['total_operations'] += len(features)
+        return pd.DataFrame(results, index=data.index)
+    
+    def calculate_batch_scaling_features(self, data: pd.DataFrame, 
+                                       features: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Calculate multiple scaling features in batch using VectorBT.
+        
+        Args:
+            data: Input data
+            features: List of scaling feature configurations
+            
+        Returns:
+            DataFrame with calculated features
+        """
+        if not VECTORBT_AVAILABLE:
+            return self._pandas_batch_scaling(data, features)
+        
+        results = {}
+        
+        try:
+            for feature_config in features:
+                name = feature_config['name']
+                column = feature_config.get('column', 'close')
+                method = feature_config.get('method', 'zscore')
+                
+                if column not in data.columns:
+                    self.logger.warning(f"Column {column} not found for feature {name}")
+                    continue
+                
+                if method == 'zscore':
+                    result = zscore(data[column])
+                elif method == 'minmax':
+                    result = scale(data[column], method='minmax')
+                elif method == 'robust':
+                    result = scale(data[column], method='robust')
+                elif method == 'quantile':
+                    result = quantile(data[column])
+                elif method == 'winsorize':
+                    result = winsorize(data[column])
+                elif method == 'rank':
+                    result = rank(data[column])
+                elif method == 'clip':
+                    result = clip(data[column])
+                else:
+                    self.logger.warning(f"Unknown scaling method: {method}")
+                    continue
+                
+                results[name] = result
+                self.stats['vectorbt_operations'] += 1
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT batch scaling failed: {e}, using pandas fallback")
+            return self._pandas_batch_scaling(data, features)
+        
+        self.stats['total_operations'] += len(features)
+        return pd.DataFrame(results, index=data.index)
+    
+    def _pandas_batch_indicators(self, data: pd.DataFrame, indicators: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback pandas implementation for batch indicators."""
+        results = {}
+        for indicator_config in indicators:
+            name = indicator_config['name']
+            indicator_type = indicator_config['type']
+            params = indicator_config.get('params', {})
+            
+            try:
+                if indicator_type == 'rsi':
+                    # Simple RSI calculation
+                    delta = data['close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=params.get('window', 14)).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=params.get('window', 14)).mean()
+                    rs = gain / loss
+                    result = 100 - (100 / (1 + rs))
+                elif indicator_type == 'macd':
+                    # Simple MACD calculation
+                    ema_fast = data['close'].ewm(span=params.get('fast_window', 12)).mean()
+                    ema_slow = data['close'].ewm(span=params.get('slow_window', 26)).mean()
+                    result = ema_fast - ema_slow
+                else:
+                    # For other indicators, return NaN series
+                    result = pd.Series(np.nan, index=data.index)
+                
+                results[name] = result
+                self.stats['pandas_fallbacks'] += 1
+                
+            except Exception as e:
+                self.logger.warning(f"Pandas indicator {indicator_type} failed: {e}")
+                results[name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _pandas_batch_rolling(self, data: pd.DataFrame, features: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback pandas implementation for batch rolling."""
+        results = {}
+        for feature_config in features:
+            name = feature_config['name']
+            column = feature_config.get('column', 'close')
+            operation = feature_config.get('operation', 'mean')
+            window = feature_config.get('window', 20)
+            
+            if column not in data.columns:
+                continue
+            
+            try:
+                if operation == 'mean':
+                    result = data[column].rolling(window=window).mean()
+                elif operation == 'std':
+                    result = data[column].rolling(window=window).std()
+                elif operation == 'var':
+                    result = data[column].rolling(window=window).var()
+                elif operation == 'min':
+                    result = data[column].rolling(window=window).min()
+                elif operation == 'max':
+                    result = data[column].rolling(window=window).max()
+                elif operation == 'sum':
+                    result = data[column].rolling(window=window).sum()
+                else:
+                    continue
+                
+                results[name] = result
+                self.stats['pandas_fallbacks'] += 1
+                
+            except Exception as e:
+                self.logger.warning(f"Pandas rolling {operation} failed: {e}")
+                results[name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _pandas_batch_scaling(self, data: pd.DataFrame, features: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback pandas implementation for batch scaling."""
+        results = {}
+        for feature_config in features:
+            name = feature_config['name']
+            column = feature_config.get('column', 'close')
+            method = feature_config.get('method', 'zscore')
+            
+            if column not in data.columns:
+                continue
+            
+            try:
+                if method == 'zscore':
+                    result = (data[column] - data[column].mean()) / data[column].std()
+                elif method == 'minmax':
+                    result = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+                elif method == 'robust':
+                    median = data[column].median()
+                    mad = (data[column] - median).abs().median()
+                    result = (data[column] - median) / mad
+                else:
+                    continue
+                
+                results[name] = result
+                self.stats['pandas_fallbacks'] += 1
+                
+            except Exception as e:
+                self.logger.warning(f"Pandas scaling {method} failed: {e}")
+                results[name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        stats = self.stats.copy()
+        if stats['total_operations'] > 0:
+            stats['vectorbt_usage_percentage'] = (
+                stats['vectorbt_operations'] / stats['total_operations'] * 100
+            )
+            stats['pandas_fallback_percentage'] = (
+                stats['pandas_fallbacks'] / stats['total_operations'] * 100
+            )
+        else:
+            stats['vectorbt_usage_percentage'] = 0
+            stats['pandas_fallback_percentage'] = 0
+        return stats
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

@@ -51,16 +51,30 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
     from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
     ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
     ROLLING_OPTIMIZER_AVAILABLE = False
     get_vectorbt_rolling_optimizer = None
     VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, 
+        UnifiedVectorizationManager, 
+        OperationType, 
+        OptimizationStrategy
+    )
+    UNIFIED_MANAGER_AVAILABLE = True
+except ImportError:
+    UNIFIED_MANAGER_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
 
 # Optimization utilities
 try:
@@ -78,7 +92,6 @@ from ..base_calculations import (
 logger = logging.getLogger(__name__)
 
 class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
-    """Feature generator for basic volume-based features with VectorBT optimization."""
     """Advanced feature generator for volume-based features with VectorBT optimization."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
@@ -86,16 +99,46 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
-        # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-        else:
-            self.vectorbt_optimizer = None
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+            
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'gpu_operations': 0,
+            'total_operations': 0,
+            'total_time': 0.0,
+            'average_operation_time': 0.0,
+            'peak_memory_usage': 0.0,
+            'chunk_operations': 0
+        }
+        
+        # Performance monitoring
+        self.operation_times = []
+        self.memory_usage_history = []
+        
+        # Memory management
+        self.memory_threshold_mb = 512.0  # 512MB threshold
+        self.chunk_size = 10000  # Process data in chunks
+        self.enable_memory_optimization = True
+        
+        # GPU acceleration
+        self.enable_gpu = enable_gpu
+        self.gpu_available = self._check_gpu_availability()
+        self.gpu_threshold = 50000  # Use GPU for datasets larger than 50k rows
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -123,34 +166,35 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive volume features using VectorBT optimization."""
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
         if data.empty or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name='volume_features')
 
+        # Optimize DataFrame for processing and memory usage
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        # Apply memory optimization
+        data = self._optimize_memory_usage(data)
+
         volume = data['volume']
         
-        # Use VectorBT for volume moving average calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
+        # Use Unified Vectorization Manager for intelligent optimization
+        if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                volume_sma = self.vectorbt_optimizer.rolling_mean(volume, window=20)
-                return volume_sma
+                return self._generate_with_unified_manager(volume, data)
             except Exception as e:
-                self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
-                return self._optimized_rolling_operation(volume, "mean", 20)
-        else:
-            return self._optimized_rolling_operation(volume, "mean", 20)
+                logger.warning(f"Unified Vectorization Manager failed: {e}, using VectorBT fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
         # Use VectorBT rolling optimizer if available
-        if self.rolling_optimizer:
+        if self.rolling_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Calculate volume SMA using VectorBT rolling optimizer
                 volume_sma = self.rolling_optimizer.rolling_mean(volume, window=20)
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Fallback to VectorBT direct operations
@@ -160,11 +204,11 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
+                logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Final fallback to pandas
-        return self._optimized_rolling_operation(volume, "mean", 20)
+        return volume.rolling(window=20).mean()
 
 # Volume Simple Moving Average
     
@@ -187,6 +231,452 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         """Determine if VectorBT should be used based on data size and configuration."""
         return (VECTORBT_AVAILABLE and 
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _should_use_unified_manager(self, data) -> bool:
+        """Determine if Unified Vectorization Manager should be used."""
+        return (UNIFIED_MANAGER_AVAILABLE and 
+                len(data) >= getattr(self, 'unified_manager_threshold', 5000))
+    
+    def _generate_with_unified_manager(self, volume: pd.Series, data: pd.DataFrame) -> pd.Series:
+        """Generate volume features using Unified Vectorization Manager."""
+        try:
+            # Configure operation for volume feature generation
+            operation_config = {
+                'operation_type': OperationType.TECHNICAL_INDICATORS,
+                'data_size': len(volume),
+                'data_dimensions': (len(volume),),
+                'memory_budget_mb': 512.0,
+                'time_budget_seconds': 60.0,
+                'precision_requirement': 'medium'
+            }
+            
+            # Use unified manager for rolling mean calculation
+            result = self.unified_manager.optimize_operation(
+                lambda: self.rolling_optimizer.rolling_mean(volume, window=20),
+                operation_config
+            )
+            
+            self.performance_stats['unified_manager_operations'] += 1
+            return result.result
+            
+        except Exception as e:
+            logger.warning(f"Unified manager volume generation failed: {e}")
+            raise
+    
+    def generate_batch_volume_features(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple volume features in batch using VectorBT optimization.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated features
+        """
+        if data.empty or 'volume' not in data.columns:
+            return pd.DataFrame(index=data.index)
+        
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        results = {}
+        volume = data['volume']
+        
+        # Use Unified Vectorization Manager for batch processing if available
+        if self.unified_manager and self._should_use_unified_manager(volume):
+            try:
+                return self._generate_batch_with_unified_manager(data, feature_configs)
+            except Exception as e:
+                logger.warning(f"Unified manager batch processing failed: {e}, using VectorBT fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Use VectorBT rolling optimizer for batch processing
+        if self.rolling_optimizer and self._should_use_vectorbt(volume):
+            try:
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+            except Exception as e:
+                logger.warning(f"VectorBT batch processing failed: {e}, using individual processing")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Fallback to individual processing
+        for config in feature_configs:
+            feature_name = config.get('name', 'volume_feature')
+            feature_type = config.get('type', 'sma')
+            period = config.get('period', 20)
+            
+            try:
+                if feature_type == 'sma':
+                    result = volume.rolling(window=period).mean()
+                elif feature_type == 'ema':
+                    result = volume.ewm(span=period).mean()
+                elif feature_type == 'std':
+                    result = volume.rolling(window=period).std()
+                elif feature_type == 'var':
+                    result = volume.rolling(window=period).var()
+                elif feature_type == 'min':
+                    result = volume.rolling(window=period).min()
+                elif feature_type == 'max':
+                    result = volume.rolling(window=period).max()
+                elif feature_type == 'sum':
+                    result = volume.rolling(window=period).sum()
+                else:
+                    logger.warning(f"Unknown feature type: {feature_type}")
+                    continue
+                
+                results[feature_name] = result
+                
+            except Exception as e:
+                logger.warning(f"Feature {feature_name} generation failed: {e}")
+                continue
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def _generate_batch_with_unified_manager(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using Unified Vectorization Manager."""
+        try:
+            # Configure operation for batch volume feature generation
+            operation_config = {
+                'operation_type': OperationType.TECHNICAL_INDICATORS,
+                'data_size': len(data),
+                'data_dimensions': (len(data), len(feature_configs)),
+                'memory_budget_mb': 1024.0,
+                'time_budget_seconds': 120.0,
+                'precision_requirement': 'medium'
+            }
+            
+            # Create batch operation function
+            def batch_operation():
+                return self._generate_batch_with_vectorbt(data, feature_configs)
+            
+            # Use unified manager for batch processing
+            result = self.unified_manager.optimize_operation(batch_operation, operation_config)
+            
+            self.performance_stats['unified_manager_operations'] += 1
+            self.performance_stats['batch_operations'] += 1
+            return result.result
+            
+        except Exception as e:
+            logger.warning(f"Unified manager batch generation failed: {e}")
+            raise
+    
+    def _generate_batch_with_vectorbt(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate batch features using VectorBT rolling optimizer."""
+        results = {}
+        volume = data['volume']
+        
+        for config in feature_configs:
+            feature_name = config.get('name', 'volume_feature')
+            feature_type = config.get('type', 'sma')
+            period = config.get('period', 20)
+            
+            try:
+                if feature_type == 'sma':
+                    result = self.rolling_optimizer.rolling_mean(volume, window=period)
+                elif feature_type == 'std':
+                    result = self.rolling_optimizer.rolling_std(volume, window=period)
+                elif feature_type == 'var':
+                    result = self.rolling_optimizer.rolling_var(volume, window=period)
+                elif feature_type == 'min':
+                    result = self.rolling_optimizer.rolling_min(volume, window=period)
+                elif feature_type == 'max':
+                    result = self.rolling_optimizer.rolling_max(volume, window=period)
+                elif feature_type == 'sum':
+                    result = self.rolling_optimizer.rolling_sum(volume, window=period)
+                else:
+                    logger.warning(f"Unknown feature type: {feature_type}")
+                    continue
+                
+                results[feature_name] = result
+                self.performance_stats['vectorbt_operations'] += 1
+                
+            except Exception as e:
+                logger.warning(f"VectorBT feature {feature_name} generation failed: {e}")
+                continue
+        
+        self.performance_stats['batch_operations'] += 1
+        return pd.DataFrame(results, index=data.index)
+    
+    def _optimize_memory_usage(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame memory usage for large datasets."""
+        if not self.enable_memory_optimization:
+            return data
+        
+        try:
+            # Calculate memory usage
+            memory_usage_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+            
+            if memory_usage_mb > self.memory_threshold_mb:
+                logger.info(f"Memory usage {memory_usage_mb:.2f}MB exceeds threshold {self.memory_threshold_mb}MB, optimizing...")
+                
+                # Optimize data types
+                optimized_data = data.copy()
+                
+                for column in optimized_data.columns:
+                    if optimized_data[column].dtype == 'float64':
+                        # Use float32 if precision allows
+                        if (optimized_data[column].min() >= np.finfo(np.float32).min and 
+                            optimized_data[column].max() <= np.finfo(np.float32).max):
+                            optimized_data[column] = optimized_data[column].astype(np.float32)
+                    
+                    elif optimized_data[column].dtype == 'int64':
+                        # Use int32 if range allows
+                        if (optimized_data[column].min() >= np.iinfo(np.int32).min and 
+                            optimized_data[column].max() <= np.iinfo(np.int32).max):
+                            optimized_data[column] = optimized_data[column].astype(np.int32)
+                
+                # Calculate new memory usage
+                new_memory_usage_mb = optimized_data.memory_usage(deep=True).sum() / (1024 * 1024)
+                memory_saved_mb = memory_usage_mb - new_memory_usage_mb
+                
+                logger.info(f"Memory optimization saved {memory_saved_mb:.2f}MB ({memory_saved_mb/memory_usage_mb*100:.1f}%)")
+                self.performance_stats['memory_optimizations'] += 1
+                
+                return optimized_data
+            
+            return data
+            
+        except Exception as e:
+            logger.warning(f"Memory optimization failed: {e}")
+            return data
+    
+    def _process_in_chunks(self, data: pd.DataFrame, operation_func: Callable, 
+                          chunk_size: Optional[int] = None) -> pd.DataFrame:
+        """Process large datasets in chunks to manage memory usage."""
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        
+        if len(data) <= chunk_size:
+            return operation_func(data)
+        
+        try:
+            logger.info(f"Processing {len(data)} rows in chunks of {chunk_size}")
+            
+            results = []
+            for i in range(0, len(data), chunk_size):
+                chunk = data.iloc[i:i + chunk_size]
+                chunk_result = operation_func(chunk)
+                results.append(chunk_result)
+                
+                # Force garbage collection after each chunk
+                import gc
+                gc.collect()
+            
+            # Combine results
+            final_result = pd.concat(results, ignore_index=False)
+            self.performance_stats['memory_optimizations'] += 1
+            
+            return final_result
+            
+        except Exception as e:
+            logger.warning(f"Chunk processing failed: {e}, falling back to full processing")
+            return operation_func(data)
+    
+    def _should_use_chunking(self, data: pd.DataFrame) -> bool:
+        """Determine if chunking should be used based on data size and memory."""
+        if not self.enable_memory_optimization:
+            return False
+        
+        memory_usage_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+        return memory_usage_mb > self.memory_threshold_mb or len(data) > self.chunk_size * 2
+    
+    def _check_gpu_availability(self) -> bool:
+        """Check if GPU acceleration is available."""
+        if not self.enable_gpu:
+            return False
+        
+        try:
+            # Check for CuPy
+            if CUPY_AVAILABLE:
+                return True
+            
+            # Check for PyTorch with CUDA
+            if TORCH_AVAILABLE and torch.cuda.is_available():
+                return True
+            
+            return False
+        except Exception as e:
+            logger.warning(f"GPU availability check failed: {e}")
+            return False
+    
+    def _should_use_gpu(self, data: pd.DataFrame) -> bool:
+        """Determine if GPU should be used based on data size and availability."""
+        return (self.gpu_available and 
+                len(data) >= self.gpu_threshold and 
+                self.enable_gpu)
+    
+    def _convert_to_gpu(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Convert DataFrame to GPU memory if available."""
+        if not self._should_use_gpu(data):
+            return data
+        
+        try:
+            if CUPY_AVAILABLE:
+                # Convert to CuPy arrays
+                gpu_data = data.copy()
+                for column in gpu_data.columns:
+                    if gpu_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
+                        gpu_data[column] = cp.asarray(gpu_data[column].values)
+                return gpu_data
+            elif TORCH_AVAILABLE and torch.cuda.is_available():
+                # Convert to PyTorch tensors on GPU
+                gpu_data = data.copy()
+                for column in gpu_data.columns:
+                    if gpu_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
+                        gpu_data[column] = torch.tensor(gpu_data[column].values, device='cuda')
+                return gpu_data
+            else:
+                return data
+        except Exception as e:
+            logger.warning(f"GPU conversion failed: {e}")
+            return data
+    
+    def _convert_from_gpu(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Convert DataFrame from GPU memory back to CPU."""
+        try:
+            if CUPY_AVAILABLE:
+                # Convert from CuPy arrays
+                cpu_data = data.copy()
+                for column in cpu_data.columns:
+                    if hasattr(cpu_data[column].iloc[0], 'get'):  # CuPy array
+                        cpu_data[column] = cpu_data[column].apply(lambda x: x.get() if hasattr(x, 'get') else x)
+                return cpu_data
+            elif TORCH_AVAILABLE and torch.cuda.is_available():
+                # Convert from PyTorch tensors
+                cpu_data = data.copy()
+                for column in cpu_data.columns:
+                    if hasattr(cpu_data[column].iloc[0], 'cpu'):  # PyTorch tensor
+                        cpu_data[column] = cpu_data[column].apply(lambda x: x.cpu().numpy() if hasattr(x, 'cpu') else x)
+                return cpu_data
+            else:
+                return data
+        except Exception as e:
+            logger.warning(f"GPU to CPU conversion failed: {e}")
+            return data
+    
+    def _monitor_operation(self, operation_name: str, operation_func: Callable, *args, **kwargs):
+        """Monitor operation performance and memory usage."""
+        import time
+        import psutil
+        import os
+        
+        start_time = time.time()
+        start_memory = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)  # MB
+        
+        try:
+            result = operation_func(*args, **kwargs)
+            
+            end_time = time.time()
+            end_memory = psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)  # MB
+            
+            operation_time = end_time - start_time
+            memory_used = end_memory - start_memory
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['total_time'] += operation_time
+            self.performance_stats['average_operation_time'] = (
+                self.performance_stats['total_time'] / self.performance_stats['total_operations']
+            )
+            self.performance_stats['peak_memory_usage'] = max(
+                self.performance_stats['peak_memory_usage'], 
+                end_memory
+            )
+            
+            # Store operation details
+            self.operation_times.append({
+                'operation': operation_name,
+                'time': operation_time,
+                'memory_used': memory_used,
+                'timestamp': start_time
+            })
+            
+            self.memory_usage_history.append({
+                'timestamp': start_time,
+                'memory_mb': end_memory
+            })
+            
+            # Log performance if significant
+            if operation_time > 1.0:  # Log operations taking more than 1 second
+                logger.info(f"Operation '{operation_name}' took {operation_time:.2f}s, used {memory_used:.2f}MB")
+            
+            return result
+            
+        except Exception as e:
+            end_time = time.time()
+            operation_time = end_time - start_time
+            logger.error(f"Operation '{operation_name}' failed after {operation_time:.2f}s: {e}")
+            raise
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get comprehensive performance summary."""
+        summary = {
+            'performance_stats': self.performance_stats.copy(),
+            'recent_operations': self.operation_times[-10:] if self.operation_times else [],
+            'memory_usage_trend': self.memory_usage_history[-20:] if self.memory_usage_history else [],
+            'optimization_effectiveness': self._calculate_optimization_effectiveness()
+        }
+        
+        return summary
+    
+    def _calculate_optimization_effectiveness(self) -> Dict[str, float]:
+        """Calculate effectiveness of different optimization strategies."""
+        total_ops = self.performance_stats['total_operations']
+        if total_ops == 0:
+            return {}
+        
+        effectiveness = {
+            'vectorbt_usage_rate': self.performance_stats['vectorbt_operations'] / total_ops,
+            'unified_manager_usage_rate': self.performance_stats['unified_manager_operations'] / total_ops,
+            'batch_processing_rate': self.performance_stats['batch_operations'] / total_ops,
+            'memory_optimization_rate': self.performance_stats['memory_optimizations'] / total_ops,
+            'gpu_usage_rate': self.performance_stats['gpu_operations'] / total_ops,
+            'fallback_rate': self.performance_stats['pandas_fallbacks'] / total_ops
+        }
+        
+        return effectiveness
+    
+    def reset_performance_stats(self):
+        """Reset all performance statistics."""
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'gpu_operations': 0,
+            'total_operations': 0,
+            'total_time': 0.0,
+            'average_operation_time': 0.0,
+            'peak_memory_usage': 0.0,
+            'chunk_operations': 0
+        }
+        self.operation_times.clear()
+        self.memory_usage_history.clear()
+    
+    def log_performance_report(self):
+        """Log a comprehensive performance report."""
+        summary = self.get_performance_summary()
+        
+        logger.info("=== Volume Feature Generation Performance Report ===")
+        logger.info(f"Total Operations: {summary['performance_stats']['total_operations']}")
+        logger.info(f"Total Time: {summary['performance_stats']['total_time']:.2f}s")
+        logger.info(f"Average Operation Time: {summary['performance_stats']['average_operation_time']:.3f}s")
+        logger.info(f"Peak Memory Usage: {summary['performance_stats']['peak_memory_usage']:.2f}MB")
+        
+        effectiveness = summary['optimization_effectiveness']
+        logger.info("=== Optimization Effectiveness ===")
+        logger.info(f"VectorBT Usage Rate: {effectiveness.get('vectorbt_usage_rate', 0):.1%}")
+        logger.info(f"Unified Manager Usage Rate: {effectiveness.get('unified_manager_usage_rate', 0):.1%}")
+        logger.info(f"Batch Processing Rate: {effectiveness.get('batch_processing_rate', 0):.1%}")
+        logger.info(f"Memory Optimization Rate: {effectiveness.get('memory_optimization_rate', 0):.1%}")
+        logger.info(f"GPU Usage Rate: {effectiveness.get('gpu_usage_rate', 0):.1%}")
+        logger.info(f"Fallback Rate: {effectiveness.get('fallback_rate', 0):.1%}")
+        
+        logger.info("=== Recent Operations ===")
+        for op in summary['recent_operations'][-5:]:  # Show last 5 operations
+            logger.info(f"  {op['operation']}: {op['time']:.3f}s, {op['memory_used']:.2f}MB")
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
@@ -250,47 +740,52 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         
-        # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-        else:
-            self.vectorbt_optimizer = None
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+            
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0
+        }
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume SMA using VectorBT optimization."""
+        if data.empty or 'volume' not in data.columns:
+            return pd.Series(dtype=float, index=data.index, name=f'volume_sma_{self.period}')
+
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         volume = data['volume']
         
-        # Use VectorBT for optimized rolling mean
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
+        # Use Unified Vectorization Manager for intelligent optimization
+        if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                return self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
+                return self._generate_sma_with_unified_manager(volume)
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
-                return volume.rolling(window=self.period).mean()
-        else:
-            return volume.rolling(window=self.period).mean()
-        if data.empty or 'volume' not in data.columns:
-            return pd.Series(dtype=float, index=data.index, name=f'volume_sma_{self.period}')
-
-        volume = data['volume']
+                logger.warning(f"Unified Vectorization Manager failed: {e}, using VectorBT fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
         
         # Use VectorBT rolling optimizer if available
-        if self.rolling_optimizer:
+        if self.rolling_optimizer and self._should_use_vectorbt(volume):
             try:
                 volume_sma = self.rolling_optimizer.rolling_mean(volume, window=self.period)
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Fallback to VectorBT direct operations
@@ -300,11 +795,47 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
-                self.logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
+                logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Final fallback to pandas
         return volume.rolling(window=self.period).mean()
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _should_use_unified_manager(self, data) -> bool:
+        """Determine if Unified Vectorization Manager should be used."""
+        return (UNIFIED_MANAGER_AVAILABLE and 
+                len(data) >= getattr(self, 'unified_manager_threshold', 5000))
+    
+    def _generate_sma_with_unified_manager(self, volume: pd.Series) -> pd.Series:
+        """Generate SMA using Unified Vectorization Manager."""
+        try:
+            # Configure operation for volume SMA calculation
+            operation_config = {
+                'operation_type': OperationType.TECHNICAL_INDICATORS,
+                'data_size': len(volume),
+                'data_dimensions': (len(volume),),
+                'memory_budget_mb': 256.0,
+                'time_budget_seconds': 30.0,
+                'precision_requirement': 'medium'
+            }
+            
+            # Use unified manager for rolling mean calculation
+            result = self.unified_manager.optimize_operation(
+                lambda: self.rolling_optimizer.rolling_mean(volume, window=self.period),
+                operation_config
+            )
+            
+            self.performance_stats['unified_manager_operations'] += 1
+            return result.result
+            
+        except Exception as e:
+            logger.warning(f"Unified manager SMA generation failed: {e}")
+            raise
 
 # Volume Exponential Moving Average
     
@@ -1043,16 +1574,32 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
             gpu_accelerated=True
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.rolling_optimizer = VectorBTRollingOptimizer()
         self.period = period
         
-        # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        # Initialize VectorBT rolling optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
-            self.vectorbt_optimizer = None
+            self.rolling_optimizer = None
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+            
+        # Performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'unified_manager_operations': 0
+        }
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate Volume VWAP using VectorBT optimization."""
+        if data.empty or 'close' not in data.columns or 'volume' not in data.columns:
+            return pd.Series(dtype=float, index=data.index, name=f'volume_vwap_{self.period}')
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
@@ -1060,18 +1607,16 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         close = data['close']
         volume = data['volume']
         
-        # Use VectorBT for volume VWAP calculation
-        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
+        # Use Unified Vectorization Manager for intelligent optimization
+        if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                price_volume = close * volume
-                price_volume_sum = self.vectorbt_optimizer.rolling_sum(price_volume, window=self.period)
-                volume_sum = self.vectorbt_optimizer.rolling_sum(volume, window=self.period)
-        """Generate Volume VWAP using VectorBT."""
-        close = data['close']
-        volume = data['volume']
+                return self._generate_vwap_with_unified_manager(close, volume)
+            except Exception as e:
+                logger.warning(f"Unified Vectorization Manager failed: {e}, using VectorBT fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
         
-        # Try VectorBT rolling optimizer first
-        if self.rolling_optimizer:
+        # Use VectorBT rolling optimizer if available
+        if self.rolling_optimizer and self._should_use_vectorbt(volume):
             try:
                 price_volume = close * volume
                 price_volume_sum = self.rolling_optimizer.rolling_sum(price_volume, window=self.period)
@@ -1079,7 +1624,7 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
                 self.performance_stats['vectorbt_operations'] += 2
                 return price_volume_sum / volume_sum
             except Exception as e:
-                self.logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using fallback")
+                logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Fallback to VectorBT direct operations
@@ -1091,11 +1636,50 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
                 self.performance_stats['vectorbt_operations'] += 2
                 return price_volume_sum / volume_sum
             except Exception as e:
-                self.logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
+                logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
         
         # Final fallback to pandas
         return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _should_use_unified_manager(self, data) -> bool:
+        """Determine if Unified Vectorization Manager should be used."""
+        return (UNIFIED_MANAGER_AVAILABLE and 
+                len(data) >= getattr(self, 'unified_manager_threshold', 5000))
+    
+    def _generate_vwap_with_unified_manager(self, close: pd.Series, volume: pd.Series) -> pd.Series:
+        """Generate VWAP using Unified Vectorization Manager."""
+        try:
+            # Configure operation for volume VWAP calculation
+            operation_config = {
+                'operation_type': OperationType.TECHNICAL_INDICATORS,
+                'data_size': len(volume),
+                'data_dimensions': (len(volume),),
+                'memory_budget_mb': 512.0,
+                'time_budget_seconds': 60.0,
+                'precision_requirement': 'medium'
+            }
+            
+            # Use unified manager for VWAP calculation
+            def vwap_operation():
+                price_volume = close * volume
+                price_volume_sum = self.rolling_optimizer.rolling_sum(price_volume, window=self.period)
+                volume_sum = self.rolling_optimizer.rolling_sum(volume, window=self.period)
+                return price_volume_sum / volume_sum
+            
+            result = self.unified_manager.optimize_operation(vwap_operation, operation_config)
+            
+            self.performance_stats['unified_manager_operations'] += 1
+            return result.result
+            
+        except Exception as e:
+            logger.warning(f"Unified manager VWAP generation failed: {e}")
+            raise
 
 # Volume Price Trend (VPT)
     
@@ -1666,6 +2250,139 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
             generators.append(VectorBTSmoothedOBVGenerator(period))
 
     return generators
+
+
+class OptimizedVolumeFeatureFactory:
+    """
+    Factory for creating optimized volume feature generators with VectorBT and UnifiedVectorizationManager.
+    """
+    
+    def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True):
+        """
+        Initialize the optimized volume feature factory.
+        
+        Args:
+            enable_gpu: Whether to enable GPU acceleration
+            enable_parallel: Whether to enable parallel processing
+        """
+        self.enable_gpu = enable_gpu
+        self.enable_parallel = enable_parallel
+        
+        # Initialize optimizers
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=enable_gpu, 
+                enable_parallel=enable_parallel
+            )
+        else:
+            self.rolling_optimizer = None
+            
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+    
+    def create_volume_sma_generator(self, period: int = 20) -> VolumeSMAGenerator:
+        """Create an optimized Volume SMA generator."""
+        generator = VolumeSMAGenerator(period)
+        generator.rolling_optimizer = self.rolling_optimizer
+        generator.unified_manager = self.unified_manager
+        return generator
+    
+    def create_volume_vwap_generator(self, period: int = 20) -> VolumeVWAPGenerator:
+        """Create an optimized Volume VWAP generator."""
+        generator = VolumeVWAPGenerator(period)
+        generator.rolling_optimizer = self.rolling_optimizer
+        generator.unified_manager = self.unified_manager
+        return generator
+    
+    def create_batch_volume_generator(self) -> VolumeFeatureGenerator:
+        """Create an optimized batch volume feature generator."""
+        generator = VolumeFeatureGenerator()
+        generator.rolling_optimizer = self.rolling_optimizer
+        generator.unified_manager = self.unified_manager
+        return generator
+    
+    def generate_comprehensive_volume_features(self, data: pd.DataFrame, 
+                                             periods: List[int] = None) -> pd.DataFrame:
+        """
+        Generate comprehensive volume features using batch processing.
+        
+        Args:
+            data: OHLCV data
+            periods: List of periods to use for features
+            
+        Returns:
+            DataFrame with comprehensive volume features
+        """
+        if periods is None:
+            periods = [5, 10, 20, 50]
+        
+        # Create feature configurations for batch processing
+        feature_configs = []
+        
+        # Volume SMAs
+        for period in periods:
+            feature_configs.append({
+                'name': f'volume_sma_{period}',
+                'type': 'sma',
+                'period': period
+            })
+        
+        # Volume EMAs
+        for period in periods:
+            feature_configs.append({
+                'name': f'volume_ema_{period}',
+                'type': 'ema',
+                'period': period
+            })
+        
+        # Volume standard deviations
+        for period in periods:
+            feature_configs.append({
+                'name': f'volume_std_{period}',
+                'type': 'std',
+                'period': period
+            })
+        
+        # Volume VWAPs
+        for period in periods:
+            feature_configs.append({
+                'name': f'volume_vwap_{period}',
+                'type': 'vwap',
+                'period': period
+            })
+        
+        # Use batch generator
+        batch_generator = self.create_batch_volume_generator()
+        return batch_generator.generate_batch_volume_features(data, feature_configs)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics from all optimizers."""
+        stats = {}
+        
+        if self.rolling_optimizer:
+            stats['rolling_optimizer'] = self.rolling_optimizer.get_performance_stats()
+        
+        if self.unified_manager:
+            stats['unified_manager'] = self.unified_manager.get_performance_stats()
+        
+        return stats
+
+
+def create_optimized_volume_factory(enable_gpu: bool = False, 
+                                  enable_parallel: bool = True) -> OptimizedVolumeFeatureFactory:
+    """
+    Create an optimized volume feature factory.
+    
+    Args:
+        enable_gpu: Whether to enable GPU acceleration
+        enable_parallel: Whether to enable parallel processing
+        
+    Returns:
+        OptimizedVolumeFeatureFactory instance
+    """
+    return OptimizedVolumeFeatureFactory(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
 
 
 class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):

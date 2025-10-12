@@ -9,14 +9,8 @@ from typing import Dict, Any, List
 from enum import Enum
 
 
-class OptimizationMethod(Enum):
-    """Available optimization methods."""
-    GRID_SEARCH = "grid_search"
-    BAYESIAN = "bayesian"
-    MRMR = "mrmr"
-    RANDOM_SEARCH = "random_search"
-    MULTI_TARGET = "multi_target"
-    COARSE_TO_REFINE = "coarse_to_refine"
+# Import centralized types
+from ..types import OptimizationMethod
 
 
 class MemoryPressureLevel(Enum):
@@ -238,8 +232,11 @@ def get_constants() -> AllConstants:
 
 def update_constants(config_dict: Dict[str, Any]):
     """Update global constants from configuration dictionary."""
+    from .tprint_utils import tprint_debug
+    tprint_debug("🔧 Updating global constants from configuration dictionary")
     constants = get_constants()
     constants.update_from_dict(config_dict)
+    tprint_debug("✅ Global constants updated successfully")
 
 
 # Convenience functions for common constants

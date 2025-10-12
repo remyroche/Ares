@@ -77,18 +77,11 @@ except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE = False
     logging.warning(f"Common operations not available: {e}")
 
-# Import tprint for enhanced logging
-try:
-    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_performance
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+# Import centralized tprint utilities
+from .utils.tprint_utils import (
+    tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_performance,
+    TPRINT_AVAILABLE
+)
 
 # Import math validation utilities for safe operations
 try:

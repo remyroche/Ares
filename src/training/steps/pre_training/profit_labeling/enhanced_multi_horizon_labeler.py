@@ -18,7 +18,6 @@ import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 import logging
-import asyncio
 
 # Import existing multi-horizon labeler components
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
@@ -33,7 +32,6 @@ from .enhanced_data_labels_system import (
 
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-from ..settings import get_pre_training_settings
 
 
 class EnhancedMultiHorizonConfig(MultiHorizonConfig):

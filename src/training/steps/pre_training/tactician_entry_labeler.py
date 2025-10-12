@@ -15,7 +15,6 @@ Key Features:
 import time
 import numpy as np
 import pandas as pd
-import warnings
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -112,83 +111,7 @@ class TacticianLabelingConfig:
     # VectorBT optimization settings
     vectorbt_config: Optional[VectorBTConfig] = None
 
-    def get_optimization_search_space(self) -> Dict[str, Any]:
-        """Get search space for hyperparameter optimization."""
-        tprint_info("🔍 Generating optimization search space for Tactician labeling configuration")
-        search_space = {
-            'entry_quality_threshold': {
-                'type': 'float',
-                'low': 0.1,
-                'high': 0.5,
-                'log': False
-            },
-            'max_adverse_movement_pct': {
-                'type': 'float',
-                'low': 0.2,
-                'high': 1.0,
-                'log': False
-            },
-            'min_favorable_movement_pct': {
-                'type': 'float',
-                'low': 0.1,
-                'high': 0.5,
-                'log': False
-            },
-            'risk_aversion': {
-                'type': 'float',
-                'low': 1.0,
-                'high': 5.0,
-                'log': False
-            }
-        }
-        tprint_success(f"✅ Search space generated with {len(search_space)} parameters")
-        return search_space
 
-    def optimize_config_grid_search(self, data: pd.DataFrame, max_trials: int = 50) -> 'TacticianLabelingConfig':
-        """Optimize configuration using grid search."""
-        tprint_info(f"🔧 Starting grid search optimization with {max_trials} trials")
-        search_space = self.get_optimization_search_space()
-
-        # Generate parameter grid
-        param_grid = generate_grid(search_space, max_trials)
-        tprint_info(f"📊 Generated parameter grid with {len(param_grid)} configurations")
-
-        best_config = None
-        best_score = -float('inf')
-
-        # Simple evaluation based on data characteristics
-        tprint_info(f"🔄 Evaluating {min(len(param_grid), max_trials)} configurations...")
-        for i, params in enumerate(param_grid[:max_trials]):
-            try:
-                tprint_info(f"📋 Evaluating configuration {i+1}/{min(len(param_grid), max_trials)}")
-                # Create config with current parameters
-                config = TacticianLabelingConfig(
-                    entry_quality_threshold=params.get('entry_quality_threshold', self.entry_quality_threshold),
-                    max_adverse_movement_pct=params.get('max_adverse_movement_pct', self.max_adverse_movement_pct),
-                    min_favorable_movement_pct=params.get('min_favorable_movement_pct', self.min_favorable_movement_pct),
-                    risk_aversion=params.get('risk_aversion', self.risk_aversion)
-                )
-
-                # Simple scoring based on data quality metrics
-                quality = create_data_quality_report(data)
-                score = quality.get('quality_metrics', {}).get('numeric_columns', 0) * 0.1
-                score += (1 - quality.get('quality_metrics', {}).get('missing_percentage', 100)) * 0.01
-
-                if score > best_score:
-                    best_score = score
-                    best_config = config
-                    tprint_info(f"🏆 New best score: {score:.4f} (config {i+1})")
-
-            except Exception as e:
-                tprint_warning(f"⚠️ Error evaluating config {i+1} {params}: {e}")
-                continue
-
-        if best_config:
-            tprint_success(f"✅ Grid search completed. Best score: {best_score:.3f}")
-            return best_config
-        else:
-            tprint_warning("⚠️ No valid configuration found during grid search, returning original config")
-            return self
 
 
 class TacticianDifferentiatedLabeler:
@@ -223,46 +146,6 @@ class TacticianDifferentiatedLabeler:
         # Initialize enhanced quality scorer
         self._initialize_quality_scorer()
 
-    def cleanup(self) -> None:
-        """Clean up resources and optimize memory."""
-        try:
-            # Optimize memory usage
-            memory_info = optimize_memory()
-            if memory_info.get('success', False):
-                tprint_info(f"🧠 Memory optimized: {memory_info.get('objects_collected', 0)} objects collected")
-
-            # Clean up matrix operations resources
-            try:
-                from src.utils.matrix_operations import cleanup_hardware_resources
-                cleanup_hardware_resources()
-                tprint_info("🧮 Matrix operations resources cleaned up")
-            except ImportError:
-                pass
-
-            # Clean up M1 optimizers if available
-            from src.utils.common_operations import cleanup_m1_optimizers
-            cleanup_m1_optimizers()
-
-            # Clean up VectorBT optimizer
-            if hasattr(self, 'vectorbt_optimizer'):
-                self.vectorbt_optimizer.clear_cache()
-                tprint_info("⚡ VectorBT optimizer cache cleared")
-
-            # Get final hardware performance report
-            hardware_report = get_hardware_performance_report()
-            tprint_info(f"🔧 Final hardware status: CPU cores={hardware_report.get('cpu_cores', 'N/A')}, GPU={hardware_report.get('gpu_available', 'N/A')}")
-
-            # Get VectorBT performance summary
-            if hasattr(self, 'vectorbt_optimizer'):
-                perf_summary = self.vectorbt_optimizer.get_performance_summary()
-                if 'total_operations' in perf_summary and perf_summary['total_operations'] > 0:
-                    tprint_info(f"⚡ VectorBT performance: {perf_summary['total_operations']} operations, "
-                              f"{perf_summary['vectorbt_usage_rate']:.1%} VectorBT usage, "
-                              f"{perf_summary['avg_execution_time']:.3f}s avg time")
-
-            tprint_success("✅ TacticianDifferentiatedLabeler cleanup completed")
-        except Exception as e:
-            tprint_warning(f"⚠️ Error during cleanup: {e}")
 
     def _initialize_quality_scorer(self):
         """Initialize the enhanced entry quality scorer based on configuration."""
@@ -1273,27 +1156,3 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             )
             return result
 
-
-# Convenience function for external usage
-async def execute_tactician_entry_labeling(
-    data: pd.DataFrame,
-    analyst_signals: Optional[pd.Series] = None,
-    regime_assignments: Optional[pd.Series] = None,
-    config: Optional[TacticianLabelingConfig] = None,
-    **kwargs
-) -> Tuple[pd.Series, Dict[str, float]]:
-    """
-    Execute Tactician entry labeling.
-    
-    Args:
-        data: Input market data (OHLCV format)
-        analyst_signals: Optional Analyst signals (legacy support)
-        regime_assignments: Optional regime assignments
-        config: Optional configuration
-        **kwargs: Additional parameters
-        
-    Returns:
-        Tuple of (labels, quality_metrics)
-    """
-    labeler = TacticianDifferentiatedLabeler(config or TacticianLabelingConfig())
-    return labeler.create_entry_timing_labels(data, analyst_signals, regime_assignments)

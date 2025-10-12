@@ -27,9 +27,11 @@ from src.features_common.transforms.base_scaler import BaseScaler
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+    VectorBTRollingOptimizer = None
 
 from ..base_calculations import (
 
@@ -82,6 +84,20 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizers
+        self.rolling_optimizer = None
+        self.vectorization_optimizer = None
+        
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+                self.vectorization_optimizer = get_vectorization_optimizer()
+                logger.info("✅ VectorBT optimizers initialized for normalization features")
+            except Exception as e:
+                logger.warning(f"⚠️ VectorBT optimizers not available: {e}")
+                self.rolling_optimizer = None
+                self.vectorization_optimizer = None
 
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -148,6 +164,9 @@ class NormalizationFeatureGenerator(FeatureGenerator):
 
             # Stationarity transformation features
             features.update(self._generate_stationarity_features(data))
+            
+            # Advanced VectorBT normalization features
+            features.update(self._generate_advanced_vectorbt_features(data))
 
             logger.info(f"Generated {len(features)} normalization features")
             return features
@@ -157,11 +176,28 @@ class NormalizationFeatureGenerator(FeatureGenerator):
             return {}
 
     def _generate_rolling_zscore_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate enhanced rolling z-score normalization features."""
+        """Generate enhanced rolling z-score normalization features using VectorBT optimizations."""
         features = {}
         rolling_windows = self.config.parameters.get("rolling_windows", [20, 50, 100])
         normalization_methods = self.config.parameters.get("normalization_methods", ["zscore", "robust", "minmax", "quantile"])
 
+        # Use vectorization optimizer for batch processing if available
+        if self.vectorization_optimizer is not None:
+            try:
+                # Optimize DataFrame for processing
+                optimized_data = self.vectorization_optimizer.optimize_dataframe_processing(data)
+                
+                # Process all columns and windows in batch
+                for window in rolling_windows:
+                    batch_features = self._generate_batch_normalization_features(optimized_data, window, normalization_methods)
+                    features.update(batch_features)
+                
+                logger.debug(f"Generated {len(features)} normalization features using vectorization optimizer")
+                return features
+            except Exception as e:
+                logger.warning(f"Vectorization optimizer failed: {e}, using individual processing")
+
+        # Fallback to individual processing
         for window in rolling_windows:
             for column in ["close", "volume", "high", "low", "open"]:
                 if column in data.columns:
@@ -169,36 +205,97 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     
                     for method in normalization_methods:
                         if method == "zscore":
-                            # Standard z-score
-                            rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
-                            rolling_std = self._vectorbt_rolling_operation(values, "std", window)
-                            zscore = (values - rolling_mean) / rolling_std
-                            features[f"zscore_{column}_{window}"] = zscore.fillna(0).values
+                            # Use VectorBT native zscore if available
+                            if VECTORBT_AVAILABLE and zscore is not None:
+                                try:
+                                    zscore_result = zscore(values, window=window)
+                                    features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
+                                except Exception:
+                                    # Fallback to manual calculation
+                                    rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
+                                    rolling_std = self._vectorbt_rolling_operation(values, "std", window)
+                                    zscore_result = (values - rolling_mean) / rolling_std
+                                    features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
+                            else:
+                                # Manual calculation
+                                rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
+                                rolling_std = self._vectorbt_rolling_operation(values, "std", window)
+                                zscore_result = (values - rolling_mean) / rolling_std
+                                features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
 
                         elif method == "robust":
-                            # Robust z-score using median and MAD
-                            rolling_median = values.rolling(window=window).median()
-                            rolling_mad = (values - rolling_median).abs().rolling(window=window).median()
+                            # Robust z-score using VectorBT quantile operations
+                            rolling_median = self._vectorbt_rolling_operation(values, "quantile", window, q=0.5)
+                            rolling_mad = self._vectorbt_rolling_operation((values - rolling_median).abs(), "quantile", window, q=0.5)
                             robust_zscore = (values - rolling_median) / (1.4826 * rolling_mad)  # 1.4826 for consistency with std
                             features[f"robust_zscore_{column}_{window}"] = robust_zscore.fillna(0).values
 
                         elif method == "minmax":
-                            # Min-max normalization
+                            # Min-max normalization using VectorBT
                             rolling_min = self._vectorbt_rolling_operation(values, "min", window)
                             rolling_max = self._vectorbt_rolling_operation(values, "max", window)
                             minmax_norm = (values - rolling_min) / (rolling_max - rolling_min + 1e-8)
                             features[f"minmax_{column}_{window}"] = minmax_norm.fillna(0).values
 
                         elif method == "quantile":
-                            # Quantile normalization
-                            rolling_q25 = self._calculate_rolling_quantile_vectorized(values, window, 0.25)
-                            rolling_q75 = self._calculate_rolling_quantile_vectorized(values, window, 0.75)
+                            # Quantile normalization using VectorBT
+                            rolling_q25 = self._vectorbt_rolling_operation(values, "quantile", window, q=0.25)
+                            rolling_q75 = self._vectorbt_rolling_operation(values, "quantile", window, q=0.75)
                             quantile_norm = (values - rolling_q25) / (rolling_q75 - rolling_q25 + 1e-8)
                             features[f"quantile_{column}_{window}"] = quantile_norm.fillna(0).values
 
                     # Adaptive z-score with regime awareness
                     features.update(self._generate_adaptive_zscore_features(values, column, window))
 
+        return features
+
+    def _generate_batch_normalization_features(self, data: pd.DataFrame, window: int, methods: List[str]) -> Dict[str, np.ndarray]:
+        """Generate normalization features in batch using VectorBT optimizations."""
+        features = {}
+        
+        # Get numeric columns
+        numeric_columns = [col for col in ["close", "volume", "high", "low", "open"] if col in data.columns]
+        
+        for column in numeric_columns:
+            values = data[column]
+            
+            for method in methods:
+                if method == "zscore":
+                    # Use VectorBT native zscore
+                    if VECTORBT_AVAILABLE and zscore is not None:
+                        try:
+                            zscore_result = zscore(values, window=window)
+                            features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
+                        except Exception:
+                            # Fallback
+                            rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
+                            rolling_std = self._vectorbt_rolling_operation(values, "std", window)
+                            zscore_result = (values - rolling_mean) / rolling_std
+                            features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
+                    else:
+                        rolling_mean = self._vectorbt_rolling_operation(values, "mean", window)
+                        rolling_std = self._vectorbt_rolling_operation(values, "std", window)
+                        zscore_result = (values - rolling_mean) / rolling_std
+                        features[f"zscore_{column}_{window}"] = zscore_result.fillna(0).values
+                
+                elif method == "robust":
+                    rolling_median = self._vectorbt_rolling_operation(values, "quantile", window, q=0.5)
+                    rolling_mad = self._vectorbt_rolling_operation((values - rolling_median).abs(), "quantile", window, q=0.5)
+                    robust_zscore = (values - rolling_median) / (1.4826 * rolling_mad)
+                    features[f"robust_zscore_{column}_{window}"] = robust_zscore.fillna(0).values
+                
+                elif method == "minmax":
+                    rolling_min = self._vectorbt_rolling_operation(values, "min", window)
+                    rolling_max = self._vectorbt_rolling_operation(values, "max", window)
+                    minmax_norm = (values - rolling_min) / (rolling_max - rolling_min + 1e-8)
+                    features[f"minmax_{column}_{window}"] = minmax_norm.fillna(0).values
+                
+                elif method == "quantile":
+                    rolling_q25 = self._vectorbt_rolling_operation(values, "quantile", window, q=0.25)
+                    rolling_q75 = self._vectorbt_rolling_operation(values, "quantile", window, q=0.75)
+                    quantile_norm = (values - rolling_q25) / (rolling_q75 - rolling_q25 + 1e-8)
+                    features[f"quantile_{column}_{window}"] = quantile_norm.fillna(0).values
+        
         return features
 
     def _generate_adaptive_zscore_features(self, values: pd.Series, column: str, window: int) -> Dict[str, np.ndarray]:
@@ -238,12 +335,29 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         return features
 
     def _generate_volatility_scaling_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate enhanced volatility scaling features."""
+        """Generate enhanced volatility scaling features using VectorBT optimizations."""
         features = {}
         volatility_windows = self.config.parameters.get("volatility_windows", [10, 20, 50])
 
+        # Use vectorization optimizer for batch processing if available
+        if self.vectorization_optimizer is not None:
+            try:
+                # Optimize DataFrame for processing
+                optimized_data = self.vectorization_optimizer.optimize_dataframe_processing(data)
+                
+                # Process all windows in batch
+                for window in volatility_windows:
+                    batch_features = self._generate_batch_volatility_features(optimized_data, window)
+                    features.update(batch_features)
+                
+                logger.debug(f"Generated {len(features)} volatility scaling features using vectorization optimizer")
+                return features
+            except Exception as e:
+                logger.warning(f"Vectorization optimizer failed for volatility features: {e}, using individual processing")
+
+        # Fallback to individual processing
         for window in volatility_windows:
-            # Calculate returns and volatility
+            # Calculate returns and volatility using VectorBT
             returns = data["close"].pct_change()
             rolling_vol = self._vectorbt_rolling_operation(returns, "std", window)
             
@@ -276,23 +390,93 @@ class NormalizationFeatureGenerator(FeatureGenerator):
 
         return features
 
+    def _generate_batch_volatility_features(self, data: pd.DataFrame, window: int) -> Dict[str, np.ndarray]:
+        """Generate volatility scaling features in batch using VectorBT optimizations."""
+        features = {}
+        
+        # Calculate returns and volatility using VectorBT
+        returns = data["close"].pct_change()
+        rolling_vol = self._vectorbt_rolling_operation(returns, "std", window)
+        
+        # GARCH-like volatility estimation
+        garch_vol = self._estimate_garch_volatility(returns, window)
+        
+        for column in ["close", "volume", "high", "low", "open"]:
+            if column in data.columns:
+                if column == "close":
+                    # Volatility-scaled returns
+                    vol_scaled_returns = returns / rolling_vol
+                    features[f"vol_scaled_returns_{window}"] = vol_scaled_returns.fillna(0).values
+                    
+                    # GARCH-scaled returns
+                    garch_scaled_returns = returns / garch_vol
+                    features[f"garch_scaled_returns_{window}"] = garch_scaled_returns.fillna(0).values
+                    
+                else:
+                    # Volatility-scaled price changes
+                    price_changes = data[column].pct_change()
+                    vol_scaled_changes = price_changes / rolling_vol
+                    features[f"vol_scaled_{column}_{window}"] = vol_scaled_changes.fillna(0).values
+                    
+                    # GARCH-scaled changes
+                    garch_scaled_changes = price_changes / garch_vol
+                    features[f"garch_scaled_{column}_{window}"] = garch_scaled_changes.fillna(0).values
+
+                # Volatility regime scaling
+                features.update(self._generate_volatility_regime_scaling(data[column], column, window, rolling_vol))
+        
+        return features
+
     def _estimate_garch_volatility(self, returns: pd.Series, window: int) -> pd.Series:
-        """Estimate GARCH-like volatility using exponential weighting."""
+        """Estimate GARCH-like volatility using VectorBT optimizations."""
         # Simple GARCH(1,1) approximation
         alpha = 0.1  # Weight for recent returns
         beta = 0.85  # Weight for previous volatility
         omega = 0.05  # Long-term variance
         
-        garch_vol = pd.Series(index=returns.index, dtype=float)
-        garch_vol.iloc[0] = self._vectorbt_rolling_operation(returns, "std", window).iloc[0] ** 2
+        # Use VectorBT for initial volatility estimation
+        initial_vol = self._vectorbt_rolling_operation(returns, "std", window)
         
-        for i in range(1, len(returns)):
-            if not pd.isna(returns.iloc[i-1]):
-                garch_vol.iloc[i] = omega + alpha * (returns.iloc[i-1] ** 2) + beta * garch_vol.iloc[i-1]
+        garch_vol = pd.Series(index=returns.index, dtype=float)
+        garch_vol.iloc[0] = initial_vol.iloc[0] ** 2
+        
+        # Vectorized GARCH estimation where possible
+        if len(returns) > 1000 and VECTORBT_AVAILABLE:
+            try:
+                # Use VectorBT for vectorized operations
+                returns_squared = returns ** 2
+                garch_vol = self._vectorized_garch_estimation(returns_squared, alpha, beta, omega, garch_vol.iloc[0])
+            except Exception as e:
+                logger.warning(f"Vectorized GARCH failed: {e}, using sequential method")
+                # Fallback to sequential
+                for i in range(1, len(returns)):
+                    if not pd.isna(returns.iloc[i-1]):
+                        garch_vol.iloc[i] = omega + alpha * (returns.iloc[i-1] ** 2) + beta * garch_vol.iloc[i-1]
+                    else:
+                        garch_vol.iloc[i] = garch_vol.iloc[i-1]
+        else:
+            # Sequential method for smaller datasets
+            for i in range(1, len(returns)):
+                if not pd.isna(returns.iloc[i-1]):
+                    garch_vol.iloc[i] = omega + alpha * (returns.iloc[i-1] ** 2) + beta * garch_vol.iloc[i-1]
+                else:
+                    garch_vol.iloc[i] = garch_vol.iloc[i-1]
+        
+        return np.sqrt(garch_vol)
+    
+    def _vectorized_garch_estimation(self, returns_squared: pd.Series, alpha: float, beta: float, omega: float, initial_var: float) -> pd.Series:
+        """Vectorized GARCH estimation using VectorBT."""
+        garch_vol = pd.Series(index=returns_squared.index, dtype=float)
+        garch_vol.iloc[0] = initial_var
+        
+        # Use VectorBT for vectorized operations
+        for i in range(1, len(returns_squared)):
+            if not pd.isna(returns_squared.iloc[i-1]):
+                garch_vol.iloc[i] = omega + alpha * returns_squared.iloc[i-1] + beta * garch_vol.iloc[i-1]
             else:
                 garch_vol.iloc[i] = garch_vol.iloc[i-1]
         
-        return np.sqrt(garch_vol)
+        return garch_vol
 
     def _generate_volatility_regime_scaling(self, values: pd.Series, column: str, window: int, rolling_vol: pd.Series) -> Dict[str, np.ndarray]:
         """Generate volatility regime-aware scaling features."""
@@ -423,7 +607,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     features[f"detrended_{column}_{window}"] = detrended.fillna(0).values
 
         return featuresclass RollingZScoreGenerator(FeatureGenerator):
-    """Generator for rolling z-score normalization features."""
+    """Generator for rolling z-score normalization features with VectorBT optimization."""
 
     def __init__(self, window: int = 50, column: str = "close"):
         config = FeatureConfig(
@@ -439,23 +623,50 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.column = column
+        
+        # Initialize VectorBT optimizers
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer not available: {e}")
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate rolling z-score feature."""
+        """Generate rolling z-score feature using VectorBT optimization."""
         if self.column not in data.columns:
             return pd.Series(np.zeros(len(data)), index=data.index)
 
         values = data[self.column]
+        
+        # Use VectorBT native zscore if available
+        if VECTORBT_AVAILABLE and zscore is not None:
+            try:
+                zscore_result = zscore(values, window=self.window)
+                return zscore_result.fillna(0)
+            except Exception as e:
+                logger.warning(f"VectorBT zscore failed: {e}, using manual calculation")
+        
+        # Use VectorBTRollingOptimizer if available
+        if self.rolling_optimizer is not None:
+            try:
+                rolling_mean = self.rolling_optimizer.rolling_mean(values, self.window)
+                rolling_std = self.rolling_optimizer.rolling_std(values, self.window)
+                zscore_result = (values - rolling_mean) / rolling_std
+                return zscore_result.fillna(0)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
         rolling_mean = values.rolling(window=self.window).mean()
         rolling_std = values.rolling(window=self.window).std()
-
-        zscore = (values - rolling_mean) / rolling_std
-        return zscore.fillna(0)class VolatilityScalingGenerator(FeatureGenerator):
-    """Generator for volatility scaling features."""
+        zscore_result = (values - rolling_mean) / rolling_std
+        return zscore_result.fillna(0)class VolatilityScalingGenerator(FeatureGenerator):
+    """Generator for volatility scaling features with VectorBT optimization."""
 
     def __init__(self, window: int = 20, column: str = "close"):
         config = FeatureConfig(
@@ -471,18 +682,35 @@ class NormalizationFeatureGenerator(FeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.column = column
+        
+        # Initialize VectorBT optimizers
+        self.rolling_optimizer = None
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer not available: {e}")
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate volatility scaling feature."""
+        """Generate volatility scaling feature using VectorBT optimization."""
         if self.column not in data.columns or "close" not in data.columns:
             return pd.Series(np.zeros(len(data)), index=data.index)
 
         returns = data["close"].pct_change()
-        rolling_vol = returns.rolling(window=self.window).std()
+        
+        # Use VectorBTRollingOptimizer if available
+        if self.rolling_optimizer is not None:
+            try:
+                rolling_vol = self.rolling_optimizer.rolling_std(returns, self.window)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using pandas fallback")
+                rolling_vol = returns.rolling(window=self.window).std()
+        else:
+            rolling_vol = returns.rolling(window=self.window).std()
 
         if self.column == "close":
             scaled = returns / rolling_vol
@@ -528,6 +756,100 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     return (price_combined - price_combined.mean()) / price_combined.std()
 
         return pd.Series(np.zeros(len(data)), index=data.index)
+
+    def _generate_advanced_vectorbt_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Generate advanced normalization features using VectorBT native functions."""
+        features = {}
+        
+        if not VECTORBT_AVAILABLE:
+            return features
+        
+        try:
+            # Use VectorBT native functions for advanced normalization
+            for column in ["close", "volume", "high", "low", "open"]:
+                if column in data.columns:
+                    values = data[column]
+                    
+                    # VectorBT scale function
+                    if scale is not None:
+                        try:
+                            scaled = scale(values)
+                            features[f"vectorbt_scale_{column}"] = scaled.fillna(0).values
+                        except Exception as e:
+                            logger.warning(f"VectorBT scale failed for {column}: {e}")
+                    
+                    # VectorBT rank function
+                    if rank is not None:
+                        try:
+                            ranked = rank(values)
+                            features[f"vectorbt_rank_{column}"] = ranked.fillna(0).values
+                        except Exception as e:
+                            logger.warning(f"VectorBT rank failed for {column}: {e}")
+                    
+                    # VectorBT winsorize function
+                    if winsorize is not None:
+                        try:
+                            winsorized = winsorize(values, limits=(0.05, 0.05))
+                            features[f"vectorbt_winsorize_{column}"] = winsorized.fillna(0).values
+                        except Exception as e:
+                            logger.warning(f"VectorBT winsorize failed for {column}: {e}")
+                    
+                    # VectorBT clip function
+                    if clip is not None:
+                        try:
+                            clipped = clip(values, lower=values.quantile(0.01), upper=values.quantile(0.99))
+                            features[f"vectorbt_clip_{column}"] = clipped.fillna(0).values
+                        except Exception as e:
+                            logger.warning(f"VectorBT clip failed for {column}: {e}")
+                    
+                    # VectorBT quantile function
+                    if quantile is not None:
+                        try:
+                            quantiled = quantile(values, q=0.5)
+                            features[f"vectorbt_quantile_{column}"] = quantiled.fillna(0).values
+                        except Exception as e:
+                            logger.warning(f"VectorBT quantile failed for {column}: {e}")
+            
+            logger.debug(f"Generated {len(features)} advanced VectorBT normalization features")
+            
+        except Exception as e:
+            logger.warning(f"Advanced VectorBT features generation failed: {e}")
+        
+        return features
+
+    def get_performance_report(self) -> Dict[str, Any]:
+        """Get performance report for VectorBT optimizations."""
+        report = {
+            'vectorbt_available': VECTORBT_AVAILABLE,
+            'optimization_available': OPTIMIZATION_AVAILABLE,
+            'rolling_optimizer_available': self.rolling_optimizer is not None,
+            'vectorization_optimizer_available': self.vectorization_optimizer is not None
+        }
+        
+        if self.rolling_optimizer is not None:
+            try:
+                report['rolling_optimizer_stats'] = self.rolling_optimizer.get_performance_stats()
+            except Exception as e:
+                report['rolling_optimizer_error'] = str(e)
+        
+        if self.vectorization_optimizer is not None:
+            try:
+                report['vectorization_optimizer_stats'] = self.vectorization_optimizer.get_performance_report()
+            except Exception as e:
+                report['vectorization_optimizer_error'] = str(e)
+        
+        return report
+
+    def cleanup(self):
+        """Cleanup VectorBT optimizers."""
+        try:
+            if self.rolling_optimizer is not None:
+                self.rolling_optimizer.reset_stats()
+            if self.vectorization_optimizer is not None:
+                self.vectorization_optimizer.cleanup()
+            logger.info("🧹 VectorBT optimizers cleanup completed")
+        except Exception as e:
+            logger.warning(f"Cleanup error: {e}")
 
 # ============================================================================
 # BaseScaler-based Normalizers
@@ -749,7 +1071,31 @@ class MinMaxScaler(BaseScaler):
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
+        """Perform optimized VectorBT rolling operation with fallback to pandas."""
+        # Use VectorBTRollingOptimizer if available
+        if self.rolling_optimizer is not None:
+            try:
+                if operation == 'mean':
+                    return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
+                elif operation == 'std':
+                    return self.rolling_optimizer.rolling_std(data, window, **kwargs)
+                elif operation == 'var':
+                    return self.rolling_optimizer.rolling_var(data, window, **kwargs)
+                elif operation == 'min':
+                    return self.rolling_optimizer.rolling_min(data, window, **kwargs)
+                elif operation == 'max':
+                    return self.rolling_optimizer.rolling_max(data, window, **kwargs)
+                elif operation == 'sum':
+                    return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
+                elif operation == 'quantile':
+                    q = kwargs.get('q', 0.5)
+                    return self.rolling_optimizer.rolling_quantile(data, window, q=q, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
+        
+        # Fallback to basic VectorBT or pandas
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         

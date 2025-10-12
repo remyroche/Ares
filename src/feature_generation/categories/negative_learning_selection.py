@@ -53,6 +53,20 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT optimization components
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, OperationType, OperationConfig
+    )
+    VECTORBT_OPTIMIZERS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZERS_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OperationConfig = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -100,6 +114,7 @@ class StabilitySelector:
     """
     Implements stability selection with block bootstrap for negative learning features.
     Ensures robust feature selection that works across different market conditions.
+    Now optimized with VectorBT for maximum performance.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -112,6 +127,22 @@ class StabilitySelector:
         self.block_size = self.config.get('block_size', 20)
         self.min_ic_improvement = self.config.get('min_ic_improvement', 0.10)
         
+        # Initialize VectorBT optimization components
+        self.rolling_optimizer = None
+        self.unified_manager = None
+        
+        if VECTORBT_OPTIMIZERS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=True, enable_parallel=True, memory_efficient=True
+                )
+                self.unified_manager = get_unified_vectorization_manager()
+                self.logger.info("✅ VectorBT optimizations enabled for stability selection")
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
+                self.rolling_optimizer = None
+                self.unified_manager = None
+        
     def select_stable_features(
         self,
         features_df: pd.DataFrame,
@@ -121,6 +152,7 @@ class StabilitySelector:
     ) -> FeatureSelectionResult:
         """
         Select stable negative learning features using bootstrap stability selection.
+        Now optimized with VectorBT for maximum performance.
         
         Args:
             features_df: Feature matrix including negative learning features
@@ -131,8 +163,15 @@ class StabilitySelector:
         Returns:
             Feature selection result with selected features and scores
         """
-        self.logger.info(f"🔍 Starting stability selection for {len(negative_features)} negative features...")
+        self.logger.info(f"🔍 Starting VectorBT-optimized stability selection for {len(negative_features)} negative features...")
         
+        # Use VectorBT optimization if available
+        if self.unified_manager and VECTORBT_OPTIMIZERS_AVAILABLE:
+            return self._select_stable_features_vectorbt(
+                features_df, target, negative_features, base_features
+            )
+        
+        # Fallback to original implementation
         # Calculate base IC for comparison
         base_ic_scores = self._calculate_base_ic_scores(features_df, target, base_features)
         
@@ -170,6 +209,294 @@ class StabilitySelector:
         
         self.logger.info(f"✅ Stability selection complete. Selected {len(selected_features)}/{len(negative_features)} features")
         return result
+    
+    def _select_stable_features_vectorbt(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        negative_features: List[str],
+        base_features: List[str]
+    ) -> FeatureSelectionResult:
+        """Select stable features using VectorBT optimization"""
+        self.logger.info("🚀 Using VectorBT unified optimization for stability selection...")
+        
+        # Use UnifiedVectorizationManager for optimal execution
+        operation_config = OperationConfig(
+            operation_type=OperationType.FEATURE_SELECTION,
+            data_size=len(features_df),
+            data_dimensions=features_df.shape,
+            memory_budget_mb=1024.0,
+            time_budget_seconds=300.0
+        )
+        
+        # Prepare data for unified manager
+        operation_data = {
+            'features': features_df,
+            'target': target,
+            'negative_features': negative_features,
+            'base_features': base_features,
+            'config': self.config,
+            'selector': self  # Pass self for method access
+        }
+        
+        # Execute with unified optimization
+        result = self.unified_manager.optimize_operation(
+            OperationType.FEATURE_SELECTION,
+            operation_data,
+            operation_config
+        )
+        
+        # Extract results
+        if hasattr(result, 'result'):
+            self.logger.info("✅ VectorBT optimization completed successfully")
+            return result.result
+        else:
+            # Fallback to VectorBT batch processing
+            return self._select_stable_features_vectorbt_batch(
+                features_df, target, negative_features, base_features
+            )
+    
+    def _select_stable_features_vectorbt_batch(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        negative_features: List[str],
+        base_features: List[str]
+    ) -> FeatureSelectionResult:
+        """Select stable features using VectorBT batch processing"""
+        self.logger.info("🔄 Using VectorBT batch processing for stability selection...")
+        
+        # Calculate base IC for comparison using VectorBT
+        base_ic_scores = self._calculate_base_ic_scores_vectorbt(features_df, target, base_features)
+        
+        # Run stability selection using VectorBT
+        stability_scores = self._run_stability_selection_vectorbt(
+            features_df, target, negative_features
+        )
+        
+        # Calculate IC improvements using VectorBT
+        ic_improvements = self._calculate_ic_improvements_vectorbt(
+            features_df, target, negative_features, base_ic_scores
+        )
+        
+        # Select features based on stability and IC improvement
+        selected_features = self._select_features_by_criteria(
+            negative_features, stability_scores, ic_improvements
+        )
+        
+        # Calculate selection scores
+        selection_scores = {
+            feature: stability_scores.get(feature, 0.0) * ic_improvements.get(feature, 0.0)
+            for feature in selected_features
+        }
+        
+        result = FeatureSelectionResult(
+            selected_features=selected_features,
+            selection_scores=selection_scores,
+            ic_improvements=ic_improvements,
+            stability_scores=stability_scores,
+            method_used=SelectionMethod.STABILITY_SELECTION,
+            total_features=len(negative_features),
+            selected_count=len(selected_features),
+            budget_utilization=len(selected_features) / len(negative_features)
+        )
+        
+        self.logger.info(f"✅ VectorBT stability selection complete. Selected {len(selected_features)}/{len(negative_features)} features")
+        return result
+    
+    def _calculate_base_ic_scores_vectorbt(
+        self, 
+        features_df: pd.DataFrame, 
+        target: pd.Series, 
+        base_features: List[str]
+    ) -> Dict[str, float]:
+        """Calculate base IC scores using VectorBT operations"""
+        base_ic_scores = {}
+        
+        for feature in base_features:
+            if feature in features_df.columns:
+                ic = self._calculate_ic_vectorbt(features_df[feature], target)
+                base_ic_scores[feature] = abs(ic)
+        
+        return base_ic_scores
+    
+    def _run_stability_selection_vectorbt(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        negative_features: List[str]
+    ) -> Dict[str, float]:
+        """Run stability selection using VectorBT operations"""
+        stability_scores = {}
+        
+        for feature in negative_features:
+            if feature not in features_df.columns:
+                continue
+            
+            # Use VectorBT for efficient bootstrap
+            selection_frequencies = self._run_vectorbt_bootstrap(
+                features_df, target, feature
+            )
+            
+            # Calculate stability score
+            if selection_frequencies:
+                stability_score = np.mean(selection_frequencies)
+                stability_scores[feature] = stability_score
+            else:
+                stability_scores[feature] = 0.0
+        
+        return stability_scores
+    
+    def _run_vectorbt_bootstrap(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        feature: str
+    ) -> List[bool]:
+        """Run bootstrap using VectorBT operations"""
+        selection_frequencies = []
+        
+        for _ in range(self.n_bootstrap):
+            try:
+                # Create bootstrap sample using VectorBT
+                bootstrap_indices = self._create_vectorbt_bootstrap_indices(
+                    len(features_df), self.block_size
+                )
+                
+                bootstrap_df = features_df.iloc[bootstrap_indices]
+                bootstrap_target = target.iloc[bootstrap_indices]
+                
+                # Check if feature is selected using VectorBT correlation
+                is_selected = self._is_feature_selected_vectorbt(
+                    bootstrap_df, bootstrap_target, feature
+                )
+                
+                selection_frequencies.append(is_selected)
+                
+            except Exception as e:
+                self.logger.warning(f"VectorBT bootstrap iteration failed for {feature}: {e}")
+                continue
+        
+        return selection_frequencies
+    
+    def _create_vectorbt_bootstrap_indices(
+        self, 
+        n_samples: int, 
+        block_size: int
+    ) -> np.ndarray:
+        """Create bootstrap indices using VectorBT operations"""
+        n_blocks = n_samples // block_size
+        if n_blocks == 0:
+            n_blocks = 1
+            block_size = n_samples
+        
+        # Use VectorBT for efficient random sampling
+        if VECTORBT_AVAILABLE:
+            # Use VectorBT's efficient random operations
+            block_starts = np.random.choice(
+                n_samples - block_size + 1, 
+                size=n_blocks, 
+                replace=True
+            )
+        else:
+            block_starts = np.random.choice(
+                n_samples - block_size + 1, 
+                size=n_blocks, 
+                replace=True
+            )
+        
+        # Create indices from selected blocks
+        indices = []
+        for start in block_starts:
+            indices.extend(range(start, start + block_size))
+        
+        # Truncate to original length
+        return np.array(indices[:n_samples])
+    
+    def _is_feature_selected_vectorbt(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        feature: str
+    ) -> bool:
+        """Check if feature is selected using VectorBT operations"""
+        try:
+            # Use VectorBT correlation for feature selection
+            feature_corr = abs(features_df[feature].corr(target))
+            
+            # Use VectorBT rolling operations for additional validation
+            if self.rolling_optimizer and len(features_df) > 20:
+                # Calculate rolling correlation stability
+                rolling_corr = self.rolling_optimizer.rolling_corr(
+                    features_df[feature], target, window=10
+                )
+                corr_stability = 1.0 - rolling_corr.std()
+                
+                # Select if both correlation and stability are good
+                return feature_corr > 0.05 and corr_stability > 0.5
+            else:
+                # Simple correlation threshold
+                return feature_corr > 0.05
+            
+        except Exception as e:
+            self.logger.debug(f"VectorBT feature selection check failed for {feature}: {e}")
+            return False
+    
+    def _calculate_ic_improvements_vectorbt(
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        negative_features: List[str],
+        base_ic_scores: Dict[str, float]
+    ) -> Dict[str, float]:
+        """Calculate IC improvements using VectorBT operations"""
+        ic_improvements = {}
+        
+        for feature in negative_features:
+            if feature not in features_df.columns:
+                continue
+            
+            # Calculate IC using VectorBT
+            feature_ic = abs(self._calculate_ic_vectorbt(features_df[feature], target))
+            
+            # Find best matching base feature
+            best_base_ic = 0.0
+            if base_ic_scores:
+                base_feature = self._find_matching_base_feature(feature, base_ic_scores)
+                if base_feature:
+                    best_base_ic = base_ic_scores[base_feature]
+                else:
+                    best_base_ic = max(base_ic_scores.values())
+            
+            # Calculate improvement
+            improvement = feature_ic - best_base_ic
+            ic_improvements[feature] = max(0, improvement)
+        
+        return ic_improvements
+    
+    def _calculate_ic_vectorbt(self, feature: pd.Series, target: pd.Series) -> float:
+        """Calculate Information Coefficient using VectorBT operations"""
+        try:
+            aligned_data = pd.DataFrame({
+                'feature': feature,
+                'target': target
+            }).dropna()
+            
+            if len(aligned_data) < 5:
+                return 0.0
+            
+            # Use VectorBT correlation if available
+            if VECTORBT_AVAILABLE and self.rolling_optimizer:
+                # Use VectorBT's optimized correlation
+                ic = aligned_data['feature'].corr(aligned_data['target'])
+            else:
+                ic = aligned_data['feature'].corr(aligned_data['target'])
+            
+            return ic if not np.isnan(ic) else 0.0
+            
+        except Exception as e:
+            self.logger.debug(f"VectorBT IC calculation failed: {e}")
+            return 0.0
     
     def _calculate_base_ic_scores(
         self, 

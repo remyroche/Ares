@@ -118,6 +118,22 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
         self.enable_gpu = enable_gpu and CUPY_AVAILABLE
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
         
+        # Initialize VectorBT optimizers for consistent usage
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        if VECTORBT_AVAILABLE:
+            try:
+                from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                from ..utils.unified_optimization_system import get_unified_optimization_system
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.enable_gpu,
+                    enable_parallel=self.enable_parallel
+                )
+                self.unified_optimizer = get_unified_optimization_system()
+                logger.info("✅ VectorBT optimizers initialized for AdvancedVolatilityFeatures")
+            except Exception as e:
+                logger.warning(f"⚠️ VectorBT optimizer initialization failed: {e}")
+        
         # Create feature config
         feature_config = FeatureConfig(
             name="advanced_volatility_features",
@@ -140,6 +156,69 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
         )
         
         super().__init__(feature_config, enable_gpu=self.enable_gpu, enable_parallel=self.enable_parallel)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if self.vectorbt_optimizer:
+            try:
+                if operation == 'mean':
+                    return self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                elif operation == 'std':
+                    return self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                elif operation == 'var':
+                    return self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                elif operation == 'min':
+                    return self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                elif operation == 'max':
+                    return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                elif operation == 'sum':
+                    return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    if func is not None:
+                        return self.vectorbt_optimizer.rolling_apply(data, func, window, **kwargs)
+                    else:
+                        raise ValueError("Function must be provided for rolling apply operation")
+                elif operation == 'quantile':
+                    q = kwargs.get('q', 0.5)
+                    return self.vectorbt_optimizer.rolling_quantile(data, window, q=q, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+                return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        rolling_obj = data.rolling(window=window, **kwargs)
+        
+        if operation == 'mean':
+            return rolling_obj.mean()
+        elif operation == 'std':
+            return rolling_obj.std()
+        elif operation == 'var':
+            return rolling_obj.var()
+        elif operation == 'min':
+            return rolling_obj.min()
+        elif operation == 'max':
+            return rolling_obj.max()
+        elif operation == 'sum':
+            return rolling_obj.sum()
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            if func is not None:
+                return rolling_obj.apply(func)
+            else:
+                raise ValueError("Function must be provided for rolling apply operation")
+        elif operation == 'quantile':
+            q = kwargs.get('q', 0.5)
+            return rolling_obj.quantile(q)
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def generate_features(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """
@@ -202,23 +281,24 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
                 # ATR as percentage of close price
                 features[f'atr_pct_{period}'] = (atr.atr / data['close']) * 100
                 
-                # ATR moving averages
-                features[f'atr_sma_{period}'] = rolling_mean(atr.atr, window=period)
+                # ATR moving averages - use optimized rolling operations
+                features[f'atr_sma_{period}'] = self._vectorbt_rolling_operation(atr.atr, 'mean', period)
                 features[f'atr_ema_{period}'] = vbt.MA.run(atr.atr, window=period, short_window=period//2).ma
                 
                 # ATR volatility (volatility of volatility)
-                features[f'atr_vol_{period}'] = rolling_std(atr.atr, window=period)
+                features[f'atr_vol_{period}'] = self._vectorbt_rolling_operation(atr.atr, 'std', period)
                 
                 # ATR position relative to recent range
-                atr_high = rolling_max(atr.atr, window=period)
-                atr_low = rolling_min(atr.atr, window=period)
+                atr_high = self._vectorbt_rolling_operation(atr.atr, 'max', period)
+                atr_low = self._vectorbt_rolling_operation(atr.atr, 'min', period)
                 features[f'atr_position_{period}'] = (atr.atr - atr_low) / (atr_high - atr_low)
                 
-                # ATR trend
-                features[f'atr_trend_{period}'] = rolling_apply(
+                # ATR trend - use optimized rolling apply
+                features[f'atr_trend_{period}'] = self._vectorbt_rolling_operation(
                     atr.atr, 
-                    lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1, 
-                    window=period//2
+                    'apply', 
+                    period//2,
+                    func=lambda x: 1 if x.iloc[-1] > x.iloc[0] else -1
                 )
             
             return features
@@ -307,39 +387,47 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     def _generate_volatility_clustering_features(self, data: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
         """Generate volatility clustering detection features."""
         try:
-            # Calculate returns using VectorBT
-            returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+            # Calculate returns using optimized rolling apply
+            returns = self._vectorbt_rolling_operation(
+                data['close'], 
+                'apply', 
+                1,
+                func=lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0
+            )
             
-            # Volatility clustering indicators
-            vol_short = rolling_std(returns, window=5)
-            vol_long = rolling_std(returns, window=20)
+            # Volatility clustering indicators - use optimized rolling operations
+            vol_short = self._vectorbt_rolling_operation(returns, 'std', 5)
+            vol_long = self._vectorbt_rolling_operation(returns, 'std', 20)
             
             # Volatility clustering ratio
             features['vol_cluster_ratio'] = vol_short / vol_long
             
-            # Volatility clustering momentum
-            features['vol_cluster_momentum'] = rolling_apply(
+            # Volatility clustering momentum - use optimized rolling apply
+            features['vol_cluster_momentum'] = self._vectorbt_rolling_operation(
                 vol_short, 
-                lambda x: x.iloc[-1] - x.iloc[0], 
-                window=10
+                'apply', 
+                10,
+                func=lambda x: x.iloc[-1] - x.iloc[0]
             )
             
-            # Volatility clustering persistence
-            features['vol_cluster_persistence'] = rolling_apply(
+            # Volatility clustering persistence - use optimized rolling apply
+            features['vol_cluster_persistence'] = self._vectorbt_rolling_operation(
                 vol_short, 
-                lambda x: (x > rolling_mean(x, window=5)).sum() / len(x), 
-                window=20
+                'apply', 
+                20,
+                func=lambda x: (x > self._vectorbt_rolling_operation(x, 'mean', 5)).sum() / len(x)
             )
             
             # Volatility clustering regime detection
             vol_threshold = vol_long.quantile(0.7)
             features['vol_cluster_regime'] = (vol_short > vol_threshold).astype(int)
             
-            # Volatility clustering intensity
-            features['vol_cluster_intensity'] = rolling_apply(
+            # Volatility clustering intensity - use optimized rolling apply
+            features['vol_cluster_intensity'] = self._vectorbt_rolling_operation(
                 returns.abs(), 
-                lambda x: x.sum(), 
-                window=10
+                'apply', 
+                10,
+                func=lambda x: x.sum()
             )
             
             return features

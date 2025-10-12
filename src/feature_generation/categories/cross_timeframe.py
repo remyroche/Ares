@@ -11,11 +11,15 @@ Key Features:
 - Memory-efficient processing
 - GPU acceleration support
 - Comprehensive cross-timeframe indicators
+- UnifiedVectorizationManager integration
+- Advanced performance monitoring
 """
 
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union
+import logging
+import warnings
+from typing import Any, Dict, List, Optional, Union, Tuple
 from scipy import stats
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -56,9 +60,18 @@ except ImportError:
     get_vectorbt_rolling_optimizer = None
     VectorBTRollingOptimizer = None
 
+# Unified Vectorization Manager
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer, VectorizationOptimizer, VectorizationConfig
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_vectorization_optimizer = None
+    VectorizationOptimizer = None
+    VectorizationConfig = None
+
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
@@ -79,11 +92,41 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
-        # Initialize VectorBT rolling optimizer
+        # Initialize VectorBT rolling optimizer with enhanced settings
         if ROLLING_OPTIMIZER_AVAILABLE:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=True, 
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=5000
+            )
         else:
             self.rolling_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            vectorization_config = VectorizationConfig(
+                chunk_size=10000,
+                enable_gpu_acceleration=True,
+                enable_parallel=True,
+                vectorization_strategy="aggressive",
+                enable_memory_pooling=True
+            )
+            self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
+        else:
+            self.vectorization_manager = None
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'unified_vectorization_operations': 0,
+            'chunked_operations': 0,
+            'gpu_operations': 0,
+            'memory_optimizations': 0,
+            'total_operations': 0,
+            'total_execution_time': 0.0,
+            'cross_timeframe_features_generated': 0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -110,22 +153,140 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             gpu_accelerated=True
         )
 
-# Cross-Timeframe Momentum Generator
-    
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+        """Optimize DataFrame for vectorized processing using Unified Vectorization Manager."""
+        if self.vectorization_manager:
+            return self.vectorization_manager.optimize_dataframe_processing(data)
+        elif hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
             return self.vectorization_optimizer.optimize_dataframe_processing(data)
         return data
     
     def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
                                     windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
         """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+        if self.vectorization_manager:
+            return self.vectorization_manager.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        elif hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
             return self.vectorization_optimizer.vectorized_rolling_operations(
                 data, operations, windows, columns
             )
         return data
+    
+    def generate_enhanced_cross_timeframe_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate comprehensive cross-timeframe features using VectorBT optimization."""
+        import time
+        start_time = time.time()
+        
+        features = {}
+        
+        try:
+            # Optimize data for processing
+            optimized_data = self.optimize_dataframe_processing(data)
+            
+            # Generate features using VectorBT rolling optimizer
+            if self.rolling_optimizer:
+                features.update(self._generate_vectorbt_optimized_features(optimized_data, **kwargs))
+                self.performance_stats['vectorbt_operations'] += 1
+            
+            # Generate features using unified vectorization manager
+            if self.vectorization_manager:
+                features.update(self._generate_unified_vectorization_features(optimized_data, **kwargs))
+                self.performance_stats['unified_vectorization_operations'] += 1
+            
+            # Update performance stats
+            self.performance_stats['total_execution_time'] += time.time() - start_time
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['cross_timeframe_features_generated'] += len(features)
+            
+            logger.info(f"Generated {len(features)} cross-timeframe features in {time.time() - start_time:.3f}s")
+            
+        except Exception as e:
+            logger.error(f"Error generating enhanced cross-timeframe features: {e}")
+        
+        return features
+    
+    def _generate_vectorbt_optimized_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate features using VectorBT rolling optimizer."""
+        features = {}
+        
+        try:
+            timeframes = self.config.parameters.get("timeframes", [1, 5, 15, 30, 60])
+            
+            for tf in timeframes:
+                # Momentum features
+                if 'close' in data.columns:
+                    momentum = self.rolling_optimizer.rolling_apply(
+                        data['close'], 
+                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 
+                        window=tf
+                    )
+                    features[f'vectorbt_momentum_{tf}'] = momentum
+                
+                # Volatility features
+                if 'close' in data.columns:
+                    returns = data['close'].pct_change().fillna(0)
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=tf)
+                    features[f'vectorbt_volatility_{tf}'] = volatility
+                
+                # Volume features
+                if 'volume' in data.columns:
+                    volume_ma = self.rolling_optimizer.rolling_mean(data['volume'], window=tf)
+                    features[f'vectorbt_volume_ma_{tf}'] = volume_ma
+                
+        except Exception as e:
+            logger.warning(f"VectorBT optimized features generation failed: {e}")
+        
+        return features
+    
+    def _generate_unified_vectorization_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
+        """Generate features using unified vectorization manager."""
+        features = {}
+        
+        try:
+            # Use unified vectorization for complex multi-timeframe operations
+            operations = ['mean', 'std', 'var', 'min', 'max']
+            windows = [5, 15, 30, 60]
+            
+            vectorized_result = self.vectorization_manager.vectorized_rolling_operations(
+                data, operations, windows, ['close'] if 'close' in data.columns else None
+            )
+            
+            # Extract features from vectorized result
+            for col in vectorized_result.columns:
+                if col != 'close':  # Skip original column
+                    features[f'unified_{col}'] = vectorized_result[col]
+                
+        except Exception as e:
+            logger.warning(f"Unified vectorization features generation failed: {e}")
+        
+        return features
+    
+    def get_performance_report(self) -> Dict[str, Any]:
+        """Get comprehensive performance report."""
+        if self.vectorization_manager:
+            vectorization_report = self.vectorization_manager.get_performance_report()
+        else:
+            vectorization_report = {}
+        
+        if self.rolling_optimizer:
+            rolling_stats = self.rolling_optimizer.get_performance_stats()
+        else:
+            rolling_stats = {}
+        
+        return {
+            'cross_timeframe_performance': self.performance_stats.copy(),
+            'vectorization_report': vectorization_report,
+            'rolling_optimizer_stats': rolling_stats,
+            'optimization_availability': {
+                'vectorbt_available': VECTORBT_AVAILABLE,
+                'rolling_optimizer_available': ROLLING_OPTIMIZER_AVAILABLE,
+                'unified_vectorization_available': UNIFIED_VECTORIZATION_AVAILABLE
+            }
+        }
+
+# Cross-Timeframe Momentum Generator
 
 class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe momentum features with VectorBT optimization."""
@@ -153,16 +314,38 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixi
         self.timeframe = timeframe
         self.base_calculation = base_calculation
         
-        # Initialize VectorBT rolling optimizer
+        # Initialize VectorBT rolling optimizer with enhanced settings
         if ROLLING_OPTIMIZER_AVAILABLE:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=True, 
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=2000
+            )
         else:
             self.rolling_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            vectorization_config = VectorizationConfig(
+                chunk_size=5000,
+                enable_gpu_acceleration=True,
+                enable_parallel=True,
+                vectorization_strategy="aggressive"
+            )
+            self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
+        else:
+            self.vectorization_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate cross-timeframe momentum using VectorBT optimization."""
+        import time
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
+        if self.vectorization_manager:
+            data = self.vectorization_manager.optimize_dataframe_processing(data)
+        elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         if data.empty:
@@ -183,29 +366,36 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixi
                         return (x.iloc[-1] - x.iloc[0]) / x.iloc[0]
                     
                     momentum = self.rolling_optimizer.rolling_apply(base_values, window=self.timeframe, func=momentum_func)
-                    self.performance_stats['vectorbt_operations'] += 1
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
                     return momentum
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
-                    self.performance_stats['pandas_fallbacks'] += 1
+                    logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
             
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
                 try:
                     momentum = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe)
-                    self.performance_stats['vectorbt_operations'] += 1
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
                     return momentum
                 except Exception as e:
-                    self.logger.warning(f"VectorBT momentum calculation failed: {e}, using pandas fallback")
-                    self.performance_stats['pandas_fallbacks'] += 1
+                    logger.warning(f"VectorBT momentum calculation failed: {e}, using pandas fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
             
             # Final fallback to pandas
             momentum = base_values.rolling(window=self.timeframe).apply(lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0)
             return momentum
             
         except Exception as e:
-            self.logger.error(f"Error generating cross-timeframe momentum: {e}")
+            logger.error(f"Error generating cross-timeframe momentum: {e}")
             return pd.Series(np.nan, index=data.index, name=f'ctf_momentum_{self.timeframe}')
+        finally:
+            if hasattr(self, 'performance_stats'):
+                self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Volatility Generator
     
@@ -250,16 +440,38 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
         self.timeframe = timeframe
         self.base_calculation = base_calculation
         
-        # Initialize VectorBT rolling optimizer
+        # Initialize VectorBT rolling optimizer with enhanced settings
         if ROLLING_OPTIMIZER_AVAILABLE:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=True, 
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=2000
+            )
         else:
             self.rolling_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            vectorization_config = VectorizationConfig(
+                chunk_size=5000,
+                enable_gpu_acceleration=True,
+                enable_parallel=True,
+                vectorization_strategy="aggressive"
+            )
+            self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
+        else:
+            self.vectorization_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate cross-timeframe volatility using VectorBT optimization."""
+        import time
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
+        if self.vectorization_manager:
+            data = self.vectorization_manager.optimize_dataframe_processing(data)
+        elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         if data.empty:
@@ -275,29 +487,36 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
             if self.rolling_optimizer:
                 try:
                     volatility = self.rolling_optimizer.rolling_std(base_values, window=self.timeframe)
-                    self.performance_stats['vectorbt_operations'] += 1
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
                     return volatility
                 except Exception as e:
-                    self.logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
-                    self.performance_stats['pandas_fallbacks'] += 1
+                    logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
             
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
                 try:
                     volatility = rolling_std(base_values, window=self.timeframe)
-                    self.performance_stats['vectorbt_operations'] += 1
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
                     return volatility
                 except Exception as e:
-                    self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
-                    self.performance_stats['pandas_fallbacks'] += 1
+                    logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
             
             # Final fallback to pandas
             volatility = base_values.rolling(window=self.timeframe).std()
             return volatility
             
         except Exception as e:
-            self.logger.error(f"Error generating cross-timeframe volatility: {e}")
+            logger.error(f"Error generating cross-timeframe volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'ctf_volatility_{self.timeframe}')
+        finally:
+            if hasattr(self, 'performance_stats'):
+                self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Volume Generator
     
@@ -340,28 +559,84 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin)
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT rolling optimizer with enhanced settings
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=True, 
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=2000
+            )
+        else:
+            self.rolling_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            vectorization_config = VectorizationConfig(
+                chunk_size=5000,
+                enable_gpu_acceleration=True,
+                enable_parallel=True,
+                vectorization_strategy="aggressive"
+            )
+            self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
+        else:
+            self.vectorization_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate cross-timeframe volume using VectorBT optimization."""
+        import time
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
+        if self.vectorization_manager:
+            data = self.vectorization_manager.optimize_dataframe_processing(data)
+        elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate cross-timeframe volume using VectorBT."""
-        base_values = self.base_calculator.calculate(data)
-        
-        # Try VectorBT rolling optimizer first
-        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
-            try:
-                volume_ma = self.rolling_optimizer.rolling_mean(base_values, window=self.timeframe)
-                self.performance_stats['vectorbt_operations'] += 1
-                return volume_ma
-            except Exception as e:
-                self.logger.warning(f"VectorBT cross-timeframe volume calculation failed: {e}, using fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
-        
-        # Fallback to VectorBT direct operations
-        volume_ma = rolling_mean(base_values, window=self.timeframe)
-        return volume_ma
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'ctf_volume_{self.timeframe}')
+
+        try:
+            base_values = self.base_calculator.calculate(data)
+            
+            if base_values.empty:
+                return pd.Series(dtype=float, index=data.index, name=f'ctf_volume_{self.timeframe}')
+            
+            # Use VectorBT rolling optimizer if available
+            if self.rolling_optimizer:
+                try:
+                    volume_ma = self.rolling_optimizer.rolling_mean(base_values, window=self.timeframe)
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
+                    return volume_ma
+                except Exception as e:
+                    logger.warning(f"VectorBT rolling optimizer failed: {e}, using fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
+            
+            # Fallback to VectorBT direct operations
+            if VECTORBT_AVAILABLE:
+                try:
+                    volume_ma = rolling_mean(base_values, window=self.timeframe)
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['vectorbt_operations'] += 1
+                    return volume_ma
+                except Exception as e:
+                    logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
+                    if hasattr(self, 'performance_stats'):
+                        self.performance_stats['pandas_fallbacks'] += 1
+            
+            # Final fallback to pandas
+            volume_ma = base_values.rolling(window=self.timeframe).mean()
+            return volume_ma
+            
+        except Exception as e:
+            logger.error(f"Error generating cross-timeframe volume: {e}")
+            return pd.Series(np.nan, index=data.index, name=f'ctf_volume_{self.timeframe}')
+        finally:
+            if hasattr(self, 'performance_stats'):
+                self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Trend Generator
     

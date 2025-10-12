@@ -88,6 +88,22 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT rolling optimizer for enhanced performance
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
+# Import VectorBT unified framework for feature selection
+try:
+    from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+    VECTORBT_FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    VECTORBT_FEATURE_SELECTION_AVAILABLE = False
+    VectorBTUnifiedFramework = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -450,6 +466,21 @@ class TacticianPIDFeatureGenerator:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild('TacticianPIDFeatureGenerator')
+        
+        # Initialize VectorBT rolling optimizer for enhanced performance
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            self.rolling_optimizer = VectorBTRollingOptimizer(
+                enable_gpu=False,  # Disable GPU for compatibility
+                enable_parallel=True,
+                memory_efficient=True,
+                chunk_size=1000,
+                fast_fail=True,
+                enable_logging=True
+            )
+            tprint_success("✅ VectorBT rolling optimizer initialized for PID features")
+        else:
+            self.rolling_optimizer = None
+            tprint_warning("⚠️ VectorBT rolling optimizer not available, using pandas fallback")
     
     def generate_pid_features(
         self, 
@@ -487,76 +518,125 @@ class TacticianPIDFeatureGenerator:
         return features
     
     def _generate_price_pid_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate price-based PID features."""
+        """Generate price-based PID features using VectorBT optimization."""
         features = pd.DataFrame(index=data.index)
         
         # Price error (difference from moving average)
         for window in [5, 10, 20, 50]:
-            ma = data['close'].rolling(window).mean()
-            error = data['close'] - ma
-            features[f'price_error_{window}'] = error
-            
-            # Proportional term
-            features[f'price_p_{window}'] = error
-            
-            # Integral term (cumulative error)
-            features[f'price_i_{window}'] = error.rolling(window).sum()
-            
-            # Derivative term (error rate of change)
-            features[f'price_d_{window}'] = error.diff()
+            if self.rolling_optimizer:
+                # Use VectorBT rolling optimizer for enhanced performance
+                ma = self.rolling_optimizer.rolling_mean(data['close'], window)
+                error = data['close'] - ma
+                features[f'price_error_{window}'] = error
+                
+                # Proportional term
+                features[f'price_p_{window}'] = error
+                
+                # Integral term (cumulative error) - use VectorBT rolling sum
+                features[f'price_i_{window}'] = self.rolling_optimizer.rolling_sum(error, window)
+                
+                # Derivative term (error rate of change)
+                features[f'price_d_{window}'] = error.diff()
+            else:
+                # Fallback to pandas
+                ma = data['close'].rolling(window).mean()
+                error = data['close'] - ma
+                features[f'price_error_{window}'] = error
+                features[f'price_p_{window}'] = error
+                features[f'price_i_{window}'] = error.rolling(window).sum()
+                features[f'price_d_{window}'] = error.diff()
         
         # Price momentum PID
         for window in [3, 6, 12]:
             momentum = data['close'].pct_change(window)
             features[f'momentum_p_{window}'] = momentum
-            features[f'momentum_i_{window}'] = momentum.rolling(window).sum()
+            
+            if self.rolling_optimizer:
+                # Use VectorBT rolling sum for integral term
+                features[f'momentum_i_{window}'] = self.rolling_optimizer.rolling_sum(momentum, window)
+            else:
+                features[f'momentum_i_{window}'] = momentum.rolling(window).sum()
+            
             features[f'momentum_d_{window}'] = momentum.diff()
         
         return features
     
     def _generate_volume_pid_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate volume-based PID features."""
+        """Generate volume-based PID features using VectorBT optimization."""
         features = pd.DataFrame(index=data.index)
         
         # Volume error (difference from average volume)
         for window in [5, 10, 20]:
-            avg_volume = data['volume'].rolling(window).mean()
-            volume_error = data['volume'] - avg_volume
-            features[f'volume_error_{window}'] = volume_error
-            
-            # Volume PID terms
-            features[f'volume_p_{window}'] = volume_error
-            features[f'volume_i_{window}'] = volume_error.rolling(window).sum()
-            features[f'volume_d_{window}'] = volume_error.diff()
+            if self.rolling_optimizer:
+                # Use VectorBT rolling optimizer for enhanced performance
+                avg_volume = self.rolling_optimizer.rolling_mean(data['volume'], window)
+                volume_error = data['volume'] - avg_volume
+                features[f'volume_error_{window}'] = volume_error
+                
+                # Volume PID terms
+                features[f'volume_p_{window}'] = volume_error
+                features[f'volume_i_{window}'] = self.rolling_optimizer.rolling_sum(volume_error, window)
+                features[f'volume_d_{window}'] = volume_error.diff()
+            else:
+                # Fallback to pandas
+                avg_volume = data['volume'].rolling(window).mean()
+                volume_error = data['volume'] - avg_volume
+                features[f'volume_error_{window}'] = volume_error
+                features[f'volume_p_{window}'] = volume_error
+                features[f'volume_i_{window}'] = volume_error.rolling(window).sum()
+                features[f'volume_d_{window}'] = volume_error.diff()
         
         # Volume-price relationship PID
-        vwap = (data['volume'] * data['close']).rolling(20).sum() / data['volume'].rolling(20).sum()
-        vwap_error = data['close'] - vwap
-        features['vwap_error'] = vwap_error
-        features['vwap_p'] = vwap_error
-        features['vwap_i'] = vwap_error.rolling(20).sum()
-        features['vwap_d'] = vwap_error.diff()
+        if self.rolling_optimizer:
+            # Use VectorBT for VWAP calculation
+            volume_close = data['volume'] * data['close']
+            vwap = self.rolling_optimizer.rolling_sum(volume_close, 20) / self.rolling_optimizer.rolling_sum(data['volume'], 20)
+            vwap_error = data['close'] - vwap
+            features['vwap_error'] = vwap_error
+            features['vwap_p'] = vwap_error
+            features['vwap_i'] = self.rolling_optimizer.rolling_sum(vwap_error, 20)
+            features['vwap_d'] = vwap_error.diff()
+        else:
+            # Fallback to pandas
+            vwap = (data['volume'] * data['close']).rolling(20).sum() / data['volume'].rolling(20).sum()
+            vwap_error = data['close'] - vwap
+            features['vwap_error'] = vwap_error
+            features['vwap_p'] = vwap_error
+            features['vwap_i'] = vwap_error.rolling(20).sum()
+            features['vwap_d'] = vwap_error.diff()
         
         return features
     
     def _generate_volatility_pid_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate volatility-based PID features."""
+        """Generate volatility-based PID features using VectorBT optimization."""
         features = pd.DataFrame(index=data.index)
         
         # Calculate rolling volatility
         for window in [5, 10, 20]:
             returns = data['close'].pct_change()
-            volatility = returns.rolling(window).std()
             
-            # Volatility error (difference from target volatility)
-            target_vol = volatility.rolling(window * 2).mean()
-            vol_error = volatility - target_vol
-            features[f'vol_error_{window}'] = vol_error
-            
-            # Volatility PID terms
-            features[f'vol_p_{window}'] = vol_error
-            features[f'vol_i_{window}'] = vol_error.rolling(window).sum()
-            features[f'vol_d_{window}'] = vol_error.diff()
+            if self.rolling_optimizer:
+                # Use VectorBT rolling optimizer for enhanced performance
+                volatility = self.rolling_optimizer.rolling_std(returns, window)
+                
+                # Volatility error (difference from target volatility)
+                target_vol = self.rolling_optimizer.rolling_mean(volatility, window * 2)
+                vol_error = volatility - target_vol
+                features[f'vol_error_{window}'] = vol_error
+                
+                # Volatility PID terms
+                features[f'vol_p_{window}'] = vol_error
+                features[f'vol_i_{window}'] = self.rolling_optimizer.rolling_sum(vol_error, window)
+                features[f'vol_d_{window}'] = vol_error.diff()
+            else:
+                # Fallback to pandas
+                volatility = returns.rolling(window).std()
+                target_vol = volatility.rolling(window * 2).mean()
+                vol_error = volatility - target_vol
+                features[f'vol_error_{window}'] = vol_error
+                features[f'vol_p_{window}'] = vol_error
+                features[f'vol_i_{window}'] = vol_error.rolling(window).sum()
+                features[f'vol_d_{window}'] = vol_error.diff()
         
         return features
     
@@ -635,6 +715,29 @@ class EnhancedTacticianPreMLOrchestrator:
         try:
             self.config = config or EnhancedTacticianPreMLConfig()
             self.logger = system_logger.getChild('EnhancedTacticianPreMLOrchestrator')
+            
+            # Initialize VectorBT rolling optimizer for enhanced performance
+            if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                self.rolling_optimizer = VectorBTRollingOptimizer(
+                    enable_gpu=False,  # Disable GPU for compatibility
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000,
+                    fast_fail=True,
+                    enable_logging=True
+                )
+                tprint_success("✅ VectorBT rolling optimizer initialized for orchestrator")
+            else:
+                self.rolling_optimizer = None
+                tprint_warning("⚠️ VectorBT rolling optimizer not available, using pandas fallback")
+            
+            # Initialize VectorBT feature selection framework
+            if VECTORBT_FEATURE_SELECTION_AVAILABLE:
+                self.feature_selector = VectorBTUnifiedFramework()
+                tprint_success("✅ VectorBT feature selection framework initialized")
+            else:
+                self.feature_selector = None
+                tprint_warning("⚠️ VectorBT feature selection framework not available, using fallback")
             
             # Initialize components
             self.labeler = TacticianDifferentiatedLabeler(self.config.labeling_config)
@@ -959,7 +1062,7 @@ class EnhancedTacticianPreMLOrchestrator:
     
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the orchestrator."""
-        return {
+        metrics = {
             'config': {
                 'timeframe': self.config.timeframe,
                 'analyst_confidence_threshold': self.config.analyst_confidence_threshold,
@@ -977,9 +1080,24 @@ class EnhancedTacticianPreMLOrchestrator:
             'component_availability': {
                 'pre_training_pipeline': self.pre_training_pipeline is not None,
                 'differentiated_labeler': self.labeler is not None,
-                'pid_generator': self.pid_generator is not None
+                'pid_generator': self.pid_generator is not None,
+                'vectorbt_rolling_optimizer': self.rolling_optimizer is not None,
+                'vectorbt_feature_selector': self.feature_selector is not None
             }
         }
+        
+        # Add VectorBT performance stats
+        if self.rolling_optimizer:
+            metrics['vectorbt_rolling_stats'] = self.rolling_optimizer.get_performance_stats()
+        
+        if self.feature_selector:
+            metrics['vectorbt_feature_selection_stats'] = self.feature_selector.get_performance_stats()
+        
+        # Add PID generator VectorBT stats if available
+        if hasattr(self.pid_generator, 'rolling_optimizer') and self.pid_generator.rolling_optimizer:
+            metrics['pid_generator_vectorbt_stats'] = self.pid_generator.rolling_optimizer.get_performance_stats()
+        
+        return metrics
 
 
 # Convenience function for external usage
@@ -1008,33 +1126,34 @@ async def execute_enhanced_tactician_pre_ml_orchestration(
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (self.rolling_optimizer is not None and 
+                len(data) >= 1000 and 
                 VECTORBT_AVAILABLE)
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
+        """Perform VectorBT rolling operation using rolling optimizer with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
         try:
+            # Use the rolling optimizer for enhanced performance
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_std(data, window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_var(data, window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_min(data, window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_max(data, window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT rolling optimizer operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 

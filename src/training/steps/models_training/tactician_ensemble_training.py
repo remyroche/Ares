@@ -84,6 +84,28 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     COMMON_OPS_AVAILABLE = False
 
+# Import VectorBT ensemble optimizer for enhanced performance
+try:
+    from src.utils.ml_common.ensembles.vectorbt_ensemble_optimizer import (
+        VectorBTEnsembleOptimizer, EnsembleConfig, EnsembleStrategy
+    )
+    VECTORBT_ENSEMBLE_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT ensemble optimizer not available: {e}")
+    VECTORBT_ENSEMBLE_OPTIMIZER_AVAILABLE = False
+    VectorBTEnsembleOptimizer = None
+    EnsembleConfig = None
+    EnsembleStrategy = None
+
+# Import VectorBT rolling optimizer for feature processing
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT rolling optimizer not available: {e}")
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
 # Import enhanced validation utilities
 try:
     from src.training.steps.pre_training.utils.validation_utils import (
@@ -175,6 +197,37 @@ class TacticianEnsembleTrainingStep:
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
 
+            # Initialize VectorBT ensemble optimizer for enhanced performance
+            if VECTORBT_ENSEMBLE_OPTIMIZER_AVAILABLE:
+                ensemble_config = EnsembleConfig(
+                    strategy=EnsembleStrategy.PORTFOLIO_OPTIMIZATION,
+                    use_vectorbt=True,
+                    enable_portfolio_optimization=True,
+                    enable_parallel=True,
+                    n_estimators=10,
+                    cv_folds=5
+                )
+                self.ensemble_optimizer = VectorBTEnsembleOptimizer(ensemble_config)
+                tprint_success("✅ VectorBT ensemble optimizer initialized")
+            else:
+                self.ensemble_optimizer = None
+                tprint_warning("⚠️ VectorBT ensemble optimizer not available, using fallback")
+
+            # Initialize VectorBT rolling optimizer for feature processing
+            if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                self.rolling_optimizer = VectorBTRollingOptimizer(
+                    enable_gpu=False,  # Disable GPU for compatibility
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000,
+                    fast_fail=True,
+                    enable_logging=True
+                )
+                tprint_success("✅ VectorBT rolling optimizer initialized for ensemble training")
+            else:
+                self.rolling_optimizer = None
+                tprint_warning("⚠️ VectorBT rolling optimizer not available, using pandas fallback")
+
             tprint_success("✅ TacticianEnsembleTrainingStep initialized successfully")
 
         except Exception as e:
@@ -245,6 +298,9 @@ class TacticianEnsembleTrainingStep:
             X_enhanced = await self._create_enhanced_feature_set(
                 X, training_data, base_models, **kwargs
             )
+            
+            # Optimize features with VectorBT if available
+            X_enhanced = self._optimize_features_with_vectorbt(X_enhanced, feature_columns)
 
             # Train ensemble models
             if ENSEMBLE_TRAINING_AVAILABLE:
@@ -469,37 +525,112 @@ class TacticianEnsembleTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train ensemble directly."""
+        """Train ensemble using VectorBT optimization if available."""
         try:
-            from sklearn.ensemble import GradientBoostingRegressor
+            # Try VectorBT ensemble optimization first
+            if self.ensemble_optimizer and len(kwargs.get('base_models', {})) > 0:
+                tprint_info("🚀 Using VectorBT ensemble optimization...")
+                
+                # Convert base models to list
+                base_models_list = list(kwargs['base_models'].values())
+                
+                # Use VectorBT ensemble optimizer
+                ensemble_result = self.ensemble_optimizer.optimize_ensemble(
+                    X, y, base_models_list, 
+                    timestamps=kwargs.get('timestamps')
+                )
+                
+                # Create metadata
+                metadata = getattr(self, '_enhanced_metadata', {
+                    'base_features_count': X.shape[1],
+                    'hmm_features_count': 0,
+                    'analyst_features_count': 0,
+                    'oof_predictions_count': 0,
+                    'total_features': X.shape[1],
+                    'vectorbt_optimization': True,
+                    'strategy_used': ensemble_result.strategy_used.value,
+                    'optimization_time': ensemble_result.optimization_time
+                })
+                
+                return {
+                    'models': {'vectorbt_ensemble': ensemble_result.ensemble_model},
+                    'metrics': {
+                        'model_type': 'VectorBTEnsemble',
+                        'strategy_used': ensemble_result.strategy_used.value,
+                        'performance_scores': ensemble_result.performance_scores,
+                        'optimization_time': ensemble_result.optimization_time
+                    },
+                    'metadata': metadata
+                }
+            else:
+                # Fallback to simple ensemble model
+                tprint_info("🔄 Using fallback ensemble training...")
+                from sklearn.ensemble import GradientBoostingRegressor
 
-            # Simple ensemble model for now
-            ensemble_model = GradientBoostingRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
-                random_state=42
-            )
+                # Simple ensemble model for now
+                ensemble_model = GradientBoostingRegressor(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    random_state=42
+                )
 
-            ensemble_model.fit(X, y.ravel(), sample_weight=sample_weight)
+                ensemble_model.fit(X, y.ravel(), sample_weight=sample_weight)
 
-            # Create metadata
-            metadata = getattr(self, '_enhanced_metadata', {
-                'base_features_count': X.shape[1],
-                'hmm_features_count': 0,
-                'analyst_features_count': 0,
-                'oof_predictions_count': 0,
-                'total_features': X.shape[1]
-            })
+                # Create metadata
+                metadata = getattr(self, '_enhanced_metadata', {
+                    'base_features_count': X.shape[1],
+                    'hmm_features_count': 0,
+                    'analyst_features_count': 0,
+                    'oof_predictions_count': 0,
+                    'total_features': X.shape[1],
+                    'vectorbt_optimization': False
+                })
 
-            return {
-                'models': {'gradient_boosting_ensemble': ensemble_model},
-                'metrics': {'model_type': 'GradientBoostingEnsemble'},
-                'metadata': metadata
-            }
+                return {
+                    'models': {'gradient_boosting_ensemble': ensemble_model},
+                    'metrics': {'model_type': 'GradientBoostingEnsemble'},
+                    'metadata': metadata
+                }
 
         except Exception as e:
             tprint_error(f"❌ Direct ensemble training failed: {e}")
             return {'models': {}, 'metrics': {}, 'metadata': {}}
+
+    def _optimize_features_with_vectorbt(self, X: np.ndarray, feature_names: List[str] = None) -> np.ndarray:
+        """Optimize features using VectorBT rolling operations if available."""
+        if not self.rolling_optimizer or feature_names is None:
+            return X
+        
+        try:
+            tprint_info("🔧 Optimizing features with VectorBT rolling operations...")
+            
+            # Convert to DataFrame for VectorBT operations
+            df = pd.DataFrame(X, columns=feature_names)
+            
+            # Apply VectorBT rolling optimizations to numeric columns
+            optimized_features = []
+            for col in df.columns:
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    # Apply rolling mean for smoothing
+                    smoothed = self.rolling_optimizer.rolling_mean(df[col], window=5)
+                    optimized_features.append(smoothed)
+                    
+                    # Apply rolling std for volatility features
+                    volatility = self.rolling_optimizer.rolling_std(df[col], window=10)
+                    optimized_features.append(volatility)
+                else:
+                    optimized_features.append(df[col])
+            
+            # Combine optimized features
+            optimized_df = pd.concat(optimized_features, axis=1)
+            result = optimized_df.values
+            
+            tprint_success(f"✅ Features optimized: {X.shape} -> {result.shape}")
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT feature optimization failed: {e}, using original features")
+            return X
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the ensemble training step."""
@@ -516,8 +647,19 @@ class TacticianEnsembleTrainingStep:
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'ensemble_optimizer_available': self.ensemble_optimizer is not None,
+                'rolling_optimizer_available': self.rolling_optimizer is not None
             }
         }
+        
+        # Add VectorBT performance stats
+        if self.ensemble_optimizer:
+            metrics['vectorbt_ensemble_stats'] = self.ensemble_optimizer.get_optimization_stats()
+        
+        if self.rolling_optimizer:
+            metrics['vectorbt_rolling_stats'] = self.rolling_optimizer.get_performance_stats()
 
         return metrics
 

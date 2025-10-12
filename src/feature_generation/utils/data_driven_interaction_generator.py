@@ -529,6 +529,57 @@ class DataDrivenInteractionGenerator:
             memory_efficient=True
         )
         
+        # Log multiplication interactions
+        interaction_types['log_product'] = InteractionType(
+            name='log_product',
+            function=self._log_product_interaction,
+            description='Log of product of features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_scaled_product'] = InteractionType(
+            name='log_scaled_product',
+            function=self._log_scaled_product_interaction,
+            description='Log of scaled product features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_ratio'] = InteractionType(
+            name='log_ratio',
+            function=self._log_ratio_interaction,
+            description='Log of ratio of features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_abs_product'] = InteractionType(
+            name='log_abs_product',
+            function=self._log_abs_product_interaction,
+            description='Log of absolute product of features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
+        interaction_types['log_sqrt_product'] = InteractionType(
+            name='log_sqrt_product',
+            function=self._log_sqrt_product_interaction,
+            description='Log of square root of product of features',
+            complexity=3,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True
+        )
+        
         return interaction_types
     
     def generate_interactions(self, 
@@ -736,6 +787,10 @@ class DataDrivenInteractionGenerator:
         # Add advanced scaled interactions for complex patterns
         if characteristics['avg_variance'] > 0.01:
             selected_types.extend(['log_scaled_product', 'log_scaled_sum', 'minmax_scaled_product', 'robust_scaled_difference'])
+        
+        # Add log multiplication interactions for non-linear patterns
+        if characteristics['avg_variance'] > 0.01:
+            selected_types.extend(['log_product', 'log_ratio', 'log_abs_product', 'log_sqrt_product'])
         
         # Add momentum interactions for time series data
         if characteristics['n_samples'] > 50:
@@ -960,6 +1015,22 @@ class DataDrivenInteractionGenerator:
                         return self.vectorization_manager.rolling_operation(feat1, 'corr', window, other=feat2)
                     else:
                         return self.vectorization_manager.rolling_operation(feat1, 'cov', window, other=feat2)
+                
+                elif interaction_type.name in ['log_product', 'log_ratio', 'log_abs_product', 'log_sqrt_product']:
+                    # Use optimized log operations
+                    if interaction_type.name == 'log_product':
+                        product = feat1 * feat2
+                        return np.log(np.abs(product) + 1e-08)
+                    elif interaction_type.name == 'log_ratio':
+                        ratio = feat1 / (feat2 + 1e-08)
+                        return np.log(np.abs(ratio) + 1e-08)
+                    elif interaction_type.name == 'log_abs_product':
+                        abs_product = np.abs(feat1 * feat2)
+                        return np.log(abs_product + 1e-08)
+                    elif interaction_type.name == 'log_sqrt_product':
+                        product = feat1 * feat2
+                        sqrt_product = np.sqrt(np.abs(product))
+                        return np.log(sqrt_product + 1e-08)
                 
                 else:
                     return interaction_type.function(feat1, feat2)
@@ -1312,6 +1383,33 @@ class DataDrivenInteractionGenerator:
             scaled2 = (feat2 - feat2.median()) / (iqr_2 + 1e-08)
         
         return scaled1 - scaled2
+    
+    # Log multiplication interaction implementations
+    def _log_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of product of features."""
+        product = feat1 * feat2
+        # Add small constant to avoid log(0) and handle negative values
+        return np.log(np.abs(product) + 1e-08)
+    
+    def _log_ratio_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of ratio of features."""
+        ratio = feat1 / (feat2 + 1e-08)
+        # Add small constant to avoid log(0) and handle negative values
+        return np.log(np.abs(ratio) + 1e-08)
+    
+    def _log_abs_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of absolute product of features."""
+        abs_product = np.abs(feat1 * feat2)
+        # Add small constant to avoid log(0)
+        return np.log(abs_product + 1e-08)
+    
+    def _log_sqrt_product_interaction(self, feat1: pd.Series, feat2: pd.Series) -> pd.Series:
+        """Log of square root of product of features."""
+        product = feat1 * feat2
+        # Ensure non-negative for square root
+        sqrt_product = np.sqrt(np.abs(product))
+        # Add small constant to avoid log(0)
+        return np.log(sqrt_product + 1e-08)
     
     # Cache management methods
     def _generate_cache_key(self, feature_combo: Tuple[str, ...], interaction_type: str) -> str:

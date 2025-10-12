@@ -50,8 +50,8 @@ class FeatureSelectionConfig:
     """Configuration for data-driven feature selection."""
     # Selection parameters
     target_feature_count: int = 40
-    min_features_per_category: int = 3
-    max_features_per_category: int = 8
+    min_features_per_category: int = 2
+    max_features_per_category: int = 4
     
     # Quality thresholds
     min_variance: float = 1e-8

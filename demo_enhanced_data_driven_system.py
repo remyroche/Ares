@@ -29,7 +29,7 @@ def demonstrate_enhanced_system():
     system_features = [
         "✅ Uses full feature bank (200+ features) from src/feature_generation/",
         "✅ Data-driven pre-selection of 40-ish features",
-        "✅ Ensures at least 3 features per category",
+        "✅ Ensures at least 2 features per category (max 4)",
         "✅ Captures different aspects within each category",
         "✅ Excludes raw OHLCV prices (close, high, low, open)",
         "✅ Generates comprehensive interactions between selected features",
@@ -140,6 +140,12 @@ def demonstrate_enhanced_system():
                 "Log Scaled Product", "Log Scaled Sum", "MinMax Scaled Product", 
                 "Robust Scaled Difference"
             ]
+        },
+        {
+            "category": "Log Multiplication (NEW)",
+            "types": [
+                "Log Product", "Log Ratio", "Log Absolute Product", "Log Square Root Product"
+            ]
         }
     ]
     
@@ -154,8 +160,8 @@ def demonstrate_enhanced_system():
     config_options = [
         ("Feature Selection", [
             "target_feature_count: 40 (configurable)",
-            "min_features_per_category: 3",
-            "max_features_per_category: 8", 
+            "min_features_per_category: 2",
+            "max_features_per_category: 4", 
             "category_weights: Customizable per category",
             "quality_thresholds: Variance, correlation, information content"
         ]),
@@ -251,7 +257,7 @@ for interaction in interactions[:5]:  # Show first 5
     
     performance_metrics = [
         ("Feature Bank Analysis", "200+ features analyzed"),
-        ("Feature Selection", "40-ish features selected (3+ per category)"),
+        ("Feature Selection", "40-ish features selected (2-4 per category)"),
         ("Interaction Generation", "100+ interactions generated"),
         ("Processing Time", "2-5x faster with VectorBT optimization"),
         ("Memory Usage", "40% reduction with intelligent optimization"),

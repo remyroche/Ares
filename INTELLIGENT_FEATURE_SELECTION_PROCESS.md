@@ -66,13 +66,13 @@ category_groups = {
 #### 4.1 Minimum Per Category
 ```python
 for category, features in category_groups.items():
-    min_required = 3  # Configurable
+    min_required = 2  # Configurable (updated from 3)
     selected_from_category = features[:max(min_required, len(features))]
 ```
 
 #### 4.2 Maximum Per Category
 ```python
-max_allowed = min(8, len(features))  # Configurable
+max_allowed = min(4, len(features))  # Configurable (updated from 8)
 selected_from_category = features[:max_allowed]
 ```
 
@@ -243,8 +243,8 @@ if is_duplicate_interaction(series, utility_score):
 @dataclass
 class FeatureSelectionConfig:
     target_feature_count: int = 40
-    min_features_per_category: int = 3
-    max_features_per_category: int = 8
+    min_features_per_category: int = 2
+    max_features_per_category: int = 4
     min_variance: float = 1e-8
     max_correlation_threshold: float = 0.95
     min_information_content: float = 0.1

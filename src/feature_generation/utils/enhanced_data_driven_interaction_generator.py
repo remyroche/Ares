@@ -59,8 +59,8 @@ class EnhancedDataDrivenConfig:
     """Enhanced configuration for data-driven interaction generation."""
     # Feature selection settings
     target_feature_count: int = 40
-    min_features_per_category: int = 3
-    max_features_per_category: int = 8
+    min_features_per_category: int = 2
+    max_features_per_category: int = 4
     
     # Interaction generation settings
     max_interactions: int = 100

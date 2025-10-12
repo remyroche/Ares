@@ -88,6 +88,29 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT Rolling Optimizer for enhanced performance
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
+        optimized_rolling_apply, optimized_rolling_corr, optimized_rolling_cov
+    )
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT Rolling Optimizer not available: {e}")
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+
+# Import Unified Vectorization Manager
+try:
+    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
+        VectorBTUnifiedFramework, create_vectorbt_unified_framework
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -658,6 +681,29 @@ class EnhancedTacticianPreMLOrchestrator:
                 self.pre_training_pipeline = None
                 tprint_error("❌ Pre-training pipeline not available")
             
+            # Initialize VectorBT Rolling Optimizer for enhanced performance
+            if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000,
+                    fast_fail=False,  # Use fallbacks for robustness
+                    enable_logging=True
+                )
+                tprint_success("✅ VectorBT Rolling Optimizer initialized")
+            else:
+                self.vectorbt_optimizer = None
+                tprint_warning("⚠️ VectorBT Rolling Optimizer not available, using fallback methods")
+            
+            # Initialize Unified Vectorization Manager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = create_vectorbt_unified_framework()
+                tprint_success("✅ Unified Vectorization Manager initialized")
+            else:
+                self.vectorization_manager = None
+                tprint_warning("⚠️ Unified Vectorization Manager not available")
+            
             tprint_success(f"✅ EnhancedTacticianPreMLOrchestrator initialized (timeframe: {self.config.timeframe})")
             tprint_info(f"🎯 Analyst signal threshold: {self.config.analyst_confidence_threshold:.2%}")
             tprint_info(f"🎯 Entry window: {self.config.labeling_config.min_entry_window_minutes}-{self.config.labeling_config.max_entry_window_minutes} minutes")
@@ -1006,39 +1052,36 @@ async def execute_enhanced_tactician_pre_ml_orchestration(
     orchestrator = EnhancedTacticianPreMLOrchestrator(config)
     return await orchestrator.orchestrate(training_data, analyst_predictions, regime_assignments, **kwargs)
 
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+                                   window: int, **kwargs) -> pd.Series:
+        """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
+        if self.vectorbt_optimizer is not None:
+            try:
+                if operation == 'mean':
+                    return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
+                elif operation == 'std':
+                    return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
+                elif operation == 'var':
+                    return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
+                elif operation == 'min':
+                    return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
+                elif operation == 'max':
+                    return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
+                elif operation == 'sum':
+                    return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    return self.vectorbt_optimizer.rolling_apply(data, func, window=window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT Rolling Optimizer failed for {operation}: {e}, using fallback")
+                return self._fallback_rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._fallback_rolling_operation(data, operation, window, **kwargs)
     
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
             return data.rolling(window=window).mean()
@@ -1052,17 +1095,29 @@ async def execute_enhanced_tactician_pre_ml_orchestration(
             return data.rolling(window=window).max()
         elif operation == 'sum':
             return data.rolling(window=window).sum()
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            return data.rolling(window=window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
     
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+                VECTORBT_AVAILABLE)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Legacy method - now uses optimized rolling operations."""
+        return self._optimized_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Legacy method - now uses fallback rolling operations."""
+        return self._fallback_rolling_operation(data, operation, window, **kwargs)
+    
     def _vectorbt_apply_operation(self, data: pd.Series, func, 
                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-        
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)
+        """Legacy method - now uses optimized rolling operations."""
+        return self._optimized_rolling_operation(data, 'apply', window, func=func, **kwargs)

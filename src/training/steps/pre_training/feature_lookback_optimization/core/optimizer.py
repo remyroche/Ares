@@ -353,6 +353,7 @@ class CoreOptimizer:
 
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
+        tprint("🔧 Initializing VectorBT optimization components")
         try:
             # Initialize VectorBT Rolling Optimizer with GPU support
             if VECTORBT_UTILS_AVAILABLE:
@@ -365,19 +366,24 @@ class CoreOptimizer:
                 )
                 if gpu_available:
                     self.logger.info("✅ VectorBT Rolling Optimizer initialized with GPU acceleration")
+                    tprint_success("✅ VectorBT Rolling Optimizer initialized with GPU acceleration")
                 else:
                     self.logger.info("✅ VectorBT Rolling Optimizer initialized (CPU only)")
+                    tprint_success("✅ VectorBT Rolling Optimizer initialized (CPU only)")
             else:
                 self.rolling_optimizer = None
                 self.logger.warning("⚠️ VectorBT Rolling Optimizer not available")
+                tprint_warning("⚠️ VectorBT Rolling Optimizer not available")
             
             # Initialize Unified Vectorization Manager
             if VECTORBT_UTILS_AVAILABLE:
                 self.unified_manager = get_unified_vectorization_manager()
                 self.logger.info("✅ Unified Vectorization Manager initialized")
+                tprint_success("✅ Unified Vectorization Manager initialized")
             else:
                 self.unified_manager = None
                 self.logger.warning("⚠️ Unified Vectorization Manager not available")
+                tprint_warning("⚠️ Unified Vectorization Manager not available")
             
             # Initialize VectorBT optimization flags
             self.use_vectorbt_optimization = VECTORBT_UTILS_AVAILABLE

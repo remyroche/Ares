@@ -88,326 +88,14 @@ except ImportError:
     OperationType = None
     OptimizationStrategy = None
 
-class LegacyRSIGenerator(VectorizedFeatureGenerator):
-    def __init__(self, period: int = 14):
-        tprint(f"Initializing LegacyRSIGenerator with period: {period}")
-        config = FeatureConfig(
-            name=f"legacy_rsi_{period}",
-            category=FeatureCategory.LEGACY,
-            description=f"Legacy RSI {period} - traditional implementation with VectorBT optimization",
-            required_columns=["close"],
-            default_lookback=period * 2,
-            min_lookback=period,
-            max_lookback=period * 3
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.period = period
-        
-        # Initialize VectorBT optimizers
-        self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        self.unified_manager = get_unified_vectorization_manager() if UNIFIED_MANAGER_AVAILABLE else None
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        tprint(f"Generating legacy RSI feature with period {self.period}")
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+# LegacyRSIGenerator removed - use VectorBTRSIGenerator from momentum.py instead
 
-        close = data['close']
-        
-        # Use UnifiedVectorizationManager for intelligent optimization if available
-        if self.unified_manager and len(close) >= 100:
-            tprint("Using UnifiedVectorizationManager for RSI calculation")
-            return self._calculate_rsi_unified(close)
-        # Use VectorBTRollingOptimizer for optimized RSI calculation
-        elif VECTORBT_AVAILABLE and len(close) >= 1000:
-            tprint("Using VectorBT for RSI calculation")
-            return self._calculate_rsi_vectorbt(close)
-        else:
-            tprint("Using pandas fallback for RSI calculation")
-            return self._calculate_rsi_pandas(close)
-    
-    def _calculate_rsi_unified(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using UnifiedVectorizationManager for intelligent optimization."""
-        try:
-            # Use UnifiedVectorizationManager for optimal RSI calculation
-            data = {'close': close, 'period': self.period}
-            result = self.unified_manager.optimize_operation(
-                OperationType.TECHNICAL_INDICATORS,
-                data,
-                **{'indicator': 'rsi', 'window': self.period}
-            )
-            return result.result.rename(f'legacy_rsi_{self.period}')
-        except Exception as e:
-            # Fallback to VectorBTRollingOptimizer
-            return self._calculate_rsi_vectorbt(close)
-    
-    def _calculate_rsi_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using VectorBTRollingOptimizer for maximum performance."""
-        try:
-            # Use VectorBTRollingOptimizer for rolling operations
-            delta = close.diff()
-            gain = delta.where(delta > 0, 0)
-            loss = -delta.where(delta < 0, 0)
-            
-            # Use VectorBTRollingOptimizer for rolling means
-            avg_gain = self.rolling_optimizer.rolling_mean(gain, window=self.period)
-            avg_loss = self.rolling_optimizer.rolling_mean(loss, window=self.period)
-            
-            # Calculate RSI with safe division
-            rs = avg_gain / avg_loss.replace(0, 1e-8)  # Avoid division by zero
-            rsi = 100 - (100 / (1 + rs))
-            
-            return rsi.rename(f'legacy_rsi_{self.period}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_rsi_pandas(close)
-    
-    def _calculate_rsi_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate RSI using pandas operations."""
-        # Vectorized RSI calculation using numpy
-        rsi = self._calculate_rsi_vectorized(close.values, self.period)
-        return pd.Series(rsi, index=close.index, name=f'legacy_rsi_{self.period}')
-    
-    def _calculate_rsi_vectorized(self, prices: np.ndarray, period: int) -> np.ndarray:
-        """Calculate RSI using vectorized numpy operations."""
-        if len(prices) < period + 1:
-            return np.full(len(prices), np.nan)
-        
-        # Calculate price changes
-        delta = np.diff(prices, prepend=prices[0])
-        
-        # Separate gains and losses
-        gains = np.where(delta > 0, delta, 0)
-        losses = np.where(delta < 0, -delta, 0)
-        
-        # Calculate rolling means using numpy
-        avg_gains = self._rolling_mean_vectorized(gains, period)
-        avg_losses = self._rolling_mean_vectorized(losses, period)
-        
-        # Calculate RSI
-        rs = np.divide(avg_gains, avg_losses, out=np.ones_like(avg_gains), where=avg_losses!=0)
-        rsi = 100 - (100 / (1 + rs))
-        
-        return rsi
-    
-    def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_sma_vectorized(series, window).values
-        
-        # Use numpy's cumsum for efficient rolling mean calculation
-        cumsum = np.cumsum(data)
-        rolling_mean = np.full(len(data), np.nan)
-        
-        # Calculate rolling mean for valid windows
-        for i in range(window - 1, len(data)):
-            if i == window - 1:
-                rolling_mean[i] = cumsum[i] / window
-            else:
-                rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
-        
-        return rolling_mean
-
-class LegacyMACDGenerator(VectorizedFeatureGenerator):
-    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
-        config = FeatureConfig(
-            name=f"legacy_macd_{fast}_{slow}_{signal}",
-            category=FeatureCategory.LEGACY,
-            description=f"Legacy MACD {fast}/{slow}/{signal} - traditional implementation with VectorBT optimization",
-            required_columns=["close"],
-            default_lookback=slow * 2,
-            min_lookback=slow,
-            max_lookback=slow * 3
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.fast = fast
-        self.slow = slow
-        self.signal = signal
-        
-        # Initialize VectorBT optimizers
-        self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        self.unified_manager = get_unified_vectorization_manager() if UNIFIED_MANAGER_AVAILABLE else None
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
-        close = data['close']
-        
-        # Use UnifiedVectorizationManager for intelligent optimization if available
-        if self.unified_manager and len(close) >= 100:
-            return self._calculate_macd_unified(close)
-        # Use VectorBTRollingOptimizer for optimized MACD calculation
-        elif VECTORBT_AVAILABLE and len(close) >= 1000:
-            return self._calculate_macd_vectorbt(close)
-        else:
-            return self._calculate_macd_pandas(close)
-    
-    def _calculate_macd_unified(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using UnifiedVectorizationManager for intelligent optimization."""
-        try:
-            # Use UnifiedVectorizationManager for optimal MACD calculation
-            data = {'close': close, 'fast': self.fast, 'slow': self.slow, 'signal': self.signal}
-            result = self.unified_manager.optimize_operation(
-                OperationType.TECHNICAL_INDICATORS,
-                data,
-                **{'indicator': 'macd', 'fast_window': self.fast, 'slow_window': self.slow, 'signal_window': self.signal}
-            )
-            return result.result.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-        except Exception as e:
-            # Fallback to VectorBTRollingOptimizer
-            return self._calculate_macd_vectorbt(close)
-    
-    def _calculate_macd_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using VectorBTRollingOptimizer for maximum performance."""
-        try:
-            # Use VectorBTRollingOptimizer for EMA calculations
-            ema_fast = close.ewm(span=self.fast).mean()
-            ema_slow = close.ewm(span=self.slow).mean()
-            
-            # Calculate MACD line
-            macd_line = ema_fast - ema_slow
-            
-            return macd_line.rename(f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_macd_pandas(close)
-    
-    def _calculate_macd_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate MACD using pandas operations."""
-        # Vectorized MACD calculation using numpy
-        macd = self._calculate_macd_vectorized(close.values, self.fast, self.slow)
-        return pd.Series(macd, index=close.index, name=f'legacy_macd_{self.fast}_{self.slow}_{self.signal}')
-    
-    def _calculate_macd_vectorized(self, prices: np.ndarray, fast: int, slow: int) -> np.ndarray:
-        """Calculate MACD using vectorized numpy operations."""
-        if len(prices) < slow:
-            return np.full(len(prices), np.nan)
-        
-        # Calculate EMAs using vectorized operations
-        ema_fast = self._calculate_ema_vectorized(prices, fast)
-        ema_slow = self._calculate_ema_vectorized(prices, slow)
-        
-        # MACD line
-        macd = ema_fast - ema_slow
-        
-        return macd
-    
-    def _calculate_ema_vectorized(self, prices: np.ndarray, span: int) -> np.ndarray:
-        """Calculate EMA using centralized method."""
-        series = pd.Series(prices)
-        return self._calculate_ema_vectorized(series, span).values
-        
-        # Calculate alpha (smoothing factor)
-        alpha = 2.0 / (span + 1.0)
-        
-        # Initialize EMA array
-        ema = np.full(len(prices), np.nan)
-        ema[0] = prices[0]
-        
-        # Calculate EMA using vectorized operations
-        for i in range(1, len(prices)):
-            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
-        
-        return ema
+# LegacyMACDGenerator removed - use VectorBTMACDGenerator from momentum.py instead
 
 
-class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
-    def __init__(self, period: int = 20, std_dev: float = 2.0):
-        tprint(f"Initializing LegacyBollingerBandsGenerator with period: {period}, std_dev: {std_dev}")
-        config = FeatureConfig(
-            name=f"legacy_bollinger_{period}_{std_dev}",
-            category=FeatureCategory.LEGACY,
-            description=f"Legacy Bollinger Bands {period}/{std_dev} - traditional implementation",
-            required_columns=["close"],
-            default_lookback=period,
-            min_lookback=period,
-            max_lookback=period
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.period = period
-        self.std_dev = std_dev
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        tprint(f"Generating legacy Bollinger Bands feature with period {self.period} and std_dev {self.std_dev}")
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+# LegacyBollingerBandsGenerator removed - use VectorBTBollingerBandsGenerator from volatility.py instead
 
-        close = data['close']
-        
-        # Use VectorBT for optimized Bollinger Bands calculation if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:
-            tprint("Using VectorBT for Bollinger Bands calculation")
-            return self._calculate_bollinger_bands_vectorbt(close)
-        else:
-            tprint("Using pandas fallback for Bollinger Bands calculation")
-            return self._calculate_bollinger_bands_pandas(close)
-    
-    def _calculate_bollinger_bands_vectorbt(self, close: pd.Series) -> pd.Series:
-        """Calculate Bollinger Bands using VectorBT optimized operations."""
-        try:
-            # Use VectorBT Bollinger Bands if available
-            bb_result = vbt.BBANDS.run(close, window=self.period, alpha=self.std_dev)
-            return bb_result.upper.rename(f'legacy_bollinger_upper_{self.period}_{self.std_dev}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_bollinger_bands_pandas(close)
-    
-    def _calculate_bollinger_bands_pandas(self, close: pd.Series) -> pd.Series:
-        """Calculate Bollinger Bands using pandas operations."""
-        # Vectorized Bollinger Bands calculation using numpy
-        upper_band = self._calculate_bollinger_bands_vectorized(close.values, self.period, self.std_dev)
-        return pd.Series(upper_band, index=close.index, name=f'legacy_bollinger_upper_{self.period}_{self.std_dev}')
-    
-    def _calculate_bollinger_bands_vectorized(self, prices: np.ndarray, period: int, std_dev: float) -> np.ndarray:
-        """Calculate Bollinger Bands upper band using vectorized numpy operations."""
-        if len(prices) < period:
-            return np.full(len(prices), np.nan)
-        
-        # Calculate SMA using vectorized operations
-        sma = self._rolling_mean_vectorized(prices, period)
-        
-        # Calculate rolling standard deviation using vectorized operations
-        std = self._rolling_std_vectorized(prices, period)
-        
-        # Calculate upper band
-        upper_band = sma + (std * std_dev)
-        
-        return upper_band
-    
-    def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_sma_vectorized(series, window).values
-        
-        # Use numpy's cumsum for efficient rolling mean calculation
-        cumsum = np.cumsum(data)
-        rolling_mean = np.full(len(data), np.nan)
-        
-        # Calculate rolling mean for valid windows
-        for i in range(window - 1, len(data)):
-            if i == window - 1:
-                rolling_mean[i] = cumsum[i] / window
-            else:
-                rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
-        
-        return rolling_mean
-    
-    def _rolling_std_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling std using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_rolling_std_vectorized(series, window).values
-        
-        rolling_std = np.full(len(data), np.nan)
-        
-        for i in range(window - 1, len(data)):
-            window_data = data[i - window + 1:i + 1]
-            rolling_std[i] = np.std(window_data, ddof=0)
-        
-        return rolling_stdclass LegacySMAGenerator(VectorizedFeatureGenerator):
+class LegacySMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20):
         config = FeatureConfig(
             name=f"legacy_sma_{period}",
@@ -609,94 +297,13 @@ class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
             else:
                 rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
         
-        return rolling_meanclass LegacyStochasticGenerator(VectorizedFeatureGenerator):
-    def __init__(self, k_period: int = 14, d_period: int = 3):
-        config = FeatureConfig(
-            name=f"legacy_stochastic_{k_period}_{d_period}",
-            category=FeatureCategory.LEGACY,
-            description=f"Legacy Stochastic {k_period}/{d_period} - traditional implementation",
-            required_columns=["high", "low", "close"],
-            default_lookback=k_period,
-            min_lookback=k_period,
-            max_lookback=k_period
-        )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.k_period = k_period
-        self.d_period = d_period
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+        return rolling_mean
 
-        high = data['high']
-        low = data['low']
-        close = data['close']
-        
-        # Use VectorBT for optimized Stochastic calculation if available
-        if VECTORBT_AVAILABLE and len(close) >= 1000:
-            return self._calculate_stochastic_vectorbt(high, low, close)
-        else:
-            return self._calculate_stochastic_pandas(high, low, close)
-    
-    def _calculate_stochastic_vectorbt(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
-        """Calculate Stochastic using VectorBT optimized operations."""
-        try:
-            # Use VectorBT Stochastic if available
-            stoch_result = vbt.STOCH.run(high, low, close, k_window=self.k_period, d_window=self.d_period)
-            return stoch_result.stoch_k.rename(f'legacy_stochastic_k_{self.k_period}_{self.d_period}')
-        except Exception as e:
-            # Fallback to pandas implementation
-            return self._calculate_stochastic_pandas(high, low, close)
-    
-    def _calculate_stochastic_pandas(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
-        """Calculate Stochastic using pandas operations."""
-        # Vectorized Stochastic calculation using numpy
-        k_percent = self._calculate_stochastic_vectorized(high.values, low.values, close.values, self.k_period)
-        return pd.Series(k_percent, index=close.index, name=f'legacy_stochastic_k_{self.k_period}_{self.d_period}')
-    
-    def _calculate_stochastic_vectorized(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, k_period: int) -> np.ndarray:
-        """Calculate Stochastic %K using vectorized numpy operations."""
-        if len(high) < k_period or len(low) < k_period or len(close) < k_period:
-            return np.full(len(close), np.nan)
-        
-        # Calculate rolling min and max using vectorized operations
-        lowest_low = self._rolling_min_vectorized(low, k_period)
-        highest_high = self._rolling_max_vectorized(high, k_period)
-        
-        # Calculate %K
-        denominator = highest_high - lowest_low
-        k_percent = np.where(
-            denominator != 0,
-            100 * ((close - lowest_low) / denominator),
-            0
-        )
-        
-        return k_percent
-    
-    def _rolling_min_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling min using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_rolling_min_vectorized(series, window).values
-        
-        rolling_min = np.full(len(data), np.nan)
-        
-        for i in range(window - 1, len(data)):
-            rolling_min[i] = np.min(data[i - window + 1:i + 1])
-        
-        return rolling_min
-    
-    def _rolling_max_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling max using centralized method."""
-        series = pd.Series(data)
-        return self._calculate_rolling_max_vectorized(series, window).values
-        
-        rolling_max = np.full(len(data), np.nan)
-        
-        for i in range(window - 1, len(data)):
-            rolling_max[i] = np.max(data[i - window + 1:i + 1])
-        
-        return rolling_maxclass LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
+
+# LegacyStochasticGenerator removed - use VectorBTStochasticGenerator from momentum.py instead
+
+
+class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
             name=f"legacy_williams_r_{period}",
@@ -855,13 +462,12 @@ def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     
     # Classic indicators with standard parameters
     generators.extend([
-        LegacyRSIGenerator(14),
-        LegacyMACDGenerator(12, 26, 9),
-        LegacyBollingerBandsGenerator(20, 2.0),
+        # LegacyRSIGenerator, LegacyMACDGenerator, LegacyBollingerBandsGenerator removed
+        # Use VectorBT versions from momentum.py and volatility.py instead
         LegacySMAGenerator(20),
         LegacyEMAGenerator(21),
         LegacyATRGenerator(14),
-        LegacyStochasticGenerator(14, 3),
+        # LegacyStochasticGenerator removed - use VectorBTStochasticGenerator from momentum.py
         LegacyWilliamsRGenerator(14),
         LegacyOBVGenerator(),
     ])
@@ -879,7 +485,7 @@ def create_default_legacy_generators() -> List[VectorizedFeatureGenerator]:
     # Additional legacy RSI periods
     rsi_periods = [9, 21, 25]
     for period in rsi_periods:
-        generators.append(LegacyRSIGenerator(period))
+        # LegacyRSIGenerator removed - use VectorBTRSIGenerator from momentum.py
     
     return generators
 
@@ -1050,8 +656,7 @@ def add_optimization_methods_to_legacy_generators():
             return data
     
     # Add methods to all legacy generator classes
-    for cls in [LegacyRSIGenerator, LegacyMACDGenerator, LegacyStochasticGenerator, 
-                LegacyWilliamsRGenerator, LegacyEMAGenerator, LegacySMAGenerator]:
+    for cls in [LegacyWilliamsRGenerator, LegacyEMAGenerator, LegacySMAGenerator]:
         cls._optimized_rolling_operation = _optimized_rolling_operation
         cls._fallback_rolling_operation = _fallback_rolling_operation
         cls._normalize_feature = _normalize_feature

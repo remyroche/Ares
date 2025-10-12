@@ -45,8 +45,6 @@ from .entropy import (
     MACDEntropyGenerator
 )
 from .legacy import (
-    LegacyRSIGenerator,
-    LegacyMACDGenerator,
     LegacyStochasticGenerator,
     LegacyWilliamsRGenerator
 )
@@ -138,9 +136,9 @@ from ..core.feature_bank import get_global_feature_bank
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-    LegacyRSIGenerator,
-    LegacyMACDGenerator,
-    LegacyStochasticGenerator,
+
+# LegacyRSIGenerator, LegacyMACDGenerator, and LegacyStochasticGenerator removed - use VectorBT versions instead
+from .legacy import (
     LegacyWilliamsRGenerator
 )
 
@@ -1881,9 +1879,9 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
         
         # Add legacy momentum generators
         generators.extend([
-            LegacyRSIGenerator(14),
-            LegacyMACDGenerator(12, 26, 9),
-            LegacyStochasticGenerator(14, 3),
+            VectorBTRSIGenerator(14),
+            VectorBTMACDGenerator(12, 26, 9),
+            VectorBTStochasticGenerator(14),
         ])
         
         # Add entropy-based momentum generators
@@ -1896,13 +1894,13 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     rsi_periods = [9, 21, 25]
     for period in rsi_periods:
         generators.append(RSIGenerator(period))
-        generators.append(LegacyRSIGenerator(period))
+        generators.append(VectorBTRSIGenerator(period))
     
     # Additional MACD configurations
     macd_configs = [(8, 21, 5), (5, 35, 5)]
     for fast, slow, signal in macd_configs:
         generators.append(MACDGenerator(fast, slow, signal))
-        generators.append(LegacyMACDGenerator(fast, slow, signal))
+        generators.append(VectorBTMACDGenerator(fast, slow, signal))
     
     # Additional Stochastic periods
     stochastic_periods = [9, 21]

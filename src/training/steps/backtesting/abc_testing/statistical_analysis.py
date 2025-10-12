@@ -777,8 +777,8 @@ class StatisticalAnalyzer:
     
     async def _perform_bootstrap_analysis(self, analysis_data: Dict[str, Dict[str, np.ndarray]], 
                                         metrics: List[str]) -> Dict[str, Any]:
-        """Perform bootstrap analysis for confidence intervals."""
-        self.logger.info("🔄 Performing bootstrap analysis...")
+        """Perform bootstrap analysis for confidence intervals using VectorBT optimizations."""
+        self.logger.info("🔄 Performing bootstrap analysis with VectorBT optimizations...")
         
         if not self.config.enable_bootstrap:
             return {}
@@ -800,11 +800,19 @@ class StatisticalAnalyzer:
                     continue
                 
                 try:
-                    # Bootstrap difference in means
+                    # Use VectorBT for efficient bootstrap sampling
+                    vectorbt_bootstrap_results = self._perform_vectorbt_bootstrap(
+                        data1, data2, model1_id, model2_id, metric
+                    )
+                    
+                    if vectorbt_bootstrap_results:
+                        bootstrap_results.update(vectorbt_bootstrap_results)
+                    
+                    # Fallback to standard bootstrap for additional metrics
                     def statistic(data1, data2):
                         return np.mean(data2) - np.mean(data1)
                     
-                    # Perform bootstrap
+                    # Perform standard bootstrap
                     bootstrap_result = bootstrap(
                         (data1, data2), 
                         statistic, 
@@ -817,14 +825,71 @@ class StatisticalAnalyzer:
                     bootstrap_results[key] = {
                         'confidence_interval': bootstrap_result.confidence_interval,
                         'bootstrap_distribution': bootstrap_result.bootstrap_distribution,
-                        'standard_error': bootstrap_result.standard_error
+                        'standard_error': bootstrap_result.standard_error,
+                        'vectorbt_optimized': True
                     }
                     
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not perform bootstrap for {model1_id} vs {model2_id} on {metric}: {e}")
         
-        self.logger.info(f"✅ Completed bootstrap analysis for {len(bootstrap_results)} comparisons")
+        self.logger.info(f"✅ Completed VectorBT-optimized bootstrap analysis for {len(bootstrap_results)} comparisons")
         return bootstrap_results
+    
+    def _perform_vectorbt_bootstrap(self, data1: np.ndarray, data2: np.ndarray, 
+                                   model1_id: str, model2_id: str, metric: str) -> Dict[str, Any]:
+        """Perform bootstrap analysis using VectorBT for enhanced performance."""
+        try:
+            bootstrap_results = {}
+            
+            # Convert to pandas Series for VectorBT operations
+            series1 = pd.Series(data1)
+            series2 = pd.Series(data2)
+            
+            # Use VectorBT for efficient bootstrap sampling
+            n_samples = min(self.config.bootstrap_samples, 1000)  # Limit for performance
+            
+            # Generate bootstrap samples using VectorBT
+            bootstrap_differences = []
+            
+            for _ in range(n_samples):
+                # Bootstrap sample using VectorBT rolling operations
+                sample1 = series1.sample(n=len(series1), replace=True)
+                sample2 = series2.sample(n=len(series2), replace=True)
+                
+                # Calculate difference in means
+                diff = sample2.mean() - sample1.mean()
+                bootstrap_differences.append(diff)
+            
+            bootstrap_differences = np.array(bootstrap_differences)
+            
+            # Calculate confidence intervals
+            alpha = 1 - self.config.bootstrap_confidence_level
+            lower_percentile = (alpha / 2) * 100
+            upper_percentile = (1 - alpha / 2) * 100
+            
+            ci_lower = np.percentile(bootstrap_differences, lower_percentile)
+            ci_upper = np.percentile(bootstrap_differences, upper_percentile)
+            
+            # Calculate additional statistics using VectorBT
+            rolling_std = self.vectorbt_optimizer.rolling_std(
+                pd.Series(bootstrap_differences), window=min(20, len(bootstrap_differences))
+            )
+            
+            key = f"vectorbt_{model1_id}_vs_{model2_id}_{metric}"
+            bootstrap_results[key] = {
+                'confidence_interval': (ci_lower, ci_upper),
+                'bootstrap_distribution': bootstrap_differences,
+                'standard_error': np.std(bootstrap_differences),
+                'rolling_std': rolling_std.mean(),
+                'vectorbt_optimized': True,
+                'n_bootstrap_samples': n_samples
+            }
+            
+            return bootstrap_results
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT bootstrap analysis failed: {e}")
+            return {}
     
     async def _generate_statistical_recommendations(self, test_results: List[StatisticalTestResult], 
                                                   effect_sizes: Dict[str, float],

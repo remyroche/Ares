@@ -47,6 +47,10 @@ from src.utils.common_operations import (
 from src.utils.performance_utils import PerformanceMonitor
 from src.utils.monitoring_utils import SystemMonitor
 
+# VectorBT optimizations
+from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+
 # Core decorators and validation
 from src.core.decorators import (
     handles_errors, validates, traced, log_execution_time, 
@@ -185,31 +189,46 @@ class MonitoringConfig:
 
 
 class MetricCollector:
-    """Advanced metric collection system."""
+    """Advanced metric collection system with VectorBT optimizations."""
     
     def __init__(self, config: MonitoringConfig):
-        """Initialize metric collector."""
+        """Initialize metric collector with VectorBT optimizations."""
         self.config = config
         self.logger = logger.getChild('MetricCollector')
+        
+        # Initialize VectorBT optimizations
+        self.vectorbt_optimizer = VectorBTRollingOptimizer(
+            enable_parallel=True,
+            memory_efficient=True,
+            chunk_size=1000,
+            fast_fail=False,
+            enable_logging=True
+        )
         
         # Metric storage
         self.metrics: Dict[str, deque] = defaultdict(lambda: deque(maxlen=config.max_metrics_per_model))
         self.model_metrics: Dict[str, Dict[str, deque]] = defaultdict(lambda: defaultdict(lambda: deque(maxlen=config.max_metrics_per_model)))
+        
+        # VectorBT analytics storage
+        self.vectorbt_analytics: Dict[str, Dict[str, Any]] = defaultdict(dict)
         
         # Performance tracking
         self.collection_stats = {
             'total_metrics_collected': 0,
             'metrics_per_second': 0.0,
             'last_collection_time': None,
-            'collection_errors': 0
+            'collection_errors': 0,
+            'vectorbt_operations': 0,
+            'rolling_analytics_generated': 0
         }
         
-        self.logger.info("🚀 MetricCollector initialized")
+        self.logger.info("🚀 MetricCollector initialized with VectorBT optimizations")
         self.logger.info(f"📊 Max metrics per model: {config.max_metrics_per_model}")
         self.logger.info(f"📊 Data retention: {config.data_retention_days} days")
+        self.logger.info("⚡ VectorBT rolling analytics enabled for real-time insights")
     
     def collect_metric(self, metric: PerformanceMetric) -> None:
-        """Collect a performance metric."""
+        """Collect a performance metric with VectorBT analytics."""
         try:
             # Store metric
             self.metrics[metric.name].append(metric)
@@ -217,6 +236,9 @@ class MetricCollector:
             # Store model-specific metric
             if metric.model_id:
                 self.model_metrics[metric.model_id][metric.name].append(metric)
+            
+            # Generate VectorBT rolling analytics
+            self._generate_vectorbt_analytics(metric)
             
             # Update statistics
             self.collection_stats['total_metrics_collected'] += 1
@@ -233,6 +255,55 @@ class MetricCollector:
         except Exception as e:
             self.collection_stats['collection_errors'] += 1
             self.logger.error(f"❌ Error collecting metric {metric.name}: {e}")
+    
+    def _generate_vectorbt_analytics(self, metric: PerformanceMetric) -> None:
+        """Generate VectorBT rolling analytics for the metric."""
+        try:
+            # Get recent metrics for rolling analysis
+            recent_metrics = self.get_metric_history(metric.name, metric.model_id, hours=1)
+            
+            if len(recent_metrics) < 5:  # Need minimum data for rolling analysis
+                return
+            
+            # Convert to pandas Series for VectorBT operations
+            values = [m.value for m in recent_metrics]
+            timestamps = [m.timestamp for m in recent_metrics]
+            series = pd.Series(values, index=timestamps)
+            
+            # Calculate rolling statistics using VectorBT
+            window_size = min(10, len(series))
+            
+            # Rolling mean
+            rolling_mean = self.vectorbt_optimizer.rolling_mean(series, window=window_size)
+            rolling_std = self.vectorbt_optimizer.rolling_std(series, window=window_size)
+            rolling_min = self.vectorbt_optimizer.rolling_min(series, window=window_size)
+            rolling_max = self.vectorbt_optimizer.rolling_max(series, window=window_size)
+            
+            # Calculate trend using rolling correlation with time
+            time_index = pd.Series(range(len(series)), index=series.index)
+            rolling_trend = self.vectorbt_optimizer.rolling_corr(series, time_index, window=window_size)
+            
+            # Store VectorBT analytics
+            analytics_key = f"{metric.name}_{metric.model_id or 'global'}"
+            self.vectorbt_analytics[analytics_key] = {
+                'rolling_mean': rolling_mean.iloc[-1] if not rolling_mean.empty else None,
+                'rolling_std': rolling_std.iloc[-1] if not rolling_std.empty else None,
+                'rolling_min': rolling_min.iloc[-1] if not rolling_min.empty else None,
+                'rolling_max': rolling_max.iloc[-1] if not rolling_max.empty else None,
+                'rolling_trend': rolling_trend.iloc[-1] if not rolling_trend.empty else None,
+                'volatility': rolling_std.mean() if not rolling_std.empty else None,
+                'trend_strength': abs(rolling_trend.mean()) if not rolling_trend.empty else None,
+                'last_updated': datetime.now().isoformat(),
+                'window_size': window_size,
+                'data_points': len(series)
+            }
+            
+            # Update performance stats
+            self.collection_stats['vectorbt_operations'] += 1
+            self.collection_stats['rolling_analytics_generated'] += 1
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT analytics generation failed for {metric.name}: {e}")
     
     def get_metric_history(self, metric_name: str, model_id: Optional[str] = None, 
                           hours: int = 24) -> List[PerformanceMetric]:
@@ -302,6 +373,73 @@ class MetricCollector:
     def get_collection_stats(self) -> Dict[str, Any]:
         """Get collection statistics."""
         return self.collection_stats.copy()
+    
+    def get_vectorbt_analytics(self, metric_name: str, model_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get VectorBT analytics for a specific metric."""
+        analytics_key = f"{metric_name}_{model_id or 'global'}"
+        return self.vectorbt_analytics.get(analytics_key, {})
+    
+    def get_all_vectorbt_analytics(self) -> Dict[str, Dict[str, Any]]:
+        """Get all VectorBT analytics."""
+        return dict(self.vectorbt_analytics)
+    
+    def calculate_vectorbt_performance_metrics(self, metric_name: str, model_id: Optional[str] = None, 
+                                             hours: int = 24) -> Dict[str, float]:
+        """Calculate advanced performance metrics using VectorBT."""
+        try:
+            metrics = self.get_metric_history(metric_name, model_id, hours)
+            
+            if len(metrics) < 10:
+                return {}
+            
+            # Convert to pandas Series
+            values = [m.value for m in metrics]
+            timestamps = [m.timestamp for m in metrics]
+            series = pd.Series(values, index=timestamps)
+            
+            # Calculate VectorBT performance metrics
+            window_size = min(20, len(series))
+            
+            # Rolling Sharpe ratio (if we have enough data)
+            if len(series) > 20:
+                rolling_returns = series.pct_change().dropna()
+                rolling_sharpe = self.vectorbt_optimizer.rolling_mean(rolling_returns, window=window_size) / \
+                               self.vectorbt_optimizer.rolling_std(rolling_returns, window=window_size)
+                sharpe_ratio = rolling_sharpe.mean()
+            else:
+                sharpe_ratio = 0.0
+            
+            # Rolling volatility
+            rolling_vol = self.vectorbt_optimizer.rolling_std(series, window=window_size)
+            volatility = rolling_vol.mean()
+            
+            # Rolling drawdown
+            rolling_max = self.vectorbt_optimizer.rolling_max(series, window=window_size)
+            rolling_drawdown = (series - rolling_max) / rolling_max
+            max_drawdown = rolling_drawdown.min()
+            
+            # Trend analysis
+            time_index = pd.Series(range(len(series)), index=series.index)
+            trend_correlation = self.vectorbt_optimizer.rolling_corr(series, time_index, window=window_size)
+            trend_strength = abs(trend_correlation.mean())
+            
+            # Stability metrics
+            rolling_mean = self.vectorbt_optimizer.rolling_mean(series, window=window_size)
+            stability = 1 - rolling_mean.std() / rolling_mean.mean() if rolling_mean.mean() != 0 else 0
+            
+            return {
+                'sharpe_ratio': sharpe_ratio,
+                'volatility': volatility,
+                'max_drawdown': max_drawdown,
+                'trend_strength': trend_strength,
+                'stability': stability,
+                'data_points': len(series),
+                'window_size': window_size
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT performance metrics calculation failed: {e}")
+            return {}
 
 
 class AlertManager:
@@ -793,10 +931,10 @@ class SystemMonitor:
 
 
 class PerformanceMonitoringSystem:
-    """Comprehensive performance monitoring system."""
+    """Comprehensive performance monitoring system with VectorBT optimizations."""
     
     def __init__(self, config: MonitoringConfig):
-        """Initialize performance monitoring system."""
+        """Initialize performance monitoring system with VectorBT optimizations."""
         self.config = config
         self.logger = logger.getChild('PerformanceMonitoringSystem')
         
@@ -805,10 +943,14 @@ class PerformanceMonitoringSystem:
         self.alert_manager = AlertManager(config)
         self.system_monitor = SystemMonitor(config)
         
+        # VectorBT unified framework for advanced analytics
+        self.vectorbt_framework = VectorBTUnifiedFramework()
+        
         # Monitoring state
         self.is_running = False
         self.monitoring_task: Optional[asyncio.Task] = None
         self.system_monitoring_task: Optional[asyncio.Task] = None
+        self.vectorbt_analytics_task: Optional[asyncio.Task] = None
         
         # Performance tracking
         self.performance_stats = {
@@ -816,7 +958,9 @@ class PerformanceMonitoringSystem:
             'total_alerts_triggered': 0,
             'system_health_score': 100.0,
             'uptime': 0.0,
-            'start_time': None
+            'start_time': None,
+            'vectorbt_operations': 0,
+            'rolling_analytics_generated': 0
         }
         
         # Data persistence
@@ -824,10 +968,11 @@ class PerformanceMonitoringSystem:
             self.data_path = Path(config.data_storage_path)
             ensure_directory(self.data_path)
         
-        self.logger.info("🚀 PerformanceMonitoringSystem initialized")
+        self.logger.info("🚀 PerformanceMonitoringSystem initialized with VectorBT optimizations")
         self.logger.info(f"📊 Monitoring interval: {config.monitoring_interval}s")
         self.logger.info(f"📊 Alerting enabled: {config.enable_alerting}")
         self.logger.info(f"📊 System monitoring: {config.enable_system_monitoring}")
+        self.logger.info("⚡ VectorBT unified framework enabled for advanced analytics")
     
     async def start(self) -> None:
         """Start the monitoring system."""
@@ -846,7 +991,10 @@ class PerformanceMonitoringSystem:
         if self.config.enable_system_monitoring:
             self.system_monitoring_task = asyncio.create_task(self._system_monitoring_loop())
         
-        self.logger.info("✅ PerformanceMonitoringSystem started")
+        # Start VectorBT analytics task
+        self.vectorbt_analytics_task = asyncio.create_task(self._vectorbt_analytics_loop())
+        
+        self.logger.info("✅ PerformanceMonitoringSystem started with VectorBT analytics")
     
     async def stop(self) -> None:
         """Stop the monitoring system."""
@@ -870,6 +1018,13 @@ class PerformanceMonitoringSystem:
             self.system_monitoring_task.cancel()
             try:
                 await self.system_monitoring_task
+            except asyncio.CancelledError:
+                pass
+        
+        if self.vectorbt_analytics_task:
+            self.vectorbt_analytics_task.cancel()
+            try:
+                await self.vectorbt_analytics_task
             except asyncio.CancelledError:
                 pass
         
@@ -997,6 +1152,215 @@ class PerformanceMonitoringSystem:
                 await asyncio.sleep(self.config.monitoring_interval)
         
         self.logger.info("🛑 System monitoring loop stopped")
+    
+    async def _vectorbt_analytics_loop(self) -> None:
+        """VectorBT analytics monitoring loop."""
+        self.logger.info("🔄 Starting VectorBT analytics loop...")
+        
+        while self.is_running:
+            try:
+                # Generate advanced VectorBT analytics
+                await self._generate_advanced_vectorbt_analytics()
+                
+                # Update performance stats
+                self.performance_stats['vectorbt_operations'] = self.metric_collector.collection_stats['vectorbt_operations']
+                self.performance_stats['rolling_analytics_generated'] = self.metric_collector.collection_stats['rolling_analytics_generated']
+                
+                # Wait for next analytics cycle
+                await asyncio.sleep(self.config.monitoring_interval * 2)  # Run every 2 monitoring cycles
+                
+            except Exception as e:
+                self.logger.error(f"❌ Error in VectorBT analytics loop: {e}")
+                await asyncio.sleep(self.config.monitoring_interval)
+        
+        self.logger.info("🛑 VectorBT analytics loop stopped")
+    
+    async def _generate_advanced_vectorbt_analytics(self) -> None:
+        """Generate advanced VectorBT analytics for all metrics."""
+        try:
+            # Get all metrics
+            all_metrics = self.metric_collector.get_all_vectorbt_analytics()
+            
+            if not all_metrics:
+                return
+            
+            # Generate cross-metric analytics
+            await self._generate_cross_metric_analytics(all_metrics)
+            
+            # Generate model comparison analytics
+            await self._generate_model_comparison_analytics()
+            
+            # Generate predictive analytics
+            await self._generate_predictive_analytics()
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Advanced VectorBT analytics generation failed: {e}")
+    
+    async def _generate_cross_metric_analytics(self, all_metrics: Dict[str, Dict[str, Any]]) -> None:
+        """Generate cross-metric analytics using VectorBT."""
+        try:
+            # Find metrics that can be correlated
+            metric_names = set()
+            for key in all_metrics.keys():
+                metric_name = key.split('_')[0]  # Extract metric name
+                metric_names.add(metric_name)
+            
+            if len(metric_names) < 2:
+                return
+            
+            # Calculate cross-metric correlations
+            for metric1 in metric_names:
+                for metric2 in metric_names:
+                    if metric1 != metric2:
+                        correlation = await self._calculate_metric_correlation(metric1, metric2)
+                        if correlation is not None:
+                            self.logger.debug(f"📊 Cross-metric correlation {metric1}-{metric2}: {correlation:.3f}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Cross-metric analytics failed: {e}")
+    
+    async def _calculate_metric_correlation(self, metric1: str, metric2: str) -> Optional[float]:
+        """Calculate correlation between two metrics using VectorBT."""
+        try:
+            # Get metric histories
+            history1 = self.metric_collector.get_metric_history(metric1, hours=24)
+            history2 = self.metric_collector.get_metric_history(metric2, hours=24)
+            
+            if len(history1) < 10 or len(history2) < 10:
+                return None
+            
+            # Convert to pandas Series
+            values1 = [m.value for m in history1]
+            values2 = [m.value for m in history2]
+            
+            # Align series by taking minimum length
+            min_len = min(len(values1), len(values2))
+            series1 = pd.Series(values1[-min_len:])
+            series2 = pd.Series(values2[-min_len:])
+            
+            # Calculate rolling correlation using VectorBT
+            rolling_corr = self.metric_collector.vectorbt_optimizer.rolling_corr(
+                series1, series2, window=min(10, min_len)
+            )
+            
+            return rolling_corr.mean() if not rolling_corr.empty else None
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Metric correlation calculation failed: {e}")
+            return None
+    
+    async def _generate_model_comparison_analytics(self) -> None:
+        """Generate model comparison analytics using VectorBT."""
+        try:
+            # Get all model metrics
+            model_metrics = self.metric_collector.model_metrics
+            
+            if len(model_metrics) < 2:
+                return
+            
+            # Compare models for each metric
+            for metric_name in ['sharpe_ratio', 'volatility', 'max_drawdown']:
+                model_data = {}
+                for model_id, metrics in model_metrics.items():
+                    if metric_name in metrics and len(metrics[metric_name]) > 0:
+                        values = [m.value for m in metrics[metric_name]]
+                        model_data[model_id] = values
+                
+                if len(model_data) >= 2:
+                    # Calculate model comparison statistics
+                    comparison_stats = await self._calculate_model_comparison_stats(model_data, metric_name)
+                    if comparison_stats:
+                        self.logger.debug(f"📊 Model comparison for {metric_name}: {comparison_stats}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Model comparison analytics failed: {e}")
+    
+    async def _calculate_model_comparison_stats(self, model_data: Dict[str, List[float]], metric_name: str) -> Optional[Dict[str, Any]]:
+        """Calculate model comparison statistics using VectorBT."""
+        try:
+            if len(model_data) < 2:
+                return None
+            
+            # Convert to DataFrame for VectorBT operations
+            df_data = {}
+            for model_id, values in model_data.items():
+                df_data[model_id] = values
+            
+            df = pd.DataFrame(df_data)
+            
+            # Calculate rolling statistics for each model
+            rolling_stats = {}
+            for model_id in df.columns:
+                series = df[model_id].dropna()
+                if len(series) > 5:
+                    rolling_mean = self.metric_collector.vectorbt_optimizer.rolling_mean(series, window=min(5, len(series)))
+                    rolling_std = self.metric_collector.vectorbt_optimizer.rolling_std(series, window=min(5, len(series)))
+                    
+                    rolling_stats[model_id] = {
+                        'mean': rolling_mean.mean(),
+                        'std': rolling_std.mean(),
+                        'stability': 1 - rolling_std.std() / rolling_std.mean() if rolling_std.mean() != 0 else 0
+                    }
+            
+            return rolling_stats
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Model comparison stats calculation failed: {e}")
+            return None
+    
+    async def _generate_predictive_analytics(self) -> None:
+        """Generate predictive analytics using VectorBT."""
+        try:
+            # Get recent performance metrics
+            recent_metrics = self.metric_collector.get_metric_history('sharpe_ratio', hours=48)
+            
+            if len(recent_metrics) < 20:
+                return
+            
+            # Convert to pandas Series
+            values = [m.value for m in recent_metrics]
+            series = pd.Series(values)
+            
+            # Calculate trend and momentum using VectorBT
+            window_size = min(10, len(series))
+            
+            # Rolling trend
+            time_index = pd.Series(range(len(series)), index=series.index)
+            trend_correlation = self.metric_collector.vectorbt_optimizer.rolling_corr(series, time_index, window=window_size)
+            
+            # Rolling momentum
+            rolling_mean = self.metric_collector.vectorbt_optimizer.rolling_mean(series, window=window_size)
+            momentum = (series - rolling_mean) / rolling_mean
+            
+            # Store predictive insights
+            predictive_insights = {
+                'trend_strength': abs(trend_correlation.mean()) if not trend_correlation.empty else 0,
+                'momentum': momentum.iloc[-1] if not momentum.empty else 0,
+                'trend_direction': 'up' if trend_correlation.mean() > 0.1 else 'down' if trend_correlation.mean() < -0.1 else 'sideways',
+                'last_updated': datetime.now().isoformat()
+            }
+            
+            self.logger.debug(f"📈 Predictive insights: {predictive_insights}")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Predictive analytics generation failed: {e}")
+    
+    def get_vectorbt_analytics_summary(self) -> Dict[str, Any]:
+        """Get comprehensive VectorBT analytics summary."""
+        try:
+            return {
+                'vectorbt_operations': self.performance_stats['vectorbt_operations'],
+                'rolling_analytics_generated': self.performance_stats['rolling_analytics_generated'],
+                'all_analytics': self.metric_collector.get_all_vectorbt_analytics(),
+                'performance_metrics': {
+                    metric_name: self.metric_collector.calculate_vectorbt_performance_metrics(metric_name)
+                    for metric_name in ['sharpe_ratio', 'volatility', 'max_drawdown', 'win_rate']
+                },
+                'last_updated': datetime.now().isoformat()
+            }
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT analytics summary generation failed: {e}")
+            return {}
 
 
 # Convenience function for easy integration

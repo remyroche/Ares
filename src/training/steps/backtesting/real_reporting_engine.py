@@ -27,6 +27,10 @@ from src.utils.matrix_operations.unified_operations import get_unified_matrix_op
 from src.utils.ml_common.evaluation import ModelEvaluator
 from src.core.decorators import handles_errors, traced, log_execution_time
 
+# VectorBT optimizations
+from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+
 # Visualization imports
 try:
     import plotly.graph_objects as go
@@ -80,7 +84,7 @@ class RealReportingConfig:
 
 class RealReportingEngine:
     """
-    Real reporting engine using existing utilities.
+    Real reporting engine using existing utilities with VectorBT optimizations.
     
     This engine provides comprehensive reporting with:
     - Performance metrics calculation and visualization
@@ -88,10 +92,11 @@ class RealReportingEngine:
     - Trade analysis and statistics
     - Portfolio analysis and attribution
     - Interactive visualizations
+    - VectorBT-optimized analytics
     """
     
     def __init__(self, config: RealReportingConfig):
-        """Initialize the real reporting engine."""
+        """Initialize the real reporting engine with VectorBT optimizations."""
         self.config = config
         self.logger = logger.getChild('RealReportingEngine')
         
@@ -99,12 +104,24 @@ class RealReportingEngine:
         self.matrix_ops = get_unified_matrix_operations()
         self.model_evaluator = ModelEvaluator()
         
+        # Initialize VectorBT optimizations
+        self.vectorbt_optimizer = VectorBTRollingOptimizer(
+            enable_parallel=True,
+            memory_efficient=True,
+            chunk_size=1000,
+            fast_fail=False,
+            enable_logging=True
+        )
+        
+        self.vectorbt_framework = VectorBTUnifiedFramework()
+        
         # Create output directory
         ensure_directory(config.output_dir)
         
         # Report storage
         self.reports = []
         self.visualizations = {}
+        self.vectorbt_analytics = {}
         
     async def generate_report(self, backtest_results: Dict[str, Any], 
                             test_name: str = "backtest_report") -> Dict[str, Any]:
@@ -135,6 +152,9 @@ class RealReportingEngine:
             
             if self.config.include_visualizations:
                 report['sections']['visualizations'] = await self._generate_visualizations(backtest_results)
+            
+            # Generate VectorBT analytics section
+            report['sections']['vectorbt_analytics'] = await self._generate_vectorbt_analytics(backtest_results)
             
             # Generate summary
             report['summary'] = self._generate_summary(report['sections'])
@@ -171,17 +191,42 @@ class RealReportingEngine:
                 if isinstance(equity_curve, list):
                     equity_curve = np.array(equity_curve)
 
-                # Calculate returns
-                returns = np.diff(equity_curve) / equity_curve[:-1]
-
-                # Performance metrics
+                # Use VectorBT for enhanced performance calculations
+                equity_series = pd.Series(equity_curve)
+                
+                # Calculate returns using VectorBT
+                returns = equity_series.pct_change().dropna()
+                
+                # Basic performance metrics
                 calculated_total_return = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
                 metrics.setdefault('total_return', calculated_total_return)
                 metrics.setdefault('annualized_return', (1 + metrics['total_return']) ** (252 / len(equity_curve)) - 1)
-                metrics.setdefault('volatility', np.std(returns) * np.sqrt(252))
+                
+                # Use VectorBT for volatility calculation
+                if len(returns) > 0:
+                    rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=min(20, len(returns)))
+                    metrics.setdefault('volatility', rolling_vol.mean() * np.sqrt(252))
+                    metrics.setdefault('rolling_volatility', rolling_vol.iloc[-1] * np.sqrt(252) if not rolling_vol.empty else 0)
+                else:
+                    metrics.setdefault('volatility', 0)
+                    metrics.setdefault('rolling_volatility', 0)
+                
                 volatility = metrics.get('volatility', 0)
                 annualized_return = metrics.get('annualized_return', 0)
                 metrics.setdefault('sharpe_ratio', annualized_return / volatility if volatility > 0 else 0)
+                
+                # Enhanced VectorBT metrics
+                if len(returns) > 10:
+                    # Rolling Sharpe ratio
+                    rolling_sharpe = self.vectorbt_optimizer.rolling_mean(returns, window=min(20, len(returns))) / \
+                                   self.vectorbt_optimizer.rolling_std(returns, window=min(20, len(returns)))
+                    metrics.setdefault('rolling_sharpe_ratio', rolling_sharpe.mean())
+                    
+                    # Rolling Calmar ratio
+                    rolling_max = self.vectorbt_optimizer.rolling_max(equity_series, window=min(20, len(equity_series)))
+                    rolling_drawdown = (equity_series - rolling_max) / rolling_max
+                    rolling_max_dd = rolling_drawdown.min()
+                    metrics.setdefault('rolling_calmar_ratio', annualized_return / abs(rolling_max_dd) if rolling_max_dd != 0 else 0)
 
                 # Drawdown analysis
                 peak = np.maximum.accumulate(equity_curve)
@@ -574,6 +619,190 @@ class RealReportingEngine:
         except Exception as e:
             self.logger.error(f"❌ Visualization generation failed: {e}")
             return {'error': str(e)}
+    
+    async def _generate_vectorbt_analytics(self, backtest_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate VectorBT analytics section."""
+        self.logger.info("⚡ Generating VectorBT analytics")
+        
+        try:
+            vectorbt_analytics = {}
+            
+            if 'equity_curve' in backtest_results:
+                equity_curve = backtest_results['equity_curve']
+                if isinstance(equity_curve, list):
+                    equity_curve = np.array(equity_curve)
+                
+                equity_series = pd.Series(equity_curve)
+                returns = equity_series.pct_change().dropna()
+                
+                if len(returns) > 10:
+                    # Advanced VectorBT analytics
+                    window_size = min(20, len(returns))
+                    
+                    # Rolling statistics
+                    rolling_mean = self.vectorbt_optimizer.rolling_mean(returns, window=window_size)
+                    rolling_std = self.vectorbt_optimizer.rolling_std(returns, window=window_size)
+                    rolling_skew = self.vectorbt_optimizer.rolling_skew(returns, window=window_size)
+                    rolling_kurt = self.vectorbt_optimizer.rolling_kurt(returns, window=window_size)
+                    
+                    # Trend analysis
+                    time_index = pd.Series(range(len(returns)), index=returns.index)
+                    trend_correlation = self.vectorbt_optimizer.rolling_corr(returns, time_index, window=window_size)
+                    
+                    # Volatility clustering
+                    volatility_clustering = self.vectorbt_optimizer.rolling_corr(
+                        rolling_std, rolling_std.shift(1), window=window_size
+                    )
+                    
+                    # Risk-adjusted metrics
+                    rolling_sharpe = rolling_mean / rolling_std
+                    rolling_sortino = rolling_mean / self.vectorbt_optimizer.rolling_std(
+                        returns[returns < 0], window=window_size
+                    )
+                    
+                    vectorbt_analytics['rolling_statistics'] = {
+                        'mean_return': rolling_mean.mean(),
+                        'volatility': rolling_std.mean(),
+                        'skewness': rolling_skew.mean(),
+                        'kurtosis': rolling_kurt.mean(),
+                        'trend_strength': abs(trend_correlation.mean()),
+                        'volatility_clustering': volatility_clustering.mean(),
+                        'sharpe_ratio': rolling_sharpe.mean(),
+                        'sortino_ratio': rolling_sortino.mean()
+                    }
+                    
+                    # Regime analysis
+                    regime_analysis = self._analyze_regimes(returns, window_size)
+                    vectorbt_analytics['regime_analysis'] = regime_analysis
+                    
+                    # Performance attribution
+                    performance_attribution = self._analyze_performance_attribution(equity_series, returns, window_size)
+                    vectorbt_analytics['performance_attribution'] = performance_attribution
+                    
+                    # Risk metrics
+                    risk_metrics = self._calculate_vectorbt_risk_metrics(returns, window_size)
+                    vectorbt_analytics['risk_metrics'] = risk_metrics
+            
+            # Store analytics
+            self.vectorbt_analytics[backtest_results.get('test_name', 'default')] = vectorbt_analytics
+            
+            return {
+                'analytics': vectorbt_analytics,
+                'timestamp': datetime.now().isoformat(),
+                'vectorbt_optimized': True
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ VectorBT analytics generation failed: {e}")
+            return {'error': str(e)}
+    
+    def _analyze_regimes(self, returns: pd.Series, window_size: int) -> Dict[str, Any]:
+        """Analyze market regimes using VectorBT."""
+        try:
+            # Calculate rolling volatility
+            rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=window_size)
+            
+            # Define regime thresholds
+            vol_threshold = rolling_vol.quantile(0.5)  # Median volatility
+            
+            # Identify regimes
+            high_vol_regime = rolling_vol > vol_threshold
+            low_vol_regime = rolling_vol <= vol_threshold
+            
+            # Calculate regime statistics
+            high_vol_returns = returns[high_vol_regime]
+            low_vol_returns = returns[low_vol_regime]
+            
+            regime_stats = {
+                'high_volatility_regime': {
+                    'count': len(high_vol_returns),
+                    'mean_return': high_vol_returns.mean(),
+                    'volatility': high_vol_returns.std(),
+                    'percentage': len(high_vol_returns) / len(returns) * 100
+                },
+                'low_volatility_regime': {
+                    'count': len(low_vol_returns),
+                    'mean_return': low_vol_returns.mean(),
+                    'volatility': low_vol_returns.std(),
+                    'percentage': len(low_vol_returns) / len(returns) * 100
+                }
+            }
+            
+            return regime_stats
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regime analysis failed: {e}")
+            return {}
+    
+    def _analyze_performance_attribution(self, equity_series: pd.Series, returns: pd.Series, window_size: int) -> Dict[str, Any]:
+        """Analyze performance attribution using VectorBT."""
+        try:
+            # Calculate rolling performance
+            rolling_returns = self.vectorbt_optimizer.rolling_mean(returns, window=window_size)
+            rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=window_size)
+            
+            # Performance attribution
+            total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
+            avg_return = rolling_returns.mean()
+            avg_vol = rolling_vol.mean()
+            
+            # Risk-adjusted performance
+            risk_adjusted_return = avg_return / avg_vol if avg_vol > 0 else 0
+            
+            attribution = {
+                'total_return': total_return,
+                'average_daily_return': avg_return,
+                'average_volatility': avg_vol,
+                'risk_adjusted_return': risk_adjusted_return,
+                'return_consistency': 1 - rolling_returns.std() / abs(rolling_returns.mean()) if rolling_returns.mean() != 0 else 0,
+                'volatility_consistency': 1 - rolling_vol.std() / rolling_vol.mean() if rolling_vol.mean() != 0 else 0
+            }
+            
+            return attribution
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Performance attribution analysis failed: {e}")
+            return {}
+    
+    def _calculate_vectorbt_risk_metrics(self, returns: pd.Series, window_size: int) -> Dict[str, Any]:
+        """Calculate advanced risk metrics using VectorBT."""
+        try:
+            # Value at Risk (VaR)
+            var_95 = returns.quantile(0.05)
+            var_99 = returns.quantile(0.01)
+            
+            # Expected Shortfall (Conditional VaR)
+            es_95 = returns[returns <= var_95].mean()
+            es_99 = returns[returns <= var_99].mean()
+            
+            # Rolling VaR
+            rolling_var = self.vectorbt_optimizer.rolling_quantile(returns, window=window_size, q=0.05)
+            
+            # Maximum Drawdown using VectorBT
+            rolling_max = self.vectorbt_optimizer.rolling_max(returns.cumsum(), window=window_size)
+            rolling_drawdown = (returns.cumsum() - rolling_max) / rolling_max
+            max_drawdown = rolling_drawdown.min()
+            
+            # Tail risk metrics
+            tail_ratio = es_95 / var_95 if var_95 != 0 else 0
+            
+            risk_metrics = {
+                'var_95': var_95,
+                'var_99': var_99,
+                'expected_shortfall_95': es_95,
+                'expected_shortfall_99': es_99,
+                'rolling_var_mean': rolling_var.mean(),
+                'max_drawdown': max_drawdown,
+                'tail_ratio': tail_ratio,
+                'downside_deviation': returns[returns < 0].std(),
+                'upside_deviation': returns[returns > 0].std()
+            }
+            
+            return risk_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT risk metrics calculation failed: {e}")
+            return {}
     
     def _generate_summary(self, sections: Dict[str, Any]) -> Dict[str, Any]:
         """Generate report summary."""

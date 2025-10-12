@@ -51,6 +51,15 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Unified Vectorization Manager
+try:
+    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -92,6 +101,12 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.vectorization_manager = get_unified_vectorization_manager()
+        else:
+            self.vectorization_manager = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:

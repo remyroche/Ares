@@ -35,10 +35,19 @@ from ..core.feature_generator import FeatureConfig, FeatureCategory
 from ..base_calculations import BaseCalculationType, create_base_calculator
 from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
+# Unified Vectorization Manager
+try:
+    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+
 logger = logging.getLogger(__name__)
 
 class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
-    """VectorBT-optimized momentum generator."""
+    """VectorBT-optimized momentum generator with UnifiedVectorizationManager."""
     
     def __init__(self, period: int = 10, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
@@ -63,11 +72,21 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
         super().__init__(config)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            self.vectorization_manager = get_unified_vectorization_manager()
+        else:
+            self.vectorization_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate momentum using VectorBT operations."""
+        """Generate momentum using VectorBT operations with UnifiedVectorizationManager."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
+        
+        # Optimize DataFrame for processing
+        if self.vectorization_manager:
+            data = self.vectorization_manager.optimize_dataframe(data)
         
         base_values = self.base_calculator.calculate(data)
         

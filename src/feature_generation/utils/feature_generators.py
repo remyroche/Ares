@@ -1032,7 +1032,7 @@ class FeatureGenerators:
     @staticmethod
     def rsi_generator(data: pd.DataFrame, lookback: int, price_column: str = 'close') -> pd.Series:
         """
-        Generate RSI (Relative Strength Index) indicator.
+        Generate RSI (Relative Strength Index) indicator using centralized utilities.
         
         Args:
             data: DataFrame with price data
@@ -1046,22 +1046,9 @@ class FeatureGenerators:
             if price_column not in data.columns:
                 raise ValueError(f"Price column '{price_column}' not found in data")
             
-            prices = data[price_column]
-            delta = prices.diff()
-            
-            # Separate gains and losses
-            gains = delta.where(delta > 0, 0)
-            losses = -delta.where(delta < 0, 0)
-            
-            # Calculate average gains and losses
-            avg_gains = self._vectorbt_rolling_operation(gains, "mean", lookback)
-            avg_losses = self._vectorbt_rolling_operation(losses, "mean", lookback)
-            
-            # Calculate RS and RSI
-            rs = avg_gains / avg_losses
-            rsi = 100 - (100 / (1 + rs))
-            
-            return rsi
+            # Use centralized technical indicators utilities
+            from .centralized_technical_indicators import calculate_rsi
+            return calculate_rsi(data[price_column], lookback)
             
         except Exception as e:
             logger.error(f"Error generating RSI: {e}")
@@ -1096,7 +1083,7 @@ class FeatureGenerators:
     @staticmethod
     def ema_generator(data: pd.DataFrame, lookback: int, price_column: str = 'close') -> pd.Series:
         """
-        Generate EMA (Exponential Moving Average) indicator.
+        Generate EMA (Exponential Moving Average) indicator using centralized utilities.
         
         Args:
             data: DataFrame with price data
@@ -1110,10 +1097,9 @@ class FeatureGenerators:
             if price_column not in data.columns:
                 raise ValueError(f"Price column '{price_column}' not found in data")
             
-            prices = data[price_column]
-            ema = prices.ewm(span=lookback).mean()
-            
-            return ema
+            # Use centralized technical indicators utilities
+            from .centralized_technical_indicators import calculate_ema
+            return calculate_ema(data[price_column], lookback)
             
         except Exception as e:
             logger.error(f"Error generating EMA: {e}")
@@ -1158,7 +1144,7 @@ class FeatureGenerators:
     def macd_generator(data: pd.DataFrame, lookback: int, price_column: str = 'close',
                       fast_period: int = 12, slow_period: int = 26) -> pd.Series:
         """
-        Generate MACD (Moving Average Convergence Divergence) indicator.
+        Generate MACD (Moving Average Convergence Divergence) indicator using centralized utilities.
         
         Args:
             data: DataFrame with price data
@@ -1174,18 +1160,9 @@ class FeatureGenerators:
             if price_column not in data.columns:
                 raise ValueError(f"Price column '{price_column}' not found in data")
             
-            prices = data[price_column]
-            
-            # Calculate EMAs
-            ema_fast = prices.ewm(span=fast_period).mean()
-            ema_slow = prices.ewm(span=slow_period).mean()
-            
-            # Calculate MACD line
-            macd_line = ema_fast - ema_slow
-            
-            # Calculate signal line
-            signal_line = macd_line.ewm(span=lookback).mean()
-            
+            # Use centralized technical indicators utilities
+            from .centralized_technical_indicators import calculate_macd
+            macd_line, signal_line, histogram = calculate_macd(data[price_column], fast_period, slow_period, lookback)
             return signal_line
             
         except Exception as e:

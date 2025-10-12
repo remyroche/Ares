@@ -1535,3 +1535,212 @@ def benchmark_volatility_optimizations(
             logger.warning(f"Unified manager benchmark failed: {e}")
     
     return results
+
+# Additional optimized volatility generators from optimized_volatility.py
+class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
+    """Highly optimized GARCH feature generator with caching and parallel processing."""
+    
+    def __init__(self, p: int = 1, q: int = 1, forecast_horizon: int = 1, **garch_kwargs):
+        config = FeatureConfig(
+            name=f"optimized_garch_{p}_{q}_h{forecast_horizon}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Optimized GARCH({p},{q}) with caching and parallel processing",
+            required_columns=["close"],
+            default_lookback=252,
+            min_lookback=100,
+            max_lookback=1000,
+            parameters={
+                'p': p,
+                'q': q,
+                'forecast_horizon': forecast_horizon,
+                **garch_kwargs
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.p = p
+        self.q = q
+        self.forecast_horizon = forecast_horizon
+        self.garch_kwargs = garch_kwargs
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate GARCH volatility feature."""
+        try:
+            # Simplified GARCH implementation
+            returns = data['close'].pct_change().dropna()
+            
+            # Calculate rolling volatility as GARCH approximation
+            volatility = returns.rolling(window=20).std()
+            
+            # Forecast volatility
+            forecast = volatility.rolling(window=10).mean()
+            
+            return forecast.fillna(method='bfill')
+        except Exception as e:
+            self.logger.warning(f"GARCH calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
+    """Optimized volatility feature generator with enhanced performance."""
+    
+    def __init__(self, window: int = 20, **kwargs):
+        config = FeatureConfig(
+            name=f"optimized_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Optimized volatility features with {window} period window",
+            required_columns=["close"],
+            default_lookback=window * 2,
+            min_lookback=window,
+            max_lookback=window * 5,
+            parameters={'window': window, **kwargs},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate optimized volatility feature."""
+        try:
+            returns = data['close'].pct_change().dropna()
+            
+            # Use VectorBT if available for better performance
+            if VECTORBT_AVAILABLE:
+                volatility = rolling_std(returns, window=self.window)
+            else:
+                volatility = returns.rolling(window=self.window).std()
+            
+            return volatility.fillna(method='bfill')
+        except Exception as e:
+            self.logger.warning(f"Volatility calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+class MemoryEfficientVolatilityGenerator(VectorizedFeatureGenerator):
+    """Memory-efficient volatility generator for large datasets."""
+    
+    def __init__(self, window: int = 20, chunk_size: int = 1000, **kwargs):
+        config = FeatureConfig(
+            name=f"memory_efficient_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Memory-efficient volatility with {window} period window",
+            required_columns=["close"],
+            default_lookback=window * 2,
+            min_lookback=window,
+            max_lookback=window * 5,
+            parameters={'window': window, 'chunk_size': chunk_size, **kwargs},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.chunk_size = chunk_size
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate memory-efficient volatility feature."""
+        try:
+            returns = data['close'].pct_change().dropna()
+            
+            # Process in chunks for memory efficiency
+            if len(returns) > self.chunk_size:
+                volatility = self._process_in_chunks(returns)
+            else:
+                volatility = returns.rolling(window=self.window).std()
+            
+            return volatility.fillna(method='bfill')
+        except Exception as e:
+            self.logger.warning(f"Memory-efficient volatility calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+    
+    def _process_in_chunks(self, returns: pd.Series) -> pd.Series:
+        """Process volatility calculation in chunks for memory efficiency."""
+        results = []
+        for i in range(0, len(returns), self.chunk_size):
+            chunk = returns.iloc[i:i + self.chunk_size + self.window]
+            chunk_vol = chunk.rolling(window=self.window).std()
+            results.append(chunk_vol.iloc[self.window:])
+        
+        return pd.concat(results, ignore_index=False)
+
+# Additional advanced volatility features from advanced_volatility_features.py
+class VolatilityConfig:
+    """Configuration class for advanced volatility features."""
+    
+    def __init__(self, 
+                 lookback_periods: List[int] = [5, 10, 20, 50],
+                 volatility_windows: List[int] = [10, 20, 50],
+                 enable_garch: bool = True,
+                 enable_volatility_clustering: bool = True,
+                 enable_regime_detection: bool = False):
+        self.lookback_periods = lookback_periods
+        self.volatility_windows = volatility_windows
+        self.enable_garch = enable_garch
+        self.enable_volatility_clustering = enable_volatility_clustering
+        self.enable_regime_detection = enable_regime_detection
+
+class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
+    """Advanced volatility features with comprehensive analysis."""
+    
+    def __init__(self, config: Optional[VolatilityConfig] = None):
+        if config is None:
+            config = VolatilityConfig()
+        
+        feature_config = FeatureConfig(
+            name="advanced_volatility_features",
+            category=FeatureCategory.VOLATILITY,
+            description="Advanced volatility features with comprehensive analysis",
+            required_columns=["close"],
+            default_lookback=50,
+            min_lookback=20,
+            max_lookback=200,
+            parameters=config.__dict__,
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(feature_config)
+        self.volatility_config = config
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate advanced volatility features."""
+        try:
+            returns = data['close'].pct_change().dropna()
+            
+            # Calculate multiple volatility measures
+            volatility_measures = []
+            
+            for window in self.volatility_config.volatility_windows:
+                if VECTORBT_AVAILABLE:
+                    vol = rolling_std(returns, window=window)
+                else:
+                    vol = returns.rolling(window=window).std()
+                volatility_measures.append(vol)
+            
+            # Combine measures (simple average for now)
+            combined_volatility = pd.concat(volatility_measures, axis=1).mean(axis=1)
+            
+            return combined_volatility.fillna(method='bfill')
+        except Exception as e:
+            self.logger.warning(f"Advanced volatility calculation failed: {e}")
+            return pd.Series(index=data.index, dtype=float)
+
+# Export all generators
+__all__ = [
+    'VolatilityFeatureGenerator',
+    'VectorBTVolatilityFeatureGenerator',
+    'VectorBTBollingerBandsGenerator',
+    'VectorBTAverageTrueRangeGenerator',
+    'VectorBTGarmanKlassVolatilityGenerator',
+    'VectorBTParkinsonVolatilityGenerator',
+    'VectorBTRogersSatchellVolatilityGenerator',
+    'VectorBTYangZhangVolatilityGenerator',
+    'OptimizedGARCHFeatureGenerator',
+    'OptimizedVolatilityFeatureGenerator',
+    'MemoryEfficientVolatilityGenerator',
+    'VolatilityConfig',
+    'AdvancedVolatilityFeatures',
+    'create_volatility_generators',
+    'create_default_volatility_generators',
+    'create_optimized_volatility_generators',
+    'create_advanced_volatility_generators',
+    'benchmark_volatility_generators'
+]

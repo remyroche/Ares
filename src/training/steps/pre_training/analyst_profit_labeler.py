@@ -15,14 +15,12 @@ Key Features:
 - Per-regime/cluster optimization support
 """
 
-import asyncio
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
@@ -31,44 +29,27 @@ from src.utils.common_operations import (
     validate_dataframe_columns,
     safe_dataframe_operation,
     validate_positive,
-    validate_range,
     safe_int,
-    safe_float,
     get_dataframe_info,
     create_data_quality_report,
     ensure_directory,
     safe_json_dump,
-    safe_json_load,
     format_bytes,
-    timed_operation,
     memory_checkpoint,
     optimize_memory,
-    check_disk_space,
-    integrate_with_m1_optimizers,
-    get_m1_gpu_manager,
-    get_m1_memory_optimizer
+    integrate_with_m1_optimizers
 )
 from src.utils.common_utilities import (
     analyze_nan_values_detailed,
-    format_nan_analysis_report,
-    create_data_quality_report as create_detailed_quality_report,
-    get_dataframe_info as get_detailed_dataframe_info
+    format_nan_analysis_report
 )
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
-    get_vectorized_processing_core,
-    get_enhanced_matrix_operations,
     optimize_dataframe,
-    vectorized_rolling_features,
-    matrix_correlation_analysis,
-    safe_correlation_matrix,
-    compute_trading_indicators,
     get_hardware_performance_report
 )
 from src.utils.ml_common.optimization.grid_utils import (
-    generate_grid,
-    build_coarse_grid_from_search_space,
-    GridSearchOptimizer
+    generate_grid
 )
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.training.steps.pre_training.components.contracts import PipelineState
@@ -181,50 +162,81 @@ class AnalystProfitLabelerConfig:
 
     def __post_init__(self):
         """Validate configuration after initialization."""
-        self._validate_horizon_timeframe_compatibility()
+        tprint_info("🔧 Validating AnalystProfitLabelerConfig...")
+        try:
+            self._validate_horizon_timeframe_compatibility()
+            tprint_success("✅ Configuration validation completed")
+        except Exception as e:
+            tprint_error(f"❌ Configuration validation failed: {e}")
+            raise
 
     def _validate_horizon_timeframe_compatibility(self) -> None:
         """Validate that horizons are compatible with the timeframe."""
+        tprint_info(f"🔍 Validating horizon-timeframe compatibility for timeframe: {self.timeframe}")
+        
         if not self.horizons:
+            tprint_error("❌ Horizons list cannot be empty")
             raise ValueError("Horizons list cannot be empty")
 
         # Parse timeframe to get base period in minutes
-        timeframe_minutes = self._parse_timeframe_to_minutes(self.timeframe)
+        try:
+            timeframe_minutes = self._parse_timeframe_to_minutes(self.timeframe)
+            tprint_info(f"📊 Timeframe '{self.timeframe}' parsed to {timeframe_minutes} minutes")
+        except Exception as e:
+            tprint_error(f"❌ Failed to parse timeframe '{self.timeframe}': {e}")
+            raise
 
         # Check each horizon
         problematic_horizons = []
         for horizon in self.horizons:
             if horizon < timeframe_minutes:
                 problematic_horizons.append((horizon, timeframe_minutes))
+                tprint_warning(f"⚠️ Horizon {horizon}m is less than timeframe {timeframe_minutes}m")
 
         if problematic_horizons:
             horizon_strs = [f"{h}m (horizon) vs {tf}m (timeframe)" for h, tf in problematic_horizons]
-            raise ValueError(
+            error_msg = (
                 f"Horizon(s) incompatible with timeframe '{self.timeframe}': {', '.join(horizon_strs)}. "
                 "Horizon must be >= timeframe period to ensure sufficient data for labeling."
             )
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        tprint_success(f"✅ All {len(self.horizons)} horizons are compatible with timeframe {self.timeframe}")
 
     def _parse_timeframe_to_minutes(self, timeframe: str) -> int:
         """Parse timeframe string to minutes."""
+        tprint_info(f"🔍 Parsing timeframe: {timeframe}")
+        
         try:
             if timeframe.endswith('m'):
-                return safe_int(timeframe[:-1])
+                minutes = safe_int(timeframe[:-1])
+                tprint_info(f"📊 Parsed {timeframe} as {minutes} minutes")
+                return minutes
             elif timeframe.endswith('h'):
                 hours = safe_int(timeframe[:-1])
                 validate_positive(hours, "hours in timeframe")
-                return hours * 60
+                minutes = hours * 60
+                tprint_info(f"📊 Parsed {timeframe} as {hours} hours = {minutes} minutes")
+                return minutes
             elif timeframe.endswith('d'):
                 days = safe_int(timeframe[:-1])
                 validate_positive(days, "days in timeframe")
-                return days * 60 * 24
+                minutes = days * 60 * 24
+                tprint_info(f"📊 Parsed {timeframe} as {days} days = {minutes} minutes")
+                return minutes
             else:
+                tprint_error(f"❌ Unsupported timeframe format: {timeframe}")
                 raise ValueError(f"Unsupported timeframe format: {timeframe}")
         except (ValueError, TypeError) as e:
+            tprint_error(f"❌ Invalid timeframe format '{timeframe}': {e}")
             raise ValueError(f"Invalid timeframe format '{timeframe}': {e}")
 
     def get_optimization_search_space(self) -> Dict[str, Any]:
         """Get search space for hyperparameter optimization."""
-        return {
+        tprint_info("🔍 Generating optimization search space for grid search")
+        
+        search_space = {
             'target_profits': {
                 'type': 'float',
                 'low': 0.5,
@@ -249,47 +261,66 @@ class AnalystProfitLabelerConfig:
                 'log': False
             }
         }
+        
+        tprint_success(f"✅ Generated search space with {len(search_space)} parameters")
+        return search_space
 
     def optimize_config_grid_search(self, data: pd.DataFrame, max_trials: int = 50) -> 'AnalystProfitLabelerConfig':
         """Optimize configuration using grid search."""
-        search_space = self.get_optimization_search_space()
+        tprint_info(f"🔍 Starting grid search optimization with {max_trials} trials")
+        
+        try:
+            search_space = self.get_optimization_search_space()
 
-        # Generate parameter grid
-        param_grid = generate_grid(search_space, max_trials)
+            # Generate parameter grid
+            tprint_info("📊 Generating parameter grid...")
+            param_grid = generate_grid(search_space, max_trials)
+            tprint_success(f"✅ Generated {len(param_grid)} parameter combinations")
 
-        best_config = None
-        best_score = -float('inf')
+            best_config = None
+            best_score = -float('inf')
+            successful_trials = 0
 
-        # Simple evaluation based on data characteristics
-        for params in param_grid[:max_trials]:
-            try:
-                # Create config with current parameters
-                config = AnalystProfitLabelerConfig(
-                    horizons=self.horizons,
-                    target_profits=params.get('target_profits', self.target_profits),
-                    volatility_window=params.get('volatility_window', self.volatility_window),
-                    min_label_quality=params.get('min_label_quality', self.min_label_quality),
-                    min_predictability=params.get('min_predictability', self.min_predictability)
-                )
+            # Simple evaluation based on data characteristics
+            tprint_info("🧪 Evaluating parameter combinations...")
+            for i, params in enumerate(param_grid[:max_trials]):
+                try:
+                    # Create config with current parameters
+                    config = AnalystProfitLabelerConfig(
+                        horizons=self.horizons,
+                        target_profits=params.get('target_profits', self.target_profits),
+                        volatility_window=params.get('volatility_window', self.volatility_window),
+                        min_label_quality=params.get('min_label_quality', self.min_label_quality),
+                        min_predictability=params.get('min_predictability', self.min_predictability)
+                    )
 
-                # Simple scoring based on data quality metrics
-                quality = create_data_quality_report(data)
-                score = quality.get('quality_metrics', {}).get('numeric_columns', 0) * 0.1
-                score += (1 - quality.get('quality_metrics', {}).get('missing_percentage', 100)) * 0.01
+                    # Simple scoring based on data quality metrics
+                    quality = create_data_quality_report(data)
+                    score = quality.get('quality_metrics', {}).get('numeric_columns', 0) * 0.1
+                    score += (1 - quality.get('quality_metrics', {}).get('missing_percentage', 100)) * 0.01
 
-                if score > best_score:
-                    best_score = score
-                    best_config = config
+                    if score > best_score:
+                        best_score = score
+                        best_config = config
+                        tprint_info(f"📈 New best score: {best_score:.3f} (trial {i+1})")
+                    
+                    successful_trials += 1
 
-            except Exception as e:
-                tprint_warning(f"⚠️ Error evaluating config {params}: {e}")
-                continue
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error evaluating config {params}: {e}")
+                    continue
 
-        if best_config:
-            tprint_success(f"✅ Grid search completed. Best score: {best_score:.3f}")
-            return best_config
-
-        return self
+            if best_config:
+                tprint_success(f"✅ Grid search completed: {successful_trials}/{max_trials} successful trials, best score: {best_score:.3f}")
+                return best_config
+            else:
+                tprint_warning("⚠️ No valid configurations found, returning original config")
+                return self
+                
+        except Exception as e:
+            tprint_error(f"❌ Grid search optimization failed: {e}")
+            tprint_warning("⚠️ Returning original configuration due to optimization failure")
+            return self
 
 
 class AnalystProfitLabeler:
@@ -306,16 +337,23 @@ class AnalystProfitLabeler:
         self.logger = system_logger.getChild('AnalystProfitLabeler')
 
         # Initialize matrix operations for enhanced data processing
-        self.matrix_ops = get_unified_matrix_operations()
-        self.vectorized_core = get_vectorized_processing_core()
-        self.enhanced_matrix_ops = get_enhanced_matrix_operations()
-
-        tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
+        try:
+            self.matrix_ops = get_unified_matrix_operations()
+            tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize matrix operations: {e}")
+            raise RuntimeError(f"Matrix operations initialization failed: {e}") from e
 
         # Initialize M1 optimizations if available
-        self.m1_integration = integrate_with_m1_optimizers()
-        if self.m1_integration.get('success', False):
-            tprint_info(f"🧠 M1 optimizations initialized: GPU={'✅' if self.m1_integration.get('gpu_manager') else '❌'}, Memory={'✅' if self.m1_integration.get('memory_optimizer') else '❌'}")
+        try:
+            self.m1_integration = integrate_with_m1_optimizers()
+            if self.m1_integration.get('success', False):
+                tprint_info(f"🧠 M1 optimizations initialized: GPU={'✅' if self.m1_integration.get('gpu_manager') else '❌'}, Memory={'✅' if self.m1_integration.get('memory_optimizer') else '❌'}")
+            else:
+                tprint_warning("⚠️ M1 optimizations not available or failed to initialize")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize M1 optimizations: {e}")
+            self.m1_integration = {'success': False}
 
         if not VOLATILITY_LABELER_AVAILABLE:
             raise RuntimeError(
@@ -326,9 +364,14 @@ class AnalystProfitLabeler:
         # Initialize advanced filters if available and enabled
         self.advanced_filters = None
         if self.config.enable_advanced_filters and ADVANCED_FILTERS_AVAILABLE:
-            filters_config = self.config.advanced_filters_config or AdvancedFiltersConfig()
-            self.advanced_filters = AdvancedFilters15m(filters_config)
-            tprint_info("🔍 Advanced 15m filters initialized")
+            try:
+                filters_config = self.config.advanced_filters_config or AdvancedFiltersConfig()
+                self.advanced_filters = AdvancedFilters15m(filters_config)
+                tprint_info("🔍 Advanced 15m filters initialized")
+            except Exception as e:
+                tprint_error(f"❌ Failed to initialize advanced filters: {e}")
+                self.advanced_filters = None
+                tprint_warning("⚠️ Continuing without advanced filters due to initialization failure")
         elif self.config.enable_advanced_filters and not ADVANCED_FILTERS_AVAILABLE:
             tprint_warning("⚠️ Advanced filters requested but not available")
 
@@ -355,63 +398,92 @@ class AnalystProfitLabeler:
 
     def _create_labeler(self) -> Any:
         """Create and configure the VolatilityAwareMultiHorizonLabeler for Analyst."""
-        # Create Analyst-specific configuration
-        labeler_config = VolatilityAwareConfig()
+        tprint_info("🔧 Creating VolatilityAwareMultiHorizonLabeler for Analyst...")
         
-        # Set label definition type to Analyst
-        labeler_config.label_definition_type = LabelDefinitionType.ANALYST
-        labeler_config.enable_enhanced_labels = True
-        
-        # Configure bar construction to use TIME bars (we're working with OHLCV data)
-        # TIME bars with bar_size = timeframe period will pass through the data as-is
-        from src.training.steps.pre_training.profit_labeling.bar_construction import BarType
-        labeler_config.bar_construction.bar_type = BarType.TIME
-        labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
-        labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data
-        
-        # Configure noise gating to be less aggressive for OHLCV data
-        # OHLCV data is already aggregated, so noise is less of an issue
-        labeler_config.noise_gating.enabled = False  # Disable noise gating for OHLCV data
-        
-        # Configure timeframe and horizons
-        labeler_config.timeframe = self.config.timeframe
-        labeler_config.multi_target.horizons = self.config.horizons
-        labeler_config.multi_target.target_profits = self.config.target_profits
-        # Configure multi-target to use very lenient quality thresholds
-        labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
-        
-        # Configure volatility settings
-        labeler_config.volatility.enabled = self.config.use_volatility_normalization
-        labeler_config.volatility.window = self.config.volatility_window
-        
-        # Configure quality scoring - disable for initial labeling to ensure labels are generated
-        # Quality filtering can be applied during feature selection/training
-        labeler_config.enable_quality_scoring = False  # Disable strict quality filtering
-        labeler_config.quality_scoring.min_quality_threshold = 0.1  # Very lenient threshold
-        labeler_config.quality_scoring.min_predictability = 0.1  # Very lenient threshold
-        
-        # Configure regime adaptation
-        labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
-        
-        # Configure optimal entry point detection
-        if hasattr(labeler_config, 'optimal_entry_detection'):
-            labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
-            labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
-            labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
-            labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
-            labeler_config.optimal_entry_detection.horizons = self.config.horizons
-            labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
-            labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
-            labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
-        
-        # Apply custom parameters
-        if self.config.custom_params:
-            for key, value in self.config.custom_params.items():
-                if hasattr(labeler_config, key):
-                    setattr(labeler_config, key, value)
-        
-        # Create the VolatilityAwareMultiHorizonLabeler with our configuration
-        return VolatilityAwareMultiHorizonLabeler(labeler_config)
+        try:
+            # Create Analyst-specific configuration
+            tprint_info("📋 Initializing labeler configuration...")
+            labeler_config = VolatilityAwareConfig()
+            
+            # Set label definition type to Analyst
+            labeler_config.label_definition_type = LabelDefinitionType.ANALYST
+            labeler_config.enable_enhanced_labels = True
+            tprint_info("✅ Set label definition type to ANALYST with enhanced labels")
+            
+            # Configure bar construction to use TIME bars (we're working with OHLCV data)
+            # TIME bars with bar_size = timeframe period will pass through the data as-is
+            tprint_info("📊 Configuring bar construction for OHLCV data...")
+            from src.training.steps.pre_training.profit_labeling.bar_construction import BarType
+            labeler_config.bar_construction.bar_type = BarType.TIME
+            labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
+            labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data
+            tprint_info(f"✅ Bar construction: TIME bars, {self.config.base_period_minutes}min period, min 10 bars")
+            
+            # Configure noise gating to be less aggressive for OHLCV data
+            # OHLCV data is already aggregated, so noise is less of an issue
+            labeler_config.noise_gating.enabled = False  # Disable noise gating for OHLCV data
+            tprint_info("✅ Disabled noise gating for OHLCV data")
+            
+            # Configure timeframe and horizons
+            tprint_info(f"⏰ Configuring timeframe and horizons: {self.config.timeframe}, {self.config.horizons}")
+            labeler_config.timeframe = self.config.timeframe
+            labeler_config.multi_target.horizons = self.config.horizons
+            labeler_config.multi_target.target_profits = self.config.target_profits
+            # Configure multi-target to use very lenient quality thresholds
+            labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
+            tprint_info(f"✅ Multi-target: {len(self.config.horizons)} horizons, {len(self.config.target_profits)} targets, LQS=0.01")
+            
+            # Configure volatility settings
+            tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
+            labeler_config.volatility.enabled = self.config.use_volatility_normalization
+            labeler_config.volatility.window = self.config.volatility_window
+            
+            # Configure quality scoring - disable for initial labeling to ensure labels are generated
+            # Quality filtering can be applied during feature selection/training
+            tprint_info("🎯 Configuring quality scoring (lenient thresholds)...")
+            labeler_config.enable_quality_scoring = False  # Disable strict quality filtering
+            labeler_config.quality_scoring.min_quality_threshold = 0.1  # Very lenient threshold
+            labeler_config.quality_scoring.min_predictability = 0.1  # Very lenient threshold
+            tprint_info("✅ Quality scoring: disabled strict filtering, thresholds=0.1")
+            
+            # Configure regime adaptation
+            tprint_info(f"🔄 Configuring regime adaptation: enabled={self.config.enable_regime_adaptation}")
+            labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
+            
+            # Configure optimal entry point detection
+            if hasattr(labeler_config, 'optimal_entry_detection'):
+                tprint_info("🎯 Configuring optimal entry point detection...")
+                labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
+                labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
+                labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
+                labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
+                labeler_config.optimal_entry_detection.horizons = self.config.horizons
+                labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
+                labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
+                labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
+                tprint_info(f"✅ Entry detection: enabled={self.config.enable_optimal_entry_detection}, threshold={self.config.entry_threshold}")
+            else:
+                tprint_warning("⚠️ Optimal entry detection not available in labeler config")
+            
+            # Apply custom parameters
+            if self.config.custom_params:
+                tprint_info(f"🔧 Applying {len(self.config.custom_params)} custom parameters...")
+                applied_count = 0
+                for key, value in self.config.custom_params.items():
+                    if hasattr(labeler_config, key):
+                        setattr(labeler_config, key, value)
+                        applied_count += 1
+                tprint_success(f"✅ Applied {applied_count} custom parameters")
+            
+            # Create the VolatilityAwareMultiHorizonLabeler with our configuration
+            tprint_info("🏗️ Creating VolatilityAwareMultiHorizonLabeler instance...")
+            labeler = VolatilityAwareMultiHorizonLabeler(labeler_config)
+            tprint_success("✅ VolatilityAwareMultiHorizonLabeler created successfully")
+            return labeler
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to create labeler: {e}")
+            raise
     
     def generate_labels(
         self,
@@ -460,11 +532,16 @@ class AnalystProfitLabeler:
             # Optimize data using matrix operations for better performance
             tprint_info(f"🧮 Optimizing data with matrix operations ({data.shape})")
             original_shape = data.shape
-            optimized_data = optimize_dataframe(data)
-
-            if optimized_data is not data:
-                data = optimized_data
-                tprint_success(f"✅ Data optimized: {original_shape} → {data.shape}")
+            try:
+                optimized_data = optimize_dataframe(data)
+                if optimized_data is not data:
+                    data = optimized_data
+                    tprint_success(f"✅ Data optimized: {original_shape} → {data.shape}")
+                else:
+                    tprint_info("ℹ️ Data optimization: no changes needed")
+            except Exception as e:
+                tprint_warning(f"⚠️ Data optimization failed, continuing with original data: {e}")
+                # Continue with original data if optimization fails
 
             # Note: regime_assignments are not currently used by the underlying labeler
             # but are kept in the API for future enhancement
@@ -517,11 +594,15 @@ class AnalystProfitLabeler:
             self._validate_labeling_result(result)
 
             # Log memory usage and data quality with matrix operations info
-            memory_info = optimize_memory()
-            data_info = get_dataframe_info(data)
-            hardware_report = get_hardware_performance_report()
-            tprint_info(f"📊 Data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")
-            tprint_info(f"🔧 Hardware performance: {hardware_report.get('cpu_cores', 'N/A')} cores, GPU: {hardware_report.get('gpu_available', 'N/A')}")
+            try:
+                optimize_memory()  # Optimize memory without storing result
+                data_info = get_dataframe_info(data)
+                hardware_report = get_hardware_performance_report()
+                tprint_info(f"📊 Data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")
+                tprint_info(f"🔧 Hardware performance: {hardware_report.get('cpu_cores', 'N/A')} cores, GPU: {hardware_report.get('gpu_available', 'N/A')}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get performance metrics: {e}")
+                # Continue without performance metrics
 
             tprint_success(
                 f"✅ Analyst labels generated: {result.n_samples} samples, "
@@ -536,47 +617,83 @@ class AnalystProfitLabeler:
     
     def _validate_labeling_result(self, result: LabelingResult) -> None:
         """Validate that labeling produced sufficient samples for training."""
+        tprint_info(f"🔍 Validating labeling result: {result.n_samples} samples, {result.n_targets} targets")
+        
         MIN_SAMPLES_PER_TARGET = 50  # Minimum samples needed per target for reliable training
         MIN_TOTAL_SAMPLES = 200     # Absolute minimum total samples
 
         if result.n_samples < MIN_TOTAL_SAMPLES:
-            raise ValueError(
+            error_msg = (
                 f"Insufficient samples for training: got {result.n_samples}, need at least {MIN_TOTAL_SAMPLES}. "
                 f"Consider adjusting labeling parameters (horizons, thresholds, or data timeframe) to generate more labels."
             )
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        tprint_success(f"✅ Sample count validation passed: {result.n_samples} >= {MIN_TOTAL_SAMPLES}")
 
         if result.n_targets > 0:
             samples_per_target = result.n_samples / result.n_targets
+            tprint_info(f"📊 Samples per target: {samples_per_target:.1f} (minimum recommended: {MIN_SAMPLES_PER_TARGET})")
+            
             if samples_per_target < MIN_SAMPLES_PER_TARGET:
-                warnings.warn(
+                warning_msg = (
                     f"Low samples per target: {samples_per_target:.1f} per target, "
                     f"recommended minimum is {MIN_SAMPLES_PER_TARGET}. "
-                    "Model training may be unreliable with insufficient samples per target.",
+                    "Model training may be unreliable with insufficient samples per target."
+                )
+                tprint_warning(f"⚠️ {warning_msg}")
+                warnings.warn(
+                    warning_msg,
                     UserWarning,
                     stacklevel=2
                 )
+            else:
+                tprint_success(f"✅ Samples per target validation passed: {samples_per_target:.1f} >= {MIN_SAMPLES_PER_TARGET}")
+        
+        tprint_success("✅ Labeling result validation completed successfully")
 
     def get_label_summary(self, result: LabelingResult) -> Dict[str, Any]:
         """Get a summary of the labeling results."""
-        summary = {
-            'n_samples': result.n_samples,
-            'n_targets': result.n_targets,
-            'n_horizons': result.n_horizons,
-            'processing_time': result.processing_time,
-            'quality_scores': {}
-        }
+        tprint_info("📊 Generating label summary...")
         
-        # Add quality scores
-        if result.quality_scores:
-            for target_name, quality in result.quality_scores.items():
-                summary['quality_scores'][target_name] = {
-                    'overall_quality': quality.overall_quality,
-                    'predictability': quality.predictability,
-                    'stability': quality.stability,
-                    'balance': quality.balance
-                }
-        
-        return summary
+        try:
+            summary = {
+                'n_samples': result.n_samples,
+                'n_targets': result.n_targets,
+                'n_horizons': result.n_horizons,
+                'processing_time': result.processing_time,
+                'quality_scores': {}
+            }
+            
+            # Add quality scores
+            if result.quality_scores:
+                tprint_info(f"📈 Processing {len(result.quality_scores)} quality scores...")
+                for target_name, quality in result.quality_scores.items():
+                    summary['quality_scores'][target_name] = {
+                        'overall_quality': quality.overall_quality,
+                        'predictability': quality.predictability,
+                        'stability': quality.stability,
+                        'balance': quality.balance
+                    }
+                tprint_success(f"✅ Processed quality scores for {len(result.quality_scores)} targets")
+            else:
+                tprint_warning("⚠️ No quality scores available in result")
+            
+            tprint_success(f"✅ Label summary generated: {summary['n_samples']} samples, {summary['n_targets']} targets, {summary['n_horizons']} horizons")
+            return summary
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate label summary: {e}")
+            # Return a basic summary even if quality scores fail
+            return {
+                'n_samples': getattr(result, 'n_samples', 0),
+                'n_targets': getattr(result, 'n_targets', 0),
+                'n_horizons': getattr(result, 'n_horizons', 0),
+                'processing_time': getattr(result, 'processing_time', 0),
+                'quality_scores': {},
+                'error': str(e)
+            }
 
 
 @register_component('analyst_profit_labeler')
@@ -635,7 +752,10 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
     
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        return ['multi_horizon_labeling_result', 'labeling_report']
+        tprint_info("📋 Getting required artifacts list")
+        artifacts = ['multi_horizon_labeling_result', 'labeling_report']
+        tprint_success(f"✅ Required artifacts: {artifacts}")
+        return artifacts
     
     async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
@@ -909,5 +1029,25 @@ async def execute_analyst_profit_labeling(
     Returns:
         LabelingResult with labels and quality metrics
     """
-    labeler = AnalystProfitLabeler(config)
-    return labeler.generate_labels(data, regime_assignments, **kwargs)
+    tprint_info("🚀 Starting execute_analyst_profit_labeling...")
+    
+    try:
+        tprint_info(f"📊 Input data: {len(data)} rows, {len(data.columns)} columns")
+        if regime_assignments is not None:
+            tprint_info(f"📈 Regime assignments: {len(regime_assignments)} regimes")
+        else:
+            tprint_info("📈 No regime assignments provided")
+        
+        tprint_info("🔧 Creating AnalystProfitLabeler...")
+        labeler = AnalystProfitLabeler(config)
+        tprint_success("✅ AnalystProfitLabeler created successfully")
+        
+        tprint_info("📈 Generating labels...")
+        result = labeler.generate_labels(data, regime_assignments, **kwargs)
+        tprint_success(f"✅ Labels generated successfully: {result.n_samples} samples, {result.n_targets} targets")
+        
+        return result
+        
+    except Exception as e:
+        tprint_error(f"❌ execute_analyst_profit_labeling failed: {e}")
+        raise

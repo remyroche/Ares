@@ -74,6 +74,24 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     COMMON_OPS_AVAILABLE = False
 
+# Import VectorBT optimizations - Enhanced performance with VectorBT
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum
+    )
+    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
+        VectorBTUnifiedFramework, create_vectorbt_unified_framework,
+        FeatureSelectionMethod
+    )
+    from src.utils.ml_common.vectorbt_memory_optimizer import VectorBTMemoryOptimizer
+    from src.utils.ml_common.vectorbt_performance_monitor import VectorBTPerformanceMonitor
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT optimizations not available: {e}")
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+
 
 @dataclass
 class AnalystEnsembleTrainingConfig:
@@ -98,6 +116,16 @@ class AnalystEnsembleTrainingConfig:
 
     # Ensemble parameters
     base_model_types: List[str] = None
+
+    # VectorBT optimization parameters
+    enable_vectorbt_optimizations: bool = True
+    vectorbt_rolling_window: int = 20
+    vectorbt_memory_efficient: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_enable_gpu: bool = False
+    vectorbt_fast_fail: bool = True
+    vectorbt_feature_selection_method: str = 'auto'
+    vectorbt_max_features: int = 100
 
     def __post_init__(self):
         """Post-initialization setup."""
@@ -156,11 +184,62 @@ class AnalystEnsembleTrainingStep:
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
 
+            # Initialize VectorBT optimizations
+            if VECTORBT_OPTIMIZATIONS_AVAILABLE and self.config.enable_vectorbt_optimizations:
+                self._initialize_vectorbt_optimizations()
+            else:
+                self.vectorbt_rolling_optimizer = None
+                self.vectorbt_unified_framework = None
+                self.vectorbt_memory_optimizer = None
+                self.vectorbt_performance_monitor = None
+
             tprint_success("✅ AnalystEnsembleTrainingStep initialized successfully")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize AnalystEnsembleTrainingStep: {e}")
             raise
+
+    def _initialize_vectorbt_optimizations(self):
+        """Initialize VectorBT optimization components."""
+        try:
+            tprint_info("🚀 Initializing VectorBT optimizations...")
+            
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.config.vectorbt_enable_gpu,
+                enable_parallel=self.config.enable_parallel_processing,
+                memory_efficient=self.config.vectorbt_memory_efficient,
+                chunk_size=self.config.vectorbt_chunk_size,
+                fast_fail=self.config.vectorbt_fast_fail,
+                enable_logging=True
+            )
+            
+            # Initialize VectorBT unified framework for feature selection
+            self.vectorbt_unified_framework = create_vectorbt_unified_framework()
+            
+            # Initialize VectorBT memory optimizer
+            self.vectorbt_memory_optimizer = VectorBTMemoryOptimizer(
+                memory_limit_gb=self.config.memory_limit_gb,
+                enable_compression=True,
+                enable_chunking=True
+            )
+            
+            # Initialize VectorBT performance monitor
+            self.vectorbt_performance_monitor = VectorBTPerformanceMonitor(
+                enable_detailed_logging=True,
+                enable_memory_tracking=True,
+                enable_timing_tracking=True
+            )
+            
+            tprint_success("✅ VectorBT optimizations initialized successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize VectorBT optimizations: {e}")
+            # Set to None to disable optimizations
+            self.vectorbt_rolling_optimizer = None
+            self.vectorbt_unified_framework = None
+            self.vectorbt_memory_optimizer = None
+            self.vectorbt_performance_monitor = None
 
     async def train_analyst_ensemble(
         self,
@@ -259,9 +338,13 @@ class AnalystEnsembleTrainingStep:
         base_models: Dict[str, Any],
         **kwargs
     ) -> np.ndarray:
-        """Create enhanced feature set with full integration."""
+        """Create enhanced feature set with full integration and VectorBT optimizations."""
         try:
-            tprint_info("🔄 Creating enhanced feature set with full integration...")
+            tprint_info("🔄 Creating enhanced feature set with full integration and VectorBT optimizations...")
+
+            # Start performance monitoring
+            if self.vectorbt_performance_monitor:
+                self.vectorbt_performance_monitor.start_operation("enhanced_feature_set_creation")
 
             enhanced_features = []
             metadata = {
@@ -269,11 +352,20 @@ class AnalystEnsembleTrainingStep:
                 'base_prediction_features_count': 0,
                 'hmm_features_count': 0,
                 'nas_features_count': 0,
+                'vectorbt_rolling_features_count': 0,
+                'vectorbt_selected_features_count': 0,
                 'total_features': X_base.shape[1]
             }
 
             # Start with base features
             enhanced_features.append(X_base)
+
+            # Add VectorBT rolling features if optimizer is available
+            if self.vectorbt_rolling_optimizer and self.config.enable_vectorbt_optimizations:
+                rolling_features = await self._create_vectorbt_rolling_features(training_data)
+                if rolling_features is not None:
+                    enhanced_features.append(rolling_features)
+                    metadata['vectorbt_rolling_features_count'] = rolling_features.shape[1]
 
             # Add base model predictions if available
             if base_models:
@@ -302,8 +394,22 @@ class AnalystEnsembleTrainingStep:
             else:
                 X_enhanced = enhanced_features[0]
 
+            # Apply VectorBT feature selection if enabled
+            if (self.vectorbt_unified_framework and 
+                self.config.enable_vectorbt_optimizations and 
+                X_enhanced.shape[1] > self.config.vectorbt_max_features):
+                
+                X_enhanced, selected_features = await self._apply_vectorbt_feature_selection(
+                    X_enhanced, training_data, **kwargs
+                )
+                metadata['vectorbt_selected_features_count'] = len(selected_features)
+
             metadata['total_features'] = X_enhanced.shape[1]
             self._enhanced_metadata = metadata
+
+            # End performance monitoring
+            if self.vectorbt_performance_monitor:
+                self.vectorbt_performance_monitor.end_operation("enhanced_feature_set_creation")
 
             tprint_success(f"✅ Enhanced feature set created: {X_enhanced.shape[1]} total features")
             return X_enhanced
@@ -393,6 +499,117 @@ class AnalystEnsembleTrainingStep:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to extract NAS features: {e}")
             return None
+
+    async def _create_vectorbt_rolling_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Create VectorBT rolling features for enhanced feature set."""
+        try:
+            if not self.vectorbt_rolling_optimizer:
+                return None
+
+            tprint_info("🔄 Creating VectorBT rolling features...")
+            
+            # Select numeric columns for rolling operations
+            numeric_columns = training_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_columns) == 0:
+                tprint_warning("⚠️ No numeric columns found for VectorBT rolling features")
+                return None
+
+            rolling_features = []
+            window = self.config.vectorbt_rolling_window
+
+            for col in numeric_columns[:10]:  # Limit to first 10 numeric columns
+                try:
+                    series = training_data[col].dropna()
+                    if len(series) < window:
+                        continue
+
+                    # Create rolling features using VectorBT optimizer
+                    rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(series, window)
+                    rolling_std = self.vectorbt_rolling_optimizer.rolling_std(series, window)
+                    rolling_min = self.vectorbt_rolling_optimizer.rolling_min(series, window)
+                    rolling_max = self.vectorbt_rolling_optimizer.rolling_max(series, window)
+
+                    # Combine rolling features
+                    col_rolling_features = np.column_stack([
+                        rolling_mean.values,
+                        rolling_std.values,
+                        rolling_min.values,
+                        rolling_max.values
+                    ])
+
+                    rolling_features.append(col_rolling_features)
+                    tprint_debug(f"📊 Created rolling features for {col}")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to create rolling features for {col}: {e}")
+                    continue
+
+            if rolling_features:
+                combined_rolling_features = np.hstack(rolling_features)
+                tprint_success(f"✅ Created VectorBT rolling features: {combined_rolling_features.shape[1]} features")
+                return combined_rolling_features
+            else:
+                tprint_warning("⚠️ No VectorBT rolling features created")
+                return None
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to create VectorBT rolling features: {e}")
+            return None
+
+    async def _apply_vectorbt_feature_selection(
+        self, 
+        X: np.ndarray, 
+        training_data: pd.DataFrame, 
+        **kwargs
+    ) -> Tuple[np.ndarray, List[int]]:
+        """Apply VectorBT feature selection to reduce dimensionality."""
+        try:
+            if not self.vectorbt_unified_framework:
+                return X, list(range(X.shape[1]))
+
+            tprint_info(f"🔄 Applying VectorBT feature selection: {X.shape[1]} -> {self.config.vectorbt_max_features} features...")
+
+            # Prepare target variable for feature selection
+            target_columns = kwargs.get('target_columns', ['target'])
+            if target_columns and target_columns[0] in training_data.columns:
+                y = training_data[target_columns[0]].values
+            else:
+                # Use first column as target if no target specified
+                y = training_data.iloc[:, 0].values
+
+            # Ensure y is numeric and finite
+            y = np.asarray(y, dtype=float)
+            y = y[~np.isnan(y)]
+            
+            if len(y) == 0:
+                tprint_warning("⚠️ No valid target values for feature selection")
+                return X, list(range(X.shape[1]))
+
+            # Align X and y
+            min_len = min(len(X), len(y))
+            X_aligned = X[:min_len]
+            y_aligned = y[:min_len]
+
+            # Apply VectorBT feature selection
+            selection_result = self.vectorbt_unified_framework.select_features(
+                X_aligned, 
+                y_aligned,
+                method=self.config.vectorbt_feature_selection_method,
+                k=self.config.vectorbt_max_features,
+                feature_names=[f'feature_{i}' for i in range(X_aligned.shape[1])]
+            )
+
+            if selection_result.success and len(selection_result.selected_indices) > 0:
+                selected_X = X_aligned[:, selection_result.selected_indices]
+                tprint_success(f"✅ VectorBT feature selection completed: {X.shape[1]} -> {selected_X.shape[1]} features")
+                return selected_X, selection_result.selected_indices
+            else:
+                tprint_warning(f"⚠️ VectorBT feature selection failed: {selection_result.error}")
+                return X, list(range(X.shape[1]))
+
+        except Exception as e:
+            tprint_error(f"❌ VectorBT feature selection failed: {e}")
+            return X, list(range(X.shape[1]))
 
     async def _train_ensemble_with_existing_trainer(
         self,
@@ -487,14 +704,43 @@ class AnalystEnsembleTrainingStep:
                 'include_hmm_features': self.config.include_hmm_features,
                 'include_nas_features': self.config.include_nas_features,
                 'save_models': self.config.save_models,
-                'output_directory': self.config.output_directory
+                'output_directory': self.config.output_directory,
+                'vectorbt_optimizations_enabled': self.config.enable_vectorbt_optimizations
             },
             'hardware_optimization': {
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'rolling_optimizer_available': self.vectorbt_rolling_optimizer is not None,
+                'unified_framework_available': self.vectorbt_unified_framework is not None,
+                'memory_optimizer_available': self.vectorbt_memory_optimizer is not None,
+                'performance_monitor_available': self.vectorbt_performance_monitor is not None
             }
         }
+
+        # Add VectorBT performance statistics if available
+        if self.vectorbt_rolling_optimizer:
+            try:
+                rolling_stats = self.vectorbt_rolling_optimizer.get_performance_stats()
+                metrics['vectorbt_rolling_stats'] = rolling_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT rolling stats: {e}")
+
+        if self.vectorbt_unified_framework:
+            try:
+                framework_stats = self.vectorbt_unified_framework.get_performance_stats()
+                metrics['vectorbt_framework_stats'] = framework_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT framework stats: {e}")
+
+        if self.vectorbt_performance_monitor:
+            try:
+                performance_stats = self.vectorbt_performance_monitor.get_performance_summary()
+                metrics['vectorbt_performance_stats'] = performance_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT performance stats: {e}")
 
         return metrics
 

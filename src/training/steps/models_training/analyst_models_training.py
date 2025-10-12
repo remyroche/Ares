@@ -84,6 +84,24 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     COMMON_OPS_AVAILABLE = False
 
+# Import VectorBT optimizations - Enhanced performance with VectorBT
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum
+    )
+    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
+        VectorBTUnifiedFramework, create_vectorbt_unified_framework,
+        FeatureSelectionMethod
+    )
+    from src.utils.ml_common.vectorbt_memory_optimizer import VectorBTMemoryOptimizer
+    from src.utils.ml_common.vectorbt_performance_monitor import VectorBTPerformanceMonitor
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT optimizations not available: {e}")
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+
 try:
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
@@ -151,6 +169,16 @@ class AnalystModelsTrainingConfig:
     validation_split: float = 0.2
     min_training_samples: int = 100
 
+    # VectorBT optimization parameters
+    enable_vectorbt_optimizations: bool = True
+    vectorbt_rolling_window: int = 20
+    vectorbt_memory_efficient: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_enable_gpu: bool = False
+    vectorbt_fast_fail: bool = True
+    vectorbt_feature_selection_method: str = 'auto'
+    vectorbt_max_features: int = 100
+
     def __post_init__(self):
         """Post-initialization setup."""
         supported_types = [
@@ -217,11 +245,62 @@ class AnalystModelsTrainingStep:
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
 
+            # Initialize VectorBT optimizations
+            if VECTORBT_OPTIMIZATIONS_AVAILABLE and self.config.enable_vectorbt_optimizations:
+                self._initialize_vectorbt_optimizations()
+            else:
+                self.vectorbt_rolling_optimizer = None
+                self.vectorbt_unified_framework = None
+                self.vectorbt_memory_optimizer = None
+                self.vectorbt_performance_monitor = None
+
             tprint_success("✅ AnalystModelsTrainingStep initialized successfully")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize AnalystModelsTrainingStep: {e}")
             raise
+
+    def _initialize_vectorbt_optimizations(self):
+        """Initialize VectorBT optimization components."""
+        try:
+            tprint_info("🚀 Initializing VectorBT optimizations for Analyst models...")
+            
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.config.vectorbt_enable_gpu,
+                enable_parallel=self.config.enable_parallel_processing,
+                memory_efficient=self.config.vectorbt_memory_efficient,
+                chunk_size=self.config.vectorbt_chunk_size,
+                fast_fail=self.config.vectorbt_fast_fail,
+                enable_logging=True
+            )
+            
+            # Initialize VectorBT unified framework for feature selection
+            self.vectorbt_unified_framework = create_vectorbt_unified_framework()
+            
+            # Initialize VectorBT memory optimizer
+            self.vectorbt_memory_optimizer = VectorBTMemoryOptimizer(
+                memory_limit_gb=self.config.memory_limit_gb,
+                enable_compression=True,
+                enable_chunking=True
+            )
+            
+            # Initialize VectorBT performance monitor
+            self.vectorbt_performance_monitor = VectorBTPerformanceMonitor(
+                enable_detailed_logging=True,
+                enable_memory_tracking=True,
+                enable_timing_tracking=True
+            )
+            
+            tprint_success("✅ VectorBT optimizations initialized successfully for Analyst models")
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize VectorBT optimizations: {e}")
+            # Set to None to disable optimizations
+            self.vectorbt_rolling_optimizer = None
+            self.vectorbt_unified_framework = None
+            self.vectorbt_memory_optimizer = None
+            self.vectorbt_performance_monitor = None
 
     async def train_analyst_models(
         self,
@@ -1258,14 +1337,43 @@ class AnalystModelsTrainingStep:
                 'save_models': self.config.save_models,
                 'output_directory': self.config.output_directory,
                 'enable_parallel_processing': self.config.enable_parallel_processing,
-                'enable_gpu_acceleration': self.config.enable_gpu_acceleration
+                'enable_gpu_acceleration': self.config.enable_gpu_acceleration,
+                'vectorbt_optimizations_enabled': self.config.enable_vectorbt_optimizations
             },
             'hardware_optimization': {
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'rolling_optimizer_available': self.vectorbt_rolling_optimizer is not None,
+                'unified_framework_available': self.vectorbt_unified_framework is not None,
+                'memory_optimizer_available': self.vectorbt_memory_optimizer is not None,
+                'performance_monitor_available': self.vectorbt_performance_monitor is not None
             }
         }
+
+        # Add VectorBT performance statistics if available
+        if self.vectorbt_rolling_optimizer:
+            try:
+                rolling_stats = self.vectorbt_rolling_optimizer.get_performance_stats()
+                metrics['vectorbt_rolling_stats'] = rolling_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT rolling stats: {e}")
+
+        if self.vectorbt_unified_framework:
+            try:
+                framework_stats = self.vectorbt_unified_framework.get_performance_stats()
+                metrics['vectorbt_framework_stats'] = framework_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT framework stats: {e}")
+
+        if self.vectorbt_performance_monitor:
+            try:
+                performance_stats = self.vectorbt_performance_monitor.get_performance_summary()
+                metrics['vectorbt_performance_stats'] = performance_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT performance stats: {e}")
 
         return metrics
 

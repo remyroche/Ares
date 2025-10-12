@@ -564,7 +564,9 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             highest_high = base_values.rolling(window=self.k_period).max()
             k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
             
-            return k_percentclass WilliamsRGenerator(VectorizedFeatureGenerator):
+            return k_percent
+
+class WilliamsRGenerator(VectorizedFeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
     def __init__(self, 

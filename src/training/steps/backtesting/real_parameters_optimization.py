@@ -39,6 +39,9 @@ except ImportError:
     OptimizationStrategy = None
     VectorBTRollingOptimizer = None
     get_vectorbt_rolling_optimizer = None
+# VectorBT optimization utilities
+from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 
 # Optional CVLSA support
 try:
@@ -162,12 +165,58 @@ class RealParametersOptimizer:
             self.vectorization_manager = None
             self.rolling_optimizer = None
             self.logger.warning("⚠️ VectorBT optimization not available, using standard methods")
+        # Initialize VectorBT optimization utilities
+        try:
+            # Create VectorBT configuration
+            vectorbt_config = VectorizationConfig(
+                enable_vectorbt=True,
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                max_memory_gb=8.0,
+                chunk_size=1000,
+                enable_monitoring=True,
+                enable_profiling=False,
+                batch_size=10000,
+                enable_batch_processing=True,
+                rolling_optimization_threshold=1000,
+                enable_rolling_optimization=True
+            )
+            
+            self.vectorization_manager = get_unified_vectorization_manager(vectorbt_config)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=config.enable_gpu_acceleration,
+                enable_parallel=config.enable_parallel_processing,
+                memory_efficient=config.enable_memory_optimization,
+                chunk_size=1000,
+                fast_fail=True,
+                enable_logging=True
+            )
+            self.logger.info("✅ VectorBT optimization utilities initialized")
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT optimization unavailable: {e}")
+            self.vectorization_manager = None
+            self.rolling_optimizer = None
         
         # Optimization state
         self.parameter_space = []
         self.optimization_history = []
         self.best_parameters = {}
         self.best_score = float('-inf') if not config.minimize_objective else float('inf')
+        
+        # Performance monitoring
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'matrix_operations': 0,
+            'standard_operations': 0,
+            'total_evaluations': 0,
+            'total_time': 0.0,
+            'memory_optimizations': 0,
+            'gpu_operations': 0,
+            'parallel_operations': 0,
+            'errors': 0,
+            'fallbacks': 0
+        }
         
     def add_parameter(self, name: str, param_type: str, bounds: Tuple[float, float] = None, 
                      choices: List[Any] = None, default: Any = None):
@@ -683,16 +732,57 @@ class RealParametersOptimizer:
                 self.logger.debug(f"VectorBT optimized evaluation: {result.performance_gain:.2f}x speedup")
             else:
                 # Use hardware optimization if available
+        start_time = time.time()
+        self.performance_stats['total_evaluations'] += 1
+        
+        try:
+            # Use VectorBT optimization if available
+            if self.vectorization_manager and self.rolling_optimizer:
+                self.logger.debug("🎯 Using VectorBT-optimized parameter evaluation")
+                
+                # Use VectorBT for enhanced parameter evaluation
+                with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
+                    if self.memory_optimizer:
+                        with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
+                            score = await objective_function(parameters)
+                    else:
+                        score = await objective_function(parameters)
+                
+                self.performance_stats['vectorbt_operations'] += 1
+                
+            # Use matrix operations if available
+            elif self.matrix_ops:
+                self.logger.debug("🎯 Using matrix operations for parameter evaluation")
+                
                 if self.memory_optimizer:
                     with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
                         score = await objective_function(parameters)
                 else:
                     score = await objective_function(parameters)
+                
+                self.performance_stats['matrix_operations'] += 1
+                
+            # Standard evaluation
+            else:
+                self.logger.debug("🎯 Using standard parameter evaluation")
+                
+                if self.memory_optimizer:
+                    with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
+                        score = await objective_function(parameters)
+                else:
+                    score = await objective_function(parameters)
+                
+                self.performance_stats['standard_operations'] += 1
+            
+            # Update performance stats
+            execution_time = time.time() - start_time
+            self.performance_stats['total_time'] += execution_time
             
             return score
             
         except Exception as e:
             self.logger.error(f"❌ Parameter evaluation failed: {e}")
+            self.performance_stats['errors'] += 1
             raise
     
     async def _evaluate_parameters_with_rolling_optimization(self, objective_function: Callable, 

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import warnings
 import logging
+import time
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -42,10 +43,26 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     VECTORBT_OPTIMIZER_AVAILABLE = True
 except ImportError:
     VECTORBT_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
+# Unified Vectorization Manager
+try:
+    from ...utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy, 
+        OperationConfig, OptimizationResult
+    )
+    UNIFIED_MANAGER_AVAILABLE = True
+except ImportError:
+    UNIFIED_MANAGER_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
+    OperationConfig = None
+    OptimizationResult = None
 
 # Optimization utilities
 try:
@@ -76,18 +93,46 @@ from ..core.feature_bank import get_global_feature_bank
 logger = logging.getLogger(__name__)
 
 class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
-    """Feature generator for oscillator-based features with VectorBT optimization."""
+    """Feature generator for oscillator-based features with comprehensive VectorBT optimization."""
     
-    def __init__(self, config: Optional[FeatureConfig] = None):
+    def __init__(self, config: Optional[FeatureConfig] = None, 
+                 enable_gpu: bool = False, enable_parallel: bool = True,
+                 use_unified_manager: bool = True):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
+        # Performance tracking
+        self.performance_stats = {
+            'total_calculations': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_operations': 0,
+            'unified_manager_operations': 0,
+            'total_time': 0.0,
+            'average_time_per_calculation': 0.0,
+            'memory_usage_mb': 0.0
+        }
+        
+        # Initialize optimization components
+        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_parallel = enable_parallel
+        self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
+        
         # Initialize VectorBT optimizer
         if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.enable_gpu, 
+                enable_parallel=self.enable_parallel
+            )
         else:
             self.vectorbt_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if self.use_unified_manager:
+            self.unified_manager = UnifiedVectorizationManager()
+        else:
+            self.unified_manager = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -113,25 +158,101 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         close_prices = data['close']
         
+        # Use UnifiedVectorizationManager for intelligent optimization
+        if self.unified_manager and self._should_use_unified_manager(close_prices):
+            try:
+                result = self._generate_with_unified_manager(data, **kwargs)
+                self.performance_stats['unified_manager_operations'] += 1
+                return result
+            except Exception as e:
+                self.logger.warning(f"UnifiedVectorizationManager failed: {e}, using VectorBT fallback")
+        
         # Use VectorBT for oscillator calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
             try:
-                # Simple oscillator using VectorBT rolling mean
+                # Enhanced oscillator using VectorBT rolling mean
                 oscillator = self.vectorbt_optimizer.rolling_mean(close_prices, window=14) - close_prices
-                return oscillator.rename('oscillator_placeholder')
+                self.performance_stats['vectorbt_operations'] += 1
+                return oscillator.rename('oscillator_vectorbt')
             except Exception as e:
                 self.logger.warning(f"VectorBT oscillator calculation failed: {e}, using pandas fallback")
-                oscillator = np.zeros_like(close_prices.values)
-                return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
+                result = self._generate_with_pandas_fallback(data, **kwargs)
+                self.performance_stats['pandas_fallbacks'] += 1
+                return result
         else:
-            oscillator = np.zeros_like(close_prices.values)
-            return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
+            result = self._generate_with_pandas_fallback(data, **kwargs)
+            self.performance_stats['pandas_fallbacks'] += 1
+            return result
+        finally:
+            # Update performance statistics
+            self.performance_stats['total_calculations'] += 1
+            self.performance_stats['total_time'] += time.time() - start_time
+            if self.performance_stats['total_calculations'] > 0:
+                self.performance_stats['average_time_per_calculation'] = (
+                    self.performance_stats['total_time'] / self.performance_stats['total_calculations']
+                )
+    
+    def _generate_with_unified_manager(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate features using UnifiedVectorizationManager."""
+        # Create operation configuration
+        config = OperationConfig(
+            operation_type=OperationType.VECTORBT_TECHNICAL_ANALYSIS,
+            data_size=len(data),
+            data_dimensions=(len(data), len(data.columns)),
+            memory_budget_mb=1024.0,
+            time_budget_seconds=30.0,
+            precision_requirement="high"
+        )
+        
+        # Execute with unified manager
+        result = self.unified_manager.optimize_operation(
+            operation_type=OperationType.VECTORBT_TECHNICAL_ANALYSIS,
+            data=data,
+            config=config,
+            **kwargs
+        )
+        
+        # Update memory usage
+        self.performance_stats['memory_usage_mb'] = result.memory_used_mb
+        
+        return result.result
+    
+    def _generate_with_pandas_fallback(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate features using pandas fallback."""
+        close_prices = data['close']
+        oscillator = close_prices.rolling(window=14).mean() - close_prices
+        return oscillator.rename('oscillator_pandas')
+    
+    def _should_use_unified_manager(self, data: pd.Series) -> bool:
+        """Determine if UnifiedVectorizationManager should be used."""
+        return (self.use_unified_manager and 
+                self.unified_manager is not None and 
+                len(data) >= 1000)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        return self.performance_stats.copy()
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics."""
+        self.performance_stats = {
+            'total_calculations': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_operations': 0,
+            'unified_manager_operations': 0,
+            'total_time': 0.0,
+            'average_time_per_calculation': 0.0,
+            'memory_usage_mb': 0.0
+        }
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of oscillator feature generators."""
@@ -219,13 +340,14 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
         return data
 
 class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
-    """Generator for CCI (Commodity Channel Index) with different base calculations and VectorBT optimization."""
-# CCI (Commodity Channel Index)class CCIGenerator(VectorizedFeatureGenerator):
-    """Generator for CCI (Commodity Channel Index) with different base calculations."""
+    """Generator for CCI (Commodity Channel Index) with comprehensive VectorBT optimization."""
     
     def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
+                 enable_gpu: bool = False,
+                 enable_parallel: bool = True,
+                 use_unified_manager: bool = True,
                  **base_kwargs):
         """
         Initialize CCI generator.
@@ -265,22 +387,59 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         self.period = period
         self.base_calculation = base_calculation
         
+        # Performance tracking
+        self.performance_stats = {
+            'total_calculations': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_operations': 0,
+            'unified_manager_operations': 0,
+            'total_time': 0.0,
+            'average_time_per_calculation': 0.0,
+            'memory_usage_mb': 0.0
+        }
+        
+        # Initialize optimization components
+        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_parallel = enable_parallel
+        self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
+        
         # Initialize VectorBT optimizer
         if VECTORBT_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.enable_gpu, 
+                enable_parallel=self.enable_parallel
+            )
         else:
             self.vectorbt_optimizer = None
+        
+        # Initialize Unified Vectorization Manager
+        if self.use_unified_manager:
+            self.unified_manager = UnifiedVectorizationManager()
+        else:
+            self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        start_time = time.time()
+        
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate CCI based on the specified base calculation."""
+        """Generate CCI based on the specified base calculation with comprehensive VectorBT optimization."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             high = data['high']
             low = data['low']
             close = data['close']
+            
+            # Use VectorBT native CCI if available
+            if CCI and VECTORBT_AVAILABLE and self._should_use_vectorbt(close):
+                try:
+                    cci_result = CCI.run(high, low, close, window=self.period)
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return cci_result.cci
+                except Exception as e:
+                    self.logger.warning(f"VectorBT native CCI failed: {e}, using custom calculation")
             
             # Use VectorBT for CCI calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(close):
@@ -294,30 +453,38 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                     mad = self.vectorbt_optimizer.rolling_mean((typical_price - self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
                     cci = (typical_price - sma_tp) / (0.015 * mad)
                     
+                    self.performance_stats['vectorbt_operations'] += 1
                     return cci
                 except Exception as e:
                     self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
-                    # Calculate typical price
-                    typical_price = (high + low + close) / 3
-                    
-                    # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
-                    sma_tp = typical_price.rolling(window=self.period).mean()
-                    # Vectorized MAD: use rolling mean of absolute deviations
-                    mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-                    cci = (typical_price - sma_tp) / (0.015 * mad)
-                    
-                    return cci
+                    result = self._generate_cci_pandas_fallback(high, low, close)
+                    self.performance_stats['pandas_fallbacks'] += 1
+                    return result
             else:
-                # Calculate typical price
-                typical_price = (high + low + close) / 3
-                
-                # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
-                sma_tp = typical_price.rolling(window=self.period).mean()
-                # Vectorized MAD: use rolling mean of absolute deviations
-                mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-                cci = (typical_price - sma_tp) / (0.015 * mad)
-                
-                return cci
+                result = self._generate_cci_pandas_fallback(high, low, close)
+                self.performance_stats['pandas_fallbacks'] += 1
+                return result
+        finally:
+            # Update performance statistics
+            self.performance_stats['total_calculations'] += 1
+            self.performance_stats['total_time'] += time.time() - start_time
+            if self.performance_stats['total_calculations'] > 0:
+                self.performance_stats['average_time_per_calculation'] = (
+                    self.performance_stats['total_time'] / self.performance_stats['total_calculations']
+                )
+    
+    def _generate_cci_pandas_fallback(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """Generate CCI using pandas fallback."""
+        # Calculate typical price
+        typical_price = (high + low + close) / 3
+        
+        # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
+        sma_tp = typical_price.rolling(window=self.period).mean()
+        # Vectorized MAD: use rolling mean of absolute deviations
+        mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+        cci = (typical_price - sma_tp) / (0.015 * mad)
+        
+        return cci
         else:
             base_values = self.base_calculator.calculate(data)
             

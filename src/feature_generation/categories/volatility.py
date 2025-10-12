@@ -231,12 +231,24 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         """Generate volatility feature using comprehensive VectorBT optimization."""
         start_time = time.time()
         
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-        """Generate volatility feature using optimized VectorBT operations."""
         # Optimize DataFrame for processing using Unified Vectorization Manager
         if self.unified_manager:
-            data = self.unified_manager.optimize_dataframe(data)
+            try:
+                # Use Unified Vectorization Manager for data optimization
+                optimized_data = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    data,
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=512.0
+                    )
+                )
+                data = optimized_data.result
+                self.performance_stats['optimized_operations'] += 1
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager data optimization failed: {e}, using original data")
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
@@ -251,29 +263,46 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         if len(returns) < self.period:
             return pd.Series(np.nan, index=data.index, name=f'volatility_{self.period}')
         
-        # Use optimized rolling optimizer (now using new consolidated version with same interface)
-        if self.rolling_optimizer:
         # Use Unified Vectorization Manager for optimized rolling operations
         if self.unified_manager:
             try:
-                volatility = self.unified_manager.rolling_operation(returns, 'std', window=self.period)
-                self.performance_stats['vectorbt_operations'] += 1
+                # Use VectorBT rolling operations through Unified Vectorization Manager
+                volatility_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': returns,
+                        'operation': 'rolling_std',
+                        'window': self.period,
+                        'indicator_configs': {'rolling_std': {'window': self.period}}
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(returns),
+                        data_dimensions=returns.shape,
+                        memory_budget_mb=256.0
+                    )
+                )
+                volatility = volatility_result.result
+                self.performance_stats['optimized_operations'] += 1
+                self.performance_stats['total_features_generated'] += 1
+                
                 # Align with original data index
                 volatility = volatility.reindex(data.index)
                 return volatility
             except Exception as e:
                 self.logger.warning(f"Unified Vectorization Manager volatility calculation failed: {e}, using VectorBT fallback")
+                # Fallback to VectorBT rolling optimizer
                 if self.rolling_optimizer:
                     try:
                         volatility = self.rolling_optimizer.rolling_std(returns, window=self.period)
-                        self.performance_stats['vectorbt_operations'] += 1
+                        self.performance_stats['optimized_operations'] += 1
                         volatility = volatility.reindex(data.index)
                         return volatility
                     except Exception as e2:
                         self.logger.warning(f"VectorBT rolling optimizer failed: {e2}, using direct VectorBT fallback")
-                        self.performance_stats['pandas_fallbacks'] += 1
+                        self.performance_stats['fallback_operations'] += 1
                 else:
-                    self.performance_stats['pandas_fallbacks'] += 1
+                    self.performance_stats['fallback_operations'] += 1
         elif self.rolling_optimizer:
             try:
                 # Check if it's the new consolidated optimizer
@@ -374,8 +403,27 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             DataFrame with generated volatility features
         """
         if self.unified_manager:
-            # Use Unified Vectorization Manager for batch processing
-            return self.unified_manager.batch_process_features(data, feature_configs)
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'volatility_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                self.logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_features_individually(data, feature_configs)
         elif self.rolling_optimizer:
             # Fallback to individual VectorBT operations
             results = {}
@@ -470,6 +518,62 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                     results[feature_name] = pd.Series(np.nan, index=data.index)
             
             return pd.DataFrame(results, index=data.index)
+    
+    def _process_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'rolling')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'rolling':
+                    operation = params.get('operation', 'std')
+                    window = params.get('window', self.period)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        # Calculate returns for volatility features
+                        if column == 'close':
+                            series_data = data[column].pct_change().dropna()
+                        else:
+                            series_data = data[column]
+                        
+                        if self.rolling_optimizer:
+                            if operation == 'std':
+                                results[feature_name] = self.rolling_optimizer.rolling_std(series_data, window)
+                            elif operation == 'var':
+                                results[feature_name] = self.rolling_optimizer.rolling_var(series_data, window)
+                            elif operation == 'mean':
+                                results[feature_name] = self.rolling_optimizer.rolling_mean(series_data, window)
+                            elif operation == 'min':
+                                results[feature_name] = self.rolling_optimizer.rolling_min(series_data, window)
+                            elif operation == 'max':
+                                results[feature_name] = self.rolling_optimizer.rolling_max(series_data, window)
+                            elif operation == 'sum':
+                                results[feature_name] = self.rolling_optimizer.rolling_sum(series_data, window)
+                        else:
+                            # Fallback to pandas
+                            rolling_obj = series_data.rolling(window=window)
+                            if operation == 'std':
+                                results[feature_name] = rolling_obj.std()
+                            elif operation == 'var':
+                                results[feature_name] = rolling_obj.var()
+                            elif operation == 'mean':
+                                results[feature_name] = rolling_obj.mean()
+                            elif operation == 'min':
+                                results[feature_name] = rolling_obj.min()
+                            elif operation == 'max':
+                                results[feature_name] = rolling_obj.max()
+                            elif operation == 'sum':
+                                results[feature_name] = rolling_obj.sum()
+                
+            except Exception as e:
+                self.logger.warning(f"Volatility feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 
 class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):

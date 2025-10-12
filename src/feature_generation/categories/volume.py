@@ -201,7 +201,25 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         # Use Unified Vectorization Manager for intelligent optimization
         if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                return self._generate_with_unified_manager(volume, data)
+                # Use Unified Vectorization Manager for optimized rolling operations
+                volume_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': volume,
+                        'operation': 'rolling_mean',
+                        'window': 20,
+                        'indicator_configs': {'rolling_mean': {'window': 20}}
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(volume),
+                        data_dimensions=volume.shape,
+                        memory_budget_mb=256.0
+                    )
+                )
+                volume_sma = volume_result.result
+                self.performance_stats['unified_manager_operations'] += 1
+                return volume_sma
             except Exception as e:
                 logger.warning(f"Unified Vectorization Manager failed: {e}, using VectorBT fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
@@ -298,8 +316,22 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         # Use Unified Vectorization Manager for batch processing if available
         if self.unified_manager and self._should_use_unified_manager(volume):
             try:
-                # Use the unified manager's batch processing method
-                return self.unified_manager.batch_process_features(data, feature_configs)
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'volume_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
             except Exception as e:
                 logger.warning(f"Unified manager batch processing failed: {e}, using VectorBT fallback")
                 self.performance_stats['pandas_fallbacks'] += 1

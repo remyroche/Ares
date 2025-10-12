@@ -276,22 +276,25 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
         # Use UnifiedVectorizationManager for optimal processing
         if self.unified_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
             try:
-                config = OperationConfig(
-                    operation_type=OperationType.FEATURE_ENGINEERING,
-                    data_size=len(data),
-                    data_dimensions=data.shape
+                # Use Unified Vectorization Manager for optimized entropy calculation
+                entropy_result = self.unified_manager.optimize_operation(
+                    OperationType.TECHNICAL_INDICATORS,
+                    {
+                        'data': data['close'],
+                        'operation': 'entropy',
+                        'window': 20,
+                        'indicator_configs': {'entropy': {'window': 20}}
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.TECHNICAL_INDICATORS,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=256.0
+                    )
                 )
                 
-                result = self.unified_manager.optimize_operation(
-                    OperationType.FEATURE_ENGINEERING,
-                    data,
-                    config,
-                    feature_type="entropy",
-                    **kwargs
-                )
-                
-                if hasattr(result, 'result'):
-                    return result.result
+                if hasattr(entropy_result, 'result'):
+                    return entropy_result.result
             except Exception as e:
                 logger.warning(f"UnifiedVectorizationManager failed: {e}, using fallback")
         
@@ -299,6 +302,67 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
         close_prices = data['close']
         entropy = calculate_vectorized_entropy(close_prices, window=20, use_vectorbt=self.use_vectorbt)
         return entropy
+    
+    def generate_optimized_entropy_features(self, data: pd.DataFrame, 
+                                          feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple entropy features using optimized batch processing.
+        
+        Args:
+            data: OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated entropy features
+        """
+        if self.unified_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
+            try:
+                # Use Unified Vectorization Manager for batch processing
+                batch_result = self.unified_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    {
+                        'data': data,
+                        'feature_configs': feature_configs,
+                        'operation_type': 'entropy_batch'
+                    },
+                    OperationConfig(
+                        operation_type=OperationType.FEATURE_ENGINEERING,
+                        data_size=len(data),
+                        data_dimensions=data.shape,
+                        memory_budget_mb=1024.0
+                    )
+                )
+                return batch_result.result
+            except Exception as e:
+                logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                # Fallback to individual processing
+                return self._process_entropy_features_individually(data, feature_configs)
+        else:
+            return self._process_entropy_features_individually(data, feature_configs)
+    
+    def _process_entropy_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Process entropy features individually as fallback when batch processing fails."""
+        results = {}
+        for config in feature_configs:
+            feature_name = config['name']
+            feature_type = config.get('type', 'entropy')
+            params = config.get('params', {})
+            
+            try:
+                if feature_type == 'entropy':
+                    window = params.get('window', 20)
+                    column = params.get('column', 'close')
+                    
+                    if column in data.columns:
+                        series_data = data[column]
+                        entropy = calculate_vectorized_entropy(series_data, window, use_vectorbt=self.use_vectorbt)
+                        results[feature_name] = entropy
+                
+            except Exception as e:
+                logger.warning(f"Entropy feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
 
 # Price Entropy Generator
     

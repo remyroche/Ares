@@ -249,25 +249,18 @@ def compute_momentum(data: pd.DataFrame, window: int = 3) -> float:
 
 
 def compute_rsi(data: pd.DataFrame, window: int = 3) -> float:
-    """Compute a short-term RSI."""
+    """Compute a short-term RSI using centralized calculator."""
 
     if data.empty or len(data) < window + 1:
         return 50.0
 
+    # Import centralized RSI calculator
+    from src.feature_generation.indicators import RSICalculator
+    
     close = data["close"]
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(window=window, min_periods=window).mean()
-    avg_loss = loss.rolling(window=window, min_periods=window).mean()
-
-    if avg_loss.iloc[-1] == 0:
-        return 100.0
-
-    rs = avg_gain.iloc[-1] / avg_loss.iloc[-1]
-    rsi = 100.0 - (100.0 / (1.0 + rs))
-    return float(rsi)
+    rsi = RSICalculator.calculate(close, window)
+    
+    return rsi.iloc[-1] if not rsi.empty and not pd.isna(rsi.iloc[-1]) else 50.0
 
 
 def compute_volatility_slope(series: pd.Series, lookback: int = 5) -> float:

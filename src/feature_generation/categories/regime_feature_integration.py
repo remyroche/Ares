@@ -106,20 +106,6 @@ class RegimeFeatureConfig:
             self.min_temporal_stability = quality_thresholds.get("min_temporal_stability", 0.1)
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """Unified regime feature generator that excludes trading features."""
@@ -435,36 +421,46 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        cpu_count = os.cpu_count() or 4
-        max_workers = min(max_workers_config, len(generators), cpu_count)
+
+def _get_cpu_count():
+    return os.cpu_count() or 4
+
+def _parallel_feature_generation(self, generators: List[Tuple[str, Any]], data: pd.DataFrame, **kwargs) -> Dict[str, Dict[str, np.ndarray]]:
+    """Execute feature generators in parallel for maximum performance."""
+    results = {}
+    
+    # OPTIMIZED: Determine optimal number of workers based on system resources
+    max_workers_config = getattr(self.regime_config, 'max_parallel_workers', 4)
+    cpu_count = _get_cpu_count()
+    max_workers = min(max_workers_config, len(generators), cpu_count)
+    
+    def generate_features_worker(generator_info):
+        """Worker function for parallel feature generation."""
+        name, generator = generator_info
+        try:
+            start_time = time.time()
+            features = generator.generate_features(data, **kwargs)
+            generation_time = time.time() - start_time
+            tprint(f"⚡ {name}: {len(features) if features else 0} features in {generation_time:.2f}s")
+            return name, features
+        except Exception as e:
+            tprint(f"❌ {name} generation failed: {e}")
+            return name, {}
+    
+    # Execute in parallel
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_name = {
+            executor.submit(generate_features_worker, gen_info): gen_info[0] 
+            for gen_info in generators
+        }
         
-        def generate_features_worker(generator_info):
-            """Worker function for parallel feature generation."""
-            name, generator = generator_info
-            try:
-                start_time = time.time()
-                features = generator.generate_features(data, **kwargs)
-                generation_time = time.time() - start_time
-                tprint(f"⚡ {name}: {len(features) if features else 0} features in {generation_time:.2f}s")
-                return name, features
-            except Exception as e:
-                tprint(f"❌ {name} generation failed: {e}")
-                return name, {}
-        
-        # Execute in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all tasks
-            future_to_name = {
-                executor.submit(generate_features_worker, gen_info): gen_info[0] 
-                for gen_info in generators
-            }
-            
-            # Collect results as they complete
-            for future in as_completed(future_to_name):
-                name, features = future.result()
-                results[name] = features
-        
-        return results
+        # Collect results as they complete
+        for future in as_completed(future_to_name):
+            name, features = future.result()
+            results[name] = features
+    
+    return results
     
     def _sequential_feature_generation(self, generators: List[Tuple[str, Any]], data: pd.DataFrame, **kwargs) -> Dict[str, Dict[str, np.ndarray]]:
         """Execute feature generators sequentially for debugging or single-threaded environments."""
@@ -1090,16 +1086,6 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
         return prob_trending_series
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        # This class doesn't need complex optimization, just return data
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        # This class doesn't need complex rolling operations, just return data
-        return data
 
 class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability choppy feature."""
@@ -1134,16 +1120,6 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
         return prob_choppy_series
 
     
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
-        # This class doesn't need complex optimization, just return data
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with VectorBT optimization."""
-        # This class doesn't need complex rolling operations, just return data
-        return data
 
 class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
     """Generator for regime stability feature."""

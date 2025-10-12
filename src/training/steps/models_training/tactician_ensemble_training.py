@@ -60,7 +60,8 @@ try:
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
         optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
         optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
-        optimized_rolling_apply, optimized_rolling_corr, optimized_rolling_cov
+        optimized_rolling_apply, optimized_rolling_corr, optimized_rolling_cov,
+        optimized_rolling_quantile, optimized_rolling_skew, optimized_rolling_kurt
     )
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError as e:
@@ -69,8 +70,9 @@ except ImportError as e:
 
 # Import Unified Vectorization Manager
 try:
-    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
-        VectorBTUnifiedFramework, create_vectorbt_unified_framework
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager,
+        OperationType, OptimizationStrategy, OperationConfig, optimize_financial_operation
     )
     UNIFIED_VECTORIZATION_AVAILABLE = True
 except ImportError as e:
@@ -215,7 +217,7 @@ class TacticianEnsembleTrainingStep:
 
             # Initialize Unified Vectorization Manager
             if UNIFIED_VECTORIZATION_AVAILABLE:
-                self.vectorization_manager = create_vectorbt_unified_framework()
+                self.vectorization_manager = get_unified_vectorization_manager()
                 tprint_success("✅ Unified Vectorization Manager initialized for ensemble training")
             else:
                 self.vectorization_manager = None
@@ -280,17 +282,31 @@ class TacticianEnsembleTrainingStep:
         """Optimize feature vectorization using Unified Vectorization Manager."""
         if self.vectorization_manager is not None:
             try:
-                # Convert DataFrame to numpy arrays for vectorization
-                X = features.values
-                feature_names = features.columns.tolist()
-                
-                # Use unified vectorization for feature optimization
-                # This could include feature selection, scaling, or other optimizations
                 tprint_debug("🔧 Applying unified vectorization optimization to features")
                 
-                # For now, return the original features
-                # In a full implementation, this would apply VectorBT optimizations
-                return features
+                # Use UnifiedVectorizationManager for feature engineering optimization
+                config = OperationConfig(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(features),
+                    data_dimensions=features.shape,
+                    memory_budget_mb=self.config.memory_limit_gb * 1024,
+                    time_budget_seconds=300.0
+                )
+                
+                # Optimize feature engineering using VectorBT
+                result = self.vectorization_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    features,
+                    config
+                )
+                
+                if result.result is not None:
+                    tprint_success(f"✅ Feature vectorization optimized using {result.strategy_used.value}")
+                    tprint_performance(f"Feature optimization", result.computation_time)
+                    return result.result
+                else:
+                    tprint_warning("⚠️ Vectorization optimization returned no result, using original features")
+                    return features
                 
             except Exception as e:
                 tprint_warning(f"⚠️ Unified vectorization failed: {e}, using original features")
@@ -469,7 +485,7 @@ class TacticianEnsembleTrainingStep:
             return X_base
 
     def _extract_hmm_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Extract HMM regime features."""
+        """Extract HMM regime features with VectorBT optimizations."""
         try:
             hmm_columns = []
 
@@ -479,8 +495,23 @@ class TacticianEnsembleTrainingStep:
                     hmm_columns.append(col)
 
             if hmm_columns:
-                hmm_features = training_data[hmm_columns].values
-                tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features")
+                hmm_data = training_data[hmm_columns].copy()
+                
+                # Apply VectorBT rolling optimizations to HMM features
+                if self.vectorbt_optimizer is not None:
+                    tprint_debug("🔧 Applying VectorBT optimizations to HMM features")
+                    for col in hmm_columns:
+                        if hmm_data[col].dtype in ['float64', 'int64']:
+                            # Apply rolling statistics for regime stability
+                            hmm_data[f'{col}_rolling_mean'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'mean', window=20
+                            )
+                            hmm_data[f'{col}_rolling_std'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'std', window=20
+                            )
+                
+                hmm_features = hmm_data.values
+                tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features with VectorBT optimizations")
                 return hmm_features
             else:
                 tprint_debug("📊 No HMM features found")
@@ -491,7 +522,7 @@ class TacticianEnsembleTrainingStep:
             return None
 
     def _extract_analyst_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Extract Analyst features."""
+        """Extract Analyst features with VectorBT optimizations."""
         try:
             analyst_columns = []
 
@@ -501,8 +532,30 @@ class TacticianEnsembleTrainingStep:
                     analyst_columns.append(col)
 
             if analyst_columns:
-                analyst_features = training_data[analyst_columns].values
-                tprint_debug(f"📊 Extracted {len(analyst_columns)} Analyst features")
+                analyst_data = training_data[analyst_columns].copy()
+                
+                # Apply VectorBT rolling optimizations to Analyst features
+                if self.vectorbt_optimizer is not None:
+                    tprint_debug("🔧 Applying VectorBT optimizations to Analyst features")
+                    for col in analyst_columns:
+                        if analyst_data[col].dtype in ['float64', 'int64']:
+                            # Apply rolling statistics for confidence stability
+                            analyst_data[f'{col}_rolling_mean'] = self._optimized_rolling_operation(
+                                analyst_data[col], 'mean', window=15
+                            )
+                            analyst_data[f'{col}_rolling_std'] = self._optimized_rolling_operation(
+                                analyst_data[col], 'std', window=15
+                            )
+                            # Add rolling quantiles for confidence distribution
+                            analyst_data[f'{col}_rolling_q25'] = self._optimized_rolling_operation(
+                                analyst_data[col], 'quantile', window=15, q=0.25
+                            )
+                            analyst_data[f'{col}_rolling_q75'] = self._optimized_rolling_operation(
+                                analyst_data[col], 'quantile', window=15, q=0.75
+                            )
+                
+                analyst_features = analyst_data.values
+                tprint_debug(f"📊 Extracted {len(analyst_columns)} Analyst features with VectorBT optimizations")
                 return analyst_features
             else:
                 tprint_debug("📊 No Analyst features found")
@@ -513,7 +566,7 @@ class TacticianEnsembleTrainingStep:
             return None
 
     def _extract_oof_predictions(self, X_base: np.ndarray, base_models: Dict[str, Any]) -> Optional[np.ndarray]:
-        """Extract OOF predictions from base models."""
+        """Extract OOF predictions from base models with VectorBT optimizations."""
         try:
             oof_predictions = []
 
@@ -523,8 +576,28 @@ class TacticianEnsembleTrainingStep:
                         pred = model.predict(X_base)
                         if len(pred.shape) == 1:
                             pred = pred.reshape(-1, 1)
-                        oof_predictions.append(pred)
-                        tprint_debug(f"📊 Got OOF predictions from {model_name}")
+                        
+                        # Apply VectorBT rolling optimizations to predictions
+                        if self.vectorbt_optimizer is not None and pred.shape[1] == 1:
+                            pred_series = pd.Series(pred.flatten())
+                            # Add rolling statistics for prediction stability
+                            pred_rolling_mean = self._optimized_rolling_operation(
+                                pred_series, 'mean', window=10
+                            )
+                            pred_rolling_std = self._optimized_rolling_operation(
+                                pred_series, 'std', window=10
+                            )
+                            # Combine original predictions with rolling features
+                            enhanced_pred = np.column_stack([
+                                pred,
+                                pred_rolling_mean.values.reshape(-1, 1),
+                                pred_rolling_std.values.reshape(-1, 1)
+                            ])
+                            oof_predictions.append(enhanced_pred)
+                        else:
+                            oof_predictions.append(pred)
+                        
+                        tprint_debug(f"📊 Got OOF predictions from {model_name} with VectorBT enhancements")
                     else:
                         tprint_debug(f"📊 Model {model_name} doesn't have predict method")
                 except Exception as e:
@@ -533,7 +606,7 @@ class TacticianEnsembleTrainingStep:
 
             if oof_predictions:
                 oof_features = np.hstack(oof_predictions)
-                tprint_debug(f"📊 Combined {len(oof_predictions)} OOF prediction sets")
+                tprint_debug(f"📊 Combined {len(oof_predictions)} OOF prediction sets with VectorBT optimizations")
                 return oof_features
             else:
                 tprint_debug("📊 No OOF predictions available")
@@ -619,7 +692,7 @@ class TacticianEnsembleTrainingStep:
             return {'models': {}, 'metrics': {}, 'metadata': {}}
 
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for the ensemble training step."""
+        """Get comprehensive performance metrics for the ensemble training step."""
         metrics = {
             'config': {
                 'enable_full_integration': self.config.enable_full_integration,
@@ -633,8 +706,28 @@ class TacticianEnsembleTrainingStep:
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'vectorbt_rolling_optimizer_available': self.vectorbt_optimizer is not None,
+                'unified_vectorization_manager_available': self.vectorization_manager is not None
             }
         }
+
+        # Add VectorBT Rolling Optimizer performance stats
+        if self.vectorbt_optimizer is not None:
+            try:
+                vectorbt_stats = self.vectorbt_optimizer.get_performance_stats()
+                metrics['vectorbt_rolling_stats'] = vectorbt_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT rolling stats: {e}")
+
+        # Add Unified Vectorization Manager performance stats
+        if self.vectorization_manager is not None:
+            try:
+                vectorization_stats = self.vectorization_manager.get_optimization_stats()
+                metrics['vectorization_stats'] = vectorization_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get vectorization stats: {e}")
 
         return metrics
 

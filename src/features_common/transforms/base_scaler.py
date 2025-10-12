@@ -37,6 +37,19 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import VectorBT optimization modules
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    warnings.warn("VectorBT optimization modules not available. Using basic VectorBT functions.")
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -80,25 +93,49 @@ class BaseScaler(ABC):
     - set_state: Restore state from persistence
     """
     
-    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 1000):
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 1000,
+                 use_optimizer: bool = True, use_unified_manager: bool = True):
         """
-        Initialize the scaler with VectorBT support.
+        Initialize the scaler with VectorBT support and optimization.
         
         Args:
             use_vectorbt: Whether to use VectorBT optimizations
             enable_gpu: Whether to enable GPU acceleration
             vectorbt_threshold: Minimum data size for VectorBT optimization
+            use_optimizer: Whether to use VectorBTRollingOptimizer
+            use_unified_manager: Whether to use UnifiedVectorizationManager
         """
         self.fitted = False
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
         self.enable_gpu = enable_gpu and CUPY_AVAILABLE
         self.vectorbt_threshold = vectorbt_threshold
+        self.use_optimizer = use_optimizer and VECTORBT_OPTIMIZER_AVAILABLE
+        self.use_unified_manager = use_unified_manager and VECTORBT_OPTIMIZER_AVAILABLE
         
-        # Performance tracking
+        # Initialize optimization components
+        if self.use_optimizer:
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.enable_gpu,
+                enable_parallel=True,
+                memory_efficient=True
+            )
+        else:
+            self.rolling_optimizer = None
+        
+        if self.use_unified_manager:
+            self.vectorization_manager = get_unified_vectorization_manager()
+        else:
+            self.vectorization_manager = None
+        
+        # Enhanced performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
+            'optimizer_operations': 0,
+            'unified_manager_operations': 0,
             'gpu_accelerations': 0,
-            'pandas_fallbacks': 0
+            'pandas_fallbacks': 0,
+            'memory_optimizations': 0,
+            'total_operations': 0
         }
     
     def _should_use_vectorbt(self, data: pd.Series) -> bool:
@@ -124,9 +161,33 @@ class BaseScaler(ABC):
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
         
-        self.performance_stats['vectorbt_operations'] += 1
+        self.performance_stats['total_operations'] += 1
         
+        # Use VectorBTRollingOptimizer if available
+        if self.use_optimizer and self.rolling_optimizer is not None:
+            try:
+                self.performance_stats['optimizer_operations'] += 1
+                if operation == 'mean':
+                    return self.rolling_optimizer.rolling_mean(data, window=window, **kwargs)
+                elif operation == 'std':
+                    return self.rolling_optimizer.rolling_std(data, window=window, **kwargs)
+                elif operation == 'var':
+                    return self.rolling_optimizer.rolling_var(data, window=window, **kwargs)
+                elif operation == 'min':
+                    return self.rolling_optimizer.rolling_min(data, window=window, **kwargs)
+                elif operation == 'max':
+                    return self.rolling_optimizer.rolling_max(data, window=window, **kwargs)
+                elif operation == 'sum':
+                    return self.rolling_optimizer.rolling_sum(data, window=window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer failed: {e}, using basic VectorBT")
+                # Fall through to basic VectorBT
+        
+        # Use basic VectorBT functions
         try:
+            self.performance_stats['vectorbt_operations'] += 1
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
@@ -182,9 +243,20 @@ class BaseScaler(ABC):
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
         
-        self.performance_stats['vectorbt_operations'] += 1
+        self.performance_stats['total_operations'] += 1
         
+        # Use VectorBTRollingOptimizer if available
+        if self.use_optimizer and self.rolling_optimizer is not None:
+            try:
+                self.performance_stats['optimizer_operations'] += 1
+                return self.rolling_optimizer.rolling_apply(data, func, window=window, **kwargs)
+            except Exception as e:
+                logger.warning(f"VectorBTRollingOptimizer apply failed: {e}, using basic VectorBT")
+                # Fall through to basic VectorBT
+        
+        # Use basic VectorBT functions
         try:
+            self.performance_stats['vectorbt_operations'] += 1
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
@@ -358,6 +430,61 @@ class BaseScaler(ABC):
                 check_for_inf_nan(data.values, name)
             except Exception as e:
                 self._log_warning(f"Output validation warning for {name}: {e}")
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive performance statistics.
+        
+        Returns:
+            Dictionary containing performance metrics
+        """
+        stats = self.performance_stats.copy()
+        
+        # Add optimizer stats if available
+        if self.use_optimizer and self.rolling_optimizer is not None:
+            optimizer_stats = self.rolling_optimizer.get_performance_stats()
+            stats.update({
+                'optimizer_' + k: v for k, v in optimizer_stats.items()
+            })
+        
+        # Add unified manager stats if available
+        if self.use_unified_manager and self.vectorization_manager is not None:
+            manager_stats = self.vectorization_manager.get_performance_stats()
+            stats.update({
+                'manager_' + k: v for k, v in manager_stats.items()
+            })
+        
+        # Calculate efficiency metrics
+        if stats['total_operations'] > 0:
+            stats['optimizer_usage_rate'] = stats.get('optimizer_operations', 0) / stats['total_operations']
+            stats['vectorbt_usage_rate'] = stats.get('vectorbt_operations', 0) / stats['total_operations']
+            stats['pandas_fallback_rate'] = stats.get('pandas_fallbacks', 0) / stats['total_operations']
+        else:
+            stats['optimizer_usage_rate'] = 0
+            stats['vectorbt_usage_rate'] = 0
+            stats['pandas_fallback_rate'] = 0
+        
+        return stats
+    
+    def reset_performance_stats(self) -> None:
+        """Reset all performance statistics."""
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'optimizer_operations': 0,
+            'unified_manager_operations': 0,
+            'gpu_accelerations': 0,
+            'pandas_fallbacks': 0,
+            'memory_optimizations': 0,
+            'total_operations': 0
+        }
+        
+        # Reset optimizer stats if available
+        if self.use_optimizer and self.rolling_optimizer is not None:
+            self.rolling_optimizer.reset_stats()
+        
+        # Reset manager stats if available
+        if self.use_unified_manager and self.vectorization_manager is not None:
+            self.vectorization_manager.reset_stats()
 
 
 class SimpleScaler(BaseScaler):
@@ -431,68 +558,82 @@ class SimpleScaler(BaseScaler):
         self.fitted = state.get('fitted', False)
 
 
-def create_optimized_scaler(method: str = 'zscore', use_vectorbt: bool = True, **kwargs) -> BaseScaler:
+def create_optimized_scaler(method: str = 'zscore', use_vectorbt: bool = True, 
+                           use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs) -> BaseScaler:
     """
-    Create the best available scaler (VectorBT if available, otherwise fallback).
+    Create the best available scaler with VectorBT optimization.
     
     Args:
         method: Scaling method ('zscore', 'minmax', 'robust', etc.)
         use_vectorbt: Whether to prefer VectorBT scaler when available
+        use_optimizer: Whether to use VectorBTRollingOptimizer
+        use_unified_manager: Whether to use UnifiedVectorizationManager
         **kwargs: Additional parameters for the scaler
         
     Returns:
-        Best available scaler instance
+        Best available scaler instance with optimization
     """
     if use_vectorbt and VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
         try:
-            return VectorBTScaler(method, **kwargs)
+            # Create VectorBTScaler with optimization
+            return VectorBTScaler(method, use_optimizer=use_optimizer, 
+                                use_unified_manager=use_unified_manager, **kwargs)
         except Exception as e:
             logger.warning(f"Failed to create VectorBT scaler: {e}, using fallback")
     
-    # Fallback to simple scaler
+    # Fallback to simple scaler with optimization
     if method == 'zscore':
-        return SimpleScaler()
+        return SimpleScaler(use_optimizer=use_optimizer, use_unified_manager=use_unified_manager)
     else:
         # For other methods, use VectorBT scaler as fallback if available
         if VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
             try:
-                return VectorBTScaler(method, **kwargs)
+                return VectorBTScaler(method, use_optimizer=use_optimizer, 
+                                    use_unified_manager=use_unified_manager, **kwargs)
             except Exception as e:
                 logger.warning(f"Failed to create VectorBT scaler for {method}: {e}")
         
-        # Ultimate fallback to simple scaler
-        return SimpleScaler()
+        # Ultimate fallback to simple scaler with optimization
+        return SimpleScaler(use_optimizer=use_optimizer, use_unified_manager=use_unified_manager)
 
 
-def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = True, **kwargs):
+def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = True, 
+                                 use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
     """
-    Create the best available batch scaler (VectorBT if available, otherwise fallback).
+    Create the best available batch scaler with VectorBT optimization.
     
     Args:
         method: Scaling method
         use_vectorbt: Whether to prefer VectorBT scaler when available
+        use_optimizer: Whether to use VectorBTRollingOptimizer
+        use_unified_manager: Whether to use UnifiedVectorizationManager
         **kwargs: Additional parameters for the scaler
         
     Returns:
-        Best available batch scaler instance
+        Best available batch scaler instance with optimization
     """
     if use_vectorbt and VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
         try:
-            return VectorBTBatchScaler(method, **kwargs)
+            return VectorBTBatchScaler(method, use_optimizer=use_optimizer, 
+                                     use_unified_manager=use_unified_manager, **kwargs)
         except Exception as e:
             logger.warning(f"Failed to create VectorBT batch scaler: {e}, using fallback")
     
-    # Fallback: create individual scalers for each column
+    # Fallback: create individual scalers for each column with optimization
     class FallbackBatchScaler:
-        def __init__(self, method: str = 'zscore', **kwargs):
+        def __init__(self, method: str = 'zscore', use_optimizer: bool = True, 
+                     use_unified_manager: bool = True, **kwargs):
             self.method = method
             self.kwargs = kwargs
+            self.use_optimizer = use_optimizer
+            self.use_unified_manager = use_unified_manager
             self.scalers = {}
         
         def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
             result = data.copy()
             for col in data.columns:
-                scaler = create_optimized_scaler(self.method, **self.kwargs)
+                scaler = create_optimized_scaler(self.method, use_optimizer=self.use_optimizer,
+                                               use_unified_manager=self.use_unified_manager, **self.kwargs)
                 result[col] = scaler.fit_transform(data[col])
                 self.scalers[col] = scaler
             return result
@@ -505,5 +646,26 @@ def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = T
                 else:
                     result[col] = data[col]
             return result
+        
+        def get_performance_stats(self) -> Dict[str, Any]:
+            """Get aggregated performance statistics from all scalers."""
+            stats = {
+                'total_operations': 0,
+                'vectorbt_operations': 0,
+                'optimizer_operations': 0,
+                'unified_manager_operations': 0,
+                'pandas_fallbacks': 0,
+                'memory_optimizations': 0
+            }
+            
+            for scaler in self.scalers.values():
+                if hasattr(scaler, 'get_performance_stats'):
+                    scaler_stats = scaler.get_performance_stats()
+                    for key, value in scaler_stats.items():
+                        if key in stats:
+                            stats[key] += value
+            
+            return stats
     
-    return FallbackBatchScaler(method, **kwargs)
+    return FallbackBatchScaler(method, use_optimizer=use_optimizer, 
+                              use_unified_manager=use_unified_manager, **kwargs)

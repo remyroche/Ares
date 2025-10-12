@@ -13,11 +13,12 @@ Key Features:
 - Fallback to standard scalers when VectorBT is not available
 """
 
+import logging
+import warnings
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-import logging
-from typing import Any, Dict, List, Optional, Union, Callable
-from abc import ABC, abstractmethod
 
 # VectorBT imports
 try:
@@ -27,6 +28,14 @@ try:
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
+
+# Optional GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
 
 # Import VectorBT optimization modules
 try:
@@ -40,6 +49,13 @@ except ImportError:
     UnifiedVectorizationManager = None
     get_unified_vectorization_manager = None
     warnings.warn("VectorBT optimization modules not available. Using basic VectorBT functions.")
+
+# Import utility functions
+try:
+    from src.utils.tprint import tprint
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
 
 from .base_scaler import BaseScaler
 
@@ -90,6 +106,9 @@ class VectorBTScaler(BaseScaler):
     
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit scaler parameters and transform data using VectorBT with enhanced optimization."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Starting fit_transform with method={self.method} on {len(data)} samples", color="cyan")
+        
         self.performance_stats['total_operations'] += 1
         self._log_info(f"🔧 [VectorBTScaler] Fitting {self.method} scaler on {len(data)} samples")
         
@@ -98,10 +117,14 @@ class VectorBTScaler(BaseScaler):
         
         # Optimize data for VectorBT processing
         if self.memory_efficient:
+            if TPRINT_AVAILABLE:
+                tprint("🔧 [VectorBTScaler] Optimizing data types for memory efficiency", color="blue")
             data = self._optimize_data_types(data)
         
         # Enable GPU processing if available
         if self.enable_gpu:
+            if TPRINT_AVAILABLE:
+                tprint("🚀 [VectorBTScaler] Enabling GPU processing", color="magenta")
             data = self._enable_gpu_processing(data)
             self.performance_stats['gpu_operations'] += 1
         
@@ -109,6 +132,8 @@ class VectorBTScaler(BaseScaler):
         clean_data = data.dropna()
         
         if len(clean_data) == 0:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTScaler] No valid data to fit, using defaults", color="yellow")
             self._log_warning("⚠️  No valid data to fit, using defaults")
             return pd.Series(np.nan, index=data.index)
         
@@ -116,9 +141,13 @@ class VectorBTScaler(BaseScaler):
             try:
                 # Use UnifiedVectorizationManager if available
                 if self.use_unified_manager and self.vectorization_manager is not None:
+                    if TPRINT_AVAILABLE:
+                        tprint("🔧 [VectorBTScaler] Using UnifiedVectorizationManager for scaling", color="green")
                     result = self._apply_unified_vectorization_scaling(clean_data)
                     self.performance_stats['unified_manager_operations'] += 1
                 else:
+                    if TPRINT_AVAILABLE:
+                        tprint("🔧 [VectorBTScaler] Using enhanced VectorBT scaling", color="green")
                     # Use enhanced VectorBT scaling
                     result = self._apply_enhanced_vectorbt_scaling(clean_data)
                     self.performance_stats['vectorbt_operations'] += 1
@@ -126,6 +155,8 @@ class VectorBTScaler(BaseScaler):
                 # Align result with original index
                 result = result.reindex(data.index)
                 self.fitted = True
+                if TPRINT_AVAILABLE:
+                    tprint(f"✅ [VectorBTScaler] Successfully fitted {self.method} scaler", color="green")
                 self._log_success(f"✅ [VectorBTScaler] Fitted {self.method} scaler successfully")
                 
                 # Validate output
@@ -134,116 +165,124 @@ class VectorBTScaler(BaseScaler):
                 return result
                 
             except Exception as e:
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [VectorBTScaler] VectorBT scaling failed: {e}, using fallback", color="yellow")
                 self._log_warning(f"⚠️  VectorBT scaling failed: {e}, using fallback")
                 return self._fallback_fit_transform(data)
         else:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTScaler] VectorBT not available, using fallback", color="yellow")
             return self._fallback_fit_transform(data)
     
     def _apply_enhanced_vectorbt_scaling(self, data: pd.Series) -> pd.Series:
         """Apply enhanced VectorBT scaling with advanced methods."""
-        if self.method == 'zscore':
-            result = zscore(data, **self.kwargs)
-            self.scaling_params = {
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Applying {self.method} scaling", color="blue")
+        
+        # Use the unified scaling method to reduce code duplication
+        result, params = self._apply_scaling_method(data, self.method, **self.kwargs)
+        self.scaling_params = params
+        
+        return result
+    
+    def _apply_scaling_method(self, data: pd.Series, method: str, **kwargs) -> Tuple[pd.Series, Dict[str, Any]]:
+        """Apply a specific scaling method and return result with parameters."""
+        if method == 'zscore':
+            result = zscore(data, **kwargs)
+            params = {
                 'mean': data.mean(),
                 'std': data.std()
             }
-        elif self.method == 'minmax':
-            result = scale(data, method='minmax', **self.kwargs)
-            self.scaling_params = {
+        elif method == 'minmax':
+            result = scale(data, method='minmax', **kwargs)
+            params = {
                 'min': data.min(),
                 'max': data.max()
             }
-        elif self.method == 'robust':
-            result = scale(data, method='robust', **self.kwargs)
+        elif method == 'robust':
+            result = scale(data, method='robust', **kwargs)
             median = data.median()
             mad = (data - median).abs().median()
-            self.scaling_params = {
+            params = {
                 'median': median,
                 'mad': mad
             }
-        elif self.method == 'quantile':
-            result = quantile(data, **self.kwargs)
-            self.scaling_params = {
+        elif method == 'quantile':
+            result = quantile(data, **kwargs)
+            params = {
                 'quantiles': data.quantile([0.25, 0.5, 0.75])
             }
-        elif self.method == 'winsorize':
-            result = winsorize(data, **self.kwargs)
-            self.scaling_params = {
-                'limits': self.kwargs.get('limits', (0.05, 0.05))
+        elif method == 'winsorize':
+            result = winsorize(data, **kwargs)
+            params = {
+                'limits': kwargs.get('limits', (0.05, 0.05))
             }
-        elif self.method == 'rank':
-            result = rank(data, **self.kwargs)
-            self.scaling_params = {
-                'method': self.kwargs.get('method', 'average')
+        elif method == 'rank':
+            result = rank(data, **kwargs)
+            params = {
+                'method': kwargs.get('method', 'average')
             }
-        elif self.method == 'clip':
-            result = clip(data, **self.kwargs)
-            self.scaling_params = {
-                'lower': self.kwargs.get('lower', None),
-                'upper': self.kwargs.get('upper', None)
+        elif method == 'clip':
+            result = clip(data, **kwargs)
+            params = {
+                'lower': kwargs.get('lower', None),
+                'upper': kwargs.get('upper', None)
             }
-        elif self.method == 'robust_zscore':
+        elif method == 'robust_zscore':
             # Enhanced robust z-score using VectorBT
             median = data.median()
             mad = (data - median).abs().median()
             result = (data - median) / (1.4826 * mad)  # 1.4826 is consistency factor for normal distribution
-            self.scaling_params = {
+            params = {
                 'median': median,
                 'mad': mad,
                 'consistency_factor': 1.4826
             }
-        elif self.method == 'adaptive':
+        elif method == 'adaptive':
             # Adaptive scaling based on data characteristics
             skewness = data.skew()
             kurtosis = data.kurtosis()
             
             if abs(skewness) > 2:  # Highly skewed data
-                result = quantile(data, **self.kwargs)
-                self.scaling_params = {
+                result, params = self._apply_scaling_method(data, 'quantile', **kwargs)
+                params.update({
                     'method_used': 'quantile',
-                    'reason': f'skewness={skewness:.3f}',
-                    'quantiles': data.quantile([0.25, 0.5, 0.75])
-                }
+                    'reason': f'skewness={skewness:.3f}'
+                })
             elif kurtosis > 3:  # Heavy-tailed data
-                result = scale(data, method='robust', **self.kwargs)
-                median = data.median()
-                mad = (data - median).abs().median()
-                self.scaling_params = {
+                result, params = self._apply_scaling_method(data, 'robust', **kwargs)
+                params.update({
                     'method_used': 'robust',
-                    'reason': f'kurtosis={kurtosis:.3f}',
-                    'median': median,
-                    'mad': mad
-                }
+                    'reason': f'kurtosis={kurtosis:.3f}'
+                })
             else:  # Normal-like data
-                result = zscore(data, **self.kwargs)
-                self.scaling_params = {
+                result, params = self._apply_scaling_method(data, 'zscore', **kwargs)
+                params.update({
                     'method_used': 'zscore',
-                    'reason': f'normal-like: skewness={skewness:.3f}, kurtosis={kurtosis:.3f}',
-                    'mean': data.mean(),
-                    'std': data.std()
-                }
+                    'reason': f'normal-like: skewness={skewness:.3f}, kurtosis={kurtosis:.3f}'
+                })
             self.performance_stats['adaptive_scaling_decisions'] += 1
-        elif self.method == 'quantile_robust':
+        elif method == 'quantile_robust':
             # Robust quantile scaling
             q25, q75 = data.quantile([0.25, 0.75])
             result = (data - q25) / (q75 - q25 + 1e-8)  # Add small epsilon to avoid division by zero
-            self.scaling_params = {
+            params = {
                 'q25': q25,
                 'q75': q75,
                 'iqr': q75 - q25
             }
-        elif self.method == 'winsorize_adaptive':
+        elif method == 'winsorize_adaptive':
             # Adaptive winsorization based on data distribution
             limits = self._calculate_adaptive_winsorize_limits(data)
-            result = winsorize(data, limits=limits, **self.kwargs)
-            self.scaling_params = {
+            result = winsorize(data, limits=limits, **kwargs)
+            params = {
                 'limits': limits,
                 'adaptive': True
             }
         else:
-            raise ValueError(f"Unsupported scaling method: {self.method}")
+            raise ValueError(f"Unsupported scaling method: {method}")
         
-        return result
+        return result, params
     
     def _apply_unified_vectorization_scaling(self, data: pd.Series) -> pd.Series:
         """Apply scaling using UnifiedVectorizationManager for optimal performance."""
@@ -262,39 +301,9 @@ class VectorBTScaler(BaseScaler):
     
     def _store_scaling_parameters_from_data(self, data: pd.Series) -> None:
         """Store scaling parameters from the data for transform method."""
-        if self.method == 'zscore':
-            self.scaling_params = {
-                'mean': data.mean(),
-                'std': data.std()
-            }
-        elif self.method == 'minmax':
-            self.scaling_params = {
-                'min': data.min(),
-                'max': data.max()
-            }
-        elif self.method == 'robust':
-            median = data.median()
-            mad = (data - median).abs().median()
-            self.scaling_params = {
-                'median': median,
-                'mad': mad
-            }
-        elif self.method == 'robust_zscore':
-            median = data.median()
-            mad = (data - median).abs().median()
-            self.scaling_params = {
-                'median': median,
-                'mad': mad,
-                'consistency_factor': 1.4826
-            }
-        elif self.method == 'quantile_robust':
-            q25, q75 = data.quantile([0.25, 0.75])
-            self.scaling_params = {
-                'q25': q25,
-                'q75': q75,
-                'iqr': q75 - q25
-            }
-        # Add other methods as needed
+        # Use the unified method to get parameters
+        _, params = self._apply_scaling_method(data, self.method, **self.kwargs)
+        self.scaling_params = params
     
     def _calculate_adaptive_winsorize_limits(self, data: pd.Series) -> Tuple[float, float]:
         """Calculate adaptive winsorization limits based on data distribution."""
@@ -337,15 +346,22 @@ class VectorBTScaler(BaseScaler):
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using fitted parameters."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Starting transform with method={self.method} on {len(data)} samples", color="cyan")
+        
         self._validate_fitted()
         
         if VECTORBT_AVAILABLE and self.fitted:
             try:
                 # Use UnifiedVectorizationManager if available
                 if self.use_unified_manager and self.vectorization_manager is not None:
+                    if TPRINT_AVAILABLE:
+                        tprint("🔧 [VectorBTScaler] Using UnifiedVectorizationManager for transform", color="green")
                     result = self._transform_with_unified_manager(data)
                     self.performance_stats['unified_manager_operations'] += 1
                 else:
+                    if TPRINT_AVAILABLE:
+                        tprint("🔧 [VectorBTScaler] Using VectorBT for transform", color="green")
                     # Use VectorBT scaling with fitted parameters
                     result = self._transform_with_vectorbt(data)
                     self.performance_stats['vectorbt_operations'] += 1
@@ -353,12 +369,18 @@ class VectorBTScaler(BaseScaler):
                 # Validate output
                 self._check_output_validity(result, "transformed data")
                 
+                if TPRINT_AVAILABLE:
+                    tprint("✅ [VectorBTScaler] Transform completed successfully", color="green")
                 return result
                 
             except Exception as e:
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [VectorBTScaler] VectorBT transform failed: {e}, using fallback", color="yellow")
                 self._log_warning(f"⚠️  VectorBT transform failed: {e}, using fallback")
                 return self._fallback_transform(data)
         else:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTScaler] VectorBT not available or not fitted, using fallback", color="yellow")
             return self._fallback_transform(data)
     
     def _transform_with_unified_manager(self, data: pd.Series) -> pd.Series:
@@ -400,75 +422,114 @@ class VectorBTScaler(BaseScaler):
     
     def _fallback_fit_transform(self, data: pd.Series) -> pd.Series:
         """Fallback fit_transform using standard methods."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Using fallback fit_transform for method={self.method}", color="yellow")
+        
         clean_data = data.dropna()
         
         if len(clean_data) == 0:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTScaler] No valid data for fallback, returning NaN", color="yellow")
             return pd.Series(np.nan, index=data.index)
         
-        if self.method == 'zscore':
-            mean = clean_data.mean()
-            std = clean_data.std()
-            if std == 0:
-                result = pd.Series(0, index=data.index)
+        try:
+            if self.method == 'zscore':
+                mean = clean_data.mean()
+                std = clean_data.std()
+                if std == 0 or np.isnan(std):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Zero std in zscore fallback, using zeros", color="yellow")
+                    result = pd.Series(0, index=data.index)
+                else:
+                    result = (data - mean) / std
+                self.scaling_params = {'mean': mean, 'std': std}
+            elif self.method == 'minmax':
+                min_val = clean_data.min()
+                max_val = clean_data.max()
+                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Invalid min/max in minmax fallback, using zeros", color="yellow")
+                    result = pd.Series(0, index=data.index)
+                else:
+                    result = (data - min_val) / (max_val - min_val)
+                self.scaling_params = {'min': min_val, 'max': max_val}
+            elif self.method == 'robust':
+                median = clean_data.median()
+                mad = (clean_data - median).abs().median()
+                if mad == 0 or np.isnan(mad):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Zero MAD in robust fallback, using zeros", color="yellow")
+                    result = pd.Series(0, index=data.index)
+                else:
+                    result = (data - median) / mad
+                self.scaling_params = {'median': median, 'mad': mad}
             else:
-                result = (data - mean) / std
-            self.scaling_params = {'mean': mean, 'std': std}
-        elif self.method == 'minmax':
-            min_val = clean_data.min()
-            max_val = clean_data.max()
-            if max_val == min_val:
-                result = pd.Series(0, index=data.index)
-            else:
-                result = (data - min_val) / (max_val - min_val)
-            self.scaling_params = {'min': min_val, 'max': max_val}
-        elif self.method == 'robust':
-            median = clean_data.median()
-            mad = (clean_data - median).abs().median()
-            if mad == 0:
-                result = pd.Series(0, index=data.index)
-            else:
-                result = (data - median) / mad
-            self.scaling_params = {'median': median, 'mad': mad}
-        else:
-            # For other methods, use simple z-score as fallback
-            mean = clean_data.mean()
-            std = clean_data.std()
-            if std == 0:
-                result = pd.Series(0, index=data.index)
-            else:
-                result = (data - mean) / std
-            self.scaling_params = {'mean': mean, 'std': std}
-        
-        self.fitted = True
-        return result
+                # For other methods, use simple z-score as fallback
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [VectorBTScaler] Unsupported method {self.method}, using zscore fallback", color="yellow")
+                mean = clean_data.mean()
+                std = clean_data.std()
+                if std == 0 or np.isnan(std):
+                    result = pd.Series(0, index=data.index)
+                else:
+                    result = (data - mean) / std
+                self.scaling_params = {'mean': mean, 'std': std}
+            
+            self.fitted = True
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTScaler] Fallback fit_transform completed", color="green")
+            return result
+            
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] Fallback fit_transform failed: {e}", color="red")
+            # Ultimate fallback - return zeros
+            return pd.Series(0, index=data.index)
     
     def _fallback_transform(self, data: pd.Series) -> pd.Series:
         """Fallback transform using fitted parameters."""
-        if self.method == 'zscore':
-            mean = self.scaling_params['mean']
-            std = self.scaling_params['std']
-            if std == 0:
-                return pd.Series(0, index=data.index)
-            return (data - mean) / std
-        elif self.method == 'minmax':
-            min_val = self.scaling_params['min']
-            max_val = self.scaling_params['max']
-            if max_val == min_val:
-                return pd.Series(0, index=data.index)
-            return (data - min_val) / (max_val - min_val)
-        elif self.method == 'robust':
-            median = self.scaling_params['median']
-            mad = self.scaling_params['mad']
-            if mad == 0:
-                return pd.Series(0, index=data.index)
-            return (data - median) / mad
-        else:
-            # Fallback to z-score
-            mean = self.scaling_params.get('mean', 0)
-            std = self.scaling_params.get('std', 1)
-            if std == 0:
-                return pd.Series(0, index=data.index)
-            return (data - mean) / std
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Using fallback transform for method={self.method}", color="yellow")
+        
+        try:
+            if self.method == 'zscore':
+                mean = self.scaling_params.get('mean', 0)
+                std = self.scaling_params.get('std', 1)
+                if std == 0 or np.isnan(std):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Zero std in zscore fallback transform, using zeros", color="yellow")
+                    return pd.Series(0, index=data.index)
+                return (data - mean) / std
+            elif self.method == 'minmax':
+                min_val = self.scaling_params.get('min', 0)
+                max_val = self.scaling_params.get('max', 1)
+                if max_val == min_val or np.isnan(max_val) or np.isnan(min_val):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Invalid min/max in minmax fallback transform, using zeros", color="yellow")
+                    return pd.Series(0, index=data.index)
+                return (data - min_val) / (max_val - min_val)
+            elif self.method == 'robust':
+                median = self.scaling_params.get('median', 0)
+                mad = self.scaling_params.get('mad', 1)
+                if mad == 0 or np.isnan(mad):
+                    if TPRINT_AVAILABLE:
+                        tprint("⚠️  [VectorBTScaler] Zero MAD in robust fallback transform, using zeros", color="yellow")
+                    return pd.Series(0, index=data.index)
+                return (data - median) / mad
+            else:
+                # Fallback to z-score
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [VectorBTScaler] Unsupported method {self.method} in fallback transform, using zscore", color="yellow")
+                mean = self.scaling_params.get('mean', 0)
+                std = self.scaling_params.get('std', 1)
+                if std == 0 or np.isnan(std):
+                    return pd.Series(0, index=data.index)
+                return (data - mean) / std
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] Fallback transform failed: {e}", color="red")
+            # Ultimate fallback - return zeros
+            return pd.Series(0, index=data.index)
     
     def get_state(self) -> Dict[str, Any]:
         """Get current state for persistence."""
@@ -551,26 +612,39 @@ class VectorBTBatchScaler:
     
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Fit and transform multiple features using VectorBT batch processing with optimization."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTBatchScaler] Starting batch fit_transform with method={self.method} on {data.shape[0]}x{data.shape[1]} data", color="cyan")
+        
         self.performance_stats['total_operations'] += 1
         
         if not VECTORBT_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTBatchScaler] VectorBT not available, using fallback", color="yellow")
             return self._fallback_fit_transform(data)
         
         # Optimize DataFrame for VectorBT processing
         if self.memory_efficient:
+            if TPRINT_AVAILABLE:
+                tprint("🔧 [VectorBTBatchScaler] Optimizing DataFrame types for memory efficiency", color="blue")
             data = self._optimize_dataframe_types(data)
         
         # Enable GPU processing if available
         if self.enable_gpu:
+            if TPRINT_AVAILABLE:
+                tprint("🚀 [VectorBTBatchScaler] Enabling GPU processing for batch operations", color="magenta")
             data = self._enable_gpu_dataframe_processing(data)
             self.performance_stats['gpu_operations'] += 1
         
         try:
             # Use UnifiedVectorizationManager if available
             if self.use_unified_manager and self.vectorization_manager is not None:
+                if TPRINT_AVAILABLE:
+                    tprint("🔧 [VectorBTBatchScaler] Using UnifiedVectorizationManager for batch scaling", color="green")
                 result = self._apply_unified_batch_scaling(data)
                 self.performance_stats['unified_manager_operations'] += 1
             else:
+                if TPRINT_AVAILABLE:
+                    tprint("🔧 [VectorBTBatchScaler] Using enhanced VectorBT batch scaling", color="green")
                 # Use enhanced VectorBT batch scaling
                 result = self._apply_enhanced_vectorbt_batch_scaling(data)
                 self.performance_stats['vectorbt_operations'] += 1
@@ -580,56 +654,60 @@ class VectorBTBatchScaler:
             
             self.performance_stats['batch_operations'] += 1
             
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTBatchScaler] Batch fit_transform completed successfully", color="green")
             return result
             
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"⚠️  [VectorBTBatchScaler] VectorBT batch scaling failed: {e}, using fallback", color="yellow")
             logger.warning(f"VectorBT batch scaling failed: {e}, using fallback")
             return self._fallback_fit_transform(data)
     
     def _apply_enhanced_vectorbt_batch_scaling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply enhanced VectorBT batch scaling with advanced methods."""
-        if self.method == 'zscore':
-            return zscore(data, **self.kwargs)
-        elif self.method == 'minmax':
-            return scale(data, method='minmax', **self.kwargs)
-        elif self.method == 'robust':
-            return scale(data, method='robust', **self.kwargs)
-        elif self.method == 'quantile':
-            return quantile(data, **self.kwargs)
-        elif self.method == 'winsorize':
-            return winsorize(data, **self.kwargs)
-        elif self.method == 'rank':
-            return rank(data, **self.kwargs)
-        elif self.method == 'clip':
-            return clip(data, **self.kwargs)
-        elif self.method == 'robust_zscore':
-            # Enhanced robust z-score for batch processing
-            median = data.median()
-            mad = (data - median).abs().median()
-            return (data - median) / (1.4826 * mad)
-        elif self.method == 'adaptive':
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTBatchScaler] Applying {self.method} batch scaling", color="blue")
+        
+        if self.method == 'adaptive':
             # Adaptive scaling for each column
             result = data.copy()
             for col in data.columns:
                 col_data = data[col].dropna()
                 if len(col_data) > 0:
-                    skewness = col_data.skew()
-                    kurtosis = col_data.kurtosis()
-                    
-                    if abs(skewness) > 2:  # Highly skewed
-                        result[col] = quantile(col_data, **self.kwargs)
-                    elif kurtosis > 3:  # Heavy-tailed
-                        result[col] = scale(col_data, method='robust', **self.kwargs)
-                    else:  # Normal-like
-                        result[col] = zscore(col_data, **self.kwargs)
+                    # Create a temporary VectorBTScaler for adaptive scaling
+                    temp_scaler = VectorBTScaler('adaptive', **self.kwargs)
+                    scaled_data, _ = temp_scaler._apply_scaling_method(col_data, 'adaptive', **self.kwargs)
+                    result[col] = scaled_data.reindex(data[col].index)
             return result
-        elif self.method == 'quantile_robust':
-            # Robust quantile scaling for batch processing
-            q25 = data.quantile(0.25)
-            q75 = data.quantile(0.75)
-            return (data - q25) / (q75 - q25 + 1e-8)
         else:
-            raise ValueError(f"Unsupported scaling method: {self.method}")
+            # Use VectorBT batch functions for non-adaptive methods
+            if self.method == 'zscore':
+                return zscore(data, **self.kwargs)
+            elif self.method == 'minmax':
+                return scale(data, method='minmax', **self.kwargs)
+            elif self.method == 'robust':
+                return scale(data, method='robust', **self.kwargs)
+            elif self.method == 'quantile':
+                return quantile(data, **self.kwargs)
+            elif self.method == 'winsorize':
+                return winsorize(data, **self.kwargs)
+            elif self.method == 'rank':
+                return rank(data, **self.kwargs)
+            elif self.method == 'clip':
+                return clip(data, **self.kwargs)
+            elif self.method == 'robust_zscore':
+                # Enhanced robust z-score for batch processing
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / (1.4826 * mad)
+            elif self.method == 'quantile_robust':
+                # Robust quantile scaling for batch processing
+                q25 = data.quantile(0.25)
+                q75 = data.quantile(0.75)
+                return (data - q25) / (q75 - q25 + 1e-8)
+            else:
+                raise ValueError(f"Unsupported scaling method: {self.method}")
     
     def _apply_unified_batch_scaling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply batch scaling using UnifiedVectorizationManager for optimal performance."""
@@ -644,38 +722,10 @@ class VectorBTBatchScaler:
     def _store_scaling_parameters(self, data: pd.DataFrame) -> None:
         """Store scaling parameters for each column."""
         for col in data.columns:
-            if self.method == 'zscore':
-                self.scalers[col] = {
-                    'mean': data[col].mean(),
-                    'std': data[col].std()
-                }
-            elif self.method == 'minmax':
-                self.scalers[col] = {
-                    'min': data[col].min(),
-                    'max': data[col].max()
-                }
-            elif self.method == 'robust':
-                median = data[col].median()
-                mad = (data[col] - median).abs().median()
-                self.scalers[col] = {
-                    'median': median,
-                    'mad': mad
-                }
-            elif self.method == 'robust_zscore':
-                median = data[col].median()
-                mad = (data[col] - median).abs().median()
-                self.scalers[col] = {
-                    'median': median,
-                    'mad': mad,
-                    'consistency_factor': 1.4826
-                }
-            elif self.method == 'quantile_robust':
-                q25, q75 = data[col].quantile([0.25, 0.75])
-                self.scalers[col] = {
-                    'q25': q25,
-                    'q75': q75,
-                    'iqr': q75 - q25
-                }
+            # Create a temporary VectorBTScaler to get parameters for each column
+            temp_scaler = VectorBTScaler(self.method, **self.kwargs)
+            _, params = temp_scaler._apply_scaling_method(data[col], self.method, **self.kwargs)
+            self.scalers[col] = params
     
     def _optimize_dataframe_types(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame types for memory efficiency."""
@@ -705,10 +755,17 @@ class VectorBTBatchScaler:
     
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Transform new data using fitted parameters."""
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTBatchScaler] Starting batch transform with method={self.method} on {data.shape[0]}x{data.shape[1]} data", color="cyan")
+        
         if not self.scalers:
+            if TPRINT_AVAILABLE:
+                tprint("❌ [VectorBTBatchScaler] Batch scaler must be fitted before transform", color="red")
             raise ValueError("Batch scaler must be fitted before transform")
         
         if not VECTORBT_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTBatchScaler] VectorBT not available, using fallback", color="yellow")
             return self._fallback_transform(data)
         
         try:
@@ -756,9 +813,13 @@ class VectorBTBatchScaler:
                 else:
                     raise ValueError(f"Unsupported scaling method: {self.method}")
             
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTBatchScaler] Batch transform completed successfully", color="green")
             return result
             
         except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"⚠️  [VectorBTBatchScaler] VectorBT batch transform failed: {e}, using fallback", color="yellow")
             logger.warning(f"VectorBT batch transform failed: {e}, using fallback")
             return self._fallback_transform(data)
     
@@ -789,32 +850,7 @@ class VectorBTBatchScaler:
         return result
 
 
-def create_vectorbt_scaler(method: str = 'zscore', **kwargs) -> BaseScaler:
-    """
-    Create a VectorBT-optimized scaler.
-    
-    Args:
-        method: Scaling method
-        **kwargs: Additional parameters
-        
-    Returns:
-        VectorBT scaler instance
-    """
-    return VectorBTScaler(method, **kwargs)
-
-
-def create_vectorbt_batch_scaler(method: str = 'zscore', **kwargs) -> VectorBTBatchScaler:
-    """
-    Create a VectorBT-optimized batch scaler.
-    
-    Args:
-        method: Scaling method
-        **kwargs: Additional parameters
-        
-    Returns:
-        VectorBT batch scaler instance
-    """
-    return VectorBTBatchScaler(method, **kwargs)
+# These functions are now available through the base_scaler module's create_optimized_scaler functions
 
 
 # Available scaling methods
@@ -833,21 +869,4 @@ def get_available_scaling_methods() -> List[str]:
         return ['zscore', 'minmax', 'robust']  # Fallback methods
 
 
-def get_performance_stats(scaler) -> Dict[str, Any]:
-    """Get performance statistics from a scaler."""
-    if hasattr(scaler, 'performance_stats'):
-        return scaler.performance_stats.copy()
-    return {}
-
-
-def reset_performance_stats(scaler) -> None:
-    """Reset performance statistics for a scaler."""
-    if hasattr(scaler, 'performance_stats'):
-        scaler.performance_stats = {
-            'vectorbt_operations': 0,
-            'gpu_operations': 0,
-            'batch_operations': 0,
-            'memory_optimizations': 0,
-            'adaptive_scaling_decisions': 0,
-            'total_operations': 0
-        }
+# Performance stats functions are now available through the scaler instances directly

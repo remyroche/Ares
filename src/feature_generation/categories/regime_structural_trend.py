@@ -25,6 +25,8 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from ..utils.unified_optimization_system import get_unified_optimization_system, UnifiedOptimizationSystem
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -76,6 +78,20 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=getattr(config, 'gpu_accelerated', False),
+                    enable_parallel=True
+                )
+                self.unified_optimizer = get_unified_optimization_system()
+                tprint("✅ VectorBT optimizers initialized for RegimeStructuralTrendFeatureGenerator")
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:

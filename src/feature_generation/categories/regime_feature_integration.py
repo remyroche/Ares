@@ -29,6 +29,8 @@ from ..core.feature_generator import (
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from ..utils.unified_optimization_system import get_unified_optimization_system, UnifiedOptimizationSystem
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -155,6 +157,20 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         self._latest_target_count: int = getattr(config, 'total_max_features', 100)
         self._latest_intensity_scalers: Dict[str, float] = {}
         
+        # Initialize VectorBT optimizers
+        self.vectorbt_optimizer = None
+        self.unified_optimizer = None
+        if OPTIMIZATION_AVAILABLE:
+            try:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=getattr(config, 'enable_gpu_acceleration', False),
+                    enable_parallel=getattr(config, 'enable_parallel_processing', True)
+                )
+                self.unified_optimizer = get_unified_optimization_system()
+                tprint("✅ VectorBT optimizers initialized successfully")
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
+        
         # Initialize regime-focused feature generators
         self.volatility_generator = RegimeVolatilityFeatureGenerator() if config.include_volatility_regime else None
         self.volume_generator = RegimeVolumeFeatureGenerator() if config.include_volume_regime else None
@@ -177,6 +193,55 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         )
         
         super().__init__(base_config, enable_matrix_ops=True)
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if self.vectorbt_optimizer:
+            try:
+                if operation == 'mean':
+                    return self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                elif operation == 'std':
+                    return self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                elif operation == 'var':
+                    return self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                elif operation == 'min':
+                    return self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                elif operation == 'max':
+                    return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                elif operation == 'sum':
+                    return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                elif operation == 'corr':
+                    other = kwargs.get('other')
+                    if other is not None:
+                        return self.vectorbt_optimizer.rolling_corr(data, other, window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint(f"VectorBT operation failed: {e}, using pandas fallback")
+                return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        elif operation == 'corr':
+            other = kwargs.get('other')
+            if other is not None:
+                return data.rolling(window=window).corr(other)
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -958,18 +1023,38 @@ except ImportError:
 # Analyst Features - Regime generators
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
+        if self.unified_optimizer:
+            return self.unified_optimizer.optimize_dataframe(data)
+        elif self.vectorbt_optimizer:
+            return self.vectorbt_optimizer._optimize_data_types(data)
         return data
     
     def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
                                     windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
+        """Perform vectorized rolling operations with VectorBT optimization."""
+        if self.vectorbt_optimizer:
+            result = data.copy()
+            if columns is None:
+                columns = data.select_dtypes(include=[np.number]).columns.tolist()
+            
+            for window in windows:
+                for col in columns:
+                    if col in data.columns:
+                        for operation in operations:
+                            if operation == 'mean':
+                                result[f'{col}_rolling_mean_{window}'] = self.vectorbt_optimizer.rolling_mean(data[col], window)
+                            elif operation == 'std':
+                                result[f'{col}_rolling_std_{window}'] = self.vectorbt_optimizer.rolling_std(data[col], window)
+                            elif operation == 'var':
+                                result[f'{col}_rolling_var_{window}'] = self.vectorbt_optimizer.rolling_var(data[col], window)
+                            elif operation == 'min':
+                                result[f'{col}_rolling_min_{window}'] = self.vectorbt_optimizer.rolling_min(data[col], window)
+                            elif operation == 'max':
+                                result[f'{col}_rolling_max_{window}'] = self.vectorbt_optimizer.rolling_max(data[col], window)
+                            elif operation == 'sum':
+                                result[f'{col}_rolling_sum_{window}'] = self.vectorbt_optimizer.rolling_sum(data[col], window)
+            return result
         return data
 
 class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
@@ -1006,18 +1091,14 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
+        # This class doesn't need complex optimization, just return data
         return data
     
     def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
                                     windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
+        """Perform vectorized rolling operations with VectorBT optimization."""
+        # This class doesn't need complex rolling operations, just return data
         return data
 
 class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
@@ -1054,18 +1135,14 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        """Optimize DataFrame for vectorized processing using VectorBT optimizers."""
+        # This class doesn't need complex optimization, just return data
         return data
     
     def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
                                     windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
+        """Perform vectorized rolling operations with VectorBT optimization."""
+        # This class doesn't need complex rolling operations, just return data
         return data
 
 class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
@@ -1127,51 +1204,3 @@ def generate_regime_features(data: pd.DataFrame,
     summary = generator.get_feature_summary(features, generator._latest_quality_stats)
 
     return features, summary
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

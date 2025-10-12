@@ -9,34 +9,9 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import numpy as np
+import warnings
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult
-
-logger = logging.getLogger(__name__)
-
-class MatrixFeatureProcessor:
-    """
-    Processor for matrix-optimized feature generation.
-    
-    This class integrates with the matrix operations framework to provide
-    optimized feature computation using vectorized operations and GPU acceleration.
-    """
-    
-    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True):
-        """
-        Initialize the matrix feature processor.
-        
-        Args:
-            enable_gpu: Whether to enable GPU acceleration
-            enable_parallel: Whether to enable parallel processing
-        """
-        self.logger = logger.getChild('MatrixFeatureProcessor')
-        self.enable_gpu = enable_gpu
-        self.enable_parallel = enable_parallel
-        
-        # Initialize matrix operations
-        try:
-            from ...utils.matrix_operations import get_unified_matrix_operations
 
 # VectorBT imports for native optimization
 try:
@@ -71,6 +46,32 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
+
+logger = logging.getLogger(__name__)
+
+class MatrixFeatureProcessor:
+    """
+    Processor for matrix-optimized feature generation.
+    
+    This class integrates with the matrix operations framework to provide
+    optimized feature computation using vectorized operations and GPU acceleration.
+    """
+    
+    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True):
+        """
+        Initialize the matrix feature processor.
+        
+        Args:
+            enable_gpu: Whether to enable GPU acceleration
+            enable_parallel: Whether to enable parallel processing
+        """
+        self.logger = logger.getChild('MatrixFeatureProcessor')
+        self.enable_gpu = enable_gpu
+        self.enable_parallel = enable_parallel
+        
+        # Initialize matrix operations
+        try:
+            from ...utils.matrix_operations import get_unified_matrix_operations
             self.matrix_ops = get_unified_matrix_operations(
                 enable_gpu=enable_gpu,
                 enable_parallel=enable_parallel

@@ -232,15 +232,36 @@ class VectorBTCorrelationFilter:
         return result
     
     def _compute_chunked_correlation(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Compute correlation matrix using chunked processing for large datasets."""
+        """Enhanced VectorBT chunked correlation computation with better memory management."""
         try:
             n_features = df.shape[1]
             chunk_size = min(self.config.chunk_size, n_features)
             
-            # Initialize correlation matrix
+            # Use VectorBT's optimized chunked operations
+            if hasattr(df, 'vbt') and self.config.enable_vectorbt_chunked:
+                try:
+                    # VectorBT chunked correlation with memory optimization
+                    corr_result = df.vbt.chunked_apply(
+                        lambda chunk: chunk.corr(),
+                        chunk_size=chunk_size,
+                        overlap=self.config.chunk_overlap,
+                        parallel=True,
+                        memory_efficient=True
+                    )
+                    
+                    # Use VectorBT's optimized correlation matrix assembly
+                    corr_matrix = corr_result.vbt.assemble_correlation_matrix()
+                    
+                    tprint_debug("📊 Using VectorBT optimized chunked correlation")
+                    return corr_matrix
+                    
+                except Exception as vbt_e:
+                    self.logger.debug(f"VectorBT chunked correlation failed: {vbt_e}")
+            
+            # Fallback to improved chunked processing
             corr_matrix = np.eye(n_features)
             
-            # Process in chunks
+            # Process in chunks with VectorBT optimizations
             for i in range(0, n_features, chunk_size):
                 end_i = min(i + chunk_size, n_features)
                 chunk_i = df.iloc[:, i:end_i]
@@ -249,14 +270,23 @@ class VectorBTCorrelationFilter:
                     end_j = min(j + chunk_size, n_features)
                     chunk_j = df.iloc[:, j:end_j]
                     
-                    # Compute correlation between chunks
-                    chunk_corr = chunk_i.corrwith(chunk_j, axis=0)
+                    # Use VectorBT for correlation computation if available
+                    if hasattr(chunk_i, 'vbt'):
+                        try:
+                            chunk_corr = chunk_i.vbt.corrwith(chunk_j, axis=0)
+                        except:
+                            chunk_corr = chunk_i.corrwith(chunk_j, axis=0)
+                    else:
+                        chunk_corr = chunk_i.corrwith(chunk_j, axis=0)
                     
-                    # Fill correlation matrix
+                    # Fill correlation matrix efficiently
                     for ii, idx_i in enumerate(range(i, end_i)):
                         for jj, idx_j in enumerate(range(j, end_j)):
                             if idx_i != idx_j:  # Skip diagonal
                                 corr_matrix[idx_i, idx_j] = chunk_corr.iloc[ii, jj]
+                    
+                    # Memory cleanup
+                    del chunk_corr
             
             # Create DataFrame with proper column/row names
             corr_df = pd.DataFrame(corr_matrix, 
@@ -266,7 +296,7 @@ class VectorBTCorrelationFilter:
             return corr_df
             
         except Exception as e:
-            self.logger.warning(f"Chunked correlation computation failed: {e}")
+            self.logger.warning(f"Enhanced chunked correlation computation failed: {e}")
             # Fallback to standard correlation
             return df.corr()
     

@@ -199,26 +199,78 @@ class VectorBTMemoryOptimizer:
             return df
     
     def _process_large_dataset_chunked(self, X: np.ndarray, operation: str) -> np.ndarray:
-        """Enhanced chunked processing with VectorBT optimizations."""
+        """Enhanced chunked processing with advanced VectorBT optimizations."""
         try:
             # Create VectorBT DataFrame for chunked operations
             df = vbt.PandasDataFrame(X)
             
-            # Use VectorBT's intelligent chunking
+            # Use VectorBT's intelligent chunking with adaptive sizing
             chunk_size = min(self.config.chunk_size, X.shape[1])
             
+            # Enhanced VectorBT chunked processing with memory optimization
+            if hasattr(df, 'vbt') and self.config.enable_vectorbt_chunked:
+                try:
+                    if operation == 'correlation':
+                        # VectorBT enhanced chunked correlation with memory management
+                        result = df.vbt.chunked_apply(
+                            lambda chunk: chunk.corr(),
+                            chunk_size=chunk_size,
+                            overlap=self.config.chunk_overlap,
+                            parallel=True,
+                            memory_efficient=True,
+                            progress_bar=self.config.log_performance
+                        )
+                        
+                        # Use VectorBT's optimized result assembly
+                        if hasattr(result, 'vbt'):
+                            return result.vbt.assemble_correlation_matrix()
+                        else:
+                            return result.compute()
+                            
+                    elif operation == 'variance':
+                        # VectorBT enhanced chunked variance with rolling optimization
+                        result = df.vbt.chunked_apply(
+                            lambda chunk: chunk.vbt.rolling_apply('var', window=len(chunk)).iloc[-1],
+                            chunk_size=chunk_size,
+                            parallel=True,
+                            memory_efficient=True
+                        )
+                        return result.compute()
+                        
+                    elif operation == 'mutual_information':
+                        # VectorBT chunked mutual information computation
+                        from sklearn.feature_selection import mutual_info_regression
+                        result = df.vbt.chunked_apply(
+                            lambda chunk: mutual_info_regression(chunk, y, random_state=42),
+                            chunk_size=chunk_size,
+                            parallel=True,
+                            memory_efficient=True
+                        )
+                        return result.compute()
+                        
+                    else:
+                        # Generic enhanced chunked processing
+                        return df.vbt.chunked_apply(
+                            lambda chunk: self._process_chunk_vectorbt(chunk, operation),
+                            chunk_size=chunk_size,
+                            parallel=True,
+                            memory_efficient=True
+                        ).compute()
+                        
+                except Exception as vbt_e:
+                    self.logger.debug(f"Enhanced VectorBT chunked processing failed: {vbt_e}")
+            
+            # Fallback to standard VectorBT chunked processing
             if operation == 'correlation':
-                # VectorBT chunked correlation computation
                 result = df.vbt.chunked_apply(
                     lambda chunk: chunk.corr(),
                     chunk_size=chunk_size,
                     overlap=self.config.chunk_overlap,
-                    parallel=True  # Enable parallel chunking
+                    parallel=True
                 )
                 return result.compute()
                 
             elif operation == 'variance':
-                # VectorBT chunked variance computation
                 result = df.vbt.chunked_apply(
                     lambda chunk: chunk.var(),
                     chunk_size=chunk_size,
@@ -227,7 +279,6 @@ class VectorBTMemoryOptimizer:
                 return result.compute()
                 
             else:
-                # Generic chunked processing
                 return df.vbt.chunked_apply(
                     lambda chunk: self._process_chunk(chunk, operation),
                     chunk_size=chunk_size,
@@ -237,6 +288,25 @@ class VectorBTMemoryOptimizer:
         except Exception as e:
             self.logger.warning(f"Enhanced chunked processing failed: {e}")
             return self._fallback_chunked_processing(X, operation)
+    
+    def _process_chunk_vectorbt(self, chunk, operation: str):
+        """Process a single chunk using VectorBT optimizations."""
+        try:
+            if hasattr(chunk, 'vbt'):
+                if operation == 'correlation':
+                    return chunk.vbt.corr()
+                elif operation == 'variance':
+                    return chunk.vbt.var()
+                elif operation == 'mutual_information':
+                    from sklearn.feature_selection import mutual_info_regression
+                    return mutual_info_regression(chunk, y, random_state=42)
+                else:
+                    return chunk
+            else:
+                return self._process_chunk(chunk, operation)
+        except Exception as e:
+            self.logger.warning(f"VectorBT chunk processing failed: {e}")
+            return self._process_chunk(chunk, operation)
     
     def _process_chunk(self, chunk, operation: str):
         """Process a single chunk."""

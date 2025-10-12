@@ -8,6 +8,7 @@ ensuring proper initialization, configuration, and lifecycle management of utili
 """
 
 import logging
+import warnings
 from typing import Any, Dict, List, Optional, Type, TypeVar, Callable, Union
 from functools import wraps
 from dataclasses import dataclass, field
@@ -375,6 +376,11 @@ def load_data(filepath):
 # M1 utilities - using available hardware optimizations
 try:
     from src.utils.hardware.m1_optimizations import M1MemoryOptimizer, M1DataManager
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+    M1MemoryOptimizer = None
+    M1DataManager = None
 
 # VectorBT imports for native optimization
 try:

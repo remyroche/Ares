@@ -46,6 +46,12 @@ from .interpretability_analysis import (
 from .consensus_indicator_system import (
     ConsensusIndicatorSystem, create_consensus_system
 )
+from .enhanced_consensus_system import (
+    EnhancedConsensusSystem, EnhancedConsensusConfig, create_enhanced_consensus_system
+)
+from .advanced_candle_features import (
+    AdvancedCandleFeatureGenerator, AdvancedFeatureConfig, create_advanced_candle_feature_generator
+)
 
 __all__ = [
     # Core generators
@@ -73,6 +79,16 @@ __all__ = [
     # Consensus system
     'ConsensusIndicatorSystem',
     'create_consensus_system',
+    
+    # Enhanced consensus system
+    'EnhancedConsensusSystem',
+    'EnhancedConsensusConfig',
+    'create_enhanced_consensus_system',
+    
+    # Advanced candle features
+    'AdvancedCandleFeatureGenerator',
+    'AdvancedFeatureConfig',
+    'create_advanced_candle_feature_generator',
     
     # Integration
     'MLIndicatorSystem',

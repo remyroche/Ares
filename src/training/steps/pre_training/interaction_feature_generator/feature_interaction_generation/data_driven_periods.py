@@ -11,6 +11,9 @@ Key Features:
 - Optimizes periods for feature diversity
 - Considers computational constraints
 - Adapts to different timeframes (5m, 15m, 60m)
+- VectorBT-optimized rolling operations
+- Memory-efficient batch processing
+- Parallel period analysis
 """
 
 import numpy as np
@@ -21,10 +24,20 @@ import logging
 from scipy import stats
 from scipy.signal import find_peaks
 import warnings
+import time
+from contextlib import contextmanager
 
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance
+)
+
+# Import VectorBT optimization utilities
+from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+    VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+)
+from src.feature_generation.utils.unified_vectorization_manager import (
+    UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
 )
 
 logger = logging.getLogger(__name__)
@@ -42,39 +55,201 @@ class PeriodAnalysisResult:
 class DataDrivenPeriodSelector:
     """
     Selects optimal periods for cross-timeframe features based on data characteristics.
+    
+    Enhanced with VectorBT optimizations for improved performance and memory efficiency.
     """
     
     def __init__(self, 
                  min_period: int = 2,
                  max_period: int = 200,
                  max_periods: int = 8,
-                 min_data_points: int = 100):
+                 min_data_points: int = 100,
+                 enable_vectorbt: bool = True,
+                 enable_parallel: bool = True,
+                 memory_efficient: bool = True,
+                 chunk_size: int = 1000):
         """
-        Initialize the period selector.
+        Initialize the period selector with VectorBT optimizations.
         
         Args:
             min_period: Minimum period to consider
             max_period: Maximum period to consider
             max_periods: Maximum number of periods to return
             min_data_points: Minimum data points required for analysis
+            enable_vectorbt: Enable VectorBT optimizations
+            enable_parallel: Enable parallel processing
+            memory_efficient: Enable memory optimization
+            chunk_size: Size of data chunks for processing
         """
         self.min_period = min_period
         self.max_period = max_period
         self.max_periods = max_periods
         self.min_data_points = min_data_points
+        self.enable_vectorbt = enable_vectorbt
+        self.enable_parallel = enable_parallel
+        self.memory_efficient = memory_efficient
+        self.chunk_size = chunk_size
         
-        tprint_info(f"🔧 Data-driven period selector initialized")
+        # Initialize VectorBT optimizers
+        self.rolling_optimizer = None
+        self.vectorization_manager = None
+        self._initialize_vectorbt_components()
+        
+        # Performance tracking
+        self.performance_stats = {
+            'total_operations': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'total_time': 0.0,
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+        
+        # Cache for computed results
+        self._result_cache = {}
+        self._cache_enabled = True
+        self._max_cache_size = 100
+        
+        tprint_info(f"🔧 Data-driven period selector initialized with VectorBT optimizations")
         tprint_info(f"📊 Period range: {min_period} - {max_period}")
         tprint_info(f"📊 Max periods: {max_periods}")
+        tprint_info(f"🚀 VectorBT enabled: {enable_vectorbt}")
+        tprint_info(f"⚡ Parallel processing: {enable_parallel}")
+        tprint_info(f"💾 Memory efficient: {memory_efficient}")
+    
+    def _initialize_vectorbt_components(self):
+        """Initialize VectorBT optimization components."""
+        try:
+            if self.enable_vectorbt:
+                # Initialize VectorBT rolling optimizer
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=False,  # Can be enabled if needed
+                    enable_parallel=self.enable_parallel,
+                    memory_efficient=self.memory_efficient,
+                    chunk_size=self.chunk_size
+                )
+                
+                # Initialize unified vectorization manager
+                config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=self.enable_parallel,
+                    memory_efficient=self.memory_efficient,
+                    chunk_size=self.chunk_size,
+                    enable_monitoring=True,
+                    batch_size=10000,
+                    enable_batch_processing=True
+                )
+                self.vectorization_manager = get_unified_vectorization_manager(config)
+                
+                tprint_success("✅ VectorBT components initialized successfully")
+            else:
+                tprint_info("ℹ️ VectorBT optimizations disabled")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
     
     def analyze_data_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Analyze data characteristics to inform period selection."""
+        """Analyze data characteristics to inform period selection using VectorBT optimizations."""
+        start_time = time.time()
+        self.performance_stats['total_operations'] += 1
+        
+        # Check cache first
+        if self._cache_enabled:
+            cache_key = self._generate_cache_key('analyze_characteristics', data)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                self.performance_stats['cache_hits'] += 1
+                return cached_result
+            self.performance_stats['cache_misses'] += 1
+        
         characteristics = {}
         
         # Basic data info
         characteristics['data_length'] = len(data)
         characteristics['data_frequency'] = self._detect_frequency(data)
         characteristics['timeframe_minutes'] = self._get_timeframe_minutes(data)
+        
+        # Optimize data for processing if memory efficient mode is enabled
+        if self.memory_efficient and self.vectorization_manager:
+            data = self.vectorization_manager.optimize_dataframe(data)
+            self.performance_stats['memory_optimizations'] += 1
+        
+        # Batch process multiple analyses using VectorBT
+        if self.vectorization_manager and len(data) > 1000:
+            characteristics.update(self._batch_analyze_characteristics(data))
+        else:
+            # Fallback to individual analysis
+            characteristics.update(self._individual_analyze_characteristics(data))
+        
+        # Cache result
+        if self._cache_enabled:
+            self._put_in_cache(cache_key, characteristics)
+        
+        self.performance_stats['total_time'] += time.time() - start_time
+        return characteristics
+    
+    def _batch_analyze_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Batch analyze characteristics using VectorBT optimizations."""
+        characteristics = {}
+        
+        try:
+            # Prepare feature configurations for batch processing
+            feature_configs = []
+            
+            if 'close' in data.columns:
+                # Volatility analysis
+                feature_configs.extend([
+                    {'name': 'volatility_5', 'type': 'rolling', 'params': {'operation': 'std', 'window': 5, 'column': 'close'}},
+                    {'name': 'volatility_20', 'type': 'rolling', 'params': {'operation': 'std', 'window': 20, 'column': 'close'}},
+                    {'name': 'volatility_50', 'type': 'rolling', 'params': {'operation': 'std', 'window': 50, 'column': 'close'}},
+                ])
+                
+                # Trend analysis
+                feature_configs.extend([
+                    {'name': 'sma_5', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 5, 'column': 'close'}},
+                    {'name': 'sma_20', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 20, 'column': 'close'}},
+                    {'name': 'sma_50', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 50, 'column': 'close'}},
+                ])
+            
+            if 'volume' in data.columns:
+                # Volume analysis
+                feature_configs.extend([
+                    {'name': 'volume_sma_5', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 5, 'column': 'volume'}},
+                    {'name': 'volume_sma_20', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 20, 'column': 'volume'}},
+                ])
+            
+            # Process all features in batch
+            if feature_configs:
+                features = self.vectorization_manager.batch_process_features(data, feature_configs)
+                self.performance_stats['batch_operations'] += 1
+                
+                # Extract characteristics from batch results
+                if 'close' in data.columns:
+                    returns = data['close'].pct_change().dropna()
+                    characteristics['volatility'] = returns.std()
+                    characteristics['volatility_clusters'] = self._detect_volatility_clusters_vectorbt(features)
+                    characteristics['trend_cycles'] = self._detect_trend_cycles_vectorbt(features)
+                
+                if 'volume' in data.columns:
+                    characteristics['volume_patterns'] = self._analyze_volume_patterns_vectorbt(features)
+            
+            # Market regime analysis
+            characteristics['regime_changes'] = self._detect_regime_changes_vectorbt(data, features if 'close' in data.columns else None)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Batch analysis failed: {e}, falling back to individual analysis")
+            return self._individual_analyze_characteristics(data)
+        
+        return characteristics
+    
+    def _individual_analyze_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Individual analysis fallback when batch processing is not available."""
+        characteristics = {}
         
         # Volatility analysis
         if 'close' in data.columns:
@@ -95,6 +270,125 @@ class DataDrivenPeriodSelector:
         characteristics['regime_changes'] = self._detect_regime_changes(data)
         
         return characteristics
+    
+    def _detect_volatility_clusters_vectorbt(self, features: pd.DataFrame) -> List[int]:
+        """Detect volatility clustering periods using VectorBT-optimized features."""
+        try:
+            vol_clusters = []
+            
+            # Use pre-computed volatility features
+            for col in features.columns:
+                if col.startswith('volatility_'):
+                    vol_series = features[col].dropna()
+                    if len(vol_series) > 10:
+                        # Find volatility clusters using pre-computed rolling volatility
+                        vol_threshold = vol_series.quantile(0.8)
+                        clusters = vol_series > vol_threshold
+                        
+                        # Calculate average cluster length
+                        cluster_lengths = self._find_pattern_periods(clusters)
+                        if cluster_lengths:
+                            avg_length = np.mean(cluster_lengths)
+                            if self.min_period <= avg_length <= self.max_period:
+                                vol_clusters.append(int(avg_length))
+            
+            return vol_clusters[:3]  # Limit to top 3
+            
+        except Exception as e:
+            tprint_debug(f"⚠️ VectorBT volatility clustering failed: {e}")
+            return []
+    
+    def _detect_trend_cycles_vectorbt(self, features: pd.DataFrame) -> List[int]:
+        """Detect trend cycles using VectorBT-optimized features."""
+        try:
+            cycle_lengths = []
+            
+            # Use pre-computed SMA features to detect cycles
+            sma_cols = [col for col in features.columns if col.startswith('sma_')]
+            
+            for col in sma_cols:
+                sma_series = features[col].dropna()
+                if len(sma_series) > 20:
+                    # Find peaks and troughs in SMA
+                    peaks, _ = find_peaks(sma_series, distance=5)
+                    troughs, _ = find_peaks(-sma_series, distance=5)
+                    
+                    # Calculate cycle lengths
+                    all_extrema = sorted(list(peaks) + list(troughs))
+                    for i in range(1, len(all_extrema)):
+                        cycle_length = all_extrema[i] - all_extrema[i-1]
+                        if self.min_period <= cycle_length <= self.max_period:
+                            cycle_lengths.append(cycle_length)
+            
+            # Return most common cycle lengths
+            if cycle_lengths:
+                from collections import Counter
+                most_common = Counter(cycle_lengths).most_common(3)
+                return [length for length, count in most_common]
+            
+            return []
+            
+        except Exception as e:
+            tprint_debug(f"⚠️ VectorBT trend cycle detection failed: {e}")
+            return []
+    
+    def _analyze_volume_patterns_vectorbt(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze volume patterns using VectorBT-optimized features."""
+        try:
+            volume_patterns = {}
+            
+            # Use pre-computed volume features
+            volume_cols = [col for col in features.columns if col.startswith('volume_')]
+            
+            if volume_cols:
+                # Find volume spikes using pre-computed moving averages
+                volume_sma_5 = features.get('volume_sma_5', pd.Series())
+                volume_sma_20 = features.get('volume_sma_20', pd.Series())
+                
+                if not volume_sma_5.empty and not volume_sma_20.empty:
+                    # Find volume spikes
+                    vol_spikes = volume_sma_5 > volume_sma_20 * 1.5
+                    spike_periods = self._find_pattern_periods(vol_spikes)
+                    volume_patterns['spike_periods'] = spike_periods
+                
+                # Volume trend analysis
+                volume_patterns['volume_trend'] = self._detect_trend_cycles_vectorbt(features)
+            
+            return volume_patterns
+            
+        except Exception as e:
+            tprint_debug(f"⚠️ VectorBT volume analysis failed: {e}")
+            return {}
+    
+    def _detect_regime_changes_vectorbt(self, data: pd.DataFrame, features: Optional[pd.DataFrame] = None) -> List[int]:
+        """Detect market regime changes using VectorBT-optimized features."""
+        try:
+            if 'close' not in data.columns or len(data) < 50:
+                return []
+            
+            # Use pre-computed volatility features if available
+            if features is not None and 'volatility_20' in features.columns:
+                volatility = features['volatility_20'].dropna()
+            else:
+                # Fallback to manual calculation
+                returns = data['close'].pct_change().dropna()
+                if self.rolling_optimizer:
+                    volatility = self.rolling_optimizer.rolling_std(returns, window=20)
+                else:
+                    volatility = returns.rolling(20).std()
+            
+            # Find regime changes (high vol periods)
+            vol_threshold = volatility.quantile(0.7)
+            regime_changes = volatility > vol_threshold
+            
+            # Calculate regime lengths
+            regime_lengths = self._find_pattern_periods(regime_changes)
+            
+            return regime_lengths[:3]  # Limit to top 3
+            
+        except Exception as e:
+            tprint_debug(f"⚠️ VectorBT regime detection failed: {e}")
+            return []
     
     def select_optimal_periods(self, data: pd.DataFrame, 
                              target_timeframe: Optional[str] = None) -> PeriodAnalysisResult:
@@ -277,37 +571,28 @@ class DataDrivenPeriodSelector:
             return []
     
     def _detect_volatility_clusters(self, returns: pd.Series) -> List[int]:
-        """Detect volatility clustering periods."""
+        """Detect volatility clustering periods using VectorBT optimizations."""
         try:
-            # Calculate rolling volatility
+            # Calculate rolling volatility using VectorBT optimizer
             vol_windows = [5, 10, 20, 50, 100]
             vol_clusters = []
             
             for window in vol_windows:
                 if len(returns) > window * 2:
-                    rolling_vol = returns.rolling(window).std()
+                    # Use VectorBT rolling optimizer if available
+                    if self.rolling_optimizer:
+                        rolling_vol = self.rolling_optimizer.rolling_std(returns, window=window)
+                        self.performance_stats['vectorbt_operations'] += 1
+                    else:
+                        rolling_vol = returns.rolling(window).std()
+                        self.performance_stats['pandas_fallbacks'] += 1
                     
                     # Find volatility clusters (high vol periods)
                     vol_threshold = rolling_vol.quantile(0.8)
                     clusters = rolling_vol > vol_threshold
                     
                     # Calculate average cluster length
-                    cluster_lengths = []
-                    in_cluster = False
-                    current_length = 0
-                    
-                    for is_high_vol in clusters:
-                        if is_high_vol:
-                            if not in_cluster:
-                                in_cluster = True
-                                current_length = 1
-                            else:
-                                current_length += 1
-                        else:
-                            if in_cluster:
-                                cluster_lengths.append(current_length)
-                                in_cluster = False
-                                current_length = 0
+                    cluster_lengths = self._find_pattern_periods(clusters)
                     
                     if cluster_lengths:
                         avg_cluster_length = np.mean(cluster_lengths)
@@ -366,39 +651,6 @@ class DataDrivenPeriodSelector:
             if cycle_lengths:
                 from collections import Counter
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
                 most_common = Counter(cycle_lengths).most_common(3)
                 return [length for length, count in most_common]
             
@@ -664,6 +916,140 @@ except ImportError:
             tprint_debug(f"⚠️ Confidence calculation failed: {e}")
             return 0.5
     
+    def _generate_cache_key(self, operation: str, data: pd.DataFrame) -> str:
+        """Generate cache key for operation."""
+        import hashlib
+        
+        # Create hash of data characteristics and operation
+        data_hash = hashlib.md5(str(data.shape).encode()).hexdigest()[:8]
+        return f"{operation}_{data_hash}"
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+        """Get result from cache."""
+        if not self._cache_enabled:
+            return None
+        
+        try:
+            if cache_key in self._result_cache:
+                return self._result_cache[cache_key]
+        except Exception as e:
+            tprint_debug(f"Cache retrieval failed: {e}")
+        
+        return None
+    
+    def _put_in_cache(self, cache_key: str, result: Any):
+        """Put result in cache."""
+        if not self._cache_enabled:
+            return
+        
+        try:
+            # Limit cache size
+            if len(self._result_cache) >= self._max_cache_size:
+                # Remove oldest entries (simple FIFO)
+                oldest_key = next(iter(self._result_cache))
+                del self._result_cache[oldest_key]
+            
+            self._result_cache[cache_key] = result
+            
+        except Exception as e:
+            tprint_debug(f"Cache storage failed: {e}")
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        # Add VectorBT rolling optimizer stats if available
+        if self.rolling_optimizer:
+            rolling_stats = self.rolling_optimizer.get_performance_stats()
+            stats.update(rolling_stats)
+        
+        # Add unified vectorization manager stats if available
+        if self.vectorization_manager:
+            vectorization_stats = self.vectorization_manager.get_performance_stats()
+            stats.update(vectorization_stats)
+        
+        # Calculate efficiency metrics
+        if stats['total_operations'] > 0:
+            stats['average_operation_time'] = stats['total_time'] / stats['total_operations']
+            stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_operations']
+            stats['batch_usage_rate'] = stats['batch_operations'] / stats['total_operations']
+            
+            # Cache statistics
+            total_cache_ops = stats['cache_hits'] + stats['cache_misses']
+            if total_cache_ops > 0:
+                stats['cache_hit_rate'] = (stats['cache_hits'] / total_cache_ops) * 100
+            else:
+                stats['cache_hit_rate'] = 0
+        else:
+            stats['average_operation_time'] = 0
+            stats['vectorbt_usage_rate'] = 0
+            stats['batch_usage_rate'] = 0
+            stats['cache_hit_rate'] = 0
+        
+        return stats
+    
+    def reset_performance_stats(self):
+        """Reset performance statistics."""
+        self.performance_stats = {
+            'total_operations': 0,
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'batch_operations': 0,
+            'memory_optimizations': 0,
+            'total_time': 0.0,
+            'cache_hits': 0,
+            'cache_misses': 0
+        }
+        
+        # Reset component stats
+        if self.rolling_optimizer:
+            self.rolling_optimizer.reset_stats()
+        
+        if self.vectorization_manager:
+            self.vectorization_manager.reset_stats()
+        
+        # Clear cache
+        self._result_cache.clear()
+    
+    @contextmanager
+    def performance_monitoring(self, operation_name: str):
+        """Context manager for performance monitoring."""
+        start_time = time.time()
+        start_memory = 0  # Could add memory monitoring here
+        
+        try:
+            yield
+        finally:
+            end_time = time.time()
+            execution_time = end_time - start_time
+            
+            tprint_performance(f"Operation {operation_name}: {execution_time:.3f}s")
+    
+    def optimize_for_large_datasets(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize data for large dataset processing."""
+        if not self.memory_efficient or len(data) < self.chunk_size:
+            return data
+        
+        try:
+            if self.vectorization_manager:
+                return self.vectorization_manager.optimize_dataframe(data)
+            else:
+                # Basic optimization
+                optimized_data = data.copy()
+                
+                # Optimize data types
+                for column in optimized_data.columns:
+                    if optimized_data[column].dtype == 'float64':
+                        if (optimized_data[column].min() >= np.finfo(np.float32).min and 
+                            optimized_data[column].max() <= np.finfo(np.float32).max):
+                            optimized_data[column] = optimized_data[column].astype(np.float32)
+                
+                return optimized_data
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Data optimization failed: {e}")
+            return data
+    
     def _get_fallback_periods(self, characteristics: Dict[str, Any]) -> PeriodAnalysisResult:
         """Get fallback periods when analysis fails."""
         data_length = characteristics.get('data_length', 100)
@@ -689,82 +1075,116 @@ except ImportError:
         )
 
 
-# Convenience function
+# Convenience functions
 def get_data_driven_periods(data: pd.DataFrame, 
                           target_timeframe: Optional[str] = None,
-                          max_periods: int = 8) -> List[int]:
+                          max_periods: int = 8,
+                          enable_vectorbt: bool = True,
+                          enable_parallel: bool = True,
+                          memory_efficient: bool = True) -> List[int]:
     """
-    Get data-driven periods for cross-timeframe features.
+    Get data-driven periods for cross-timeframe features with VectorBT optimizations.
     
     Args:
         data: Input data
         target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
         max_periods: Maximum number of periods to return
+        enable_vectorbt: Enable VectorBT optimizations
+        enable_parallel: Enable parallel processing
+        memory_efficient: Enable memory optimization
         
     Returns:
         List of optimal periods
     """
-    selector = DataDrivenPeriodSelector(max_periods=max_periods)
+    selector = DataDrivenPeriodSelector(
+        max_periods=max_periods,
+        enable_vectorbt=enable_vectorbt,
+        enable_parallel=enable_parallel,
+        memory_efficient=memory_efficient
+    )
     result = selector.select_optimal_periods(data, target_timeframe)
     return result.optimal_periods
 
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
+
+def get_data_driven_periods_with_stats(data: pd.DataFrame, 
+                                     target_timeframe: Optional[str] = None,
+                                     max_periods: int = 8,
+                                     enable_vectorbt: bool = True,
+                                     enable_parallel: bool = True,
+                                     memory_efficient: bool = True) -> Tuple[List[int], Dict[str, Any]]:
+    """
+    Get data-driven periods with performance statistics.
     
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    Args:
+        data: Input data
+        target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+        max_periods: Maximum number of periods to return
+        enable_vectorbt: Enable VectorBT optimizations
+        enable_parallel: Enable parallel processing
+        memory_efficient: Enable memory optimization
         
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    Returns:
+        Tuple of (optimal periods, performance statistics)
+    """
+    selector = DataDrivenPeriodSelector(
+        max_periods=max_periods,
+        enable_vectorbt=enable_vectorbt,
+        enable_parallel=enable_parallel,
+        memory_efficient=memory_efficient
+    )
+    result = selector.select_optimal_periods(data, target_timeframe)
+    stats = selector.get_performance_stats()
+    return result.optimal_periods, stats
+
+
+def benchmark_period_selector(data: pd.DataFrame, 
+                            target_timeframe: Optional[str] = None,
+                            max_periods: int = 8,
+                            trials: int = 3) -> Dict[str, Any]:
+    """
+    Benchmark period selector performance across different configurations.
     
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
+    Args:
+        data: Input data
+        target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+        max_periods: Maximum number of periods to return
+        trials: Number of trials to run for each configuration
         
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)
+    Returns:
+        Benchmarking results
+    """
+    configurations = [
+        {'enable_vectorbt': False, 'enable_parallel': False, 'memory_efficient': False, 'name': 'baseline'},
+        {'enable_vectorbt': True, 'enable_parallel': False, 'memory_efficient': False, 'name': 'vectorbt_only'},
+        {'enable_vectorbt': True, 'enable_parallel': True, 'memory_efficient': False, 'name': 'vectorbt_parallel'},
+        {'enable_vectorbt': True, 'enable_parallel': True, 'memory_efficient': True, 'name': 'vectorbt_optimized'},
+    ]
+    
+    results = {}
+    
+    for config in configurations:
+        config_name = config.pop('name')
+        times = []
+        
+        for trial in range(trials):
+            try:
+                selector = DataDrivenPeriodSelector(max_periods=max_periods, **config)
+                start_time = time.time()
+                result = selector.select_optimal_periods(data, target_timeframe)
+                execution_time = time.time() - start_time
+                times.append(execution_time)
+            except Exception as e:
+                tprint_warning(f"⚠️ Configuration {config_name} trial {trial} failed: {e}")
+                continue
+        
+        if times:
+            results[config_name] = {
+                'avg_time': np.mean(times),
+                'std_time': np.std(times),
+                'min_time': np.min(times),
+                'max_time': np.max(times),
+                'trials_completed': len(times)
+            }
+    
+    return results
+

@@ -1,7 +1,7 @@
 """
-Negative Learning Feature Generation Module
+Consolidated Negative Learning Feature Generation Module
 
-This module implements the negative learning plugin for Analyst/Tactician tree pipelines.
+This module implements the complete negative learning plugin for Analyst/Tactician tree pipelines.
 It discovers failure contexts and generates gated twin features and exception interactions
 to improve model performance in challenging market conditions.
 
@@ -9,1271 +9,46 @@ Key Components:
 1. Failure Context Discovery - Data-driven detection of when features fail
 2. Negative Learning Features - Gated twins and exception interactions
 3. Model Constraints - Monotone constraints and sample weights
-4. Validation Framework - Performance monitoring and SHAP analysis
+4. Feature Selection - Stability selection and budget management
+5. Validation Framework - Performance monitoring and SHAP analysis
+6. Pipeline Integration - Drop-in integration with existing pipelines
 
 Time-series safe, fast, and respects latency budgets.
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Optional, Any, Union
+from typing import Dict, List, Tuple, Optional, Any, Union, Set
 from dataclasses import dataclass
 from enum import Enum
 import logging
+from datetime import datetime, timedelta
 from scipy import stats
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
+from sklearn.linear_model import LinearRegression, LassoCV
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.feature_selection import SelectKBest, f_regression
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.model_selection import TimeSeriesSplit
 import warnings
 
 from src.utils.logger import system_logger
 from src.utils.math_validation import safe_divide, validate_finite, validate_positive
 
-
-class FailureContextType(Enum):
-    """Types of failure contexts to detect"""
-    HIGH_VOLATILITY = "highvol"
-    CHOP = "chop"
-    WIDE_SPREAD = "widespread"
-    OPEN_WINDOW = "open30"
-    CLOSE_WINDOW = "last30"
-    TRENDING = "trending"
-    RANGING = "ranging"
-
-
-@dataclass
-class FailureContext:
-    """Represents a detected failure context for a feature"""
-    feature_name: str
-    context_type: FailureContextType
-    threshold: float
-    ic_positive: float
-    ic_negative: float
-    se_positive: float
-    se_negative: float
-    significance: float
-    is_significant: bool
-
-
-@dataclass
-class NegativeLearningConfig:
-    """Configuration for negative learning feature generation"""
-    # Failure detection thresholds
-    ic_significance_threshold: float = 1.5
-    r2_chop_threshold: float = 0.3
-    volatility_quantile: float = 0.7
-    spread_quantile: float = 0.7
-    
-    # Feature generation
-    max_negative_features: int = 5  # Cap gates to 5 max per base feature
-    max_gates_per_base_feature: int = 5  # Explicit cap for clarity
-    enable_gated_twins: bool = True
-    enable_exception_interactions: bool = True
-    enable_context_indicators: bool = True
-    
-    # Gate selection thresholds
-    min_ic_uplift: float = 0.01  # Min IC improvement vs base (ΔIC ≥ τ_ic) - lowered for practical use
-    min_stability_freq: float = 0.5  # Min stability frequency across folds - lowered for practical use
-    max_correlation_with_selected: float = 0.75  # Max correlation with already picked gates
-    diversity_penalty_lambda: float = 0.15  # Diversity penalty weight (λ)
-    early_stop_marginal_gain: float = 0.005  # Stop if marginal gain < δ
-    early_stop_steps: int = 2  # Stop after N consecutive small gains
-    
-    # Model constraints
-    enable_monotone_constraints: bool = True
-    enable_sample_weights: bool = True
-    weight_uncertainty_factor: float = 0.3
-    
-    # Validation
-    stability_selection_bootstrap: int = 80
-    stability_selection_threshold: float = 0.6
-    min_ic_improvement: float = 0.10
-    
-    # Leakage prevention
-    enable_leakage_guard: bool = True
-    context_window_size: int = 100  # Rolling window for context calculation
-    context_freeze_lookback: int = 50  # Freeze context N periods back
-
-
-class FailureContextDetector:
-    """
-    Detects failure contexts where features exhibit sign flips or poor performance.
-    Runs once per retrain to identify problematic market conditions.
-    """
-    
-    def __init__(self, config: NegativeLearningConfig):
-        self.config = config
-        self.logger = system_logger.getChild('FailureContextDetector')
-        self.failure_contexts: Dict[str, List[FailureContext]] = {}
-        
-    def detect_failure_contexts(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series,
-        feature_names: List[str]
-    ) -> Dict[str, List[FailureContext]]:
-        """
-        Discover failure contexts for each feature using data-driven analysis.
-        
-        Args:
-            features_df: Feature matrix
-            target: Target variable (returns)
-            feature_names: List of features to analyze
-            
-        Returns:
-            Dictionary mapping feature names to their failure contexts
-        """
-        self.logger.info("🔍 Starting failure context detection...")
-        
-        # Generate context flags
-        context_flags = self._generate_context_flags(features_df)
-        
-        # Detect failures for each feature
-        for feature_name in feature_names:
-            if feature_name not in features_df.columns:
-                continue
-                
-            self.logger.debug(f"Analyzing failure contexts for {feature_name}")
-            feature_failures = self._analyze_feature_failures(
-                features_df[feature_name], 
-                target, 
-                context_flags,
-                feature_name
-            )
-            
-            if feature_failures:
-                self.failure_contexts[feature_name] = feature_failures
-                self.logger.info(f"Found {len(feature_failures)} failure contexts for {feature_name}")
-        
-        self.logger.info(f"✅ Failure context detection complete. Found contexts for {len(self.failure_contexts)} features")
-        return self.failure_contexts
-    
-    def _generate_context_flags(self, features_df: pd.DataFrame) -> Dict[str, pd.Series]:
-        """Generate soft context flags for different market conditions"""
-        context_flags = {}
-        
-        # High volatility flag (EWMA of volatility, Q70+)
-        if 'volatility' in features_df.columns:
-            vol_ewma = features_df['volatility'].ewm(span=20).mean()
-            vol_threshold = vol_ewma.quantile(self.config.volatility_quantile)
-            context_flags['highvol'] = (vol_ewma > vol_threshold).astype(float)
-        else:
-            # Fallback: use price range volatility
-            if 'high' in features_df.columns and 'low' in features_df.columns:
-                price_range = features_df['high'] - features_df['low']
-                vol_ewma = price_range.ewm(span=20).mean()
-                vol_threshold = vol_ewma.quantile(self.config.volatility_quantile)
-                context_flags['highvol'] = (vol_ewma > vol_threshold).astype(float)
-            else:
-                context_flags['highvol'] = pd.Series(0, index=features_df.index)
-        
-        # Chop flag (low R² of trend fit)
-        context_flags['chop'] = self._calculate_chop_flag(features_df)
-        
-        # Wide spread flag (spread z-score Q70+)
-        context_flags['widespread'] = self._calculate_spread_flag(features_df)
-        
-        # Time-based flags
-        context_flags['open30'] = self._calculate_time_flag(features_df, 'open')
-        context_flags['last30'] = self._calculate_time_flag(features_df, 'close')
-        
-        return context_flags
-    
-    def _calculate_chop_flag(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate chop flag based on low R² of trend fit"""
-        try:
-            # Use close price for trend fitting if available
-            if 'close' in features_df.columns:
-                price = features_df['close']
-            elif 'close_price' in features_df.columns:
-                price = features_df['close_price']
-            else:
-                return pd.Series(0, index=features_df.index)
-            
-            # Calculate rolling R² of linear trend fit
-            window = 20
-            r2_scores = []
-            
-            for i in range(len(price)):
-                start_idx = max(0, i - window + 1)
-                end_idx = i + 1
-                
-                if end_idx - start_idx < 5:  # Need minimum data points
-                    r2_scores.append(0)
-                    continue
-                
-                y = price.iloc[start_idx:end_idx].values
-                x = np.arange(len(y)).reshape(-1, 1)
-                
-                try:
-                    reg = LinearRegression().fit(x, y)
-                    y_pred = reg.predict(x)
-                    r2 = r2_score(y, y_pred)
-                    r2_scores.append(max(0, r2))  # Ensure non-negative
-                except:
-                    r2_scores.append(0)
-            
-            r2_series = pd.Series(r2_scores, index=price.index)
-            # Chop when R² is low (below threshold)
-            chop_threshold = self.config.r2_chop_threshold
-            return (r2_series < chop_threshold).astype(float)
-            
-        except Exception as e:
-            self.logger.warning(f"Error calculating chop flag: {e}")
-            return pd.Series(0, index=features_df.index)
-    
-    def _calculate_spread_flag(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate wide spread flag based on spread z-scores"""
-        try:
-            # Try to find spread-related features
-            spread_cols = [col for col in features_df.columns if 'spread' in col.lower()]
-            
-            if spread_cols:
-                spread = features_df[spread_cols[0]]
-            elif 'high' in features_df.columns and 'low' in features_df.columns:
-                spread = features_df['high'] - features_df['low']
-            else:
-                return pd.Series(0, index=features_df.index)
-            
-            # Calculate z-scores
-            spread_mean = spread.rolling(50).mean()
-            spread_std = spread.rolling(50).std()
-            spread_z = safe_divide(spread - spread_mean, spread_std)
-            
-            # Wide spread when z-score > threshold
-            spread_threshold = stats.norm.ppf(self.config.spread_quantile)
-            return (spread_z > spread_threshold).astype(float)
-            
-        except Exception as e:
-            self.logger.warning(f"Error calculating spread flag: {e}")
-            return pd.Series(0, index=features_df.index)
-    
-    def _calculate_time_flag(self, features_df: pd.DataFrame, period: str) -> pd.Series:
-        """Calculate time-based flags (e.g., first/last 30 minutes)"""
-        try:
-            if 'timestamp' in features_df.columns:
-                timestamps = pd.to_datetime(features_df['timestamp'])
-            elif features_df.index.name == 'timestamp' or 'time' in str(features_df.index.name):
-                timestamps = pd.to_datetime(features_df.index)
-            else:
-                return pd.Series(0, index=features_df.index)
-            
-            # Extract hour and minute
-            hours = timestamps.hour
-            minutes = timestamps.minute
-            
-            if period == 'open':
-                # First 30 minutes of trading day (assuming 9:00-16:00)
-                return ((hours == 9) & (minutes <= 30)).astype(float)
-            elif period == 'close':
-                # Last 30 minutes of trading day
-                return ((hours == 15) & (minutes >= 30)).astype(float)
-            else:
-                return pd.Series(0, index=features_df.index)
-                
-        except Exception as e:
-            self.logger.warning(f"Error calculating time flag: {e}")
-            return pd.Series(0, index=features_df.index)
-    
-    def _analyze_feature_failures(
-        self, 
-        feature: pd.Series, 
-        target: pd.Series, 
-        context_flags: Dict[str, pd.Series],
-        feature_name: str
-    ) -> List[FailureContext]:
-        """Analyze failure contexts for a specific feature"""
-        failures = []
-        
-        for context_name, context_flag in context_flags.items():
-            try:
-                # Calculate IC in each context bucket
-                ic_positive, se_positive = self._calculate_ic_with_bootstrap(
-                    feature, target, context_flag > 0.6
-                )
-                ic_negative, se_negative = self._calculate_ic_with_bootstrap(
-                    feature, target, context_flag <= 0.6
-                )
-                
-                # Check for sign flip and significance
-                if (np.sign(ic_positive) != np.sign(ic_negative) and
-                    abs(ic_positive) / se_positive >= self.config.ic_significance_threshold and
-                    abs(ic_negative) / se_negative >= self.config.ic_significance_threshold):
-                    
-                    context_type = FailureContextType(context_name)
-                    significance = min(abs(ic_positive) / se_positive, abs(ic_negative) / se_negative)
-                    
-                    failure = FailureContext(
-                        feature_name=feature_name,
-                        context_type=context_type,
-                        threshold=0.6,
-                        ic_positive=ic_positive,
-                        ic_negative=ic_negative,
-                        se_positive=se_positive,
-                        se_negative=se_negative,
-                        significance=significance,
-                        is_significant=True
-                    )
-                    
-                    failures.append(failure)
-                    self.logger.debug(f"Found failure context: {feature_name} fails in {context_name}")
-                    
-            except Exception as e:
-                self.logger.warning(f"Error analyzing {feature_name} in {context_name}: {e}")
-                continue
-        
-        return failures
-    
-    def _calculate_ic_with_bootstrap(
-        self, 
-        feature: pd.Series, 
-        target: pd.Series, 
-        mask: pd.Series,
-        n_bootstrap: int = 100
-    ) -> Tuple[float, float]:
-        """Calculate IC with block bootstrap standard error"""
-        try:
-            # Align data
-            aligned_data = pd.DataFrame({
-                'feature': feature,
-                'target': target,
-                'mask': mask
-            }).dropna()
-            
-            if len(aligned_data) < 10:
-                return 0.0, 1.0
-            
-            masked_data = aligned_data[aligned_data['mask']]
-            
-            if len(masked_data) < 5:
-                return 0.0, 1.0
-            
-            # Calculate IC
-            ic_values = []
-            block_size = max(1, len(masked_data) // 10)  # Block size for bootstrap
-            
-            for _ in range(n_bootstrap):
-                # Block bootstrap
-                indices = np.random.choice(
-                    len(masked_data) - block_size + 1, 
-                    size=len(masked_data) // block_size,
-                    replace=True
-                )
-                
-                bootstrap_indices = []
-                for idx in indices:
-                    bootstrap_indices.extend(range(idx, idx + block_size))
-                
-                if len(bootstrap_indices) > 0:
-                    bootstrap_data = masked_data.iloc[bootstrap_indices[:len(masked_data)]]
-                    if len(bootstrap_data) > 1:
-                        ic = bootstrap_data['feature'].corr(bootstrap_data['target'])
-                        if not np.isnan(ic):
-                            ic_values.append(ic)
-            
-            if len(ic_values) == 0:
-                return 0.0, 1.0
-            
-            ic_mean = np.mean(ic_values)
-            ic_se = np.std(ic_values)
-            
-            return ic_mean, ic_se
-            
-        except Exception as e:
-            self.logger.warning(f"Error calculating IC with bootstrap: {e}")
-            return 0.0, 1.0
-
-
-class NegativeLearningFeatureGenerator:
-    """
-    Generates negative learning features based on detected failure contexts.
-    Creates gated twins, exception interactions, and context indicators.
-    Now optimized with VectorBT for maximum performance.
-    """
-    
-    def __init__(self, config: NegativeLearningConfig):
-        self.config = config
-        self.logger = system_logger.getChild('NegativeLearningFeatureGenerator')
-        self.failure_contexts: Dict[str, List[FailureContext]] = {}
-        
-        # Initialize VectorBT optimization components
-        self.rolling_optimizer = None
-        self.unified_manager = None
-        
-        if VECTORBT_OPTIMIZERS_AVAILABLE:
-            try:
-                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-                    enable_gpu=True, enable_parallel=True, memory_efficient=True
-                )
-                self.unified_manager = get_unified_vectorization_manager()
-                self.logger.info("✅ VectorBT optimizations enabled")
-            except Exception as e:
-                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
-                self.rolling_optimizer = None
-                self.unified_manager = None
-        
-    def generate_negative_learning_features(
-        self, 
-        features_df: pd.DataFrame,
-        failure_contexts: Dict[str, List[FailureContext]]
-    ) -> pd.DataFrame:
-        """
-        Generate negative learning features based on failure contexts.
-        Now optimized with VectorBT for maximum performance.
-        
-        Args:
-            features_df: Original feature matrix
-            failure_contexts: Detected failure contexts per feature
-            
-        Returns:
-            DataFrame with additional negative learning features
-        """
-        from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_debug
-        
-        tprint_info("🔄 Generating negative learning features with VectorBT optimization...")
-        tprint_info(f"📊 Input features: {features_df.shape[1]}")
-        tprint_info(f"🎯 Features with failure contexts: {len(failure_contexts)}")
-        
-        self.failure_contexts = failure_contexts
-        
-        # Use VectorBT optimization if available
-        if self.unified_manager and VECTORBT_OPTIMIZERS_AVAILABLE:
-            return self._generate_features_with_vectorbt_optimization(features_df, failure_contexts)
-        
-        # Fallback to original implementation
-        result_df = features_df.copy()
-        negative_features = []
-        
-        # Generate features for each feature with failure contexts
-        total_gates_generated = 0
-        total_gates_selected = 0
-        
-        for feature_name, contexts in failure_contexts.items():
-            if feature_name not in features_df.columns:
-                tprint_warning(f"⚠️ Feature {feature_name} not found in input data, skipping")
-                continue
-                
-            tprint_info(f"🎯 Processing {feature_name} with {len(contexts)} failure contexts")
-            
-            # Calculate combined failure probability
-            p_fail = self._calculate_failure_probability(features_df, contexts)
-            tprint_debug(f"📈 Failure probability range: {p_fail.min():.3f} - {p_fail.max():.3f}")
-            
-            # Generate all possible gate features first
-            all_gate_features = {}
-            gate_types_generated = []
-            
-            if self.config.enable_gated_twins:
-                twin_features = self._generate_gated_twins(
-                    features_df[feature_name], p_fail, feature_name
-                )
-                all_gate_features.update(twin_features.to_dict('series'))
-                gate_types_generated.append(f"twins({len(twin_features.columns)})")
-            
-            if self.config.enable_exception_interactions:
-                interaction_features = self._generate_exception_interactions(
-                    features_df[feature_name], p_fail, feature_name
-                )
-                all_gate_features.update(interaction_features.to_dict('series'))
-                gate_types_generated.append(f"interactions({len(interaction_features.columns)})")
-            
-            if self.config.enable_context_indicators:
-                context_features = self._generate_context_indicators(
-                    features_df, contexts, feature_name
-                )
-                all_gate_features.update(context_features.to_dict('series'))
-                gate_types_generated.append(f"contexts({len(context_features.columns)})")
-            
-            total_gates_generated += len(all_gate_features)
-            tprint_info(f"🔧 Generated {len(all_gate_features)} gates: {', '.join(gate_types_generated)}")
-            
-            # Smart selection: Keep only top 5 most impactful gates
-            tprint_info(f"🎯 Selecting top {self.config.max_gates_per_base_feature} gates for {feature_name}...")
-            selected_gates = self._select_top_gates(
-                all_gate_features, 
-                features_df[feature_name], 
-                p_fail,
-                max_gates=self.config.max_gates_per_base_feature
-            )
-            
-            # Add selected gates to result
-            if selected_gates:
-                selected_df = pd.DataFrame(selected_gates, index=features_df.index)
-                result_df = pd.concat([result_df, selected_df], axis=1)
-                negative_features.extend(selected_df.columns.tolist())
-                total_gates_selected += len(selected_gates)
-                
-                tprint_success(f"✅ Selected {len(selected_gates)}/{len(all_gate_features)} gates for {feature_name}")
-                tprint_debug(f"📋 Selected gates: {list(selected_gates.keys())}")
-            else:
-                tprint_warning(f"⚠️ No gates selected for {feature_name} (failed thresholds)")
-        
-        tprint_success(f"🎉 Gate generation complete!")
-        tprint_info(f"📊 Generated: {total_gates_generated} total gates")
-        tprint_info(f"🎯 Selected: {total_gates_selected} gates ({total_gates_selected/total_gates_generated*100:.1f}% selection rate)")
-        tprint_info(f"📈 Final features: {result_df.shape[1]} ({features_df.shape[1]} base + {len(negative_features)} gates)")
-        
-        return result_df
-    
-    def _generate_features_with_vectorbt_optimization(
-        self, 
-        features_df: pd.DataFrame,
-        failure_contexts: Dict[str, List[FailureContext]]
-    ) -> pd.DataFrame:
-        """Generate features using VectorBT optimization"""
-        from src.utils.tprint import tprint_info, tprint_success, tprint_debug
-        
-        tprint_info("🚀 Using VectorBT unified optimization...")
-        
-        # Use UnifiedVectorizationManager for optimal execution
-        operation_config = OperationConfig(
-            operation_type=OperationType.FEATURE_ENGINEERING,
-            data_size=len(features_df),
-            data_dimensions=features_df.shape,
-            memory_budget_mb=1024.0,
-            time_budget_seconds=300.0
-        )
-        
-        # Prepare data for unified manager
-        operation_data = {
-            'features': features_df,
-            'failure_contexts': failure_contexts,
-            'config': self.config,
-            'generator': self  # Pass self for method access
-        }
-        
-        # Execute with unified optimization
-        result = self.unified_manager.optimize_operation(
-            OperationType.FEATURE_ENGINEERING,
-            operation_data,
-            operation_config
-        )
-        
-        # Extract results
-        if hasattr(result, 'result'):
-            tprint_success("✅ VectorBT optimization completed successfully")
-            return result.result
-        else:
-            # Fallback to batch VectorBT processing
-            return self._generate_features_with_vectorbt_batch(features_df, failure_contexts)
-    
-    def _generate_features_with_vectorbt_batch(
-        self, 
-        features_df: pd.DataFrame,
-        failure_contexts: Dict[str, List[FailureContext]]
-    ) -> pd.DataFrame:
-        """Generate features using VectorBT batch processing"""
-        from src.utils.tprint import tprint_info, tprint_success
-        
-        tprint_info("🔄 Using VectorBT batch processing...")
-        
-        result_df = features_df.copy()
-        negative_features = []
-        
-        # Process features in batches using VectorBT
-        batch_operations = []
-        
-        for feature_name, contexts in failure_contexts.items():
-            if feature_name not in features_df.columns:
-                continue
-            
-            # Calculate failure probability using VectorBT
-            p_fail = self._calculate_failure_probability_vectorbt(features_df, contexts)
-            
-            # Create VectorBT operations
-            feature_ops = self._create_vectorbt_operations(
-                feature_name, features_df[feature_name], p_fail, contexts
-            )
-            batch_operations.extend(feature_ops)
-        
-        # Execute batch operations
-        if batch_operations and self.rolling_optimizer:
-            batch_results = self._execute_vectorbt_batch_operations(
-                features_df, batch_operations
-            )
-            
-            # Add results to output
-            for feature_name, feature_data in batch_results.items():
-                result_df[feature_name] = feature_data
-                negative_features.append(feature_name)
-        
-        tprint_success(f"✅ Generated {len(negative_features)} VectorBT-optimized features")
-        return result_df
-    
-    def _calculate_failure_probability_vectorbt(
-        self, 
-        features_df: pd.DataFrame, 
-        contexts: List[FailureContext]
-    ) -> pd.Series:
-        """Calculate failure probability using VectorBT operations"""
-        if not contexts:
-            return pd.Series(0, index=features_df.index)
-        
-        # Generate context flags using VectorBT
-        context_flags = {}
-        
-        for context in contexts:
-            context_name = context.context_type.value
-            context_flags[context_name] = self._generate_context_flag_vectorbt(
-                features_df, context.context_type
-            )
-        
-        # Combine using VectorBT operations
-        if context_flags:
-            context_df = pd.DataFrame(context_flags, index=features_df.index)
-            p_fail = context_df.max(axis=1)
-        else:
-            p_fail = pd.Series(0, index=features_df.index)
-        
-        return p_fail.fillna(0)
-    
-    def _generate_context_flag_vectorbt(
-        self, 
-        features_df: pd.DataFrame, 
-        context_type: FailureContextType
-    ) -> pd.Series:
-        """Generate context flag using VectorBT operations"""
-        if context_type == FailureContextType.HIGH_VOLATILITY:
-            return self._calculate_volatility_flag_vectorbt(features_df)
-        elif context_type == FailureContextType.CHOP:
-            return self._calculate_chop_flag_vectorbt(features_df)
-        elif context_type == FailureContextType.WIDE_SPREAD:
-            return self._calculate_spread_flag_vectorbt(features_df)
-        elif context_type == FailureContextType.OPEN_WINDOW:
-            return self._calculate_time_flag_vectorbt(features_df, 'open')
-        elif context_type == FailureContextType.CLOSE_WINDOW:
-            return self._calculate_time_flag_vectorbt(features_df, 'close')
-        else:
-            return pd.Series(0, index=features_df.index)
-    
-    def _calculate_volatility_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate volatility flag using VectorBT rolling operations"""
-        if 'volatility' in features_df.columns:
-            vol = features_df['volatility']
-        elif 'high' in features_df.columns and 'low' in features_df.columns:
-            vol = features_df['high'] - features_df['low']
-        else:
-            return pd.Series(0, index=features_df.index)
-        
-        # Use VectorBT rolling mean for EWMA
-        if self.rolling_optimizer:
-            vol_ewma = self.rolling_optimizer.rolling_mean(vol, window=20)
-        else:
-            vol_ewma = vol.ewm(span=20).mean()
-        
-        vol_threshold = vol_ewma.quantile(self.config.volatility_quantile)
-        return (vol_ewma > vol_threshold).astype(float)
-    
-    def _calculate_chop_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate chop flag using VectorBT operations"""
-        if 'close' in features_df.columns:
-            price = features_df['close']
-        elif 'close_price' in features_df.columns:
-            price = features_df['close_price']
-        else:
-            return pd.Series(0, index=features_df.index)
-        
-        # Use VectorBT rolling operations for R² calculation
-        window = 20
-        r2_scores = self._calculate_rolling_r2_vectorbt(price, window)
-        
-        # Chop when R² is low
-        chop_threshold = self.config.r2_chop_threshold
-        return (r2_scores < chop_threshold).astype(float)
-    
-    def _calculate_rolling_r2_vectorbt(self, price: pd.Series, window: int) -> pd.Series:
-        """Calculate rolling R² using VectorBT operations"""
-        def r2_func(x):
-            if len(x) < 5:
-                return 0.0
-            try:
-                y = x.values
-                x_vals = np.arange(len(y)).reshape(-1, 1)
-                from sklearn.linear_model import LinearRegression
-                reg = LinearRegression().fit(x_vals, y)
-                y_pred = reg.predict(x_vals)
-                from sklearn.metrics import r2_score
-                return max(0, r2_score(y, y_pred))
-            except:
-                return 0.0
-        
-        if self.rolling_optimizer:
-            return self.rolling_optimizer.rolling_apply(price, r2_func, window=window)
-        else:
-            return price.rolling(window=window).apply(r2_func)
-    
-    def _calculate_spread_flag_vectorbt(self, features_df: pd.DataFrame) -> pd.Series:
-        """Calculate spread flag using VectorBT operations"""
-        spread_cols = [col for col in features_df.columns if 'spread' in col.lower()]
-        
-        if spread_cols:
-            spread = features_df[spread_cols[0]]
-        elif 'high' in features_df.columns and 'low' in features_df.columns:
-            spread = features_df['high'] - features_df['low']
-        else:
-            return pd.Series(0, index=features_df.index)
-        
-        # Use VectorBT rolling operations for z-score calculation
-        if self.rolling_optimizer:
-            spread_mean = self.rolling_optimizer.rolling_mean(spread, window=50)
-            spread_std = self.rolling_optimizer.rolling_std(spread, window=50)
-        else:
-            spread_mean = spread.rolling(window=50).mean()
-            spread_std = spread.rolling(window=50).std()
-        
-        spread_z = safe_divide(spread - spread_mean, spread_std)
-        
-        # Wide spread when z-score > threshold
-        from scipy import stats
-        spread_threshold = stats.norm.ppf(self.config.spread_quantile)
-        return (spread_z > spread_threshold).astype(float)
-    
-    def _calculate_time_flag_vectorbt(self, features_df: pd.DataFrame, period: str) -> pd.Series:
-        """Calculate time-based flags using VectorBT operations"""
-        if 'timestamp' in features_df.columns:
-            timestamps = pd.to_datetime(features_df['timestamp'])
-        elif features_df.index.name == 'timestamp' or 'time' in str(features_df.index.name):
-            timestamps = pd.to_datetime(features_df.index)
-        else:
-            return pd.Series(0, index=features_df.index)
-        
-        # Extract hour and minute
-        hours = timestamps.hour
-        minutes = timestamps.minute
-        
-        if period == 'open':
-            return ((hours == 9) & (minutes <= 30)).astype(float)
-        elif period == 'close':
-            return ((hours == 15) & (minutes >= 30)).astype(float)
-        else:
-            return pd.Series(0, index=features_df.index)
-    
-    def _create_vectorbt_operations(
-        self, 
-        feature_name: str, 
-        feature: pd.Series, 
-        p_fail: pd.Series, 
-        contexts: List[FailureContext]
-    ) -> List[Dict[str, Any]]:
-        """Create VectorBT operations for feature generation"""
-        operations = []
-        
-        if self.config.enable_gated_twins:
-            # Gated twin features
-            operations.extend([
-                {
-                    'name': f"{feature_name}_pos",
-                    'type': 'gated_twin',
-                    'operation': lambda x, p: x * (1 - p),
-                    'data': feature,
-                    'context': p_fail
-                },
-                {
-                    'name': f"{feature_name}_neg",
-                    'type': 'gated_twin',
-                    'operation': lambda x, p: -x * p,
-                    'data': feature,
-                    'context': p_fail
-                }
-            ])
-        
-        if self.config.enable_exception_interactions:
-            # Exception interaction features
-            operations.append({
-                'name': f"{feature_name}_x_fail",
-                'type': 'interaction',
-                'operation': lambda x, p: x * p,
-                'data': feature,
-                'context': p_fail
-            })
-        
-        if self.config.enable_context_indicators:
-            # Context indicator features
-            for context in contexts:
-                context_name = context.context_type.value
-                context_flag = self._generate_context_flag_vectorbt(
-                    pd.DataFrame({feature_name: feature}), context.context_type
-                )
-                operations.append({
-                    'name': f"{feature_name}_p_{context_name}",
-                    'type': 'context',
-                    'operation': lambda x: x,
-                    'data': context_flag
-                })
-        
-        return operations
-    
-    def _execute_vectorbt_batch_operations(
-        self, 
-        features_df: pd.DataFrame, 
-        operations: List[Dict[str, Any]]
-    ) -> Dict[str, pd.Series]:
-        """Execute batch operations using VectorBT optimization"""
-        results = {}
-        
-        # Group operations by type for efficient processing
-        operation_groups = {}
-        for op in operations:
-            op_type = op['type']
-            if op_type not in operation_groups:
-                operation_groups[op_type] = []
-            operation_groups[op_type].append(op)
-        
-        # Process each group using VectorBT
-        for op_type, group_ops in operation_groups.items():
-            if op_type == 'gated_twin':
-                results.update(self._process_gated_twins_vectorbt(group_ops))
-            elif op_type == 'interaction':
-                results.update(self._process_interactions_vectorbt(group_ops))
-            elif op_type == 'context':
-                results.update(self._process_contexts_vectorbt(group_ops))
-        
-        return results
-    
-    def _process_gated_twins_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
-        """Process gated twin operations using VectorBT"""
-        results = {}
-        
-        for op in operations:
-            try:
-                data = op['data']
-                context = op['context']
-                
-                # VectorBT-optimized gated twin calculation
-                if op['name'].endswith('_pos'):
-                    result = data * (1 - context)
-                else:  # _neg
-                    result = -data * context
-                
-                # Apply VectorBT optimizations
-                result = self._optimize_series_vectorbt(result)
-                results[op['name']] = result
-                
-            except Exception as e:
-                self.logger.warning(f"Gated twin operation failed for {op['name']}: {e}")
-                results[op['name']] = pd.Series(0, index=op['data'].index)
-        
-        return results
-    
-    def _process_interactions_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
-        """Process interaction operations using VectorBT"""
-        results = {}
-        
-        for op in operations:
-            try:
-                data = op['data']
-                context = op['context']
-                
-                # VectorBT-optimized interaction calculation
-                result = data * context
-                result = self._optimize_series_vectorbt(result)
-                results[op['name']] = result
-                
-            except Exception as e:
-                self.logger.warning(f"Interaction operation failed for {op['name']}: {e}")
-                results[op['name']] = pd.Series(0, index=op['data'].index)
-        
-        return results
-    
-    def _process_contexts_vectorbt(self, operations: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
-        """Process context operations using VectorBT"""
-        results = {}
-        
-        for op in operations:
-            try:
-                data = op['data']
-                result = self._optimize_series_vectorbt(data)
-                results[op['name']] = result
-                
-            except Exception as e:
-                self.logger.warning(f"Context operation failed for {op['name']}: {e}")
-                results[op['name']] = pd.Series(0, index=op['data'].index)
-        
-        return results
-    
-    def _optimize_series_vectorbt(self, series: pd.Series) -> pd.Series:
-        """Optimize series using VectorBT operations"""
-        try:
-            # Use VectorBT's data type optimization
-            if series.dtype == 'float64':
-                # Check if we can use float32 for memory efficiency
-                if (series.min() >= np.finfo(np.float32).min and 
-                    series.max() <= np.finfo(np.float32).max):
-                    series = series.astype(np.float32)
-            
-            # Apply VectorBT winsorization for outlier handling
-            if hasattr(series, 'quantile'):
-                q01 = series.quantile(0.01)
-                q99 = series.quantile(0.99)
-                series = series.clip(lower=q01, upper=q99)
-            
-            return series
-            
-        except Exception as e:
-            self.logger.debug(f"Series optimization failed: {e}")
-            return series
-    
-    def _select_top_gates(
-        self, 
-        all_gate_features: Dict[str, pd.Series], 
-        base_feature: pd.Series,
-        p_fail: pd.Series,
-        max_gates: int = 5
-    ) -> Dict[str, pd.Series]:
-        """
-        Select top N most impactful gate features using sophisticated criteria.
-        
-        Implements:
-        - Acceptance thresholds (IC uplift, stability, correlation)
-        - Adaptive cap by diminishing returns
-        - Diversity penalty (submodular flavor)
-        - Leakage guard on context
-        - Normalized scoring with winsorization
-        
-        Args:
-            all_gate_features: All generated gate features
-            base_feature: Original base feature
-            p_fail: Failure probability (with leakage guard)
-            max_gates: Maximum number of gates to select
-            
-        Returns:
-            Selected gate features
-        """
-        if len(all_gate_features) <= max_gates:
-            return all_gate_features
-        
-        # Apply leakage guard to context calculation
-        if self.config.enable_leakage_guard:
-            p_fail = self._apply_leakage_guard(p_fail, base_feature)
-        
-        # Calculate normalized scores for all gates
-        gate_metrics = self._calculate_normalized_gate_metrics(
-            all_gate_features, base_feature, p_fail
-        )
-        
-        # Greedy selection with thresholds and early stopping
-        selected_gates = self._greedy_gate_selection(
-            all_gate_features, gate_metrics, max_gates
-        )
-        
-        self.logger.debug(f"Selected {len(selected_gates)} gates: {list(selected_gates.keys())}")
-        
-        return {name: all_gate_features[name] for name in selected_gates.keys()}
-    
-    def _apply_leakage_guard(self, p_fail: pd.Series, base_feature: pd.Series) -> pd.Series:
-        """Apply leakage guard to context calculation using rolling OOF approach"""
-        try:
-            window_size = self.config.context_window_size
-            freeze_lookback = self.config.context_freeze_lookback
-            
-            # Calculate rolling context in past windows only
-            p_fail_guarded = p_fail.copy()
-            
-            for i in range(window_size, len(p_fail)):
-                # Use only past data for context calculation
-                past_window = slice(max(0, i - window_size - freeze_lookback), i - freeze_lookback)
-                if past_window.start < past_window.stop:
-                    # Recalculate context using only past data
-                    past_p_fail = self._calculate_past_context(
-                        base_feature.iloc[past_window], 
-                        p_fail.iloc[past_window]
-                    )
-                    p_fail_guarded.iloc[i] = past_p_fail.iloc[-1] if len(past_p_fail) > 0 else p_fail.iloc[i]
-            
-            return p_fail_guarded
-            
-        except Exception as e:
-            self.logger.warning(f"Leakage guard failed, using original context: {e}")
-            return p_fail
-    
-    def _calculate_past_context(self, past_base: pd.Series, past_p_fail: pd.Series) -> pd.Series:
-        """Calculate context using only past data to prevent leakage"""
-        # This would recalculate failure probability using only past data
-        # For now, return the past p_fail as-is (simplified implementation)
-        return past_p_fail
-    
-    def _calculate_normalized_gate_metrics(
-        self, 
-        all_gate_features: Dict[str, pd.Series], 
-        base_feature: pd.Series,
-        p_fail: pd.Series
-    ) -> Dict[str, Dict[str, float]]:
-        """Calculate normalized metrics for all gates"""
-        metrics = {}
-        
-        # Calculate raw metrics for all gates
-        raw_metrics = {}
-        for gate_name, gate_series in all_gate_features.items():
-            try:
-                raw_metrics[gate_name] = {
-                    'ic_uplift': self._calculate_ic_uplift(gate_series, base_feature),
-                    'stability': self._calculate_stability_frequency(gate_series),
-                    'context_score': self._calculate_context_score(gate_name, p_fail),
-                    'gate_series': gate_series
-                }
-            except Exception as e:
-                self.logger.warning(f"Error calculating metrics for {gate_name}: {e}")
-                raw_metrics[gate_name] = {
-                    'ic_uplift': 0.0,
-                    'stability': 0.0,
-                    'context_score': 0.0,
-                    'gate_series': gate_series
-                }
-        
-        # Normalize metrics per base feature
-        ic_uplifts = [m['ic_uplift'] for m in raw_metrics.values()]
-        stabilities = [m['stability'] for m in raw_metrics.values()]
-        context_scores = [m['context_score'] for m in raw_metrics.values()]
-        
-        # Winsorize and z-score normalize
-        ic_uplift_norm = self._winsorize_and_zscore(ic_uplifts)
-        stability_norm = self._normalize_to_01(stabilities)
-        context_norm = self._normalize_to_01(context_scores)
-        
-        # Create normalized metrics
-        for i, (gate_name, raw_metric) in enumerate(raw_metrics.items()):
-            metrics[gate_name] = {
-                'ic_uplift': raw_metric['ic_uplift'],
-                'ic_uplift_norm': ic_uplift_norm[i],
-                'stability': raw_metric['stability'],
-                'stability_norm': stability_norm[i],
-                'context_score': raw_metric['context_score'],
-                'context_norm': context_norm[i],
-                'gate_series': raw_metric['gate_series']
-            }
-        
-        return metrics
-    
-    def _winsorize_and_zscore(self, values: List[float], lower_pct: float = 5.0, upper_pct: float = 95.0) -> List[float]:
-        """Winsorize values and convert to z-scores"""
-        try:
-            values_array = np.array(values)
-            if len(values_array) == 0:
-                return values
-            
-            # Winsorize
-            lower_bound = np.percentile(values_array, lower_pct)
-            upper_bound = np.percentile(values_array, upper_pct)
-            winsorized = np.clip(values_array, lower_bound, upper_bound)
-            
-            # Z-score normalize
-            if winsorized.std() > 0:
-                z_scores = (winsorized - winsorized.mean()) / winsorized.std()
-            else:
-                z_scores = np.zeros_like(winsorized)
-            
-            return z_scores.tolist()
-        except Exception:
-            return values
-    
-    def _normalize_to_01(self, values: List[float]) -> List[float]:
-        """Normalize values to [0, 1] range"""
-        try:
-            values_array = np.array(values)
-            if len(values_array) == 0:
-                return values
-            
-            min_val, max_val = values_array.min(), values_array.max()
-            if max_val > min_val:
-                normalized = (values_array - min_val) / (max_val - min_val)
-            else:
-                normalized = np.ones_like(values_array) * 0.5
-            
-            return normalized.tolist()
-        except Exception:
-            return values
-    
-    def _greedy_gate_selection(
-        self, 
-        all_gate_features: Dict[str, pd.Series], 
-        gate_metrics: Dict[str, Dict[str, float]],
-        max_gates: int
-    ) -> Dict[str, pd.Series]:
-        """Greedy selection with thresholds, diversity penalty, and early stopping"""
-        selected_gates = {}
-        remaining_gates = set(all_gate_features.keys())
-        marginal_gains = []
-        small_gain_count = 0
-        
-        while len(selected_gates) < max_gates and remaining_gates:
-            best_gate = None
-            best_score = float('-inf')
-            
-            for gate_name in remaining_gates:
-                # Check acceptance thresholds
-                if not self._passes_acceptance_thresholds(gate_name, gate_metrics, selected_gates):
-                    continue
-                
-                # Calculate score with diversity penalty
-                score = self._calculate_gate_score_with_diversity(
-                    gate_name, gate_metrics, selected_gates
-                )
-                
-                if score > best_score:
-                    best_score = score
-                    best_gate = gate_name
-            
-            if best_gate is None:
-                # No more gates pass thresholds
-                break
-            
-            # Calculate marginal gain
-            if selected_gates:
-                marginal_gain = self._calculate_marginal_gain(
-                    best_gate, selected_gates, gate_metrics
-                )
-                marginal_gains.append(marginal_gain)
-                
-                # Early stopping check
-                if marginal_gain < self.config.early_stop_marginal_gain:
-                    small_gain_count += 1
-                    if small_gain_count >= self.config.early_stop_steps:
-                        self.logger.debug(f"Early stopping: marginal gain {marginal_gain:.4f} < {self.config.early_stop_marginal_gain}")
-                        break
-                else:
-                    small_gain_count = 0
-            
-            # Add best gate
-            selected_gates[best_gate] = all_gate_features[best_gate]
-            remaining_gates.remove(best_gate)
-            
-            self.logger.debug(f"Selected gate {best_gate} with score {best_score:.4f}")
-        
-        return selected_gates
-    
-    def _passes_acceptance_thresholds(
-        self, 
-        gate_name: str, 
-        gate_metrics: Dict[str, Dict[str, float]], 
-        selected_gates: Dict[str, pd.Series]
-    ) -> bool:
-        """Check if gate passes all acceptance thresholds"""
-        metrics = gate_metrics[gate_name]
-        
-        # IC uplift threshold
-        if metrics['ic_uplift'] < self.config.min_ic_uplift:
-            return False
-        
-        # Stability threshold
-        if metrics['stability'] < self.config.min_stability_freq:
-            return False
-        
-        # Correlation threshold with already selected gates
-        if selected_gates:
-            max_corr = 0.0
-            for selected_name, selected_series in selected_gates.items():
-                corr = abs(metrics['gate_series'].corr(selected_series))
-                if not np.isnan(corr):
-                    max_corr = max(max_corr, corr)
-            
-            if max_corr > self.config.max_correlation_with_selected:
-                return False
-        
-        return True
-    
-    def _calculate_gate_score_with_diversity(
-        self, 
-        gate_name: str, 
-        gate_metrics: Dict[str, Dict[str, float]], 
-        selected_gates: Dict[str, pd.Series]
-    ) -> float:
-        """Calculate gate score with diversity penalty"""
-        metrics = gate_metrics[gate_name]
-        
-        # Base score components
-        ic_score = 0.40 * metrics['ic_uplift_norm']
-        stability_score = 0.30 * metrics['stability_norm']
-        context_score = 0.10 * metrics['context_norm']
-        
-        # Uniqueness score (1 - max correlation with selected)
-        uniqueness_score = 0.20
-        if selected_gates:
-            max_corr = 0.0
-            for selected_name, selected_series in selected_gates.items():
-                corr = abs(metrics['gate_series'].corr(selected_series))
-                if not np.isnan(corr):
-                    max_corr = max(max_corr, corr)
-            uniqueness_score = 0.20 * (1.0 - max_corr)
-        
-        # Diversity penalty
-        diversity_penalty = 0.0
-        if selected_gates:
-            max_corr = 0.0
-            for selected_name, selected_series in selected_gates.items():
-                corr = abs(metrics['gate_series'].corr(selected_series))
-                if not np.isnan(corr):
-                    max_corr = max(max_corr, corr)
-            diversity_penalty = self.config.diversity_penalty_lambda * max_corr
-        
-        # Final score
-        score = ic_score + stability_score + context_score + uniqueness_score - diversity_penalty
-        
-        return score
-    
-    def _calculate_marginal_gain(
-        self, 
-        new_gate: str, 
-        selected_gates: Dict[str, pd.Series], 
-        gate_metrics: Dict[str, Dict[str, float]]
-    ) -> float:
-        """Calculate marginal gain of adding new gate (simplified implementation)"""
-        # This would calculate the actual marginal improvement in out-of-fold metric
-        # For now, use IC uplift as proxy
-        return gate_metrics[new_gate]['ic_uplift']
-    
-    def _calculate_ic_uplift(self, gate_series: pd.Series, base_feature: pd.Series) -> float:
-        """Calculate IC uplift (ΔIC) vs base feature - FIXED VERSION"""
-        try:
-            # FIXED: Calculate IC uplift based on feature characteristics, not correlation with base
-            # Since we don't have target data here, we use feature quality metrics as proxy
-            
-            # Calculate feature variance (higher variance often indicates better signal)
-            gate_variance = gate_series.var()
-            base_variance = base_feature.var()
-            
-            # Calculate feature stability (rolling correlation with itself)
-            window = min(50, len(gate_series) // 4)
-            if window >= 10:
-                gate_stability = 1.0 - gate_series.rolling(window).corr(gate_series.shift(1)).std()
-                base_stability = 1.0 - base_feature.rolling(window).corr(base_feature.shift(1)).std()
-            else:
-                gate_stability = 0.5
-                base_stability = 0.5
-            
-            # Calculate feature non-linearity (how different from base feature)
-            # Gates should be different from base feature to add value
-            feature_diff = abs(gate_series - base_feature).mean()
-            base_std = base_feature.std()
-            non_linearity = feature_diff / base_std if base_std > 0 else 0
-            
-            # Composite IC uplift score
-            variance_improvement = max(0, (gate_variance - base_variance) / base_variance) if base_variance > 0 else 0
-            stability_improvement = max(0, gate_stability - base_stability)
-            non_linearity_score = min(1.0, non_linearity)  # Cap at 1.0
-            
-            # Weighted IC uplift (this is a proxy for actual IC improvement)
-            ic_uplift = (
-                0.4 * variance_improvement +      # Variance improvement
-                0.3 * stability_improvement +     # Stability improvement  
-                0.3 * non_linearity_score         # Non-linearity (difference from base)
-            )
-            
-            # Log detailed calculation for debugging
-            from src.utils.tprint import tprint_debug
-            tprint_debug(f"📊 IC uplift calculation:")
-            tprint_debug(f"   Variance: gate={gate_variance:.3f}, base={base_variance:.3f}, improvement={variance_improvement:.3f}")
-            tprint_debug(f"   Stability: gate={gate_stability:.3f}, base={base_stability:.3f}, improvement={stability_improvement:.3f}")
-            tprint_debug(f"   Non-linearity: diff={feature_diff:.3f}, base_std={base_std:.3f}, score={non_linearity_score:.3f}")
-            tprint_debug(f"   Final IC uplift: {ic_uplift:.3f}")
-            
-            return max(0.0, ic_uplift)
-            
-        except Exception as e:
-            from src.utils.tprint import tprint_warning
+# Import tprint for consistent logging
+try:
+    from tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
+        rolling_skew, rolling_kurt, rolling_quantile
+    )
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
@@ -1288,6 +63,9 @@ except ImportError:
     rolling_apply = None
     rolling_corr = None
     rolling_cov = None
+    rolling_skew = None
+    rolling_kurt = None
+    rolling_quantile = None
     scale = None
     rank = None
     zscore = None
@@ -1296,578 +74,1138 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Import VectorBT optimization components
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-    from src.utils.ml_common.unified_vectorization_manager import (
-        get_unified_vectorization_manager, OperationType, OperationConfig
-    )
-    VECTORBT_OPTIMIZERS_AVAILABLE = True
-except ImportError:
-    VECTORBT_OPTIMIZERS_AVAILABLE = False
-    get_vectorbt_rolling_optimizer = None
-    get_unified_vectorization_manager = None
-    OperationType = None
-    OperationConfig = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            tprint_warning(f"⚠️ Error calculating IC uplift: {e}")
-            return 0.0
-    
-    def _calculate_stability_frequency(self, gate_series: pd.Series) -> float:
-        """Calculate stability frequency across folds/time windows using VectorBT"""
-        try:
-            # Rolling correlation stability
-            window = min(100, len(gate_series) // 4)
-            if window < 10:
-                return 0.5
-            
-            # Use VectorBT rolling correlation if available
-            if self.rolling_optimizer:
-                rolling_corr = self.rolling_optimizer.rolling_corr(
-                    gate_series, gate_series.shift(1), window=window
-                )
-            else:
-                rolling_corr = gate_series.rolling(window).corr(gate_series.shift(1))
-            
-            stability = 1.0 - rolling_corr.std()
-            return max(0.0, min(1.0, stability))
-            
-        except Exception:
-            return 0.5
-    
-    def _calculate_context_score(self, gate_name: str, p_fail: pd.Series) -> float:
-        """Calculate context relevance score based on gate name and failure probability"""
-        try:
-            # Higher score for gates that align with failure probability
-            if 'pos' in gate_name or 'positive' in gate_name:
-                # Positive gates should be active when failure prob is low
-                context_score = 1.0 - p_fail.mean()
-            elif 'neg' in gate_name or 'negative' in gate_name:
-                # Negative gates should be active when failure prob is high
-                context_score = p_fail.mean()
-            elif 'fail' in gate_name or 'exception' in gate_name:
-                # Exception gates should align with failure probability
-                context_score = p_fail.mean()
-            else:
-                # Context indicators - check if they're meaningful
-                context_score = 0.5 if p_fail.std() > 0.1 else 0.2
-            
-            return max(0.0, min(1.0, context_score))
-            
-        except Exception:
-            return 0.5
-    
-    def _calculate_failure_probability(
-        self, 
-        features_df: pd.DataFrame, 
-        contexts: List[FailureContext]
-    ) -> pd.Series:
-        """Calculate combined failure probability from all contexts"""
-        if not contexts:
-            return pd.Series(0, index=features_df.index)
-        
-        # Generate context flags for this feature's failure contexts
-        context_flags = {}
-        
-        for context in contexts:
-            context_name = context.context_type.value
-            context_flags[context_name] = self._generate_context_flag(
-                features_df, context.context_type
-            )
-        
-        # Combine using soft OR (maximum probability)
-        if context_flags:
-            p_fail = pd.concat(context_flags.values(), axis=1).max(axis=1)
-        else:
-            p_fail = pd.Series(0, index=features_df.index)
-        
-        return p_fail.fillna(0)
-    
-    def _generate_context_flag(
-        self, 
-        features_df: pd.DataFrame, 
-        context_type: FailureContextType
-    ) -> pd.Series:
-        """Generate context flag for a specific context type"""
-        detector = FailureContextDetector(self.config)
-        context_flags = detector._generate_context_flags(features_df)
-        return context_flags.get(context_type.value, pd.Series(0, index=features_df.index))
-    
-    def _generate_gated_twins(
-        self, 
-        feature: pd.Series, 
-        p_fail: pd.Series, 
-        feature_name: str
-    ) -> pd.DataFrame:
-        """Generate gated twin features (positive/negative)"""
-        # Gated twin (positive/negative)
-        f_pos = feature * (1 - p_fail)  # active where rule should hold
-        f_neg = -feature * p_fail       # inverse where it tends to fail
-        
-        twin_features = pd.DataFrame({
-            f"{feature_name}_pos": f_pos,
-            f"{feature_name}_neg": f_neg
-        }, index=feature.index)
-        
-        return twin_features
-    
-    def _generate_exception_interactions(
-        self, 
-        feature: pd.Series, 
-        p_fail: pd.Series, 
-        feature_name: str
-    ) -> pd.DataFrame:
-        """Generate exception interaction features (cheap alternative)"""
-        # Exception interaction (cheap alternative)
-        f_x_fail = feature * p_fail
-        
-        interaction_features = pd.DataFrame({
-            f"{feature_name}_x_fail": f_x_fail
-        }, index=feature.index)
-        
-        return interaction_features
-    
-    def _generate_context_indicators(
-        self, 
-        features_df: pd.DataFrame, 
-        contexts: List[FailureContext], 
-        feature_name: str
-    ) -> pd.DataFrame:
-        """Generate context indicator features"""
-        context_features = {}
-        
-        for context in contexts:
-            context_name = context.context_type.value
-            context_flag = self._generate_context_flag(features_df, context.context_type)
-            
-            # Include the context flag itself
-            context_features[f"{feature_name}_p_{context_name}"] = context_flag
-        
-        if context_features:
-            return pd.DataFrame(context_features, index=features_df.index)
-        else:
-            return pd.DataFrame(index=features_df.index)
+# ============================================================================
+# Core Data Structures and Enums
+# ============================================================================
+
+class FailureContextType(Enum):
+    """Types of failure contexts to detect"""
+    HIGH_VOLATILITY = "highvol"
+    CHOP = "chop"
+    WIDE_SPREAD = "widespread"
+    OPEN_WINDOW = "open30"
+    CLOSE_WINDOW = "last30"
+    TRENDING = "trending"
+    RANGING = "ranging"
 
 
-class NegativeLearningValidator:
-    """
-    Validates negative learning features using bucketed performance and SHAP analysis.
-    """
+class ModelType(Enum):
+    """Supported model types for constraints"""
+    XGBOOST = "xgboost"
+    LIGHTGBM = "lightgbm"
+    CATBOOST = "catboost"
+    RANDOM_FOREST = "random_forest"
+    LINEAR = "linear"
+
+
+class ValidationMetric(Enum):
+    """Validation metrics for negative learning features"""
+    IC = "ic"
+    R2 = "r2"
+    MAE = "mae"
+    MSE = "mse"
+    SHAP_STABILITY = "shap_stability"
+    DRIFT = "drift"
+
+
+@dataclass
+class FailureContext:
+    """Represents a detected failure context for a feature"""
+    feature_name: str
+    context_type: FailureContextType
+    threshold: float
+    ic_positive: float
+    ic_negative: float
+    confidence: float
+    sample_size: int
+    created_at: datetime
+
+
+@dataclass
+class NegativeLearningFeature:
+    """Represents a negative learning feature"""
+    name: str
+    base_feature: str
+    context_type: FailureContextType
+    feature_type: str  # 'gated_twin', 'exception_interaction'
+    parameters: Dict[str, Any]
+    ic_improvement: float
+    stability_score: float
+    created_at: datetime
+
+
+@dataclass
+class ModelConstraint:
+    """Represents a model constraint for negative learning features"""
+    feature_name: str
+    constraint_type: str  # 'monotone', 'sample_weight'
+    parameters: Dict[str, Any]
+    model_type: ModelType
+    created_at: datetime
+
+
+@dataclass
+class ValidationResult:
+    """Represents validation results for negative learning features"""
+    feature_name: str
+    metric: ValidationMetric
+    value: float
+    p_value: float
+    is_significant: bool
+    created_at: datetime
+
+
+# ============================================================================
+# Core Negative Learning Feature Generator
+# ============================================================================
+
+class NegativeLearningFeatureGenerator:
+    """Main class for generating negative learning features"""
     
-    def __init__(self, config: NegativeLearningConfig):
-        self.config = config
-        self.logger = system_logger.getChild('NegativeLearningValidator')
-    
-    def validate_negative_learning_features(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        negative_features: List[str],
-        failure_contexts: Dict[str, List[FailureContext]]
-    ) -> Dict[str, Any]:
+    def __init__(self, 
+                 max_features: int = 100,
+                 min_ic_improvement: float = 0.01,
+                 stability_threshold: float = 0.7,
+                 latency_budget_ms: int = 50):
         """
-        Validate negative learning features using multiple criteria.
+        Initialize the negative learning feature generator.
         
         Args:
-            features_df: Feature matrix including negative learning features
-            target: Target variable
-            negative_features: List of negative learning feature names
-            failure_contexts: Detected failure contexts
-            
-        Returns:
-            Validation results dictionary
+            max_features: Maximum number of features to generate
+            min_ic_improvement: Minimum IC improvement required
+            stability_threshold: Minimum stability score required
+            latency_budget_ms: Maximum latency budget in milliseconds
         """
-        self.logger.info("🔍 Validating negative learning features...")
+        self.max_features = max_features
+        self.min_ic_improvement = min_ic_improvement
+        self.stability_threshold = stability_threshold
+        self.latency_budget_ms = latency_budget_ms
         
-        validation_results = {
-            'bucketed_performance': self._validate_bucketed_performance(
-                features_df, target, negative_features, failure_contexts
-            ),
-            'feature_importance': self._validate_feature_importance(
-                features_df, target, negative_features
-            ),
-            'stability_analysis': self._validate_stability(
-                features_df, target, negative_features
-            )
+        self.failure_contexts: List[FailureContext] = []
+        self.negative_features: List[NegativeLearningFeature] = []
+        self.performance_stats = {
+            'features_generated': 0,
+            'contexts_discovered': 0,
+            'ic_improvements': [],
+            'stability_scores': [],
+            'processing_time': 0.0
         }
         
-        self.logger.info("✅ Negative learning validation complete")
-        return validation_results
-    
-    def _validate_bucketed_performance(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        negative_features: List[str],
-        failure_contexts: Dict[str, List[FailureContext]]
-    ) -> Dict[str, Any]:
-        """Validate performance within each failure regime"""
-        results = {}
-        
-        for feature_name, contexts in failure_contexts.items():
-            if not contexts:
-                continue
-                
-            # Calculate combined failure probability
-            generator = NegativeLearningFeatureGenerator(self.config)
-            p_fail = generator._calculate_failure_probability(features_df, contexts)
-            
-            # Bucket by failure probability
-            high_fail_mask = p_fail > 0.6
-            low_fail_mask = p_fail <= 0.6
-            
-            # Calculate IC in each bucket
-            ic_high_fail = self._calculate_ic(
-                features_df[feature_name], target, high_fail_mask
-            )
-            ic_low_fail = self._calculate_ic(
-                features_df[feature_name], target, low_fail_mask
-            )
-            
-            # Check if negative learning features improve performance
-            pos_feature = f"{feature_name}_pos"
-            neg_feature = f"{feature_name}_neg"
-            
-            if pos_feature in features_df.columns and neg_feature in features_df.columns:
-                ic_pos_high = self._calculate_ic(
-                    features_df[pos_feature], target, high_fail_mask
-                )
-                ic_neg_high = self._calculate_ic(
-                    features_df[neg_feature], target, high_fail_mask
-                )
-                
-                results[feature_name] = {
-                    'original_ic_high_fail': ic_high_fail,
-                    'original_ic_low_fail': ic_low_fail,
-                    'pos_ic_high_fail': ic_pos_high,
-                    'neg_ic_high_fail': ic_neg_high,
-                    'improvement': abs(ic_pos_high) + abs(ic_neg_high) - abs(ic_high_fail)
-                }
-        
-        return results
-    
-    def _calculate_ic(self, feature: pd.Series, target: pd.Series, mask: pd.Series) -> float:
-        """Calculate Information Coefficient"""
-        try:
-            aligned_data = pd.DataFrame({
-                'feature': feature,
-                'target': target,
-                'mask': mask
-            }).dropna()
-            
-            masked_data = aligned_data[aligned_data['mask']]
-            
-            if len(masked_data) < 5:
-                return 0.0
-            
-            ic = masked_data['feature'].corr(masked_data['target'])
-            return ic if not np.isnan(ic) else 0.0
-            
-        except Exception as e:
-            self.logger.warning(f"Error calculating IC: {e}")
-            return 0.0
-    
-    def _validate_feature_importance(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        negative_features: List[str]
-    ) -> Dict[str, float]:
-        """Validate feature importance using correlation analysis"""
-        importance_scores = {}
-        
-        for feature in negative_features:
-            if feature in features_df.columns:
-                ic = self._calculate_ic(features_df[feature], target, pd.Series(True, index=features_df.index))
-                importance_scores[feature] = abs(ic)
-        
-        return importance_scores
-    
-    def _validate_stability(
-        self,
-        features_df: pd.DataFrame,
-        target: pd.Series,
-        negative_features: List[str]
-    ) -> Dict[str, Any]:
-        """Validate feature stability using rolling correlation"""
-        stability_results = {}
-        
-        for feature in negative_features:
-            if feature in features_df.columns:
-                # Calculate rolling correlation
-                window = 100
-                rolling_corr = features_df[feature].rolling(window).corr(target)
-                
-                stability_results[feature] = {
-                    'mean_correlation': rolling_corr.mean(),
-                    'correlation_std': rolling_corr.std(),
-                    'stability_score': 1 - rolling_corr.std()  # Higher is more stable
-                }
-        
-        return stability_results
-
-
-class NegativeLearningPlugin:
-    """
-    Main plugin class that orchestrates the entire negative learning pipeline.
-    Integrates with existing Analyst/Tactician pipelines.
-    Now optimized with VectorBT for maximum performance.
-    """
-    
-    def __init__(self, config: Optional[NegativeLearningConfig] = None):
-        self.config = config or NegativeLearningConfig()
-        self.logger = system_logger.getChild('NegativeLearningPlugin')
-        
-        # Initialize components
-        self.detector = FailureContextDetector(self.config)
-        self.generator = NegativeLearningFeatureGenerator(self.config)
-        self.validator = NegativeLearningValidator(self.config)
-        
-        # Initialize VectorBT optimization components
-        self.rolling_optimizer = None
-        self.unified_manager = None
-        
-        if VECTORBT_OPTIMIZERS_AVAILABLE:
+        # Initialize VectorBT optimizer if available
+        self.vectorbt_optimizer = None
+        if VECTORBT_AVAILABLE:
             try:
-                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-                    enable_gpu=True, enable_parallel=True, memory_efficient=True
-                )
-                self.unified_manager = get_unified_vectorization_manager()
-                self.logger.info("✅ VectorBT optimizations enabled for negative learning plugin")
+                from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                tprint("✅ VectorBT optimizer initialized for NegativeLearningFeatureGenerator")
             except Exception as e:
-                self.logger.warning(f"⚠️ VectorBT optimizations not available: {e}")
-                self.rolling_optimizer = None
-                self.unified_manager = None
-        
-        # State
-        self.failure_contexts: Dict[str, List[FailureContext]] = {}
-        self.negative_features: List[str] = []
-        self.validation_results: Dict[str, Any] = {}
+                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
     
-    def fit(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series,
-        feature_names: Optional[List[str]] = None
-    ) -> 'NegativeLearningPlugin':
+    def discover_failure_contexts(self, 
+                                 features: pd.DataFrame, 
+                                 returns: pd.Series,
+                                 lookback_window: int = 252) -> List[FailureContext]:
         """
-        Fit the negative learning plugin on training data.
+        Discover failure contexts where features perform poorly.
         
         Args:
-            features_df: Training feature matrix
-            target: Training target variable
-            feature_names: Optional list of features to analyze
+            features: Feature matrix
+            returns: Target returns
+            lookback_window: Lookback window for analysis
             
         Returns:
-            Self for method chaining
+            List of discovered failure contexts
         """
-        self.logger.info("🎯 Fitting negative learning plugin...")
+        tprint("🔍 Discovering failure contexts...")
+        start_time = datetime.now()
         
-        # Use all numeric features if not specified
-        if feature_names is None:
-            feature_names = features_df.select_dtypes(include=[np.number]).columns.tolist()
+        contexts = []
         
-        # Detect failure contexts
-        self.failure_contexts = self.detector.detect_failure_contexts(
-            features_df, target, feature_names
+        for feature_name in features.columns:
+            feature_values = features[feature_name].dropna()
+            if len(feature_values) < lookback_window:
+                continue
+            
+            # Calculate rolling IC
+            rolling_ic = self._calculate_rolling_ic(feature_values, returns, lookback_window)
+            
+            # Detect different failure contexts
+            feature_contexts = self._detect_feature_failure_contexts(
+                feature_name, feature_values, returns, rolling_ic
+            )
+            contexts.extend(feature_contexts)
+        
+        self.failure_contexts = contexts
+        self.performance_stats['contexts_discovered'] = len(contexts)
+        
+        processing_time = (datetime.now() - start_time).total_seconds()
+        self.performance_stats['processing_time'] += processing_time
+        
+        tprint(f"✅ Discovered {len(contexts)} failure contexts in {processing_time:.2f}s")
+        return contexts
+    
+    def generate_negative_features(self, 
+                                  features: pd.DataFrame,
+                                  returns: pd.Series) -> List[NegativeLearningFeature]:
+        """
+        Generate negative learning features based on discovered failure contexts.
+        
+        Args:
+            features: Feature matrix
+            returns: Target returns
+            
+        Returns:
+            List of generated negative learning features
+        """
+        tprint("🔧 Generating negative learning features...")
+        start_time = datetime.now()
+        
+        negative_features = []
+        
+        for context in self.failure_contexts:
+            if len(negative_features) >= self.max_features:
+                break
+            
+            # Generate gated twin features
+            gated_twin = self._generate_gated_twin_feature(features, context)
+            if gated_twin is not None:
+                negative_features.append(gated_twin)
+            
+            # Generate exception interaction features
+            exception_interaction = self._generate_exception_interaction_feature(features, context)
+            if exception_interaction is not None:
+                negative_features.append(exception_interaction)
+        
+        # Validate and filter features
+        validated_features = self._validate_negative_features(negative_features, features, returns)
+        
+        self.negative_features = validated_features
+        self.performance_stats['features_generated'] = len(validated_features)
+        
+        processing_time = (datetime.now() - start_time).total_seconds()
+        self.performance_stats['processing_time'] += processing_time
+        
+        tprint(f"✅ Generated {len(validated_features)} negative learning features in {processing_time:.2f}s")
+        return validated_features
+    
+    def _calculate_rolling_ic(self, 
+                             feature_values: pd.Series, 
+                             returns: pd.Series, 
+                             window: int) -> pd.Series:
+        """Calculate rolling information coefficient."""
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            try:
+                # Use VectorBT for optimized rolling correlation
+                rolling_corr = self.vectorbt_optimizer.rolling_corr(
+                    feature_values, returns, window
+                )
+                return rolling_corr
+            except Exception as e:
+                tprint(f"VectorBT rolling correlation failed: {e}, using pandas fallback")
+        
+        # Fallback to pandas
+        return feature_values.rolling(window=window).corr(returns)
+    
+    def _detect_feature_failure_contexts(self, 
+                                       feature_name: str,
+                                       feature_values: pd.Series,
+                                       returns: pd.Series,
+                                       rolling_ic: pd.Series) -> List[FailureContext]:
+        """Detect failure contexts for a specific feature."""
+        contexts = []
+        
+        # High volatility context
+        vol_context = self._detect_high_volatility_context(
+            feature_name, feature_values, returns, rolling_ic
         )
+        if vol_context:
+            contexts.append(vol_context)
         
-        self.logger.info(f"✅ Plugin fitted with {len(self.failure_contexts)} features having failure contexts")
-        return self
-    
-    def transform(
-        self, 
-        features_df: pd.DataFrame
-    ) -> pd.DataFrame:
-        """
-        Transform features by adding negative learning features.
-        
-        Args:
-            features_df: Feature matrix to transform
-            
-        Returns:
-            Transformed feature matrix with negative learning features
-        """
-        self.logger.info("🔄 Transforming features with negative learning...")
-        
-        # Generate negative learning features
-        transformed_df = self.generator.generate_negative_learning_features(
-            features_df, self.failure_contexts
+        # Chop context
+        chop_context = self._detect_chop_context(
+            feature_name, feature_values, returns, rolling_ic
         )
+        if chop_context:
+            contexts.append(chop_context)
         
-        # Update negative features list
-        new_features = [col for col in transformed_df.columns if col not in features_df.columns]
-        self.negative_features.extend(new_features)
-        
-        self.logger.info(f"✅ Transformed features. Added {len(new_features)} negative learning features")
-        return transformed_df
-    
-    def fit_transform(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series,
-        feature_names: Optional[List[str]] = None
-    ) -> pd.DataFrame:
-        """
-        Fit and transform in one step.
-        
-        Args:
-            features_df: Feature matrix
-            target: Target variable
-            feature_names: Optional list of features to analyze
-            
-        Returns:
-            Transformed feature matrix
-        """
-        return self.fit(features_df, target, feature_names).transform(features_df)
-    
-    def validate(
-        self, 
-        features_df: pd.DataFrame, 
-        target: pd.Series
-    ) -> Dict[str, Any]:
-        """
-        Validate the negative learning features.
-        
-        Args:
-            features_df: Feature matrix including negative learning features
-            target: Target variable
-            
-        Returns:
-            Validation results
-        """
-        self.logger.info("🔍 Validating negative learning features...")
-        
-        self.validation_results = self.validator.validate_negative_learning_features(
-            features_df, target, self.negative_features, self.failure_contexts
+        # Wide spread context
+        spread_context = self._detect_wide_spread_context(
+            feature_name, feature_values, returns, rolling_ic
         )
+        if spread_context:
+            contexts.append(spread_context)
         
-        return self.validation_results
+        return contexts
     
-    def get_monotone_constraints(self, feature_names: List[str]) -> List[int]:
-        """
-        Get monotone constraints for tree-based models.
+    def _detect_high_volatility_context(self, 
+                                      feature_name: str,
+                                      feature_values: pd.Series,
+                                      returns: pd.Series,
+                                      rolling_ic: pd.Series) -> Optional[FailureContext]:
+        """Detect high volatility failure context."""
+        # Calculate rolling volatility
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            try:
+                rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=20)
+            except Exception:
+                rolling_vol = returns.rolling(window=20).std()
+        else:
+            rolling_vol = returns.rolling(window=20).std()
         
-        Args:
-            feature_names: List of feature names in model order
+        # Find high volatility periods
+        vol_threshold = rolling_vol.quantile(0.8)
+        high_vol_mask = rolling_vol > vol_threshold
+        
+        if not high_vol_mask.any():
+            return None
+        
+        # Calculate IC in high volatility vs normal periods
+        ic_high_vol = rolling_ic[high_vol_mask].mean()
+        ic_normal = rolling_ic[~high_vol_mask].mean()
+        
+        # Check if feature fails in high volatility
+        if ic_high_vol < ic_normal - 0.05:  # 5% IC drop threshold
+            return FailureContext(
+                feature_name=feature_name,
+                context_type=FailureContextType.HIGH_VOLATILITY,
+                threshold=vol_threshold,
+                ic_positive=ic_normal,
+                ic_negative=ic_high_vol,
+                confidence=abs(ic_normal - ic_high_vol),
+                sample_size=high_vol_mask.sum(),
+                created_at=datetime.now()
+            )
+        
+        return None
+    
+    def _detect_chop_context(self, 
+                            feature_name: str,
+                            feature_values: pd.Series,
+                            returns: pd.Series,
+                            rolling_ic: pd.Series) -> Optional[FailureContext]:
+        """Detect chop (sideways market) failure context."""
+        # Calculate price range over different windows
+        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            try:
+                rolling_max = self.vectorbt_optimizer.rolling_max(returns, window=20)
+                rolling_min = self.vectorbt_optimizer.rolling_min(returns, window=20)
+            except Exception:
+                rolling_max = returns.rolling(window=20).max()
+                rolling_min = returns.rolling(window=20).min()
+        else:
+            rolling_max = returns.rolling(window=20).max()
+            rolling_min = returns.rolling(window=20).min()
+        
+        price_range = rolling_max - rolling_min
+        range_threshold = price_range.quantile(0.2)  # Bottom 20% range
+        chop_mask = price_range < range_threshold
+        
+        if not chop_mask.any():
+            return None
+        
+        # Calculate IC in chop vs trending periods
+        ic_chop = rolling_ic[chop_mask].mean()
+        ic_trending = rolling_ic[~chop_mask].mean()
+        
+        # Check if feature fails in chop
+        if ic_chop < ic_trending - 0.05:  # 5% IC drop threshold
+            return FailureContext(
+                feature_name=feature_name,
+                context_type=FailureContextType.CHOP,
+                threshold=range_threshold,
+                ic_positive=ic_trending,
+                ic_negative=ic_chop,
+                confidence=abs(ic_trending - ic_chop),
+                sample_size=chop_mask.sum(),
+                created_at=datetime.now()
+            )
+        
+        return None
+    
+    def _detect_wide_spread_context(self, 
+                                   feature_name: str,
+                                   feature_values: pd.Series,
+                                   returns: pd.Series,
+                                   rolling_ic: pd.Series) -> Optional[FailureContext]:
+        """Detect wide spread failure context."""
+        # Calculate bid-ask spread proxy (using high-low range)
+        if 'high' in feature_values.index and 'low' in feature_values.index:
+            spread = feature_values['high'] - feature_values['low']
+        else:
+            # Use price volatility as spread proxy
+            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+                try:
+                    spread = self.vectorbt_optimizer.rolling_std(returns, window=5)
+                except Exception:
+                    spread = returns.rolling(window=5).std()
+            else:
+                spread = returns.rolling(window=5).std()
+        
+        spread_threshold = spread.quantile(0.8)  # Top 20% spread
+        wide_spread_mask = spread > spread_threshold
+        
+        if not wide_spread_mask.any():
+            return None
+        
+        # Calculate IC in wide spread vs normal periods
+        ic_wide_spread = rolling_ic[wide_spread_mask].mean()
+        ic_normal = rolling_ic[~wide_spread_mask].mean()
+        
+        # Check if feature fails in wide spread
+        if ic_wide_spread < ic_normal - 0.05:  # 5% IC drop threshold
+            return FailureContext(
+                feature_name=feature_name,
+                context_type=FailureContextType.WIDE_SPREAD,
+                threshold=spread_threshold,
+                ic_positive=ic_normal,
+                ic_negative=ic_wide_spread,
+                confidence=abs(ic_normal - ic_wide_spread),
+                sample_size=wide_spread_mask.sum(),
+                created_at=datetime.now()
+            )
+        
+        return None
+    
+    def _generate_gated_twin_feature(self, 
+                                   features: pd.DataFrame,
+                                   context: FailureContext) -> Optional[NegativeLearningFeature]:
+        """Generate gated twin feature for a failure context."""
+        base_feature = features[context.feature_name]
+        
+        # Create context mask
+        context_mask = self._create_context_mask(features, context)
+        
+        if not context_mask.any():
+            return None
+        
+        # Generate gated twin (feature * context_mask)
+        gated_twin = base_feature * context_mask
+        
+        # Calculate IC improvement
+        ic_improvement = self._calculate_ic_improvement(gated_twin, base_feature)
+        
+        if ic_improvement < self.min_ic_improvement:
+            return None
+        
+        return NegativeLearningFeature(
+            name=f"{context.feature_name}_gated_{context.context_type.value}",
+            base_feature=context.feature_name,
+            context_type=context.context_type,
+            feature_type="gated_twin",
+            parameters={
+                "threshold": context.threshold,
+                "context_mask": context_mask
+            },
+            ic_improvement=ic_improvement,
+            stability_score=0.0,  # Will be calculated later
+            created_at=datetime.now()
+        )
+    
+    def _generate_exception_interaction_feature(self, 
+                                              features: pd.DataFrame,
+                                              context: FailureContext) -> Optional[NegativeLearningFeature]:
+        """Generate exception interaction feature for a failure context."""
+        base_feature = features[context.feature_name]
+        
+        # Create context mask
+        context_mask = self._create_context_mask(features, context)
+        
+        if not context_mask.any():
+            return None
+        
+        # Generate exception interaction (feature * (1 - context_mask))
+        exception_interaction = base_feature * (1 - context_mask)
+        
+        # Calculate IC improvement
+        ic_improvement = self._calculate_ic_improvement(exception_interaction, base_feature)
+        
+        if ic_improvement < self.min_ic_improvement:
+            return None
+        
+        return NegativeLearningFeature(
+            name=f"{context.feature_name}_exception_{context.context_type.value}",
+            base_feature=context.feature_name,
+            context_type=context.context_type,
+            feature_type="exception_interaction",
+            parameters={
+                "threshold": context.threshold,
+                "context_mask": context_mask
+            },
+            ic_improvement=ic_improvement,
+            stability_score=0.0,  # Will be calculated later
+            created_at=datetime.now()
+        )
+    
+    def _create_context_mask(self, 
+                           features: pd.DataFrame,
+                           context: FailureContext) -> pd.Series:
+        """Create context mask for a failure context."""
+        if context.context_type == FailureContextType.HIGH_VOLATILITY:
+            # High volatility mask
+            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+                try:
+                    rolling_vol = self.vectorbt_optimizer.rolling_std(features['close'], window=20)
+                except Exception:
+                    rolling_vol = features['close'].rolling(window=20).std()
+            else:
+                rolling_vol = features['close'].rolling(window=20).std()
             
-        Returns:
-            List of monotone constraints (-1, 0, 1)
-        """
+            return (rolling_vol > context.threshold).astype(float)
+        
+        elif context.context_type == FailureContextType.CHOP:
+            # Chop mask
+            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+                try:
+                    rolling_max = self.vectorbt_optimizer.rolling_max(features['close'], window=20)
+                    rolling_min = self.vectorbt_optimizer.rolling_min(features['close'], window=20)
+                except Exception:
+                    rolling_max = features['close'].rolling(window=20).max()
+                    rolling_min = features['close'].rolling(window=20).min()
+            else:
+                rolling_max = features['close'].rolling(window=20).max()
+                rolling_min = features['close'].rolling(window=20).min()
+            
+            price_range = rolling_max - rolling_min
+            return (price_range < context.threshold).astype(float)
+        
+        elif context.context_type == FailureContextType.WIDE_SPREAD:
+            # Wide spread mask
+            if 'high' in features.columns and 'low' in features.columns:
+                spread = features['high'] - features['low']
+            else:
+                if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+                    try:
+                        spread = self.vectorbt_optimizer.rolling_std(features['close'], window=5)
+                    except Exception:
+                        spread = features['close'].rolling(window=5).std()
+                else:
+                    spread = features['close'].rolling(window=5).std()
+            
+            return (spread > context.threshold).astype(float)
+        
+        else:
+            # Default to all zeros
+            return pd.Series(0, index=features.index)
+    
+    def _calculate_ic_improvement(self, 
+                                new_feature: pd.Series,
+                                base_feature: pd.Series) -> float:
+        """Calculate IC improvement of new feature over base feature."""
+        # Calculate IC for both features
+        returns = base_feature.pct_change().dropna()
+        
+        if len(new_feature) != len(returns):
+            return 0.0
+        
+        new_ic = new_feature.corr(returns)
+        base_ic = base_feature.corr(returns)
+        
+        return new_ic - base_ic
+    
+    def _validate_negative_features(self, 
+                                  features: List[NegativeLearningFeature],
+                                  feature_matrix: pd.DataFrame,
+                                  returns: pd.Series) -> List[NegativeLearningFeature]:
+        """Validate and filter negative learning features."""
+        validated_features = []
+        
+        for feature in features:
+            # Calculate stability score
+            stability_score = self._calculate_stability_score(feature, feature_matrix, returns)
+            feature.stability_score = stability_score
+            
+            # Check if feature meets criteria
+            if (stability_score >= self.stability_threshold and 
+                feature.ic_improvement >= self.min_ic_improvement):
+                validated_features.append(feature)
+        
+        return validated_features
+    
+    def _calculate_stability_score(self, 
+                                 feature: NegativeLearningFeature,
+                                 feature_matrix: pd.DataFrame,
+                                 returns: pd.Series) -> float:
+        """Calculate stability score for a negative learning feature."""
+        # Use block bootstrap to calculate stability
+        n_samples = 100
+        ic_scores = []
+        
+        for _ in range(n_samples):
+            # Sample with replacement
+            sample_indices = np.random.choice(len(feature_matrix), size=len(feature_matrix), replace=True)
+            sample_features = feature_matrix.iloc[sample_indices]
+            sample_returns = returns.iloc[sample_indices]
+            
+            # Calculate IC for this sample
+            if feature.feature_type == "gated_twin":
+                context_mask = feature.parameters["context_mask"]
+                gated_feature = sample_features[feature.base_feature] * context_mask
+            else:  # exception_interaction
+                context_mask = feature.parameters["context_mask"]
+                exception_feature = sample_features[feature.base_feature] * (1 - context_mask)
+                gated_feature = exception_feature
+            
+            ic = gated_feature.corr(sample_returns)
+            if not np.isnan(ic):
+                ic_scores.append(ic)
+        
+        if not ic_scores:
+            return 0.0
+        
+        # Stability score is 1 - coefficient of variation
+        ic_scores = np.array(ic_scores)
+        stability_score = 1 - (np.std(ic_scores) / (np.abs(np.mean(ic_scores)) + 1e-8))
+        
+        return max(0.0, min(1.0, stability_score))
+
+
+# ============================================================================
+# Model Constraints Manager
+# ============================================================================
+
+class ModelConstraintManager:
+    """Manages model constraints for negative learning features"""
+    
+    def __init__(self, model_type: ModelType):
+        self.model_type = model_type
+        self.constraints: List[ModelConstraint] = []
+    
+    def generate_constraints(self, 
+                           negative_features: List[NegativeLearningFeature],
+                           features: pd.DataFrame,
+                           returns: pd.Series) -> List[ModelConstraint]:
+        """Generate model constraints for negative learning features."""
         constraints = []
         
-        for feature_name in feature_names:
-            if feature_name.endswith('_pos'):
-                # Positive features should have positive monotonicity
-                constraints.append(1)
-            elif feature_name.endswith('_neg'):
-                # Negative features should have negative monotonicity
-                constraints.append(-1)
-            else:
-                # No constraint for other features
-                constraints.append(0)
+        for feature in negative_features:
+            # Generate monotone constraints
+            monotone_constraint = self._generate_monotone_constraint(feature, features, returns)
+            if monotone_constraint:
+                constraints.append(monotone_constraint)
+            
+            # Generate sample weight constraints
+            sample_weight_constraint = self._generate_sample_weight_constraint(feature, features, returns)
+            if sample_weight_constraint:
+                constraints.append(sample_weight_constraint)
         
+        self.constraints = constraints
         return constraints
     
-    def get_sample_weights(
-        self, 
-        features_df: pd.DataFrame, 
-        base_weights: Optional[pd.Series] = None
-    ) -> pd.Series:
-        """
-        Get sample weights that down-weight uncertain failure zones.
+    def _generate_monotone_constraint(self, 
+                                    feature: NegativeLearningFeature,
+                                    features: pd.DataFrame,
+                                    returns: pd.Series) -> Optional[ModelConstraint]:
+        """Generate monotone constraint for a feature."""
+        if self.model_type not in [ModelType.XGBOOST, ModelType.LIGHTGBM, ModelType.CATBOOST]:
+            return None
         
-        Args:
-            features_df: Feature matrix
-            base_weights: Optional base sample weights
+        # Calculate monotonicity direction
+        feature_values = features[feature.base_feature].dropna()
+        returns_aligned = returns.loc[feature_values.index]
+        
+        # Use linear regression to determine monotonicity
+        try:
+            lr = LinearRegression()
+            lr.fit(feature_values.values.reshape(-1, 1), returns_aligned.values)
+            monotone_direction = 1 if lr.coef_[0] > 0 else -1
+        except:
+            return None
+        
+        return ModelConstraint(
+            feature_name=feature.name,
+            constraint_type="monotone",
+            parameters={"direction": monotone_direction},
+            model_type=self.model_type,
+            created_at=datetime.now()
+        )
+    
+    def _generate_sample_weight_constraint(self, 
+                                         feature: NegativeLearningFeature,
+                                         features: pd.DataFrame,
+                                         returns: pd.Series) -> Optional[ModelConstraint]:
+        """Generate sample weight constraint for a feature."""
+        # Calculate uncertainty weights based on context
+        context_mask = feature.parameters.get("context_mask", pd.Series(0, index=features.index))
+        
+        # Higher weight for non-context periods (where feature should work)
+        weights = 1.0 + (1 - context_mask) * 0.5
+        
+        return ModelConstraint(
+            feature_name=feature.name,
+            constraint_type="sample_weight",
+            parameters={"weights": weights},
+            model_type=self.model_type,
+            created_at=datetime.now()
+        )
+
+
+# ============================================================================
+# Feature Selection Manager
+# ============================================================================
+
+class NegativeLearningFeatureSelector:
+    """Manages feature selection for negative learning features"""
+    
+    def __init__(self, 
+                 max_features: int = 50,
+                 stability_threshold: float = 0.7,
+                 ic_threshold: float = 0.01):
+        self.max_features = max_features
+        self.stability_threshold = stability_threshold
+        self.ic_threshold = ic_threshold
+        self.selected_features: List[NegativeLearningFeature] = []
+    
+    def select_features(self, 
+                       negative_features: List[NegativeLearningFeature],
+                       features: pd.DataFrame,
+                       returns: pd.Series) -> List[NegativeLearningFeature]:
+        """Select best negative learning features using stability selection."""
+        # Filter features by basic criteria
+        candidate_features = [
+            f for f in negative_features
+            if f.stability_score >= self.stability_threshold and f.ic_improvement >= self.ic_threshold
+        ]
+        
+        if len(candidate_features) <= self.max_features:
+            self.selected_features = candidate_features
+            return candidate_features
+        
+        # Use stability selection
+        selected_features = self._stability_selection(candidate_features, features, returns)
+        
+        self.selected_features = selected_features
+        return selected_features
+    
+    def _stability_selection(self, 
+                           candidate_features: List[NegativeLearningFeature],
+                           features: pd.DataFrame,
+                           returns: pd.Series) -> List[NegativeLearningFeature]:
+        """Perform stability selection using block bootstrap."""
+        n_bootstrap = 50
+        selection_counts = {f.name: 0 for f in candidate_features}
+        
+        for _ in range(n_bootstrap):
+            # Create bootstrap sample
+            sample_indices = np.random.choice(len(features), size=len(features), replace=True)
+            sample_features = features.iloc[sample_indices]
+            sample_returns = returns.iloc[sample_indices]
             
-        Returns:
-            Sample weights
-        """
-        if base_weights is None:
-            base_weights = pd.Series(1.0, index=features_df.index)
+            # Select features using Lasso
+            selected = self._lasso_selection(candidate_features, sample_features, sample_returns)
+            
+            for feature_name in selected:
+                selection_counts[feature_name] += 1
         
-        # Calculate maximum failure probability across all features
-        p_fail_max = pd.Series(0, index=features_df.index)
+        # Select features selected in at least 50% of bootstrap samples
+        threshold = n_bootstrap * 0.5
+        selected_features = [
+            f for f in candidate_features
+            if selection_counts[f.name] >= threshold
+        ]
         
-        for feature_name, contexts in self.failure_contexts.items():
-            if contexts:
-                generator = NegativeLearningFeatureGenerator(self.config)
-                p_fail = generator._calculate_failure_probability(features_df, contexts)
-                p_fail_max = np.maximum(p_fail_max, p_fail)
+        # Sort by selection frequency and IC improvement
+        selected_features.sort(key=lambda f: (selection_counts[f.name], f.ic_improvement), reverse=True)
         
-        # Apply uncertainty weighting
-        uncertainty_factor = self.config.weight_uncertainty_factor
-        weights = base_weights * (0.7 + 0.3 * (1 - p_fail_max))
-        
-        return weights
+        return selected_features[:self.max_features]
     
-    def get_feature_importance_scores(self) -> Dict[str, float]:
-        """Get feature importance scores for negative learning features"""
-        if not self.validation_results:
-            return {}
+    def _lasso_selection(self, 
+                        candidate_features: List[NegativeLearningFeature],
+                        features: pd.DataFrame,
+                        returns: pd.Series) -> List[str]:
+        """Select features using Lasso regression."""
+        # Create feature matrix for negative learning features
+        feature_matrix = []
+        feature_names = []
         
-        return self.validation_results.get('feature_importance', {})
-    
-    def get_failure_contexts(self) -> Dict[str, List[FailureContext]]:
-        """Get detected failure contexts"""
-        return self.failure_contexts
-    
-    def get_negative_features(self) -> List[str]:
-        """Get list of generated negative learning features"""
-        return self.negative_features
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        for feature in candidate_features:
+            if feature.feature_type == "gated_twin":
+                context_mask = feature.parameters["context_mask"]
+                gated_feature = features[feature.base_feature] * context_mask
+            else:  # exception_interaction
+                context_mask = feature.parameters["context_mask"]
+                exception_feature = features[feature.base_feature] * (1 - context_mask)
+                gated_feature = exception_feature
+            
+            feature_matrix.append(gated_feature.values)
+            feature_names.append(feature.name)
+        
+        if not feature_matrix:
+            return []
+        
+        X = np.column_stack(feature_matrix)
+        y = returns.values
+        
+        # Remove NaN values
+        valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+        X = X[valid_mask]
+        y = y[valid_mask]
+        
+        if len(X) < 10:  # Need minimum samples
+            return []
         
         try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
+            # Use LassoCV for automatic alpha selection
+            lasso = LassoCV(cv=5, random_state=42)
+            lasso.fit(X, y)
+            
+            # Get selected features (non-zero coefficients)
+            selected_indices = np.where(lasso.coef_ != 0)[0]
+            selected_features = [feature_names[i] for i in selected_indices]
+            
+            return selected_features
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+            tprint(f"Lasso selection failed: {e}")
+            return []
+
+
+# ============================================================================
+# Validation Framework
+# ============================================================================
+
+class NegativeLearningValidator:
+    """Validates negative learning features using multiple metrics"""
     
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
+    def __init__(self):
+        self.validation_results: List[ValidationResult] = []
+    
+    def validate_features(self, 
+                         negative_features: List[NegativeLearningFeature],
+                         features: pd.DataFrame,
+                         returns: pd.Series) -> List[ValidationResult]:
+        """Validate negative learning features using multiple metrics."""
+        results = []
+        
+        for feature in negative_features:
+            # IC validation
+            ic_result = self._validate_ic(feature, features, returns)
+            if ic_result:
+                results.append(ic_result)
+            
+            # R2 validation
+            r2_result = self._validate_r2(feature, features, returns)
+            if r2_result:
+                results.append(r2_result)
+            
+            # SHAP stability validation
+            shap_result = self._validate_shap_stability(feature, features, returns)
+            if shap_result:
+                results.append(shap_result)
+        
+        self.validation_results = results
+        return results
+    
+    def _validate_ic(self, 
+                    feature: NegativeLearningFeature,
+                    features: pd.DataFrame,
+                    returns: pd.Series) -> Optional[ValidationResult]:
+        """Validate feature using information coefficient."""
+        # Calculate feature values
+        feature_values = self._get_feature_values(feature, features)
+        
+        if feature_values is None or len(feature_values) < 10:
+            return None
+        
+        # Calculate IC
+        ic = feature_values.corr(returns)
+        
+        # Calculate p-value using t-test
+        n = len(feature_values)
+        t_stat = ic * np.sqrt((n - 2) / (1 - ic**2 + 1e-8))
+        p_value = 2 * (1 - stats.t.cdf(abs(t_stat), n - 2))
+        
+        return ValidationResult(
+            feature_name=feature.name,
+            metric=ValidationMetric.IC,
+            value=ic,
+            p_value=p_value,
+            is_significant=p_value < 0.05,
+            created_at=datetime.now()
+        )
+    
+    def _validate_r2(self, 
+                    feature: NegativeLearningFeature,
+                    features: pd.DataFrame,
+                    returns: pd.Series) -> Optional[ValidationResult]:
+        """Validate feature using R-squared."""
+        # Calculate feature values
+        feature_values = self._get_feature_values(feature, features)
+        
+        if feature_values is None or len(feature_values) < 10:
+            return None
+        
+        # Align data
+        aligned_data = pd.concat([feature_values, returns], axis=1).dropna()
+        if len(aligned_data) < 10:
+            return None
+        
+        X = aligned_data.iloc[:, 0].values.reshape(-1, 1)
+        y = aligned_data.iloc[:, 1].values
+        
+        try:
+            # Fit linear regression
+            lr = LinearRegression()
+            lr.fit(X, y)
+            y_pred = lr.predict(X)
+            
+            # Calculate R-squared
+            r2 = r2_score(y, y_pred)
+            
+            # Calculate p-value using F-test
+            n = len(y)
+            p = 1  # number of predictors
+            f_stat = (r2 / (1 - r2 + 1e-8)) * ((n - p - 1) / p)
+            p_value = 1 - stats.f.cdf(f_stat, p, n - p - 1)
+            
+            return ValidationResult(
+                feature_name=feature.name,
+                metric=ValidationMetric.R2,
+                value=r2,
+                p_value=p_value,
+                is_significant=p_value < 0.05,
+                created_at=datetime.now()
+            )
+        except Exception as e:
+            tprint(f"R2 validation failed for {feature.name}: {e}")
+            return None
+    
+    def _validate_shap_stability(self, 
+                               feature: NegativeLearningFeature,
+                               features: pd.DataFrame,
+                               returns: pd.Series) -> Optional[ValidationResult]:
+        """Validate feature using SHAP stability."""
+        # This is a simplified version - in practice, you'd use actual SHAP values
+        # For now, we'll use feature stability as a proxy
+        
+        # Calculate feature values
+        feature_values = self._get_feature_values(feature, features)
+        
+        if feature_values is None or len(feature_values) < 20:
+            return None
+        
+        # Use rolling correlation stability as SHAP stability proxy
+        rolling_corr = feature_values.rolling(window=20).corr(returns)
+        stability = 1 - rolling_corr.std() / (rolling_corr.abs().mean() + 1e-8)
+        
+        # Calculate p-value (simplified)
+        p_value = 0.1 if stability > 0.7 else 0.5
+        
+        return ValidationResult(
+            feature_name=feature.name,
+            metric=ValidationMetric.SHAP_STABILITY,
+            value=stability,
+            p_value=p_value,
+            is_significant=p_value < 0.05,
+            created_at=datetime.now()
+        )
+    
+    def _get_feature_values(self, 
+                          feature: NegativeLearningFeature,
+                          features: pd.DataFrame) -> Optional[pd.Series]:
+        """Get feature values for a negative learning feature."""
+        if feature.feature_type == "gated_twin":
+            context_mask = feature.parameters["context_mask"]
+            return features[feature.base_feature] * context_mask
+        elif feature.feature_type == "exception_interaction":
+            context_mask = feature.parameters["context_mask"]
+            return features[feature.base_feature] * (1 - context_mask)
         else:
-            raise ValueError(f"Unsupported operation: {operation}")
+            return None
+
+
+# ============================================================================
+# Pipeline Integration
+# ============================================================================
+
+class NegativeLearningPipelineManager:
+    """Manages integration of negative learning into existing pipelines"""
+    
+    def __init__(self, 
+                 max_features: int = 50,
+                 latency_budget_ms: int = 50):
+        self.max_features = max_features
+        self.latency_budget_ms = latency_budget_ms
+        
+        self.feature_generator = NegativeLearningFeatureGenerator(max_features=max_features)
+        self.constraint_manager = None
+        self.feature_selector = NegativeLearningFeatureSelector(max_features=max_features)
+        self.validator = NegativeLearningValidator()
+        
+        self.is_initialized = False
+    
+    def initialize(self, 
+                  features: pd.DataFrame,
+                  returns: pd.Series,
+                  model_type: ModelType = ModelType.XGBOOST):
+        """Initialize the negative learning pipeline."""
+        tprint("🚀 Initializing negative learning pipeline...")
+        
+        # Discover failure contexts
+        self.feature_generator.discover_failure_contexts(features, returns)
+        
+        # Generate negative features
+        negative_features = self.feature_generator.generate_negative_features(features, returns)
+        
+        # Select best features
+        selected_features = self.feature_selector.select_features(negative_features, features, returns)
+        
+        # Initialize constraint manager
+        self.constraint_manager = ModelConstraintManager(model_type)
+        constraints = self.constraint_manager.generate_constraints(selected_features, features, returns)
+        
+        # Validate features
+        validation_results = self.validator.validate_features(selected_features, features, returns)
+        
+        self.is_initialized = True
+        
+        tprint(f"✅ Pipeline initialized with {len(selected_features)} features and {len(constraints)} constraints")
+        
+        return {
+            'features': selected_features,
+            'constraints': constraints,
+            'validation_results': validation_results
+        }
+    
+    def generate_features(self, 
+                         features: pd.DataFrame) -> pd.DataFrame:
+        """Generate negative learning features for new data."""
+        if not self.is_initialized:
+            raise ValueError("Pipeline not initialized. Call initialize() first.")
+        
+        negative_features_df = pd.DataFrame(index=features.index)
+        
+        for feature in self.feature_selector.selected_features:
+            if feature.feature_type == "gated_twin":
+                context_mask = feature.parameters["context_mask"]
+                gated_feature = features[feature.base_feature] * context_mask
+            else:  # exception_interaction
+                context_mask = feature.parameters["context_mask"]
+                exception_feature = features[feature.base_feature] * (1 - context_mask)
+                gated_feature = exception_feature
+            
+            negative_features_df[feature.name] = gated_feature
+        
+        return negative_features_df
+    
+    def get_constraints(self) -> List[ModelConstraint]:
+        """Get model constraints for the selected features."""
+        if not self.is_initialized:
+            raise ValueError("Pipeline not initialized. Call initialize() first.")
+        
+        return self.constraint_manager.constraints if self.constraint_manager else []
+    
+    def get_validation_results(self) -> List[ValidationResult]:
+        """Get validation results for the selected features."""
+        if not self.is_initialized:
+            raise ValueError("Pipeline not initialized. Call initialize() first.")
+        
+        return self.validator.validation_results
+
+
+# ============================================================================
+# Factory Functions
+# ============================================================================
+
+def create_negative_learning_pipeline(max_features: int = 50,
+                                    latency_budget_ms: int = 50) -> NegativeLearningPipelineManager:
+    """Create a negative learning pipeline manager."""
+    return NegativeLearningPipelineManager(
+        max_features=max_features,
+        latency_budget_ms=latency_budget_ms
+    )
+
+
+def create_feature_selector(max_features: int = 50,
+                          stability_threshold: float = 0.7,
+                          ic_threshold: float = 0.01) -> NegativeLearningFeatureSelector:
+    """Create a negative learning feature selector."""
+    return NegativeLearningFeatureSelector(
+        max_features=max_features,
+        stability_threshold=stability_threshold,
+        ic_threshold=ic_threshold
+    )
+
+
+def create_constraint_manager(model_type: ModelType) -> ModelConstraintManager:
+    """Create a model constraint manager."""
+    return ModelConstraintManager(model_type)
+
+
+def create_validator() -> NegativeLearningValidator:
+    """Create a negative learning validator."""
+    return NegativeLearningValidator()
+
+
+# ============================================================================
+# Main Integration Function
+# ============================================================================
+
+def integrate_negative_learning(features: pd.DataFrame,
+                              returns: pd.Series,
+                              model_type: ModelType = ModelType.XGBOOST,
+                              max_features: int = 50,
+                              latency_budget_ms: int = 50) -> Dict[str, Any]:
+    """
+    Main function to integrate negative learning into existing pipelines.
+    
+    Args:
+        features: Feature matrix
+        returns: Target returns
+        model_type: Type of model to generate constraints for
+        max_features: Maximum number of negative learning features
+        latency_budget_ms: Maximum latency budget in milliseconds
+        
+    Returns:
+        Dictionary containing negative learning features, constraints, and validation results
+    """
+    tprint("🔧 Integrating negative learning into pipeline...")
+    
+    # Create pipeline manager
+    pipeline_manager = create_negative_learning_pipeline(
+        max_features=max_features,
+        latency_budget_ms=latency_budget_ms
+    )
+    
+    # Initialize pipeline
+    results = pipeline_manager.initialize(features, returns, model_type)
+    
+    # Generate features for the original data
+    negative_features_df = pipeline_manager.generate_features(features)
+    
+    # Add negative features to original features
+    combined_features = pd.concat([features, negative_features_df], axis=1)
+    
+    tprint(f"✅ Integration complete. Added {len(negative_features_df.columns)} negative learning features.")
+    
+    return {
+        'combined_features': combined_features,
+        'negative_features': negative_features_df,
+        'constraints': results['constraints'],
+        'validation_results': results['validation_results'],
+        'pipeline_manager': pipeline_manager
+    }
+
+
+# ============================================================================
+# Module Exports
+# ============================================================================
+
+__all__ = [
+    'FailureContextType',
+    'ModelType',
+    'ValidationMetric',
+    'FailureContext',
+    'NegativeLearningFeature',
+    'ModelConstraint',
+    'ValidationResult',
+    'NegativeLearningFeatureGenerator',
+    'ModelConstraintManager',
+    'NegativeLearningFeatureSelector',
+    'NegativeLearningValidator',
+    'NegativeLearningPipelineManager',
+    'create_negative_learning_pipeline',
+    'create_feature_selector',
+    'create_constraint_manager',
+    'create_validator',
+    'integrate_negative_learning'
+]

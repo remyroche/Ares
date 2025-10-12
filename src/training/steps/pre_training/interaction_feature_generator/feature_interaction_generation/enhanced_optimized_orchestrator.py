@@ -59,6 +59,42 @@ except ImportError:
     generate_vectorbt_features = None
     create_vectorbt_config = None
 
+# Import VectorBT rolling optimizer and unified vectorization manager
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
+        optimized_rolling_quantile, optimized_rolling_apply,
+        optimized_rolling_corr, optimized_rolling_cov
+    )
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager,
+        OperationType, OptimizationStrategy, optimize_financial_operation
+    )
+    VECTORBT_ROLLING_AVAILABLE = True
+    tprint_success("✅ VectorBT rolling optimizations imported successfully")
+except ImportError as e:
+    VECTORBT_ROLLING_AVAILABLE = False
+    tprint_warning(f"⚠️ VectorBT rolling optimizations not available: {e}")
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    optimized_rolling_mean = None
+    optimized_rolling_std = None
+    optimized_rolling_var = None
+    optimized_rolling_min = None
+    optimized_rolling_max = None
+    optimized_rolling_sum = None
+    optimized_rolling_quantile = None
+    optimized_rolling_apply = None
+    optimized_rolling_corr = None
+    optimized_rolling_cov = None
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+    OperationType = None
+    OptimizationStrategy = None
+    optimize_financial_operation = None
+
 # Import existing utilities for backward compatibility - fast-fail
 from src.feature_generation.core.feature_cache import FeatureCacheService
 from src.feature_generation.core.feature_bank import FeatureBank
@@ -129,6 +165,13 @@ class EnhancedOptimizedConfig:
     vectorbt_memory_limit_gb: float = 8.0
     vectorbt_enable_parallel: bool = True
     
+    # VectorBT rolling operations optimization
+    enable_vectorbt_rolling: bool = True
+    vectorbt_rolling_window_threshold: int = 1000  # Use VectorBT for windows >= this size
+    vectorbt_correlation_threshold: int = 500  # Use VectorBT for correlation with >= this data points
+    vectorbt_rolling_use_gpu: bool = True
+    vectorbt_rolling_parallel: bool = True
+    
     # Performance monitoring
     enable_performance_monitoring: bool = True
     log_level: str = "INFO"
@@ -181,6 +224,17 @@ class EnhancedOptimizedInteractionOrchestrator:
         self.start_time = 0.0
         self.stage_times = {}
         self.performance_metrics = {}
+        
+        # VectorBT performance tracking
+        self.vectorbt_performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'total_operations': 0,
+            'total_time': 0.0,
+            'memory_optimizations': 0,
+            'gpu_operations': 0,
+            'parallel_operations': 0
+        }
         
         tprint_success("🚀 Enhanced Optimized Interaction Orchestrator initialized")
         tprint_info(f"📊 Max workers: {self.config.max_workers}")
@@ -257,7 +311,78 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             self.dag_executor = None
         
+        # Initialize VectorBT optimizations
+        self._initialize_vectorbt_optimizations()
+        
         tprint_success("✅ All optimization components initialized")
+    
+    def _initialize_vectorbt_optimizations(self):
+        """Initialize VectorBT optimization components."""
+        if not VECTORBT_ROLLING_AVAILABLE:
+            tprint_warning("⚠️ VectorBT rolling optimizations not available, using fallback methods")
+            self.vectorbt_rolling_optimizer = None
+            self.unified_vectorization_manager = None
+            return
+
+        tprint_debug("🔧 Initializing VectorBT rolling optimizations...")
+
+        try:
+            # Initialize VectorBT rolling optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                enable_gpu=self.config.vectorbt_rolling_use_gpu,
+                enable_parallel=self.config.vectorbt_rolling_parallel
+            )
+            tprint_success("✅ VectorBT rolling optimizer initialized")
+
+            # Initialize unified vectorization manager
+            self.unified_vectorization_manager = get_unified_vectorization_manager()
+            tprint_success("✅ Unified vectorization manager initialized")
+
+            # Configure VectorBT settings
+            if hasattr(self.vectorbt_rolling_optimizer, 'chunk_size'):
+                self.vectorbt_rolling_optimizer.chunk_size = self.config.vectorbt_chunk_size
+            
+            tprint_info(f"🚀 VectorBT rolling optimizations configured:")
+            tprint_info(f"   → GPU acceleration: {'✅' if self.config.vectorbt_rolling_use_gpu else '❌'}")
+            tprint_info(f"   → Parallel processing: {'✅' if self.config.vectorbt_rolling_parallel else '❌'}")
+            tprint_info(f"   → Window threshold: {self.config.vectorbt_rolling_window_threshold:,}")
+            tprint_info(f"   → Correlation threshold: {self.config.vectorbt_correlation_threshold:,}")
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize VectorBT rolling optimizations: {e}")
+            self.vectorbt_rolling_optimizer = None
+            self.unified_vectorization_manager = None
+    
+    def _track_vectorbt_performance(self, operation_type: str, execution_time: float, 
+                                  vectorbt_used: bool = False, gpu_used: bool = False, 
+                                  parallel_used: bool = False):
+        """Track VectorBT performance metrics."""
+        self.vectorbt_performance_stats['total_operations'] += 1
+        self.vectorbt_performance_stats['total_time'] += execution_time
+        
+        if vectorbt_used:
+            self.vectorbt_performance_stats['vectorbt_operations'] += 1
+        else:
+            self.vectorbt_performance_stats['pandas_fallbacks'] += 1
+        
+        if gpu_used:
+            self.vectorbt_performance_stats['gpu_operations'] += 1
+        
+        if parallel_used:
+            self.vectorbt_performance_stats['parallel_operations'] += 1
+    
+    def _get_vectorbt_performance_summary(self) -> Dict[str, Any]:
+        """Get VectorBT performance summary."""
+        stats = self.vectorbt_performance_stats.copy()
+        
+        if stats['total_operations'] > 0:
+            stats['avg_time_per_operation'] = stats['total_time'] / stats['total_operations']
+            stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_operations']
+            stats['pandas_fallback_rate'] = stats['pandas_fallbacks'] / stats['total_operations']
+            stats['gpu_usage_rate'] = stats['gpu_operations'] / stats['total_operations']
+            stats['parallel_usage_rate'] = stats['parallel_operations'] / stats['total_operations']
+        
+        return stats
     
     def _create_optimized_dag(self) -> DAGExecutor:
         """Create an optimized DAG for the pipeline."""
@@ -484,25 +609,45 @@ class EnhancedOptimizedInteractionOrchestrator:
         tprint_debug(f"🔍 Input data columns: {list(data.columns)}")
         tprint_debug(f"🔍 Data types: {data.dtypes.to_dict()}")
         
-        # Use improved feature generation with fast-fail validation
-        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
-        
-        # Create feature generation config
-        feature_config = FeatureGenerationConfig(
-            enable_technical_indicators=True,
-            enable_rolling_stats=True,
-            enable_interaction_features=False,  # Will be done in interaction stage
-            enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
-            rolling_windows=[5, 10, 20, 50, 100],
-            max_interactions=50,
-            min_valid_ratio=0.8,  # Require 80% valid values
-            max_constant_ratio=0.1  # Allow max 10% constant features
+        # Use VectorBT optimized feature generation with fast-fail validation
+        from .vectorbt_optimized_feature_generator import (
+            VectorBTOptimizedFeatureGenerator, VectorBTFeatureConfig,
+            generate_vectorbt_features
         )
         
-        # Generate base features using improved generator with VectorBT - fast-fail on error
+        # Create VectorBT feature generation config
+        vectorbt_config = VectorBTFeatureConfig(
+            enable_vectorbt_rolling=self.config.enable_vectorbt_rolling,
+            vectorbt_window_threshold=self.config.vectorbt_rolling_window_threshold,
+            vectorbt_correlation_threshold=self.config.vectorbt_correlation_threshold,
+            enable_gpu=self.config.vectorbt_rolling_use_gpu,
+            enable_parallel=self.config.vectorbt_rolling_parallel,
+            chunk_size=self.config.vectorbt_chunk_size,
+            memory_limit_gb=self.config.vectorbt_memory_limit_gb,
+            rolling_windows=[5, 10, 20, 50, 100, 200],
+            quantile_levels=[0.25, 0.5, 0.75, 0.9, 0.95]
+        )
+        
+        # Generate base features using VectorBT optimized generator - fast-fail on error
         try:
-            feature_generator = ImprovedFeatureGenerator(feature_config)
-            generated_features = feature_generator.generate_meaningful_features(data)
+            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
+                tprint_info("🚀 Using VectorBT optimized feature generation")
+                generated_features = generate_vectorbt_features(data, vectorbt_config)
+            else:
+                tprint_info("⚠️ Using fallback feature generation (VectorBT not available)")
+                from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+                feature_config = FeatureGenerationConfig(
+                    enable_technical_indicators=True,
+                    enable_rolling_stats=True,
+                    enable_interaction_features=False,  # Will be done in interaction stage
+                    enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
+                    rolling_windows=[5, 10, 20, 50, 100],
+                    max_interactions=50,
+                    min_valid_ratio=0.8,  # Require 80% valid values
+                    max_constant_ratio=0.1  # Allow max 10% constant features
+                )
+                feature_generator = ImprovedFeatureGenerator(feature_config)
+                generated_features = feature_generator.generate_meaningful_features(data)
         except Exception as e:
             raise RuntimeError(f"CRITICAL: Feature generation failed: {e}")
         
@@ -616,24 +761,46 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Use improved interaction feature generation with fast-fail validation
-        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
-        
-        # Create feature generation config for interactions
-        feature_config = FeatureGenerationConfig(
-            enable_technical_indicators=False,
-            enable_rolling_stats=False,
-            enable_interaction_features=True,
-            enable_cross_timeframe=False,
-            max_interactions=50,
-            interaction_types=['ratio', 'product', 'difference', 'sum'],
-            min_valid_ratio=0.8,  # Require 80% valid values
-            max_constant_ratio=0.1  # Allow max 10% constant features
+        # Use VectorBT optimized interaction feature generation with fast-fail validation
+        from .vectorbt_optimized_feature_generator import (
+            VectorBTOptimizedFeatureGenerator, VectorBTFeatureConfig
         )
         
-        # Generate interaction features using improved generator - fast-fail on error
-        feature_generator = ImprovedFeatureGenerator(feature_config)
-        interaction_features = feature_generator.generate_interaction_features(features)
+        # Create VectorBT feature generation config for interactions
+        vectorbt_config = VectorBTFeatureConfig(
+            enable_vectorbt_rolling=self.config.enable_vectorbt_rolling,
+            vectorbt_window_threshold=self.config.vectorbt_rolling_window_threshold,
+            vectorbt_correlation_threshold=self.config.vectorbt_correlation_threshold,
+            enable_gpu=self.config.vectorbt_rolling_use_gpu,
+            enable_parallel=self.config.vectorbt_rolling_parallel,
+            chunk_size=self.config.vectorbt_chunk_size,
+            memory_limit_gb=self.config.vectorbt_memory_limit_gb
+        )
+        
+        # Generate interaction features using VectorBT optimized generator - fast-fail on error
+        try:
+            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
+                tprint_info("🚀 Using VectorBT optimized interaction feature generation")
+                feature_generator = VectorBTOptimizedFeatureGenerator(vectorbt_config)
+                interaction_features = feature_generator.generate_interaction_features(features)
+            else:
+                tprint_info("⚠️ Using fallback interaction feature generation (VectorBT not available)")
+                from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+                feature_config = FeatureGenerationConfig(
+                    enable_technical_indicators=False,
+                    enable_rolling_stats=False,
+                    enable_interaction_features=True,
+                    enable_cross_timeframe=False,
+                    max_interactions=50,
+                    interaction_types=['ratio', 'product', 'difference', 'sum'],
+                    min_valid_ratio=0.8,  # Require 80% valid values
+                    max_constant_ratio=0.1  # Allow max 10% constant features
+                )
+                feature_generator = ImprovedFeatureGenerator(feature_config)
+                interaction_features = feature_generator.generate_interaction_features(features)
+        except Exception as e:
+            tprint_warning(f"⚠️ Interaction feature generation failed: {e}")
+            interaction_features = pd.DataFrame(index=features.index)
         
         # CRITICAL: Fast-fail if no interaction features generated
         if interaction_features.empty or len(interaction_features.columns) == 0:
@@ -713,23 +880,46 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Use improved cross-timeframe feature generation with fast-fail validation
-        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
-        
-        # Create feature generation config for cross-timeframe
-        feature_config = FeatureGenerationConfig(
-            enable_technical_indicators=False,
-            enable_rolling_stats=False,
-            enable_interaction_features=False,
-            enable_cross_timeframe=True,
-            cross_timeframe_periods=[5, 15, 30, 60],
-            min_valid_ratio=0.8,  # Require 80% valid values
-            max_constant_ratio=0.1  # Allow max 10% constant features
+        # Use VectorBT optimized cross-timeframe feature generation with fast-fail validation
+        from .vectorbt_optimized_feature_generator import (
+            VectorBTOptimizedFeatureGenerator, VectorBTFeatureConfig
         )
         
-        # Generate cross-timeframe features using improved generator - fast-fail on error
-        feature_generator = ImprovedFeatureGenerator(feature_config)
-        cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+        # Create VectorBT feature generation config for cross-timeframe
+        vectorbt_config = VectorBTFeatureConfig(
+            enable_vectorbt_rolling=self.config.enable_vectorbt_rolling,
+            vectorbt_window_threshold=self.config.vectorbt_rolling_window_threshold,
+            vectorbt_correlation_threshold=self.config.vectorbt_correlation_threshold,
+            enable_gpu=self.config.vectorbt_rolling_use_gpu,
+            enable_parallel=self.config.vectorbt_rolling_parallel,
+            chunk_size=self.config.vectorbt_chunk_size,
+            memory_limit_gb=self.config.vectorbt_memory_limit_gb,
+            rolling_windows=[5, 15, 30, 60]  # Cross-timeframe periods
+        )
+        
+        # Generate cross-timeframe features using VectorBT optimized generator - fast-fail on error
+        try:
+            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
+                tprint_info("🚀 Using VectorBT optimized cross-timeframe feature generation")
+                feature_generator = VectorBTOptimizedFeatureGenerator(vectorbt_config)
+                cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+            else:
+                tprint_info("⚠️ Using fallback cross-timeframe feature generation (VectorBT not available)")
+                from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+                feature_config = FeatureGenerationConfig(
+                    enable_technical_indicators=False,
+                    enable_rolling_stats=False,
+                    enable_interaction_features=False,
+                    enable_cross_timeframe=True,
+                    cross_timeframe_periods=[5, 15, 30, 60],
+                    min_valid_ratio=0.8,  # Require 80% valid values
+                    max_constant_ratio=0.1  # Allow max 10% constant features
+                )
+                feature_generator = ImprovedFeatureGenerator(feature_config)
+                cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+        except Exception as e:
+            tprint_warning(f"⚠️ Cross-timeframe feature generation failed: {e}")
+            cross_timeframe_features = pd.DataFrame(index=features.index)
         
         # CRITICAL: Fast-fail if no cross-timeframe features generated
         if cross_timeframe_features.empty or len(cross_timeframe_features.columns) == 0:
@@ -1002,6 +1192,9 @@ class EnhancedOptimizedInteractionOrchestrator:
             memory_usage = self.memory_processor.get_memory_usage()
             cache_stats = self.cache.get_stats() if self.cache else {'hit_rate': 0.0}
             
+            # Get VectorBT performance statistics
+            vectorbt_stats = self._get_vectorbt_performance_summary()
+            
             # Create result
             result = OptimizedInteractionResult(
                 features=final_features,
@@ -1019,6 +1212,7 @@ class EnhancedOptimizedInteractionOrchestrator:
                 pipeline_metadata={
                     'memory_usage': memory_usage,
                     'cache_stats': cache_stats,
+                    'vectorbt_performance': vectorbt_stats,
                     'config': self.config.__dict__
                 }
             )
@@ -1027,6 +1221,14 @@ class EnhancedOptimizedInteractionOrchestrator:
             tprint_info(f"📊 Generated {len(final_features.columns)} features")
             tprint_info(f"💾 Memory usage: {memory_usage.get('rss_mb', 0.0):.1f} MB")
             tprint_info(f"📈 Cache hit rate: {cache_stats.get('hit_rate', 0.0):.1%}")
+            
+            # Log VectorBT performance statistics
+            if vectorbt_stats['total_operations'] > 0:
+                tprint_info(f"🚀 VectorBT performance:")
+                tprint_info(f"   → VectorBT usage rate: {vectorbt_stats.get('vectorbt_usage_rate', 0.0):.1%}")
+                tprint_info(f"   → GPU usage rate: {vectorbt_stats.get('gpu_usage_rate', 0.0):.1%}")
+                tprint_info(f"   → Parallel usage rate: {vectorbt_stats.get('parallel_usage_rate', 0.0):.1%}")
+                tprint_info(f"   → Avg time per operation: {vectorbt_stats.get('avg_time_per_operation', 0.0):.3f}s")
             
             return result
             

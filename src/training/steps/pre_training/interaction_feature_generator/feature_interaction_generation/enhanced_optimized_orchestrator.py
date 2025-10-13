@@ -1019,11 +1019,11 @@ class EnhancedOptimizedInteractionOrchestrator:
             return pd.DataFrame(index=features.index)
     
     async def _interaction_pruning_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Enhanced interaction pruning stage with multiple pruning strategies."""
+        """Enhanced interaction pruning stage using final_feature_selection pipeline."""
         if not self.interaction_pruning:
             return {'status': 'skipped', 'reason': 'disabled'}
         
-        tprint_debug("✂️ Enhanced interaction pruning stage...")
+        tprint_debug("✂️ Enhanced interaction pruning stage using final_feature_selection pipeline...")
         
         # Get interaction features
         if 'interaction_features' in context.pipeline_state:
@@ -1053,10 +1053,10 @@ class EnhancedOptimizedInteractionOrchestrator:
         if len(feature_names) == 0:
             return {'status': 'skipped', 'reason': 'no_features_after_target_removal'}
         
-        # Apply enhanced pruning with multiple strategies
+        # Apply final_feature_selection pipeline
         try:
-            pruned_features = await self._apply_enhanced_interaction_pruning(
-                features, target, feature_names, context.pipeline_state
+            pruned_features = await self._apply_final_feature_selection_pipeline(
+                features, target_column, context.pipeline_state
             )
             
             # Update context with pruned features
@@ -1064,7 +1064,7 @@ class EnhancedOptimizedInteractionOrchestrator:
             context.pipeline_state['interaction_pruning_result'] = {
                 'selected_interactions': list(pruned_features.columns),
                 'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
-                'pruning_method': 'enhanced_multi_strategy'
+                'pruning_method': 'final_feature_selection_pipeline'
             }
             
             return {
@@ -1072,13 +1072,109 @@ class EnhancedOptimizedInteractionOrchestrator:
                 'selected_interactions': len(pruned_features.columns),
                 'rejected_interactions': len(feature_names) - len(pruned_features.columns),
                 'selection_rate': len(pruned_features.columns) / len(feature_names) if feature_names else 0.0,
-                'method': 'enhanced_multi_strategy'
+                'method': 'final_feature_selection_pipeline'
             }
             
         except Exception as e:
-            tprint_error(f"❌ Enhanced interaction pruning failed: {e}")
+            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
             # Fallback to basic pruning
             return await self._basic_interaction_pruning(features, target, feature_names, context)
+    
+    async def _apply_final_feature_selection_pipeline(self, features: pd.DataFrame, 
+                                                    target_column: str, 
+                                                    pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+        """Apply the final_feature_selection pipeline for interaction pruning."""
+        try:
+            from src.training.steps.market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
+            
+            tprint_debug("🔧 Applying final_feature_selection pipeline for interaction pruning...")
+            
+            # Initialize the optimized feature selection engine
+            selection_engine = OptimizedFeatureSelectionEngine(
+                use_hardware_accel=True,
+                cache_size=1000,
+                use_vectorbt=True
+            )
+            
+            # Define selection stages for interaction features
+            # More aggressive pruning for interactions since they can be numerous
+            selection_stages = [
+                min(50, len(features.columns) - 1),  # Stage 1: Keep top 50 or all if less
+                min(30, len(features.columns) - 1),  # Stage 2: Keep top 30 or all if less
+                min(15, len(features.columns) - 1)   # Stage 3: Keep top 15 or all if less
+            ]
+            
+            # Remove any stages that are not applicable
+            selection_stages = [stage for stage in selection_stages if stage > 0]
+            
+            if not selection_stages:
+                tprint_warning("⚠️ No valid selection stages for interaction pruning")
+                return features
+            
+            # Perform multi-stage feature selection
+            selection_result = selection_engine.select_features(
+                features_df=features,
+                target_column=target_column,
+                selection_stages=selection_stages
+            )
+            
+            if 'error' in selection_result:
+                tprint_error(f"❌ Feature selection failed: {selection_result['error']}")
+                return features
+            
+            # Extract final selected features
+            if 'final_features' in selection_result:
+                if isinstance(selection_result['final_features'], list):
+                    # If it's a list of feature names, select those columns
+                    selected_features = selection_result['final_features']
+                    if target_column not in selected_features:
+                        selected_features.append(target_column)
+                    pruned_features = features[selected_features]
+                else:
+                    # If it's already a DataFrame
+                    pruned_features = selection_result['final_features']
+            else:
+                # Fallback: use the last stage's results
+                selection_results = selection_result.get('selection_results', {})
+                if selection_results:
+                    last_stage = max(selection_results.keys(), key=lambda x: int(x.split('_')[1]))
+                    selected_features = selection_results[last_stage]['selected_features']
+                    pruned_features = features[selected_features]
+                else:
+                    tprint_warning("⚠️ No selection results found, returning original features")
+                    return features
+            
+            # Log selection statistics
+            total_stages = selection_result.get('total_stages_completed', 0)
+            tprint_success(f"✅ Final feature selection completed {total_stages} stages")
+            tprint_info(f"📊 Selected {len(pruned_features.columns)} features from {len(features.columns)}")
+            
+            # Store detailed results in pipeline state for debugging
+            pipeline_state['feature_selection_details'] = {
+                'selection_result': selection_result,
+                'original_feature_count': len(features.columns),
+                'final_feature_count': len(pruned_features.columns),
+                'reduction_ratio': len(pruned_features.columns) / len(features.columns)
+            }
+            
+            return pruned_features
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ OptimizedFeatureSelectionEngine not available: {e}")
+            # Fallback to basic pruning
+            return await self._apply_enhanced_interaction_pruning(
+                features, features[target_column], 
+                [col for col in features.columns if col != target_column], 
+                pipeline_state
+            )
+        except Exception as e:
+            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
+            # Fallback to basic pruning
+            return await self._apply_enhanced_interaction_pruning(
+                features, features[target_column], 
+                [col for col in features.columns if col != target_column], 
+                pipeline_state
+            )
     
     async def _apply_enhanced_interaction_pruning(self, features: pd.DataFrame, target: pd.Series, 
                                                 feature_names: List[str], pipeline_state: Dict[str, Any]) -> pd.DataFrame:

@@ -89,7 +89,12 @@ except ImportError:
 
 
 class MultiStageFeatureSelector:
-    """Multi-stage feature selection using RandomForest and SHAP with vectorization and caching."""
+    """
+    Multi-stage feature selection using RandomForest and SHAP with vectorization and caching.
+    
+    DEPRECATED: Use MultiStageFeatureSelectionPipeline instead for new code.
+    This class is maintained for backward compatibility.
+    """
 
     def __init__(self, config: Optional[FeatureSelectionConfig] = None, execution_mode_config: Optional[Dict[str, Any]] = None):
         self.config = config or FeatureSelectionConfig()

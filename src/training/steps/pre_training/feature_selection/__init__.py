@@ -19,6 +19,11 @@ from .core import (
     FeatureSelectionResult
 )
 
+from .core.multi_stage_pipeline import (
+    MultiStageFeatureSelectionPipeline,
+    run_multi_stage_feature_selection
+)
+
 from .hardware import (
     MemoryManager,
     VectorBTManager,
@@ -60,26 +65,17 @@ def run_final_feature_selection(
     Returns:
         FeatureSelectionResult with selected features
     """
-    from .core.pipeline import MultiStageFeatureSelector
     from .core.config import FeatureSelectionConfig
     
-    # Load configuration
-    config_loader = ConfigLoader()
-    config_result = config_loader.load_config('feature_selection', 'default')
-    
-    if not config_result.success:
-        raise ValueError(f"Failed to load configuration: {config_result.error_message}")
-    
     # Create feature selection config
-    fs_config = FeatureSelectionConfig(**config_result.config)
+    fs_config = FeatureSelectionConfig()
+    if config:
+        for key, value in config.items():
+            if hasattr(fs_config, key):
+                setattr(fs_config, key, value)
     
-    # Initialize selector
-    selector = MultiStageFeatureSelector(fs_config)
-    
-    # Run feature selection
-    result = selector.select_features(X, y, symbol, exchange, timeframe)
-    
-    return result
+    # Use the new pipeline
+    return run_multi_stage_feature_selection(X, y, symbol, exchange, timeframe, fs_config)
 
 __all__ = [
     # Core modules
@@ -88,6 +84,10 @@ __all__ = [
     'FeatureSelectionOptimizer',
     'FeatureSelectionConfig',
     'FeatureSelectionResult',
+    
+    # New pipeline
+    'MultiStageFeatureSelectionPipeline',
+    'run_multi_stage_feature_selection',
     
     # Hardware modules
     'MemoryManager',

@@ -202,31 +202,72 @@ class RealReportingEngine:
                 metrics.setdefault('total_return', calculated_total_return)
                 metrics.setdefault('annualized_return', (1 + metrics['total_return']) ** (252 / len(equity_curve)) - 1)
                 
-                # Use VectorBT for volatility calculation
+                # Use VectorBT for enhanced volatility calculation
                 if len(returns) > 0:
-                    rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=min(20, len(returns)))
+                    window_size = min(20, len(returns))
+                    
+                    # Calculate rolling volatility using VectorBT
+                    rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=window_size)
                     metrics.setdefault('volatility', rolling_vol.mean() * np.sqrt(252))
                     metrics.setdefault('rolling_volatility', rolling_vol.iloc[-1] * np.sqrt(252) if not rolling_vol.empty else 0)
+                    
+                    # Calculate additional volatility metrics
+                    rolling_vol_std = self.vectorbt_optimizer.rolling_std(rolling_vol, window=min(10, len(rolling_vol)))
+                    metrics.setdefault('volatility_of_volatility', rolling_vol_std.mean() * np.sqrt(252) if not rolling_vol_std.empty else 0)
+                    
                 else:
                     metrics.setdefault('volatility', 0)
                     metrics.setdefault('rolling_volatility', 0)
+                    metrics.setdefault('volatility_of_volatility', 0)
                 
                 volatility = metrics.get('volatility', 0)
                 annualized_return = metrics.get('annualized_return', 0)
                 metrics.setdefault('sharpe_ratio', annualized_return / volatility if volatility > 0 else 0)
                 
-                # Enhanced VectorBT metrics
+                # Enhanced VectorBT metrics with comprehensive risk analysis
                 if len(returns) > 10:
-                    # Rolling Sharpe ratio
-                    rolling_sharpe = self.vectorbt_optimizer.rolling_mean(returns, window=min(20, len(returns))) / \
-                                   self.vectorbt_optimizer.rolling_std(returns, window=min(20, len(returns)))
-                    metrics.setdefault('rolling_sharpe_ratio', rolling_sharpe.mean())
+                    window_size = min(20, len(returns))
                     
-                    # Rolling Calmar ratio
-                    rolling_max = self.vectorbt_optimizer.rolling_max(equity_series, window=min(20, len(equity_series)))
+                    # Rolling Sharpe ratio using VectorBT
+                    rolling_mean = self.vectorbt_optimizer.rolling_mean(returns, window=window_size)
+                    rolling_std = self.vectorbt_optimizer.rolling_std(returns, window=window_size)
+                    rolling_sharpe = rolling_mean / rolling_std
+                    metrics.setdefault('rolling_sharpe_ratio', rolling_sharpe.mean())
+                    metrics.setdefault('rolling_sharpe_std', rolling_sharpe.std())
+                    
+                    # Rolling Calmar ratio using VectorBT
+                    rolling_max = self.vectorbt_optimizer.rolling_max(equity_series, window=window_size)
                     rolling_drawdown = (equity_series - rolling_max) / rolling_max
                     rolling_max_dd = rolling_drawdown.min()
                     metrics.setdefault('rolling_calmar_ratio', annualized_return / abs(rolling_max_dd) if rolling_max_dd != 0 else 0)
+                    
+                    # Rolling Sortino ratio using VectorBT
+                    downside_returns = returns[returns < 0]
+                    if len(downside_returns) > 0:
+                        downside_series = pd.Series(downside_returns)
+                        rolling_downside_std = self.vectorbt_optimizer.rolling_std(downside_series, window=window_size)
+                        rolling_sortino = rolling_mean / rolling_downside_std
+                        metrics.setdefault('rolling_sortino_ratio', rolling_sortino.mean())
+                    
+                    # Rolling skewness and kurtosis for tail risk analysis
+                    rolling_skew = self.vectorbt_optimizer.rolling_skew(returns, window=window_size)
+                    rolling_kurt = self.vectorbt_optimizer.rolling_kurt(returns, window=window_size)
+                    metrics.setdefault('rolling_skewness', rolling_skew.mean())
+                    metrics.setdefault('rolling_kurtosis', rolling_kurt.mean())
+                    
+                    # Rolling VaR calculations
+                    var_95 = self.vectorbt_optimizer.rolling_quantile(returns, window=window_size, q=0.05)
+                    var_99 = self.vectorbt_optimizer.rolling_quantile(returns, window=window_size, q=0.01)
+                    metrics.setdefault('rolling_var_95', var_95.mean())
+                    metrics.setdefault('rolling_var_99', var_99.mean())
+                    
+                    # Rolling correlation with time for trend analysis
+                    time_index = pd.Series(range(len(returns)), index=returns.index)
+                    rolling_correlation = self.vectorbt_optimizer.rolling_corr(returns, time_index, window=window_size)
+                    metrics.setdefault('trend_correlation', rolling_correlation.mean())
+                    
+                    # Update VectorBT performance stats
+                    self.performance_stats['vectorbt_operations'] += 10
 
                 # Drawdown analysis
                 peak = np.maximum.accumulate(equity_curve)

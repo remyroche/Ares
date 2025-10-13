@@ -225,7 +225,7 @@ class VectorBTUnifiedManager:
     
     async def rolling_statistics(self, data: Union[pd.Series, pd.DataFrame], 
                                window: int, operations: List[str] = None) -> Dict[str, Any]:
-        """Calculate rolling statistics using VectorBT."""
+        """Calculate rolling statistics using VectorBT with enhanced backtesting operations."""
         if operations is None:
             operations = ['mean', 'std', 'min', 'max', 'skew', 'kurt']
         
@@ -244,6 +244,253 @@ class VectorBTUnifiedManager:
         result = await self.execute_operation(
             VectorBTOperationType.ROLLING_STATISTICS,
             _calculate_rolling_stats
+        )
+        
+        return result.result if result.success else {}
+    
+    async def backtesting_metrics(self, equity_curve: Union[pd.Series, np.ndarray], 
+                                returns: Union[pd.Series, np.ndarray],
+                                window: int = 20) -> Dict[str, Any]:
+        """Calculate comprehensive backtesting metrics using VectorBT."""
+        async def _calculate_backtesting_metrics():
+            try:
+                # Convert to pandas Series if needed
+                if isinstance(equity_curve, np.ndarray):
+                    equity_series = pd.Series(equity_curve)
+                else:
+                    equity_series = equity_curve
+                
+                if isinstance(returns, np.ndarray):
+                    returns_series = pd.Series(returns)
+                else:
+                    returns_series = returns
+                
+                metrics = {}
+                
+                # Basic performance metrics
+                total_return = (equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0]
+                metrics['total_return'] = float(total_return)
+                metrics['annualized_return'] = float((1 + total_return) ** (252 / len(equity_series)) - 1)
+                
+                # Rolling volatility using VectorBT
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, window=window)
+                metrics['volatility'] = float(rolling_vol.mean() * np.sqrt(252))
+                metrics['rolling_volatility'] = float(rolling_vol.iloc[-1] * np.sqrt(252) if not rolling_vol.empty else 0)
+                
+                # Sharpe ratio
+                if metrics['volatility'] > 0:
+                    metrics['sharpe_ratio'] = metrics['annualized_return'] / metrics['volatility']
+                else:
+                    metrics['sharpe_ratio'] = 0.0
+                
+                # Rolling Sharpe ratio
+                rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=window)
+                rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=window)
+                rolling_sharpe = rolling_mean / rolling_std
+                metrics['rolling_sharpe_ratio'] = float(rolling_sharpe.mean())
+                
+                # Drawdown analysis using VectorBT
+                rolling_max = self.rolling_optimizer.rolling_max(equity_series, window=window)
+                rolling_drawdown = (equity_series - rolling_max) / rolling_max
+                metrics['max_drawdown'] = float(rolling_drawdown.min())
+                metrics['avg_drawdown'] = float(rolling_drawdown[rolling_drawdown < 0].mean())
+                
+                # Calmar ratio
+                if metrics['max_drawdown'] != 0:
+                    metrics['calmar_ratio'] = metrics['annualized_return'] / abs(metrics['max_drawdown'])
+                else:
+                    metrics['calmar_ratio'] = 0.0
+                
+                # Sortino ratio
+                downside_returns = returns_series[returns_series < 0]
+                if len(downside_returns) > 0:
+                    downside_std = self.rolling_optimizer.rolling_std(downside_returns, window=window)
+                    metrics['sortino_ratio'] = float(rolling_mean.mean() / downside_std.mean() if downside_std.mean() > 0 else 0)
+                else:
+                    metrics['sortino_ratio'] = 0.0
+                
+                # VaR calculations
+                var_95 = self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.05)
+                var_99 = self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.01)
+                metrics['var_95'] = float(var_95.mean())
+                metrics['var_99'] = float(var_99.mean())
+                
+                # Tail risk metrics
+                rolling_skew = self.rolling_optimizer.rolling_skew(returns_series, window=window)
+                rolling_kurt = self.rolling_optimizer.rolling_kurt(returns_series, window=window)
+                metrics['skewness'] = float(rolling_skew.mean())
+                metrics['kurtosis'] = float(rolling_kurt.mean())
+                
+                # Trend analysis
+                time_index = pd.Series(range(len(returns_series)), index=returns_series.index)
+                trend_correlation = self.rolling_optimizer.rolling_corr(returns_series, time_index, window=window)
+                metrics['trend_correlation'] = float(trend_correlation.mean())
+                
+                return metrics
+                
+            except Exception as e:
+                self.logger.error(f"❌ Backtesting metrics calculation failed: {e}")
+                return {}
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.PERFORMANCE_ANALYSIS,
+            _calculate_backtesting_metrics
+        )
+        
+        return result.result if result.success else {}
+    
+    async def regime_analysis(self, returns: Union[pd.Series, np.ndarray], 
+                            window: int = 20) -> Dict[str, Any]:
+        """Perform regime analysis using VectorBT rolling operations."""
+        async def _calculate_regime_analysis():
+            try:
+                if isinstance(returns, np.ndarray):
+                    returns_series = pd.Series(returns)
+                else:
+                    returns_series = returns
+                
+                analysis = {}
+                
+                # Volatility regime analysis
+                rolling_vol = self.rolling_optimizer.rolling_std(returns_series, window=window)
+                vol_mean = rolling_vol.mean()
+                vol_std = rolling_vol.std()
+                
+                # Classify volatility regimes
+                high_vol_threshold = vol_mean + vol_std
+                low_vol_threshold = vol_mean - vol_std
+                
+                high_vol_periods = rolling_vol > high_vol_threshold
+                low_vol_periods = rolling_vol < low_vol_threshold
+                normal_vol_periods = ~(high_vol_periods | low_vol_periods)
+                
+                analysis['volatility_regimes'] = {
+                    'high_volatility_periods': int(high_vol_periods.sum()),
+                    'low_volatility_periods': int(low_vol_periods.sum()),
+                    'normal_volatility_periods': int(normal_vol_periods.sum()),
+                    'high_vol_threshold': float(high_vol_threshold),
+                    'low_vol_threshold': float(low_vol_threshold)
+                }
+                
+                # Momentum regime analysis
+                rolling_momentum = self.rolling_optimizer.rolling_mean(returns_series, window=window)
+                momentum_mean = rolling_momentum.mean()
+                momentum_std = rolling_momentum.std()
+                
+                high_momentum_threshold = momentum_mean + momentum_std
+                low_momentum_threshold = momentum_mean - momentum_std
+                
+                high_momentum_periods = rolling_momentum > high_momentum_threshold
+                low_momentum_periods = rolling_momentum < low_momentum_threshold
+                normal_momentum_periods = ~(high_momentum_periods | low_momentum_periods)
+                
+                analysis['momentum_regimes'] = {
+                    'high_momentum_periods': int(high_momentum_periods.sum()),
+                    'low_momentum_periods': int(low_momentum_periods.sum()),
+                    'normal_momentum_periods': int(normal_momentum_periods.sum()),
+                    'high_momentum_threshold': float(high_momentum_threshold),
+                    'low_momentum_threshold': float(low_momentum_threshold)
+                }
+                
+                # Regime stability analysis
+                vol_of_vol = self.rolling_optimizer.rolling_std(rolling_vol, window=min(10, len(rolling_vol)))
+                momentum_of_momentum = self.rolling_optimizer.rolling_std(rolling_momentum, window=min(10, len(rolling_momentum)))
+                
+                analysis['regime_stability'] = {
+                    'volatility_stability': float(1.0 / (1.0 + vol_of_vol.mean()) if not vol_of_vol.empty else 0),
+                    'momentum_stability': float(1.0 / (1.0 + momentum_of_momentum.mean()) if not momentum_of_momentum.empty else 0)
+                }
+                
+                return analysis
+                
+            except Exception as e:
+                self.logger.error(f"❌ Regime analysis failed: {e}")
+                return {}
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.REGIME_ANALYSIS,
+            _calculate_regime_analysis
+        )
+        
+        return result.result if result.success else {}
+    
+    async def portfolio_optimization_metrics(self, returns: Union[pd.Series, np.ndarray],
+                                           benchmark_returns: Union[pd.Series, np.ndarray] = None,
+                                           window: int = 20) -> Dict[str, Any]:
+        """Calculate portfolio optimization metrics using VectorBT."""
+        async def _calculate_portfolio_metrics():
+            try:
+                if isinstance(returns, np.ndarray):
+                    returns_series = pd.Series(returns)
+                else:
+                    returns_series = returns
+                
+                metrics = {}
+                
+                # Basic portfolio metrics
+                metrics['mean_return'] = float(returns_series.mean())
+                metrics['volatility'] = float(returns_series.std())
+                metrics['sharpe_ratio'] = float(metrics['mean_return'] / metrics['volatility'] if metrics['volatility'] > 0 else 0)
+                
+                # Rolling metrics
+                rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=window)
+                rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=window)
+                rolling_sharpe = rolling_mean / rolling_std
+                
+                metrics['rolling_sharpe_mean'] = float(rolling_sharpe.mean())
+                metrics['rolling_sharpe_std'] = float(rolling_sharpe.std())
+                
+                # Risk metrics
+                var_95 = self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.05)
+                var_99 = self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.01)
+                
+                metrics['var_95'] = float(var_95.mean())
+                metrics['var_99'] = float(var_99.mean())
+                
+                # Expected Shortfall (Conditional VaR)
+                es_95 = returns_series[returns_series <= var_95.mean()].mean()
+                es_99 = returns_series[returns_series <= var_99.mean()].mean()
+                
+                metrics['expected_shortfall_95'] = float(es_95)
+                metrics['expected_shortfall_99'] = float(es_99)
+                
+                # Benchmark comparison if provided
+                if benchmark_returns is not None:
+                    if isinstance(benchmark_returns, np.ndarray):
+                        benchmark_series = pd.Series(benchmark_returns)
+                    else:
+                        benchmark_series = benchmark_returns
+                    
+                    # Ensure same length
+                    min_len = min(len(returns_series), len(benchmark_series))
+                    returns_aligned = returns_series.iloc[:min_len]
+                    benchmark_aligned = benchmark_series.iloc[:min_len]
+                    
+                    # Calculate excess returns
+                    excess_returns = returns_aligned - benchmark_aligned
+                    
+                    # Information ratio
+                    metrics['information_ratio'] = float(excess_returns.mean() / excess_returns.std() if excess_returns.std() > 0 else 0)
+                    
+                    # Rolling correlation with benchmark
+                    rolling_corr = self.rolling_optimizer.rolling_corr(returns_aligned, benchmark_aligned, window=window)
+                    metrics['rolling_correlation'] = float(rolling_corr.mean())
+                    
+                    # Beta calculation
+                    covariance = self.rolling_optimizer.rolling_cov(returns_aligned, benchmark_aligned, window=window)
+                    benchmark_variance = self.rolling_optimizer.rolling_var(benchmark_aligned, window=window)
+                    rolling_beta = covariance / benchmark_variance
+                    metrics['rolling_beta'] = float(rolling_beta.mean())
+                
+                return metrics
+                
+            except Exception as e:
+                self.logger.error(f"❌ Portfolio optimization metrics calculation failed: {e}")
+                return {}
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.PORTFOLIO_OPTIMIZATION,
+            _calculate_portfolio_metrics
         )
         
         return result.result if result.success else {}

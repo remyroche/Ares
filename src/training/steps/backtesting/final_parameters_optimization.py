@@ -3030,17 +3030,51 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             return self._calculate_rolling_metrics_pandas(data, window)
     
     def _calculate_rolling_metrics_pandas(self, data: pd.DataFrame, window: int) -> Dict[str, pd.Series]:
-        """Fallback pandas implementation for rolling metrics."""
+        """Fallback pandas implementation for rolling metrics with enhanced VectorBT integration."""
         rolling_metrics = {}
         
         if 'close' in data.columns:
             returns = data['close'].pct_change().dropna()
-            rolling_metrics.update({
-                'volatility': returns.rolling(window=window).std(),
-                'momentum': returns.rolling(window=window).mean(),
-                'max_drawdown': returns.rolling(window=window).min(),
-                'sharpe_ratio': returns.rolling(window=window).mean() / returns.rolling(window=window).std()
-            })
+            
+            # Use VectorBT rolling optimizer if available for enhanced performance
+            if self.rolling_optimizer and self.vectorbt_enabled:
+                try:
+                    # Convert to pandas Series for VectorBT processing
+                    returns_series = pd.Series(returns)
+                    
+                    # Use VectorBT for enhanced rolling calculations
+                    rolling_metrics.update({
+                        'volatility': self.rolling_optimizer.rolling_std(returns_series, window=window),
+                        'momentum': self.rolling_optimizer.rolling_mean(returns_series, window=window),
+                        'max_drawdown': self.rolling_optimizer.rolling_min(returns_series, window=window),
+                        'sharpe_ratio': self.rolling_optimizer.rolling_mean(returns_series, window=window) / 
+                                       self.rolling_optimizer.rolling_std(returns_series, window=window),
+                        'skewness': self.rolling_optimizer.rolling_skew(returns_series, window=window),
+                        'kurtosis': self.rolling_optimizer.rolling_kurt(returns_series, window=window),
+                        'quantile_25': self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.25),
+                        'quantile_75': self.rolling_optimizer.rolling_quantile(returns_series, window=window, q=0.75)
+                    })
+                    
+                    self.performance_stats['vectorbt_operations'] += 8  # Count VectorBT operations
+                    
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling metrics failed, using pandas fallback: {e}")
+                    self.performance_stats['fallbacks'] += 1
+                    # Fallback to standard pandas operations
+                    rolling_metrics.update({
+                        'volatility': returns.rolling(window=window).std(),
+                        'momentum': returns.rolling(window=window).mean(),
+                        'max_drawdown': returns.rolling(window=window).min(),
+                        'sharpe_ratio': returns.rolling(window=window).mean() / returns.rolling(window=window).std()
+                    })
+            else:
+                # Standard pandas operations
+                rolling_metrics.update({
+                    'volatility': returns.rolling(window=window).std(),
+                    'momentum': returns.rolling(window=window).mean(),
+                    'max_drawdown': returns.rolling(window=window).min(),
+                    'sharpe_ratio': returns.rolling(window=window).mean() / returns.rolling(window=window).std()
+                })
         
         return rolling_metrics
     
@@ -3072,8 +3106,211 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.warning(f"VectorBT data optimization failed: {e}")
             return data
     
+    def _calculate_optimal_batch_size(self, total_parameters: int) -> int:
+        """Calculate optimal batch size for VectorBT processing."""
+        if not self.vectorbt_enabled:
+            return min(10, total_parameters)
+        
+        # Calculate based on available memory and data size
+        memory_budget = self.config.get('memory_budget_mb', 2048)
+        data_size = len(self.training_data) if hasattr(self, 'training_data') else 1000
+        
+        # Estimate memory per parameter evaluation
+        memory_per_eval = data_size * 8 / (1024 * 1024)  # Rough estimate in MB
+        
+        optimal_batch_size = max(1, min(50, int(memory_budget / (memory_per_eval * 2))))
+        return min(optimal_batch_size, total_parameters)
+    
+    def _precalculate_common_metrics(self) -> Dict[str, Any]:
+        """Pre-calculate common metrics that can be reused across parameter evaluations."""
+        if not self.vectorbt_enabled or not hasattr(self, 'training_data'):
+            return {}
+        
+        try:
+            data = self.training_data
+            if 'close' in data.columns:
+                returns = data['close'].pct_change().dropna()
+                returns_series = pd.Series(returns)
+                
+                # Pre-calculate common rolling metrics
+                common_metrics = {
+                    'returns_series': returns_series,
+                    'rolling_volatility_20': self.rolling_optimizer.rolling_std(returns_series, window=20),
+                    'rolling_momentum_20': self.rolling_optimizer.rolling_mean(returns_series, window=20),
+                    'rolling_skewness_20': self.rolling_optimizer.rolling_skew(returns_series, window=20),
+                    'rolling_kurtosis_20': self.rolling_optimizer.rolling_kurt(returns_series, window=20),
+                    'rolling_quantile_25': self.rolling_optimizer.rolling_quantile(returns_series, window=20, q=0.25),
+                    'rolling_quantile_75': self.rolling_optimizer.rolling_quantile(returns_series, window=20, q=0.75)
+                }
+                
+                self.performance_stats['vectorbt_operations'] += 6
+                return common_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to precalculate common metrics: {e}")
+            return {}
+    
+    def _process_parameter_batch_vectorbt(self, batch: List[Dict[str, Any]], 
+                                        objective_function: callable,
+                                        common_metrics: Dict[str, Any]) -> List[float]:
+        """Process a batch of parameters using VectorBT optimization."""
+        results = []
+        
+        for params in batch:
+            try:
+                # Use pre-calculated metrics for enhanced evaluation
+                if common_metrics:
+                    # Create enhanced objective function that uses common metrics
+                    enhanced_objective = self._create_enhanced_objective(objective_function, common_metrics)
+                    score = enhanced_objective(params)
+                else:
+                    score = self._evaluate_parameters_vectorbt_optimized(objective_function, params)
+                
+                results.append(score)
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
+                results.append(0.0)  # Default score for failed evaluations
+        
+        return results
+    
+    def _create_enhanced_objective(self, objective_function: callable, 
+                                 common_metrics: Dict[str, Any]) -> callable:
+        """Create an enhanced objective function that uses pre-calculated metrics."""
+        def enhanced_objective(params):
+            # Add common metrics to the parameters for the objective function
+            enhanced_params = params.copy()
+            enhanced_params['common_metrics'] = common_metrics
+            return objective_function(enhanced_params)
+        
+        return enhanced_objective
+    
+    def _calculate_enhanced_sharpe_ratio(self, rolling_metrics: Dict[str, pd.Series]) -> float:
+        """Calculate enhanced Sharpe ratio using VectorBT rolling metrics."""
+        try:
+            momentum = rolling_metrics.get('momentum', pd.Series())
+            volatility = rolling_metrics.get('volatility', pd.Series())
+            
+            if momentum.empty or volatility.empty:
+                return 0.0
+            
+            # Use VectorBT for enhanced Sharpe calculation
+            sharpe_ratio = momentum.mean() / volatility.mean() if volatility.mean() > 0 else 0
+            return float(sharpe_ratio)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate enhanced Sharpe ratio: {e}")
+            return 0.0
+    
+    def _calculate_enhanced_calmar_ratio(self, rolling_metrics: Dict[str, pd.Series], 
+                                       returns: pd.Series) -> float:
+        """Calculate enhanced Calmar ratio using VectorBT rolling metrics."""
+        try:
+            momentum = rolling_metrics.get('momentum', pd.Series())
+            rolling_max = self.rolling_optimizer.rolling_max(returns, window=20)
+            rolling_drawdown = (returns - rolling_max) / rolling_max
+            max_drawdown = rolling_drawdown.min()
+            
+            if momentum.empty or max_drawdown == 0:
+                return 0.0
+            
+            calmar_ratio = momentum.mean() / abs(max_drawdown)
+            return float(calmar_ratio)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate enhanced Calmar ratio: {e}")
+            return 0.0
+    
+    def _calculate_enhanced_sortino_ratio(self, rolling_metrics: Dict[str, pd.Series], 
+                                        returns: pd.Series) -> float:
+        """Calculate enhanced Sortino ratio using VectorBT rolling metrics."""
+        try:
+            momentum = rolling_metrics.get('momentum', pd.Series())
+            downside_returns = returns[returns < 0]
+            
+            if momentum.empty or len(downside_returns) == 0:
+                return 0.0
+            
+            downside_std = self.rolling_optimizer.rolling_std(pd.Series(downside_returns), window=20)
+            sortino_ratio = momentum.mean() / downside_std.mean() if downside_std.mean() > 0 else 0
+            return float(sortino_ratio)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate enhanced Sortino ratio: {e}")
+            return 0.0
+    
+    def _calculate_tail_risk_metrics(self, returns: pd.Series, 
+                                   rolling_metrics: Dict[str, pd.Series]) -> float:
+        """Calculate tail risk metrics using VectorBT."""
+        try:
+            var_95 = self.rolling_optimizer.rolling_quantile(returns, window=20, q=0.05)
+            var_99 = self.rolling_optimizer.rolling_quantile(returns, window=20, q=0.01)
+            
+            if var_95.empty or var_99.empty:
+                return 0.0
+            
+            # Calculate tail risk as the difference between VaR levels
+            tail_risk = abs(var_99.mean() - var_95.mean())
+            return float(tail_risk)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate tail risk metrics: {e}")
+            return 0.0
+    
+    def _calculate_regime_stability(self, returns: pd.Series, 
+                                  rolling_metrics: Dict[str, pd.Series]) -> float:
+        """Calculate regime stability using VectorBT rolling metrics."""
+        try:
+            volatility = rolling_metrics.get('volatility', pd.Series())
+            
+            if volatility.empty:
+                return 0.0
+            
+            # Calculate volatility of volatility as regime stability measure
+            vol_of_vol = self.rolling_optimizer.rolling_std(volatility, window=10)
+            stability = 1.0 / (1.0 + vol_of_vol.mean()) if not vol_of_vol.empty else 0.0
+            return float(stability)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate regime stability: {e}")
+            return 0.0
+    
+    def _calculate_weighted_score(self, metrics: Dict[str, float], 
+                                parameters: Dict[str, Any]) -> float:
+        """Calculate weighted score based on metrics and parameters."""
+        try:
+            # Base weights
+            weights = {
+                'sharpe_ratio': 0.25,
+                'calmar_ratio': 0.20,
+                'sortino_ratio': 0.15,
+                'var_95': -0.10,  # Negative weight for risk metrics
+                'var_99': -0.10,
+                'tail_risk': -0.10,
+                'regime_stability': 0.10,
+                'information_ratio': 0.10
+            }
+            
+            # Adjust weights based on parameters
+            if 'risk_tolerance' in parameters:
+                risk_tolerance = parameters['risk_tolerance']
+                weights['sharpe_ratio'] *= (1 + risk_tolerance)
+                weights['calmar_ratio'] *= (1 + risk_tolerance)
+                weights['var_95'] *= (1 - risk_tolerance)
+                weights['var_99'] *= (1 - risk_tolerance)
+            
+            # Calculate weighted score
+            weighted_score = sum(metrics.get(metric, 0) * weight 
+                               for metric, weight in weights.items())
+            
+            return max(0, min(1, weighted_score))  # Normalize to [0, 1]
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate weighted score: {e}")
+            return 0.0
+
     def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
-        """Get VectorBT performance statistics."""
+        """Get comprehensive VectorBT performance statistics."""
         if not self.vectorbt_enabled:
             return {'vectorbt_enabled': False}
         
@@ -3089,6 +3326,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         if self.optimization_manager:
             optimization_stats = self.optimization_manager.get_optimization_stats()
             stats['optimization_manager_stats'] = optimization_stats
+        
+        # Add enhanced performance metrics
+        stats.update({
+            'rolling_operations': self.performance_stats.get('vectorbt_operations', 0),
+            'batch_evaluations': self.performance_stats.get('batch_evaluations', 0),
+            'fallbacks': self.performance_stats.get('fallbacks', 0),
+            'errors': self.performance_stats.get('errors', 0),
+            'memory_optimizations': self.performance_stats.get('memory_optimizations', 0)
+        })
         
         return stats
     

@@ -686,7 +686,7 @@ class RealParametersOptimizer:
             raise
     
     async def _evaluate_parameters(self, objective_function: Callable, parameters: Dict[str, Any]) -> float:
-        """Evaluate objective function with given parameters using VectorBT optimization."""
+        """Enhanced parameter evaluation using VectorBT optimization with UnifiedVectorizationManager."""
         start_time = time.time()
         self.performance_stats['total_evaluations'] += 1
         
@@ -695,13 +695,30 @@ class RealParametersOptimizer:
             if self.vectorization_manager and self.rolling_optimizer:
                 self.logger.debug("🎯 Using VectorBT-optimized parameter evaluation")
                 
-                # Use VectorBT for enhanced parameter evaluation
+                # Create operation configuration for intelligent optimization
+                operation_config = OperationConfig(
+                    operation_type=OperationType.BACKTESTING,
+                    data_size=len(self.training_data) if hasattr(self, 'training_data') else 1000,
+                    data_dimensions=self.training_data.shape if hasattr(self, 'training_data') else (1000, 10),
+                    memory_budget_mb=self.config.memory_budget_mb if hasattr(self.config, 'memory_budget_mb') else 2048,
+                    time_budget_seconds=self.config.timeout_seconds,
+                    parallel_workers=self.config.n_jobs if self.config.n_jobs > 0 else 1
+                )
+                
+                # Use VectorBT for enhanced parameter evaluation with intelligent strategy selection
                 with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
                     if self.memory_optimizer:
                         with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
-                            score = await objective_function(parameters)
+                            # Use VectorBT rolling optimizer for enhanced metrics calculation
+                            enhanced_score = await self._evaluate_with_vectorbt_enhancements(
+                                objective_function, parameters, operation_config
+                            )
+                            score = enhanced_score
                     else:
-                        score = await objective_function(parameters)
+                        enhanced_score = await self._evaluate_with_vectorbt_enhancements(
+                            objective_function, parameters, operation_config
+                        )
+                        score = enhanced_score
                 
                 self.performance_stats['vectorbt_operations'] += 1
                 
@@ -740,6 +757,86 @@ class RealParametersOptimizer:
             self.performance_stats['errors'] += 1
             raise
     
+    async def _evaluate_with_vectorbt_enhancements(self, objective_function: Callable, 
+                                                 parameters: Dict[str, Any],
+                                                 operation_config: OperationConfig) -> float:
+        """Evaluate parameters with VectorBT enhancements and intelligent optimization."""
+        try:
+            # Pre-calculate common metrics if available
+            common_metrics = await self._precalculate_vectorbt_metrics()
+            
+            # Create enhanced objective function
+            enhanced_objective = self._create_vectorbt_enhanced_objective(
+                objective_function, parameters, common_metrics
+            )
+            
+            # Use VectorBT optimization manager for intelligent strategy selection
+            result = self.vectorization_manager.optimize_operation(
+                enhanced_objective,
+                parameters,
+                operation_config
+            )
+            
+            # Extract result
+            if hasattr(result, 'result'):
+                return result.result
+            else:
+                return result
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT enhanced evaluation failed: {e}")
+            # Fallback to standard evaluation
+            return await objective_function(parameters)
+    
+    async def _precalculate_vectorbt_metrics(self) -> Dict[str, Any]:
+        """Pre-calculate VectorBT metrics for enhanced parameter evaluation."""
+        if not hasattr(self, 'training_data') or self.training_data is None:
+            return {}
+        
+        try:
+            data = self.training_data
+            if 'close' in data.columns:
+                returns = data['close'].pct_change().dropna()
+                returns_series = pd.Series(returns)
+                
+                # Pre-calculate VectorBT rolling metrics
+                common_metrics = {
+                    'returns_series': returns_series,
+                    'rolling_volatility_20': self.rolling_optimizer.rolling_std(returns_series, window=20),
+                    'rolling_momentum_20': self.rolling_optimizer.rolling_mean(returns_series, window=20),
+                    'rolling_skewness_20': self.rolling_optimizer.rolling_skew(returns_series, window=20),
+                    'rolling_kurtosis_20': self.rolling_optimizer.rolling_kurt(returns_series, window=20),
+                    'rolling_quantile_25': self.rolling_optimizer.rolling_quantile(returns_series, window=20, q=0.25),
+                    'rolling_quantile_75': self.rolling_optimizer.rolling_quantile(returns_series, window=20, q=0.75),
+                    'rolling_max_20': self.rolling_optimizer.rolling_max(returns_series, window=20),
+                    'rolling_min_20': self.rolling_optimizer.rolling_min(returns_series, window=20)
+                }
+                
+                self.performance_stats['vectorbt_operations'] += 8
+                return common_metrics
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to precalculate VectorBT metrics: {e}")
+            return {}
+    
+    def _create_vectorbt_enhanced_objective(self, objective_function: Callable,
+                                          parameters: Dict[str, Any],
+                                          common_metrics: Dict[str, Any]) -> Callable:
+        """Create VectorBT-enhanced objective function."""
+        def enhanced_objective(params):
+            # Add VectorBT metrics to parameters
+            enhanced_params = params.copy()
+            enhanced_params['vectorbt_metrics'] = common_metrics
+            
+            # Add VectorBT-specific parameters
+            enhanced_params['vectorbt_enabled'] = True
+            enhanced_params['rolling_optimizer'] = self.rolling_optimizer
+            enhanced_params['vectorization_manager'] = self.vectorization_manager
+            
+            return objective_function(enhanced_params)
+        
+        return enhanced_objective
+    
     def _is_better_score(self, score: float, best_score: float) -> bool:
         """Check if score is better than current best."""
         if self.config.minimize_objective:
@@ -747,8 +844,58 @@ class RealParametersOptimizer:
         else:
             return score > best_score
     
+    def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
+        """Get comprehensive VectorBT performance statistics."""
+        try:
+            stats = self.performance_stats.copy()
+            
+            # Add VectorBT-specific stats
+            stats['vectorbt_enabled'] = self.vectorization_manager is not None and self.rolling_optimizer is not None
+            
+            if self.rolling_optimizer:
+                rolling_stats = self.rolling_optimizer.get_performance_stats()
+                stats['rolling_optimizer_stats'] = rolling_stats
+                stats['vectorbt_rolling_operations'] = rolling_stats.get('vectorbt_operations', 0)
+                stats['vectorbt_gpu_operations'] = rolling_stats.get('gpu_operations', 0)
+                stats['vectorbt_memory_optimizations'] = rolling_stats.get('memory_optimizations', 0)
+                stats['vectorbt_avg_time_per_operation'] = rolling_stats.get('avg_time_per_operation', 0.0)
+            
+            if self.vectorization_manager:
+                vectorization_stats = self.vectorization_manager.get_performance_stats()
+                stats['unified_vectorization_operations'] = vectorization_stats.get('total_operations', 0)
+                stats['unified_vectorization_time'] = vectorization_stats.get('total_time', 0.0)
+                stats['unified_vectorization_memory_savings'] = vectorization_stats.get('memory_savings', 0.0)
+                stats['unified_vectorization_cache_hit_rate'] = vectorization_stats.get('cache_hit_rate', 0.0)
+            
+            # Calculate efficiency metrics
+            if stats['total_evaluations'] > 0:
+                stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_evaluations']
+                stats['matrix_usage_rate'] = stats['matrix_operations'] / stats['total_evaluations']
+                stats['standard_usage_rate'] = stats['standard_operations'] / stats['total_evaluations']
+                stats['avg_time_per_evaluation'] = stats['total_time'] / stats['total_evaluations']
+            else:
+                stats['vectorbt_usage_rate'] = 0.0
+                stats['matrix_usage_rate'] = 0.0
+                stats['standard_usage_rate'] = 0.0
+                stats['avg_time_per_evaluation'] = 0.0
+            
+            # Add error and fallback rates
+            total_operations = stats['vectorbt_operations'] + stats['matrix_operations'] + stats['standard_operations']
+            if total_operations > 0:
+                stats['error_rate'] = stats['errors'] / total_operations
+                stats['fallback_rate'] = stats['fallbacks'] / total_operations
+            else:
+                stats['error_rate'] = 0.0
+                stats['fallback_rate'] = 0.0
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get VectorBT performance stats: {e}")
+            return {'error': str(e)}
+
     def get_optimization_report(self) -> Dict[str, Any]:
-        """Generate optimization report."""
+        """Generate comprehensive optimization report with VectorBT statistics."""
         try:
             report = {
                 'optimization_config': {
@@ -770,6 +917,7 @@ class RealParametersOptimizer:
                 'best_parameters': self.best_parameters,
                 'best_score': self.best_score,
                 'optimization_history': self.optimization_history,
+                'vectorbt_performance': self.get_vectorbt_performance_stats(),
                 'timestamp': datetime.now().isoformat()
             }
             

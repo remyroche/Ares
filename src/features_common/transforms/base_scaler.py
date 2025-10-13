@@ -1,14 +1,15 @@
 """
-Base Scaler Interface with Native VectorBT Support
+Enhanced Base Scaler Interface with All Optimizations
 
 Provides a shared interface for all scaling and normalization operations
 across feature_generation and feature_engineering_roadmap systems with
-native VectorBT optimization for maximum performance.
+comprehensive optimization including VectorBT, caching, performance monitoring,
+and intelligent fallback mechanisms.
 """
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -24,6 +25,18 @@ from ..utils import (
     MATH_VALIDATION_AVAILABLE, safe_divide, check_for_inf_nan, validate_numeric_array, is_valid_number
 )
 
+# Import mixins for comprehensive optimization
+from ..mixins import (
+    OptimizationMixin, PerformanceMixin, VectorBTMixin, 
+    ValidationMixin, CachingMixin, MonitoringMixin
+)
+
+# Import unified VectorBT manager
+from ..vectorbt import get_unified_vectorbt_manager
+
+# Import configuration
+from ..config import get_unified_config
+
 # Check if VectorBT scaler is available
 try:
     from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
@@ -36,12 +49,13 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class BaseScaler(ABC):
+class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, ValidationMixin, CachingMixin, MonitoringMixin):
     """
-    Abstract base class for all scaling/transformation operations with native VectorBT support.
+    Enhanced base class for all scaling/transformation operations with comprehensive optimization.
     
     This interface ensures consistency between feature_generation's normalization
-    and feature_engineering_roadmap's transform systems while providing VectorBT optimization.
+    and feature_engineering_roadmap's transform systems while providing comprehensive
+    optimization including VectorBT, caching, performance monitoring, and intelligent fallback.
     
     All scalers must implement:
     - fit_transform: Fit parameters and transform data
@@ -50,10 +64,10 @@ class BaseScaler(ABC):
     - set_state: Restore state from persistence
     """
     
-    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 1000,
-                 use_optimizer: bool = True, use_unified_manager: bool = True):
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 100,
+                 use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
         """
-        Initialize the scaler with VectorBT support and optimization.
+        Initialize the enhanced scaler with all optimizations.
         
         Args:
             use_vectorbt: Whether to use VectorBT optimizations
@@ -61,13 +75,27 @@ class BaseScaler(ABC):
             vectorbt_threshold: Minimum data size for VectorBT optimization
             use_optimizer: Whether to use VectorBTRollingOptimizer
             use_unified_manager: Whether to use UnifiedVectorizationManager
+            **kwargs: Additional configuration parameters
         """
+        # Initialize all mixins first
+        super().__init__()
+        
+        # Get unified configuration
+        self.config = get_unified_config()
+        
+        # Scaler state
         self.fitted = False
+        self.scaling_params = {}
+        
+        # Legacy compatibility
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
         self.enable_gpu = enable_gpu and CUPY_AVAILABLE
         self.vectorbt_threshold = vectorbt_threshold
         self.use_optimizer = use_optimizer and VECTORBT_OPTIMIZER_AVAILABLE
         self.use_unified_manager = use_unified_manager and VECTORBT_OPTIMIZER_AVAILABLE
+        
+        # Initialize unified VectorBT manager
+        self.vectorbt_manager = get_unified_vectorbt_manager()
         
         # Initialize optimization components
         if self.use_optimizer:
@@ -94,6 +122,10 @@ class BaseScaler(ABC):
             'memory_optimizations': 0,
             'total_operations': 0
         }
+        
+        # Enable all optimizations by default
+        self.enable_optimization()
+        self.enable_performance_monitoring()
     
     def _should_use_vectorbt(self, data: pd.Series) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -237,10 +269,43 @@ class BaseScaler(ABC):
             self.performance_stats['pandas_fallbacks'] += 1
             return data.rolling(window=window).apply(func, **kwargs)
     
-    @abstractmethod
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """
-        Fit scaler parameters on training data and transform it.
+        Enhanced fit_transform with all optimizations.
+        
+        This method provides comprehensive optimization including:
+        - Data validation and sanitization
+        - Automatic optimization selection
+        - VectorBT acceleration when beneficial
+        - Caching for repeated operations
+        - Performance monitoring
+        
+        Args:
+            data: Training data to fit and transform
+            
+        Returns:
+            Transformed data with all optimizations applied
+        """
+        # Validate and sanitize input data
+        sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
+        if not is_valid and warnings:
+            self._log_warning(f"Data validation warnings: {warnings}")
+        
+        # Use cached operation if available
+        if hasattr(self, 'cached_operation'):
+            return self.cached_operation(self._fit_transform_impl, sanitized_data)
+        else:
+            return self._fit_transform_impl(sanitized_data)
+    
+    def _fit_transform_impl(self, data: pd.Series) -> pd.Series:
+        """Implementation of fit_transform with all optimizations."""
+        # Use auto-optimization for the core operation
+        return self.auto_optimize_operation(self._core_fit_transform, data)
+    
+    @abstractmethod
+    def _core_fit_transform(self, data: pd.Series) -> pd.Series:
+        """
+        Core fit_transform implementation (to be implemented by subclasses).
         
         Args:
             data: Training data to fit and transform
@@ -250,19 +315,55 @@ class BaseScaler(ABC):
         """
         pass
     
-    @abstractmethod
     def transform(self, data: pd.Series) -> pd.Series:
         """
-        Transform new data using previously fitted parameters.
+        Enhanced transform with all optimizations.
+        
+        This method provides comprehensive optimization including:
+        - Data validation and sanitization
+        - Automatic optimization selection
+        - VectorBT acceleration when beneficial
+        - Caching for repeated operations
+        - Performance monitoring
+        
+        Args:
+            data: New data to transform
+            
+        Returns:
+            Transformed data with all optimizations applied
+            
+        Raises:
+            ValueError: If scaler has not been fitted
+        """
+        # Validate that scaler has been fitted
+        self._validate_fitted()
+        
+        # Validate and sanitize input data
+        sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
+        if not is_valid and warnings:
+            self._log_warning(f"Data validation warnings: {warnings}")
+        
+        # Use cached operation if available
+        if hasattr(self, 'cached_operation'):
+            return self.cached_operation(self._transform_impl, sanitized_data)
+        else:
+            return self._transform_impl(sanitized_data)
+    
+    def _transform_impl(self, data: pd.Series) -> pd.Series:
+        """Implementation of transform with all optimizations."""
+        # Use auto-optimization for the core operation
+        return self.auto_optimize_operation(self._core_transform, data)
+    
+    @abstractmethod
+    def _core_transform(self, data: pd.Series) -> pd.Series:
+        """
+        Core transform implementation (to be implemented by subclasses).
         
         Args:
             data: New data to transform
             
         Returns:
             Transformed data
-            
-        Raises:
-            ValueError: If scaler has not been fitted
         """
         pass
     
@@ -470,24 +571,21 @@ class BaseScaler(ABC):
 
 class SimpleScaler(BaseScaler):
     """
-    Simple example implementation of BaseScaler for reference.
+    Enhanced simple scaler implementation with all optimizations.
     
-    This is a basic z-score normalization scaler that can serve as
-    a template for implementing other scalers.
+    This is a z-score normalization scaler that automatically uses
+    all available optimizations including VectorBT, caching, and performance monitoring.
     """
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.mean: Optional[float] = None
         self.std: Optional[float] = None
     
-    def fit_transform(self, data: pd.Series) -> pd.Series:
-        """Fit mean/std and transform data with enhanced logging and validation."""
+    def _core_fit_transform(self, data: pd.Series) -> pd.Series:
+        """Core fit_transform implementation with z-score normalization."""
         if TPRINT_AVAILABLE:
             tprint(f"🔧 [SimpleScaler] Fitting on {len(data)} samples", color="cyan")
-        
-        # Validate input
-        self._validate_numeric_input(data, "input data")
         
         # Remove NaN values for fitting
         clean_data = data.dropna()
@@ -511,24 +609,23 @@ class SimpleScaler(BaseScaler):
             if TPRINT_AVAILABLE:
                 tprint(f"✅ [SimpleScaler] Fitted: mean={self.mean:.4f}, std={self.std:.4f}", color="green")
             
-            transformed = self.transform(data)
+            # Transform the data
+            result = self._core_transform(data)
             
             # Validate output
-            self._check_output_validity(transformed, "transformed data")
+            self._check_output_validity(result, "transformed data")
             
-            return transformed
+            return result
             
         except Exception as e:
             error_msg = f"Failed to fit scaler: {e}"
             self._log_error(f"❌ [SimpleScaler] {error_msg}")
             raise RuntimeError(error_msg) from e
     
-    def transform(self, data: pd.Series) -> pd.Series:
-        """Transform data using fitted mean/std with safe division."""
+    def _core_transform(self, data: pd.Series) -> pd.Series:
+        """Core transform implementation with z-score normalization."""
         if TPRINT_AVAILABLE:
             tprint(f"🔧 [SimpleScaler] Transforming {len(data)} samples", color="cyan")
-        
-        self._validate_fitted()
         
         if self.mean is None or self.std is None:
             error_msg = "Scaler state is invalid - mean or std is None"

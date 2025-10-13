@@ -185,7 +185,37 @@ class DataDrivenInteractionGenerator:
         """
         tprint("🚀 Initializing DataDrivenInteractionGenerator")
         
-        # Use provided config or create from parameters
+        # Initialize configuration
+        self._initialize_config(max_interactions, utility_threshold, correlation_threshold, enable_vectorbt, config)
+        
+        # Initialize VectorBT utilities
+        self._initialize_vectorbt_utilities()
+        
+        # Initialize interaction types
+        self._initialize_interaction_types()
+        
+        # Initialize performance tracking
+        self._initialize_performance_tracking()
+        
+        # Initialize caching system
+        self._initialize_caching_system()
+        
+        tprint("✅ DataDrivenInteractionGenerator initialized successfully")
+        tprint(f"📊 Max interactions: {self.config.max_interactions}")
+        tprint(f"📊 Utility threshold: {self.config.utility_threshold}")
+        tprint(f"📊 VectorBT enabled: {self.config.enable_vectorbt}")
+        tprint(f"📊 GPU enabled: {self.config.enable_gpu}")
+        tprint(f"📊 Batch processing: {self.config.enable_batch_processing}")
+    
+    def _initialize_config(self, 
+                          max_interactions: int, 
+                          utility_threshold: float, 
+                          correlation_threshold: float, 
+                          enable_vectorbt: bool, 
+                          config: Optional[EnhancedInteractionConfig]) -> None:
+        """Initialize configuration with validation."""
+        tprint("🔧 Initializing configuration")
+        
         if config is not None:
             self.config = config
         else:
@@ -196,13 +226,29 @@ class DataDrivenInteractionGenerator:
                 enable_vectorbt=enable_vectorbt
             )
         
-        # Initialize VectorBT utilities
-        self._initialize_vectorbt_utilities()
+        # Validate configuration
+        self._validate_config()
+        tprint("✅ Configuration initialized and validated")
+    
+    def _validate_config(self) -> None:
+        """Validate configuration parameters."""
+        if self.config.max_interactions <= 0:
+            raise ValueError("max_interactions must be positive")
+        if not 0 <= self.config.utility_threshold <= 1:
+            raise ValueError("utility_threshold must be between 0 and 1")
+        if not 0 <= self.config.correlation_threshold <= 1:
+            raise ValueError("correlation_threshold must be between 0 and 1")
+        if self.config.max_memory_gb <= 0:
+            raise ValueError("max_memory_gb must be positive")
+        if self.config.chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if self.config.cache_size <= 0:
+            raise ValueError("cache_size must be positive")
+    
+    def _initialize_performance_tracking(self) -> None:
+        """Initialize performance tracking system."""
+        tprint("🔧 Initializing performance tracking")
         
-        # Initialize interaction types
-        self.interaction_types = self._initialize_interaction_types()
-        
-        # Performance tracking
         self.performance_stats = {
             'total_interactions_generated': 0,
             'vectorbt_operations': 0,
@@ -213,21 +259,30 @@ class DataDrivenInteractionGenerator:
             'memory_optimizations': 0,
             'total_processing_time': 0.0,
             'average_utility_score': 0.0,
-            'memory_savings': 0.0
+            'memory_savings': 0.0,
+            'cache_hit_rate': 0.0,
+            'cache_misses': 0,
+            'memory_usage_mb': 0.0,
+            'peak_memory_usage_mb': 0.0
         }
         
-        # Cache for computed results
+        # Initialize seen hashes for duplicate detection
+        self._seen_hashes = set()
+        
+        tprint("✅ Performance tracking initialized")
+    
+    def _initialize_caching_system(self) -> None:
+        """Initialize caching system with proper management."""
+        tprint("🔧 Initializing caching system")
+        
         self._result_cache = {}
         self._cache_enabled = self.config.enable_caching
+        self._cache_access_count = 0
+        self._cache_hit_count = 0
         
-        tprint("✅ DataDrivenInteractionGenerator initialized successfully")
-        tprint(f"📊 Max interactions: {self.config.max_interactions}")
-        tprint(f"📊 Utility threshold: {self.config.utility_threshold}")
-        tprint(f"📊 VectorBT enabled: {self.config.enable_vectorbt}")
-        tprint(f"📊 GPU enabled: {self.config.enable_gpu}")
-        tprint(f"📊 Batch processing: {self.config.enable_batch_processing}")
+        tprint("✅ Caching system initialized")
     
-    def _initialize_vectorbt_utilities(self):
+    def _initialize_vectorbt_utilities(self) -> None:
         """Initialize VectorBT utilities with proper error handling."""
         tprint("🔧 Initializing VectorBT utilities")
         
@@ -477,7 +532,7 @@ class DataDrivenInteractionGenerator:
         
         return selected_interactions
     
-    def _validate_inputs(self, features: pd.DataFrame, targets: Optional[pd.Series]):
+    def _validate_inputs(self, features: pd.DataFrame, targets: Optional[pd.Series]) -> None:
         """Validate inputs with fast-fail approach."""
         tprint("🔍 Validating inputs")
         
@@ -722,7 +777,10 @@ class DataDrivenInteractionGenerator:
             if self._cache_enabled and cache_key in self._result_cache:
                 tprint(f"💾 Using cached result for {cache_key}")
                 self.performance_stats['cached_operations'] += 1
+                self._cache_hit_count += 1
                 return self._result_cache[cache_key]
+            
+            self._cache_access_count += 1
             
             # Generate interaction
             start_time = time.time()
@@ -787,8 +845,17 @@ class DataDrivenInteractionGenerator:
             tprint(f"✅ Generated interaction: {feature_name} (utility: {utility_score:.3f})")
             return result
             
+        except (ValueError, TypeError, KeyError) as e:
+            tprint(f"❌ ERROR: Input validation failed for {feat1_name} x {feat2_name} ({interaction_type_name}): {e}")
+            return None
+        except (MemoryError, OSError) as e:
+            tprint(f"❌ ERROR: Resource error for {feat1_name} x {feat2_name} ({interaction_type_name}): {e}")
+            # Try to cleanup memory and retry once
+            self._cleanup_memory()
+            return None
         except Exception as e:
-            tprint(f"❌ ERROR: Single interaction generation failed: {e}")
+            tprint(f"❌ ERROR: Unexpected error in single interaction generation: {e}")
+            logger.exception(f"Unexpected error in {feat1_name} x {feat2_name} ({interaction_type_name})")
             return None
     
     def _generate_vectorbt_optimized_interaction(self, 
@@ -905,7 +972,7 @@ class DataDrivenInteractionGenerator:
             tprint(f"❌ ERROR: Ranking failed: {e}")
             return interactions
     
-    def _update_performance_stats(self, interactions: List[InteractionResult], total_time: float):
+    def _update_performance_stats(self, interactions: List[InteractionResult], total_time: float) -> None:
         """Update performance statistics."""
         tprint("📊 Updating performance statistics")
         
@@ -917,18 +984,26 @@ class DataDrivenInteractionGenerator:
         
         tprint(f"✅ Performance stats updated: {len(interactions)} interactions, {total_time:.2f}s")
     
-    def _put_in_cache(self, key: str, value: InteractionResult):
+    def _put_in_cache(self, key: str, value: InteractionResult) -> None:
         """Put result in cache with size management."""
         tprint(f"💾 Caching result: {key}")
         
+        # Check memory usage before caching
+        self._check_memory_usage()
+        
         if len(self._result_cache) >= self.config.cache_size:
-            # Remove oldest entry
-            oldest_key = next(iter(self._result_cache))
-            del self._result_cache[oldest_key]
-            tprint(f"💾 Cache full, removed oldest entry: {oldest_key}")
+            # Remove oldest 25% of entries to make room
+            keys_to_remove = list(self._result_cache.keys())[:len(self._result_cache) // 4]
+            for old_key in keys_to_remove:
+                del self._result_cache[old_key]
+            tprint(f"💾 Cache full, removed {len(keys_to_remove)} oldest entries")
         
         self._result_cache[key] = value
         tprint(f"✅ Cached result: {key}")
+        
+        # Update cache statistics
+        if self._cache_access_count > 0:
+            self.performance_stats['cache_hit_rate'] = self._cache_hit_count / self._cache_access_count
     
     # Consolidated interaction methods
     def _arithmetic_interaction(self, feat1: pd.Series, feat2: pd.Series, operation: str = 'multiply') -> pd.Series:
@@ -1044,7 +1119,7 @@ class DataDrivenInteractionGenerator:
         tprint("📊 Getting performance statistics")
         return self.performance_stats.copy()
     
-    def reset_stats(self):
+    def reset_stats(self) -> None:
         """Reset all performance statistics."""
         tprint("🔄 Resetting performance statistics")
         self.performance_stats = {
@@ -1057,9 +1132,143 @@ class DataDrivenInteractionGenerator:
             'memory_optimizations': 0,
             'total_processing_time': 0.0,
             'average_utility_score': 0.0,
-            'memory_savings': 0.0
+            'memory_savings': 0.0,
+            'cache_hit_rate': 0.0,
+            'cache_misses': 0,
+            'memory_usage_mb': 0.0,
+            'peak_memory_usage_mb': 0.0
         }
         tprint("✅ Performance statistics reset")
+    
+    def cleanup(self) -> None:
+        """Clean up resources and perform memory management."""
+        tprint("🧹 Cleaning up resources")
+        
+        try:
+            # Clear cache
+            if hasattr(self, '_result_cache'):
+                self._result_cache.clear()
+                tprint("✅ Cache cleared")
+            
+            # Clear seen hashes
+            if hasattr(self, '_seen_hashes'):
+                self._seen_hashes.clear()
+                tprint("✅ Seen hashes cleared")
+            
+            # Cleanup VectorBT utilities
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                try:
+                    if hasattr(self.rolling_optimizer, 'cleanup'):
+                        self.rolling_optimizer.cleanup()
+                    tprint("✅ Rolling optimizer cleaned up")
+                except Exception as e:
+                    tprint(f"⚠️ WARNING: Rolling optimizer cleanup failed: {e}")
+            
+            if hasattr(self, 'vectorization_manager') and self.vectorization_manager:
+                try:
+                    if hasattr(self.vectorization_manager, 'cleanup'):
+                        self.vectorization_manager.cleanup()
+                    tprint("✅ Vectorization manager cleaned up")
+                except Exception as e:
+                    tprint(f"⚠️ WARNING: Vectorization manager cleanup failed: {e}")
+            
+            if hasattr(self, 'batch_processor') and self.batch_processor:
+                try:
+                    if hasattr(self.batch_processor, 'cleanup'):
+                        self.batch_processor.cleanup()
+                    tprint("✅ Batch processor cleaned up")
+                except Exception as e:
+                    tprint(f"⚠️ WARNING: Batch processor cleanup failed: {e}")
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint("✅ Garbage collection completed")
+            
+        except Exception as e:
+            tprint(f"❌ ERROR: Cleanup failed: {e}")
+            raise RuntimeError(f"Resource cleanup failed: {e}")
+        
+        tprint("✅ Resource cleanup completed")
+    
+    def __enter__(self) -> 'DataDrivenInteractionGenerator':
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit with cleanup."""
+        self.cleanup()
+    
+    def _invalidate_cache(self, pattern: Optional[str] = None) -> None:
+        """Invalidate cache entries matching pattern or clear all if no pattern."""
+        tprint(f"🗑️ Invalidating cache entries: {pattern or 'all'}")
+        
+        if not hasattr(self, '_result_cache'):
+            tprint("⚠️ No cache to invalidate")
+            return
+        
+        if pattern:
+            keys_to_remove = [k for k in self._result_cache.keys() if pattern in k]
+            for key in keys_to_remove:
+                del self._result_cache[key]
+            tprint(f"✅ Removed {len(keys_to_remove)} cache entries matching '{pattern}'")
+        else:
+            self._result_cache.clear()
+            tprint("✅ All cache entries removed")
+        
+        # Reset cache statistics
+        self._cache_access_count = 0
+        self._cache_hit_count = 0
+    
+    def _check_memory_usage(self) -> None:
+        """Check current memory usage and cleanup if necessary."""
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            # Update peak memory usage
+            if memory_mb > self.performance_stats['peak_memory_usage_mb']:
+                self.performance_stats['peak_memory_usage_mb'] = memory_mb
+            
+            self.performance_stats['memory_usage_mb'] = memory_mb
+            
+            # Check if memory usage exceeds limit
+            if memory_mb > self.config.max_memory_gb * 1024:
+                tprint(f"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds limit {self.config.max_memory_gb}GB")
+                self._cleanup_memory()
+                
+        except ImportError:
+            tprint("⚠️ WARNING: psutil not available, cannot monitor memory usage")
+        except Exception as e:
+            tprint(f"⚠️ WARNING: Memory check failed: {e}")
+    
+    def _cleanup_memory(self) -> None:
+        """Perform memory cleanup operations."""
+        tprint("🧹 Performing memory cleanup")
+        
+        try:
+            # Clear cache if it's getting large
+            if len(self._result_cache) > self.config.cache_size * 0.8:
+                # Remove oldest 25% of cache entries
+                keys_to_remove = list(self._result_cache.keys())[:len(self._result_cache) // 4]
+                for key in keys_to_remove:
+                    del self._result_cache[key]
+                tprint(f"✅ Removed {len(keys_to_remove)} cache entries for memory cleanup")
+            
+            # Clear seen hashes if they're getting large
+            if len(self._seen_hashes) > 10000:
+                self._seen_hashes.clear()
+                tprint("✅ Cleared seen hashes for memory cleanup")
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint("✅ Memory cleanup completed")
+            
+        except Exception as e:
+            tprint(f"❌ ERROR: Memory cleanup failed: {e}")
+            raise RuntimeError(f"Memory cleanup failed: {e}")
 
 
 def create_data_driven_interaction_generator(

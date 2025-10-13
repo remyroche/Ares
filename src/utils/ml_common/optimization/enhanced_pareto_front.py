@@ -29,18 +29,16 @@ from .pareto import (
     filter_by_constraints, DEFAULT_FINANCIAL_WEIGHTS
 )
 
-# Import VectorBT optimizations
+# VectorBT optimizations are now integrated into the main pareto.py file
+VECTORBT_PARETO_AVAILABLE = False
+VectorBTParetoOptimizer = None
+VectorBTParetoConfig = None
+
+# Import VectorBT availability from main pareto file
 try:
-    from .vectorbt_pareto_optimizer import (
-        VectorBTParetoOptimizer, VectorBTParetoConfig,
-        compute_pareto_front_vectorbt, compute_hypervolume_vectorbt,
-        select_knee_point_vectorbt, get_vectorbt_pareto_optimizer
-    )
-    VECTORBT_PARETO_AVAILABLE = True
+    from .pareto import VECTORBT_AVAILABLE
 except ImportError:
-    VECTORBT_PARETO_AVAILABLE = False
-    VectorBTParetoOptimizer = None
-    VectorBTParetoConfig = None
+    VECTORBT_AVAILABLE = False
 
 # Import VectorBT rolling optimizer
 try:
@@ -234,15 +232,15 @@ class EnhancedParetoFront:
         n_objectives = len(objectives)
         
         # VectorBT strategy selection for large datasets
-        if (self.vectorbt_optimizer and 
-            n_solutions >= self.config.vectorbt_threshold and
-            self.config.prefer_vectorbt):
+        if (n_solutions >= self.config.vectorbt_threshold and
+            self.config.prefer_vectorbt and
+            VECTORBT_AVAILABLE):
             return 'vectorbt'
         
         # VectorBT rolling strategy for medium datasets
-        if (self.vectorbt_rolling_optimizer and 
-            n_solutions >= self.config.vectorbt_rolling_threshold and
-            n_solutions < self.config.vectorbt_threshold):
+        if (n_solutions >= self.config.vectorbt_rolling_threshold and
+            n_solutions < self.config.vectorbt_threshold and
+            VECTORBT_ROLLING_AVAILABLE):
             return 'vectorbt_rolling'
         
         # GPU strategy selection
@@ -261,14 +259,11 @@ class EnhancedParetoFront:
         use_nonlinear_transforms: bool
     ) -> List[Solution]:
         """Execute Pareto front computation with selected strategy."""
-        if strategy == 'vectorbt' and self.vectorbt_optimizer:
+        if strategy == 'vectorbt' or strategy == 'vectorbt_rolling':
+            # Use enhanced ParetoFront with VectorBT optimizations
             self.performance_stats['vectorbt_operations'] += 1
-            return self.vectorbt_optimizer.compute_pareto_front_vectorbt(solutions, objectives)
-        
-        elif strategy == 'vectorbt_rolling' and self.vectorbt_rolling_optimizer:
-            # Use VectorBT rolling operations for medium datasets
-            self.performance_stats['vectorbt_operations'] += 1
-            return self._compute_pareto_front_vectorbt_rolling(solutions, objectives)
+            pareto_front = ParetoFront(enable_vectorbt=True)
+            return pareto_front.compute_pareto_front_gpu(solutions, objectives, use_gpu, use_nonlinear_transforms)
         
         elif strategy == 'gpu':
             # Use GPU-accelerated computation

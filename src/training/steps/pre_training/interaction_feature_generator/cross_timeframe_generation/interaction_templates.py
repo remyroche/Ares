@@ -99,7 +99,7 @@ except ImportError:  # pragma: no cover - fallback for standalone usage
 class InteractionTemplate:
     """Template for generating interactions."""
     name: str
-    template_type: str  # 'core', 'htf_aware', 'cross_asset'
+    template_type: str  # 'core', 'htf_aware'
     formula: str
     required_features: List[str]
     optional_features: List[str]
@@ -407,65 +407,6 @@ class HTFAwareTemplates:
         return templates
 
 
-class CrossAssetTemplates:
-    """Cross-asset HTF interaction templates."""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-        self.templates = self._create_cross_asset_templates()
-        tprint_info(
-            "Initialized cross-asset templates | count=%d | supports_lag=%s"
-            % (
-                len(self.templates),
-                any('lag' in template.optional_features for template in self.templates),
-            )
-        )
-    
-    def _create_cross_asset_templates(self) -> List[InteractionTemplate]:
-        """Create cross-asset HTF interaction templates."""
-        templates = [
-            # Lead-lag interactions
-            InteractionTemplate(
-                name="lead_lag_interaction",
-                template_type="cross_asset",
-                formula="asset1_htf_feature * asset2_htf_feature.shift(lag)",
-                required_features=["asset1_htf_feature", "asset2_htf_feature"],
-                optional_features=["lag"],
-                max_instances=2,
-                priority=1,
-                metadata={"description": "Cross-asset lead-lag interaction"}
-            ),
-            
-            # Correlation interactions
-            InteractionTemplate(
-                name="correlation_interaction",
-                template_type="cross_asset",
-                formula="asset1_htf_feature * asset2_htf_feature",
-                required_features=["asset1_htf_feature", "asset2_htf_feature"],
-                optional_features=[],
-                max_instances=2,
-                priority=1,
-                metadata={"description": "Cross-asset correlation interaction"}
-            ),
-            
-            # Relative strength interactions
-            InteractionTemplate(
-                name="relative_strength_interaction",
-                template_type="cross_asset",
-                formula="asset_htf_feature / market_htf_feature",
-                required_features=["asset_htf_feature", "market_htf_feature"],
-                optional_features=[],
-                max_instances=2,
-                priority=2,
-                metadata={"description": "Cross-asset relative strength interaction"}
-            )
-        ]
-        
-        tprint_debug(
-            "Constructed cross-asset template catalogue | total=%d | names=%s"
-            % (len(templates), [template.name for template in templates])
-        )
-        return templates
 
 
 class InteractionGenerator:
@@ -477,13 +418,11 @@ class InteractionGenerator:
 
         self.core_templates = CoreInteractionTemplates()
         self.htf_aware_templates = HTFAwareTemplates()
-        self.cross_asset_templates = CrossAssetTemplates()
         tprint_debug(
-            "InteractionGenerator initialized | core=%d | htf=%d | cross_asset=%d"
+            "InteractionGenerator initialized | core=%d | htf=%d"
             % (
                 len(self.core_templates.templates),
                 len(self.htf_aware_templates.templates),
-                len(self.cross_asset_templates.templates),
             )
         )
     
@@ -528,11 +467,10 @@ class InteractionGenerator:
         # Determine budget allocation
         budget_allocation = self._determine_budget_allocation(materialized_htfs)
         tprint_debug(
-            "Budget allocation computed | core=%d | htf=%d | cross_asset=%d"
+            "Budget allocation computed | core=%d | htf=%d"
             % (
                 budget_allocation['core'],
                 budget_allocation['htf_aware'],
-                budget_allocation['cross_asset'],
             )
         )
 
@@ -546,13 +484,8 @@ class InteractionGenerator:
             materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
         )
 
-        # Generate cross-asset interactions with VectorBT optimization
-        cross_asset_interactions = self._generate_cross_asset_interactions_vectorbt(
-            materialized_htfs, normalized_base_features, targets, budget_allocation['cross_asset']
-        )
-
         # Combine all interactions
-        all_interactions = core_interactions + htf_interactions + cross_asset_interactions
+        all_interactions = core_interactions + htf_interactions
 
         # Apply VectorBT-based feature selection
         selected_interactions = self._apply_vectorbt_feature_selection(all_interactions, targets)
@@ -613,30 +546,6 @@ class InteractionGenerator:
         
         return interactions
 
-    def _generate_cross_asset_interactions_vectorbt(self, materialized_htfs: Dict[str, Any],
-                                                  base_features: pd.DataFrame,
-                                                  targets: Optional[pd.Series],
-                                                  budget: int) -> List[GeneratedInteraction]:
-        """Generate cross-asset interactions using VectorBT optimization."""
-        interactions = []
-        
-        if not VECTORBT_AVAILABLE:
-            tprint_warning("VectorBT not available, using fallback method")
-            return self._generate_cross_asset_interactions_fallback(materialized_htfs, base_features, targets, budget)
-        
-        try:
-            # VectorBT-optimized cross-asset interaction generation
-            for template in self.cross_asset_templates.templates[:budget]:
-                template_interactions = self._generate_template_interactions_vectorbt(
-                    template, base_features, targets, materialized_htfs
-                )
-                interactions.extend(template_interactions)
-                
-        except Exception as e:
-            tprint_error(f"VectorBT cross-asset interactions failed: {e}, using fallback")
-            return self._generate_cross_asset_interactions_fallback(materialized_htfs, base_features, targets, budget)
-        
-        return interactions
 
     def _generate_template_interactions_vectorbt(self, template: InteractionTemplate,
                                               base_features: pd.DataFrame,
@@ -941,37 +850,23 @@ class InteractionGenerator:
         # Implementation would go here
         return []
 
-    def _generate_cross_asset_interactions_fallback(self, materialized_htfs: Dict[str, Any],
-                                                  base_features: pd.DataFrame,
-                                                  targets: Optional[pd.Series],
-                                                  budget: int) -> List[GeneratedInteraction]:
-        """Fallback method for cross-asset interactions when VectorBT is not available."""
-        # Implementation would go here
-        return []enerate_htf_aware_interactions(
+enerate_htf_aware_interactions(
             materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
         )
         
-        # Generate cross-asset interactions (if enabled)
-        cross_asset_interactions = []
-        if self.config.get('enable_cross_asset', False):
-            cross_asset_interactions = self._generate_cross_asset_interactions(
-                materialized_htfs, targets, budget_allocation['cross_asset']
-            )
-        
         # Combine all interactions
-        all_interactions = core_interactions + htf_interactions + cross_asset_interactions
+        all_interactions = core_interactions + htf_interactions
         
         # Apply interaction heredity
         filtered_interactions = self._apply_interaction_heredity(all_interactions)
         
         self.logger.info(f"Interaction generation completed: {len(filtered_interactions)} interactions generated")
         tprint_success(
-            "Interaction generation completed | total=%d | core=%d | htf=%d | cross_asset=%d"
+            "Interaction generation completed | total=%d | core=%d | htf=%d"
             % (
                 len(filtered_interactions),
                 len(core_interactions),
                 len(htf_interactions),
-                len(cross_asset_interactions),
             )
         )
         return filtered_interactions
@@ -997,18 +892,15 @@ class InteractionGenerator:
         if avg_htf_utility > 0.1:  # Top-quartile performance
             # Allow more HTF-aware interactions
             core_budget = 15
-            htf_aware_budget = 10
-            cross_asset_budget = 5
+            htf_aware_budget = 15  # Increased since we removed cross-asset
         else:
             # Standard allocation
             core_budget = 20
-            htf_aware_budget = 7
-            cross_asset_budget = 3
+            htf_aware_budget = 10  # Increased since we removed cross-asset
         
         allocation = {
             'core': core_budget,
-            'htf_aware': htf_aware_budget,
-            'cross_asset': cross_asset_budget
+            'htf_aware': htf_aware_budget
         }
         tprint_info(
             "Budget allocation finalized | total=%d | breakdown=%s"
@@ -1088,42 +980,6 @@ class InteractionGenerator:
 
         return interactions[:budget]
     
-    def _generate_cross_asset_interactions(self, 
-                                         materialized_htfs: Dict[str, Any],
-                                         targets: Optional[pd.Series],
-                                         budget: int) -> List[GeneratedInteraction]:
-        """Generate cross-asset interactions."""
-        interactions = []
-        
-        # Group HTF features by asset
-        asset_groups = self._group_htf_features_by_asset(materialized_htfs)
-        tprint_debug(
-            "Generating cross-asset interactions | budget=%d | templates=%d | assets=%d"
-            % (
-                budget,
-                len(self.cross_asset_templates.templates),
-                len(asset_groups),
-            )
-        )
-
-        # Generate interactions for each template
-        for template in self.cross_asset_templates.templates:
-            if len(interactions) >= budget:
-                break
-
-            template_interactions = self._generate_cross_asset_template_interactions(
-                template, asset_groups, targets
-            )
-            tprint_debug(
-                "Cross-asset template processed | name=%s | generated=%d"
-                % (template.name, len(template_interactions))
-            )
-
-            # Limit by template max_instances
-            template_interactions = template_interactions[:template.max_instances]
-            interactions.extend(template_interactions)
-
-        return interactions[:budget]
     
     def _group_features_by_type(self, features: Dict[str, pd.Series]) -> Dict[str, List[str]]:
         """Group features by type."""
@@ -1303,36 +1159,6 @@ class InteractionGenerator:
         )
         return groups
     
-    def _group_htf_features_by_asset(self, materialized_htfs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        """Group HTF features by asset."""
-        groups: Dict[str, Dict[str, Any]] = defaultdict(dict)
-
-        for feature_name, feature in materialized_htfs.items():
-            asset_name: Optional[str] = None
-
-            metadata = getattr(feature, 'metadata', {}) or {}
-            if isinstance(metadata, dict):
-                asset_name = metadata.get('asset') or metadata.get('symbol')
-
-            if not asset_name:
-                separators = ['__', '::', '|']
-                for sep in separators:
-                    if sep in feature_name:
-                        asset_name = feature_name.split(sep)[0]
-                        break
-
-            if not asset_name and '_' in feature_name:
-                asset_name = feature_name.split('_')[0]
-
-            asset_key = asset_name or 'asset1'
-            groups[asset_key][feature_name] = feature
-
-        grouped = dict(groups)
-        tprint_debug(
-            "Grouped HTF features by asset | assets=%d"
-            % len(grouped)
-        )
-        return grouped
     
     def _generate_template_interactions(self, 
                                      template: InteractionTemplate,
@@ -1420,197 +1246,6 @@ class InteractionGenerator:
         )
         return interactions
     
-    def _generate_cross_asset_template_interactions(self,
-                                                  template: InteractionTemplate,
-                                                  asset_groups: Dict[str, Dict[str, Any]],
-                                                  targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
-        """Generate cross-asset interactions for a specific template."""
-        interactions = []
-
-        asset_items = [
-            (asset, features)
-            for asset, features in asset_groups.items()
-            if features
-        ]
-
-        if len(asset_items) < 2:
-            tprint_warning(
-                "Cross-asset template skipped due to insufficient assets | available=%d"
-                % len(asset_items)
-            )
-            return interactions
-
-        lag_values: List[Optional[int]] = [None]
-        if 'lag' in template.optional_features:
-            configured_lags: Any = None
-            if isinstance(self.config, dict):
-                configured_lags = self.config.get('cross_asset_lags')
-            else:
-                configured_lags = getattr(self.config, 'cross_asset_lags', None)
-
-            if configured_lags is None:
-                configured_lags = template.metadata.get('lag_values') or template.metadata.get('lag')
-
-            if configured_lags is None:
-                lag_values = [1]
-            elif isinstance(configured_lags, (list, tuple, set)):
-                lag_values = [int(l) for l in configured_lags if l is not None]
-            else:
-                lag_values = [int(configured_lags)]
-
-            if not lag_values:
-                lag_values = [1]
-
-        def _extract_series(feature_obj: Any) -> Optional[pd.Series]:
-            if isinstance(feature_obj, pd.Series):
-                return feature_obj
-            return getattr(feature_obj, 'feature_series', None)
-
-        seen_names = set()
-
-        for (asset1, features1), (asset2, features2) in combinations(asset_items, 2):
-            if len(interactions) >= template.max_instances:
-                break
-
-            for feature1_name, feature1 in features1.items():
-                series1 = _extract_series(feature1)
-                if series1 is None:
-                    continue
-
-                for feature2_name, feature2 in features2.items():
-                    series2 = _extract_series(feature2)
-                    if series2 is None:
-                        continue
-
-                    for lag_value in lag_values:
-                        if len(interactions) >= template.max_instances:
-                            break
-
-                        placeholder_series: Dict[str, pd.Series] = {}
-                        placeholder_names: Dict[str, str] = {}
-
-                        for placeholder in template.required_features:
-                            lower_placeholder = placeholder.lower()
-                            if 'asset1' in lower_placeholder:
-                                placeholder_series[placeholder] = series1
-                                placeholder_names[placeholder] = feature1_name
-                            elif 'asset2' in lower_placeholder:
-                                placeholder_series[placeholder] = series2
-                                placeholder_names[placeholder] = feature2_name
-                            elif 'market' in lower_placeholder:
-                                if 'market' in asset2.lower() or 'index' in asset2.lower():
-                                    placeholder_series[placeholder] = series2
-                                    placeholder_names[placeholder] = feature2_name
-                                elif 'market' in asset1.lower() or 'index' in asset1.lower():
-                                    placeholder_series[placeholder] = series1
-                                    placeholder_names[placeholder] = feature1_name
-                                else:
-                                    placeholder_series[placeholder] = series2
-                                    placeholder_names[placeholder] = feature2_name
-                            else:
-                                placeholder_series[placeholder] = series1
-                                placeholder_names[placeholder] = feature1_name
-
-                        if 'lag' in template.optional_features:
-                            lag_int = int(lag_value)
-                            lag_value = lag_int
-                            placeholder_series['lag'] = lag_int
-                            placeholder_names['lag'] = str(lag_int)
-
-                        try:
-                            evaluated_series = eval(
-                                template.formula,
-                                {'np': np, 'pd': pd},
-                                placeholder_series
-                            )
-                        except Exception as exc:
-                            self.logger.debug(
-                                "Failed to evaluate cross-asset formula %s: %s",
-                                template.name,
-                                exc
-                            )
-                            continue
-
-                        if isinstance(evaluated_series, pd.DataFrame):
-                            evaluated_series = evaluated_series.iloc[:, 0]
-
-                        if not isinstance(evaluated_series, pd.Series):
-                            evaluated_series = pd.Series(evaluated_series)
-
-                        interaction_series = evaluated_series.dropna()
-                        if interaction_series.empty:
-                            continue
-
-                        name_parts = [template.name, feature1_name, feature2_name]
-                        if 'lag' in template.optional_features:
-                            name_parts.append(f"lag{lag_value}")
-
-                        interaction_name = f"int_{'_'.join(name_parts)}"
-                        if interaction_name in seen_names:
-                            continue
-
-                        seen_names.add(interaction_name)
-
-                        formatted_formula = template.formula
-                        for placeholder, replacement in placeholder_names.items():
-                            formatted_formula = formatted_formula.replace(placeholder, replacement)
-
-                        interaction_series = interaction_series.sort_index()
-                        interaction_series.name = interaction_name
-
-                        utility_score = 0.0
-                        if targets is not None:
-                            aligned = pd.concat(
-                                [interaction_series, targets], axis=1, join='inner'
-                            ).dropna()
-                            if not aligned.empty:
-                                corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
-                                if not pd.isna(corr):
-                                    utility_score = float(corr)
-
-                        parent_features: List[str] = []
-                        for placeholder in template.required_features:
-                            feature_name = placeholder_names.get(placeholder)
-                            if feature_name and feature_name not in parent_features:
-                                parent_features.append(feature_name)
-
-                        interaction_metadata = {
-                            'template_name': template.name,
-                            'template_type': template.template_type,
-                            'priority': template.priority,
-                            'asset1': asset1,
-                            'asset2': asset2
-                        }
-
-                        if 'lag' in template.optional_features:
-                            interaction_metadata['lag'] = lag_value
-
-                        interactions.append(
-                            GeneratedInteraction(
-                                name=interaction_name,
-                                formula=formatted_formula,
-                                parent_features=parent_features,
-                                interaction_type=template.template_type,
-                                feature_series=interaction_series,
-                                utility_score=utility_score,
-                                metadata=interaction_metadata
-                            )
-                        )
-
-                        if len(interactions) >= template.max_instances:
-                            break
-
-                    if len(interactions) >= template.max_instances:
-                        break
-
-                if len(interactions) >= template.max_instances:
-                    break
-
-        tprint_debug(
-            "Cross-asset template evaluation complete | template=%s | accepted=%d"
-            % (template.name, len(interactions))
-        )
-        return interactions
     
     def _generate_feature_combinations(self, 
                                      required_features: List[str],

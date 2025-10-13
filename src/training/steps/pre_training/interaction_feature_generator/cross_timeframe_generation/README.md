@@ -51,7 +51,6 @@ This system implements a complete pipeline for cross-timeframe feature generatio
 - Core 15 interactions (theory-first)
 - HTF-aware templates (2-3 additional)
 - Dynamic budget allocation
-- Cross-asset HTF interactions (optional)
 
 ### 📊 **Statistical Selection**
 - Stability selection with block bootstrap
@@ -210,7 +209,6 @@ config = PipelineConfig(
 ### 8. Interaction Templates (`interaction_templates.py`)
 - **CoreInteractionTemplates**: Core 15 interaction templates
 - **HTFAwareTemplates**: HTF-aware interaction templates
-- **CrossAssetTemplates**: Cross-asset HTF interactions
 - **InteractionGenerator**: Main interaction generation
 
 ### 9. Statistical Selection (`statistical_selection.py`)

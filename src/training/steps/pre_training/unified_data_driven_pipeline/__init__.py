@@ -20,6 +20,13 @@ from .core.unified_pipeline import (
     process_features
 )
 
+from .core.feature_generation_adapter import (
+    FeatureGenerationAdapter,
+    IntegratedFeaturePipeline,
+    create_integrated_pipeline,
+    process_with_integrated_pipeline
+)
+
 from .core.config import (
     UnifiedPipelineConfig,
     create_default_config,
@@ -60,6 +67,12 @@ __all__ = [
     'FeaturePipelineResult',
     'create_unified_pipeline',
     'process_features',
+    
+    # Feature generation integration
+    'FeatureGenerationAdapter',
+    'IntegratedFeaturePipeline',
+    'create_integrated_pipeline',
+    'process_with_integrated_pipeline',
     
     # Configuration
     'UnifiedPipelineConfig',

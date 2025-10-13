@@ -31,7 +31,6 @@ class NewPipelineConfig:
     
     # Stage 2: Progressive refinement
     stage2_enable_progressive_refinement: bool = True
-    stage2_removal_percentage: float = 0.10  # Remove 10% of features above target, rounded down
     
     # Bootstrap stability and CV threshold
     stage2_bootstrap_cv_threshold: int = 40  # Use bootstrap stability and CV when 40+ features away from target
@@ -46,8 +45,12 @@ class NewPipelineConfig:
     lasso_cv_folds: int = 5
     
     # RFE configuration
-    rfe_step_size: float = 0.1
+    rfe_step_size: float = 0.10  # Remove 10% of features above target in each RFE round
     rfe_min_features: int = 10
+    rfe_cv_folds: int = 3
+    rfe_early_stopping: bool = True
+    rfe_early_stopping_patience: int = 3
+    rfe_use_percentage_step: bool = True  # Use percentage-based step size instead of fixed
     
     # Bootstrap stability configuration
     bootstrap_n_samples: int = 100
@@ -87,13 +90,14 @@ Located in: `src/training/steps/pre_training/feature_selection/core/enhanced_pip
 - Leverages VectorBT's vectorized operations for performance
 - Maintains memory efficiency with chunked processing
 
-### **4. Stage 2: Progressive Refinement**
+### **4. Stage 2: Progressive Refinement with RFE**
 
 **Process:**
-1. **Percentage-Based Batch Sizing**: 
-   - Removes 10% of features above target (rounded down)
-   - Provides good balance between efficiency and precision
-   - Minimum batch size of 1 feature
+1. **RFE with Percentage-Based Step Size**: 
+   - Uses Recursive Feature Elimination (RFE)
+   - Removes 10% of features above target in each RFE round
+   - Operates recursively until target is reached
+   - Minimum step size of 1 feature
 
 2. **Ensemble Feature Scoring**:
    - **LGBM-SHAP**: 40% weight - Tree-based feature importance with SHAP values
@@ -106,7 +110,7 @@ Located in: `src/training/steps/pre_training/feature_selection/core/enhanced_pip
    - Reduces computational overhead when close to target
    - Maintains precision for final refinement steps
 
-4. **Progressive Removal**: Remove lowest-scoring features in calculated batch sizes
+4. **RFE Rounds**: Each round removes 10% of features above target, recursively
 
 ### **5. Integration with Existing System**
 

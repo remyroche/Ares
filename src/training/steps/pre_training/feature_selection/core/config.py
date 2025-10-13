@@ -170,7 +170,6 @@ class NewPipelineConfig:
     
     # Stage 2: Progressive refinement
     stage2_enable_progressive_refinement: bool = True
-    stage2_removal_percentage: float = 0.10  # Remove 10% of features above target, rounded down
     
     # Bootstrap stability and CV threshold
     stage2_bootstrap_cv_threshold: int = 40  # Use bootstrap stability and CV when 40+ features away from target
@@ -201,11 +200,12 @@ class NewPipelineConfig:
     lasso_n_alphas: int = 50
     
     # RFE configuration
-    rfe_step_size: float = 0.1
+    rfe_step_size: float = 0.10  # Remove 10% of features above target in each RFE round
     rfe_min_features: int = 10
     rfe_cv_folds: int = 3
     rfe_early_stopping: bool = True
     rfe_early_stopping_patience: int = 3
+    rfe_use_percentage_step: bool = True  # Use percentage-based step size instead of fixed
     
     # Bootstrap stability configuration
     bootstrap_n_samples: int = 100

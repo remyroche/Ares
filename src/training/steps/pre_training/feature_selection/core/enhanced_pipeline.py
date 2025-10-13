@@ -254,12 +254,12 @@ class EnhancedMultiStageFeatureSelector:
     def _stage_2_progressive_refinement(self, X: pd.DataFrame, y: pd.Series, 
                                       current_features: List[str]) -> Dict[str, Any]:
         """
-        Stage 2: Progressive refinement using LGBM-SHAP and LASSO ensemble.
+        Stage 2: Progressive refinement using RFE with percentage-based step size.
         
-        Removes 10% of features above target (rounded down) for good balance.
+        Uses RFE to recursively remove 10% of features above target in each round.
         Uses bootstrap stability and CV only when 40+ features away from target.
         """
-        tprint_debug("🔍 Stage 2: Progressive refinement")
+        tprint_debug("🔍 Stage 2: Progressive refinement with RFE")
         tprint_debug(f"   📊 Input features: {len(current_features)}")
         tprint_debug(f"   📊 Data shape: {X.shape}")
         
@@ -268,63 +268,26 @@ class EnhancedMultiStageFeatureSelector:
             current_features = current_features.copy()
             
             tprint_debug(f"   📊 Target features: {target_features}")
-            tprint_debug(f"   📊 Removal percentage: {self.config.stage2_removal_percentage:.1%}")
+            tprint_debug(f"   📊 RFE step percentage: {self.config.rfe_step_size:.1%}")
             tprint_debug(f"   📊 Bootstrap/CV threshold: {self.config.stage2_bootstrap_cv_threshold} features")
             
-            # Progressive refinement loop
-            refinement_steps = []
-            step = 0
+            # Check if we should use bootstrap stability and CV
+            features_above_target = len(current_features) - target_features
+            use_bootstrap_cv = features_above_target >= self.config.stage2_bootstrap_cv_threshold
+            tprint_debug(f"   📊 Use bootstrap stability and CV: {use_bootstrap_cv} (threshold: {self.config.stage2_bootstrap_cv_threshold})")
             
-            while len(current_features) > target_features:
-                step += 1
-                features_above_target = len(current_features) - target_features
-                tprint_debug(f"   📊 Refinement step {step}: {len(current_features)} features remaining ({features_above_target} above target)")
-                
-                # Calculate batch size as 10% of features above target, rounded down
-                batch_size = max(1, int(features_above_target * self.config.stage2_removal_percentage))
-                tprint_debug(f"   📊 Calculated batch size: {batch_size} (10% of {features_above_target} above target)")
-                
-                # Determine if we should use bootstrap stability and CV
-                use_bootstrap_cv = features_above_target >= self.config.stage2_bootstrap_cv_threshold
-                tprint_debug(f"   📊 Use bootstrap stability and CV: {use_bootstrap_cv} (threshold: {self.config.stage2_bootstrap_cv_threshold})")
-                
-                # Calculate feature importance using ensemble methods
-                feature_scores = self._calculate_ensemble_feature_scores(
-                    X[current_features], y, use_bootstrap_cv=use_bootstrap_cv
-                )
-                
-                # Select features to remove
-                features_to_remove = self._select_features_to_remove(
-                    current_features, feature_scores, batch_size
-                )
-                
-                # Remove features
-                current_features = [f for f in current_features if f not in features_to_remove]
-                
-                tprint_debug(f"   📊 Removed {len(features_to_remove)} features: {features_to_remove}")
-                
-                refinement_steps.append({
-                    'step': step,
-                    'features_remaining': len(current_features),
-                    'features_removed': len(features_to_remove),
-                    'batch_size': batch_size,
-                    'features_above_target': features_above_target,
-                    'use_bootstrap_cv': use_bootstrap_cv,
-                    'features_removed_list': features_to_remove
-                })
-                
-                # Safety check to prevent infinite loop
-                if step > 100:
-                    tprint_warning("   ⚠️ Maximum refinement steps reached, stopping")
-                    break
+            # Use RFE with percentage-based step size
+            selected_features = self._rfe_with_percentage_step(
+                X[current_features], y, current_features, target_features, use_bootstrap_cv
+            )
             
-            tprint_debug(f"   ✅ Stage 2 completed: {len(current_features)} features selected")
+            tprint_debug(f"   ✅ Stage 2 completed: {len(selected_features)} features selected")
             
             return {
-                'selected_features': current_features,
-                'refinement_steps': refinement_steps,
+                'selected_features': selected_features,
                 'target_count': target_features,
-                'method': 'progressive_refinement_percentage_based'
+                'method': 'rfe_percentage_based',
+                'use_bootstrap_cv': use_bootstrap_cv
             }
             
         except Exception as e:
@@ -332,6 +295,95 @@ class EnhancedMultiStageFeatureSelector:
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
     
+    def _rfe_with_percentage_step(self, X: pd.DataFrame, y: pd.Series, 
+                                 feature_names: List[str], target_features: int,
+                                 use_bootstrap_cv: bool = False) -> List[str]:
+        """
+        Recursive Feature Elimination with percentage-based step size.
+        
+        Removes 10% of features above target in each RFE round, recursively.
+        """
+        tprint_debug("🔍 Starting RFE with percentage-based step size")
+        
+        try:
+            current_features = feature_names.copy()
+            current_X = X.copy()
+            rfe_rounds = []
+            
+            while len(current_features) > target_features:
+                features_above_target = len(current_features) - target_features
+                
+                # Calculate step size as percentage of features above target
+                step_size = max(1, int(features_above_target * self.config.rfe_step_size))
+                tprint_debug(f"   📊 RFE Round: {len(current_features)} features, {features_above_target} above target")
+                tprint_debug(f"   📊 Step size: {step_size} features (10% of {features_above_target})")
+                
+                # Calculate feature importance using ensemble methods
+                feature_scores = self._calculate_ensemble_feature_scores(
+                    current_X, y, use_bootstrap_cv=use_bootstrap_cv
+                )
+                
+                # Select features to remove (lowest scores)
+                features_to_remove = self._select_features_to_remove(
+                    current_features, feature_scores, step_size
+                )
+                
+                # Remove features
+                current_features = [f for f in current_features if f not in features_to_remove]
+                current_X = current_X.drop(columns=features_to_remove)
+                
+                tprint_debug(f"   📊 Removed {len(features_to_remove)} features: {features_to_remove}")
+                
+                rfe_rounds.append({
+                    'round': len(rfe_rounds) + 1,
+                    'features_remaining': len(current_features),
+                    'features_removed': len(features_to_remove),
+                    'step_size': step_size,
+                    'features_above_target': features_above_target,
+                    'features_removed_list': features_to_remove
+                })
+                
+                # Safety check to prevent infinite loop
+                if len(rfe_rounds) > 100:
+                    tprint_warning("   ⚠️ Maximum RFE rounds reached, stopping")
+                    break
+            
+            tprint_debug(f"   ✅ RFE completed: {len(current_features)} features selected in {len(rfe_rounds)} rounds")
+            
+            return current_features
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ RFE with percentage step failed: {e}")
+            # Fallback to simple correlation-based selection
+            return self._fallback_feature_selection(X, y, feature_names, target_features)
+    
+    def _fallback_feature_selection(self, X: pd.DataFrame, y: pd.Series, 
+                                   feature_names: List[str], target_features: int) -> List[str]:
+        """Fallback feature selection using simple correlation."""
+        try:
+            tprint_debug("   📊 Using fallback correlation-based selection")
+            
+            # Calculate correlation scores
+            correlations = []
+            for col in X.columns:
+                corr, _ = spearmanr(X[col], y)
+                correlations.append(abs(corr) if not np.isnan(corr) else 0.0)
+            
+            # Select top features
+            feature_scores = pd.Series(correlations, index=X.columns)
+            sorted_features = feature_scores.sort_values(ascending=False)
+            
+            selected_features = sorted_features.head(target_features).index.tolist()
+            
+            tprint_debug(f"   ✅ Fallback selection completed: {len(selected_features)} features selected")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Fallback selection failed: {e}")
+            # Last resort: select first target_features
+            return feature_names[:target_features]
+
     def _calculate_mrmr_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
         """Calculate mRMR scores using VectorBT optimization."""
         try:

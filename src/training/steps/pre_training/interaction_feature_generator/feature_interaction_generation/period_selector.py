@@ -146,8 +146,9 @@ class PeriodSelector:
             characteristics = self.analyzer.analyze_data_characteristics(data)
             self.performance_stats['analysis_operations'] += 1
             
-            # Check if we have enough data
+            # Check if we have enough data - fast fail
             if characteristics['data_length'] < self.min_data_points:
+                tprint_error(f"❌ Insufficient data: {characteristics['data_length']} < {self.min_data_points} required")
                 raise AnalysisError(f"Insufficient data: {characteristics['data_length']} < {self.min_data_points} required")
             
             # Get base periods from timeframe
@@ -332,20 +333,44 @@ class PeriodSelector:
         return cache_key
     
     def _get_from_cache(self, cache_key: str) -> Optional[PeriodAnalysisResult]:
-        """Get result from cache."""
+        """Get result from cache with comprehensive logging."""
         if not self._cache_enabled:
+            tprint_debug("ℹ️ Cache disabled - skipping cache lookup")
+            return None
+        
+        if not isinstance(cache_key, str) or not cache_key:
+            tprint_warning(f"⚠️ Invalid cache key: {cache_key}")
             return None
         
         if cache_key in self._result_cache:
+            result = self._result_cache[cache_key]
+            if result is None:
+                tprint_warning(f"⚠️ Cache hit but result is None for key: {cache_key}")
+                return None
             tprint_debug(f"✅ Cache hit for key: {cache_key}")
-            return self._result_cache[cache_key]
+            tprint_debug(f"📊 Cached result type: {type(result).__name__}")
+            return result
         else:
             tprint_debug(f"❌ Cache miss for key: {cache_key}")
+            tprint_debug(f"📊 Cache size: {len(self._result_cache)}/{self._max_cache_size}")
             return None
     
     def _put_in_cache(self, cache_key: str, result: PeriodAnalysisResult):
-        """Put result in cache."""
+        """Put result in cache with comprehensive validation and logging."""
         if not self._cache_enabled:
+            tprint_debug("ℹ️ Cache disabled - skipping cache storage")
+            return
+        
+        if not isinstance(cache_key, str) or not cache_key:
+            tprint_warning(f"⚠️ Invalid cache key for storage: {cache_key}")
+            return
+        
+        if result is None:
+            tprint_warning(f"⚠️ Cannot cache None result for key: {cache_key}")
+            return
+        
+        if not isinstance(result, PeriodAnalysisResult):
+            tprint_warning(f"⚠️ Invalid result type for caching: {type(result).__name__}")
             return
         
         # Limit cache size
@@ -357,6 +382,7 @@ class PeriodSelector:
         
         self._result_cache[cache_key] = result
         tprint_debug(f"✅ Stored result in cache (size: {len(self._result_cache)}/{self._max_cache_size})")
+        tprint_debug(f"📊 Cached result: {len(result.optimal_periods)} periods, confidence: {result.confidence_score:.3f}")
     
     def enable_cache(self, enabled: bool = True, max_size: int = 100):
         """Enable or disable caching."""

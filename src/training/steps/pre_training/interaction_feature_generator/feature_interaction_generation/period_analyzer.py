@@ -89,13 +89,24 @@ class PeriodAnalyzer:
         tprint_info(f"💾 Memory efficient: {memory_efficient}")
     
     def _initialize_vectorbt_components(self):
-        """Initialize VectorBT optimization components."""
-        if not self.enable_vectorbt or not VECTORBT_AVAILABLE:
-            tprint_info("ℹ️ VectorBT optimizations disabled or unavailable")
+        """Initialize VectorBT optimization components with comprehensive error handling."""
+        tprint_debug("🔍 Initializing VectorBT components...")
+        
+        if not self.enable_vectorbt:
+            tprint_info("ℹ️ VectorBT optimizations disabled by configuration")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+            return
+        
+        if not VECTORBT_AVAILABLE:
+            tprint_warning("⚠️ VectorBT not available - falling back to pandas operations")
+            tprint_warning("📊 Install VectorBT with: pip install vectorbt")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
             return
         
         try:
-            # Initialize VectorBT rolling optimizer
+            tprint_debug("🔧 Initializing VectorBT rolling optimizer...")
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=False,
                 enable_parallel=self.enable_parallel,
@@ -103,7 +114,11 @@ class PeriodAnalyzer:
                 chunk_size=self.chunk_size
             )
             
-            # Initialize unified vectorization manager
+            if self.rolling_optimizer is None:
+                tprint_error("❌ VectorBT rolling optimizer initialization returned None")
+                raise AnalysisError("VectorBT rolling optimizer initialization failed - returned None")
+            
+            tprint_debug("🔧 Initializing unified vectorization manager...")
             config = VectorizationConfig(
                 enable_vectorbt=True,
                 enable_gpu=False,
@@ -116,12 +131,25 @@ class PeriodAnalyzer:
             )
             self.vectorization_manager = get_unified_vectorization_manager(config)
             
-            tprint_success("✅ VectorBT components initialized successfully")
+            if self.vectorization_manager is None:
+                tprint_error("❌ VectorBT vectorization manager initialization returned None")
+                raise AnalysisError("VectorBT vectorization manager initialization failed - returned None")
             
+            tprint_success("✅ VectorBT components initialized successfully")
+            tprint_debug(f"📊 Rolling optimizer: {type(self.rolling_optimizer).__name__}")
+            tprint_debug(f"📊 Vectorization manager: {type(self.vectorization_manager).__name__}")
+            
+        except ImportError as e:
+            tprint_error(f"❌ VectorBT import failed: {e}")
+            tprint_error("📊 VectorBT dependencies may be missing")
+            raise AnalysisError(f"VectorBT import failed: {e}") from e
         except Exception as e:
-            tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
+            tprint_error(f"❌ VectorBT initialization failed: {e}")
+            tprint_error(f"📊 Error type: {type(e).__name__}")
+            tprint_error("📊 Falling back to pandas operations")
             self.rolling_optimizer = None
             self.vectorization_manager = None
+            # Don't raise here - allow fallback to pandas
     
     def analyze_data_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -305,23 +333,33 @@ class PeriodAnalyzer:
     
     def _detect_volatility_clusters_vectorbt(self, features: pd.DataFrame) -> List[int]:
         """Detect volatility clustering periods using VectorBT-optimized features."""
+        tprint_debug("🔍 Detecting volatility clusters using VectorBT features...")
+        
         if features.empty:
+            tprint_warning("⚠️ Empty features DataFrame provided for volatility clustering")
             return []
         
         vol_clusters = []
         volatility_cols = [col for col in features.columns if col.startswith('volatility_')]
         
         if not volatility_cols:
+            tprint_warning("⚠️ No volatility columns found in features for clustering analysis")
             return []
+        
+        tprint_debug(f"📊 Found {len(volatility_cols)} volatility columns: {volatility_cols}")
         
         # Use pre-computed volatility features
         for col in volatility_cols:
+            tprint_debug(f"🔍 Processing volatility column: {col}")
             vol_series = features[col].dropna()
+            
             if len(vol_series) < 10:
+                tprint_warning(f"⚠️ Skipping {col}: insufficient data ({len(vol_series)} points)")
                 continue
             
             vol_threshold = vol_series.quantile(0.8)
             if pd.isna(vol_threshold):
+                tprint_warning(f"⚠️ Skipping {col}: invalid threshold (NaN)")
                 continue
             
             clusters = vol_series > vol_threshold
@@ -330,115 +368,180 @@ class PeriodAnalyzer:
             if cluster_lengths:
                 avg_length = np.mean(cluster_lengths)
                 vol_clusters.append(int(avg_length))
+                tprint_debug(f"✅ Added volatility cluster: {int(avg_length)} from {col}")
+            else:
+                tprint_debug(f"ℹ️ No clusters found in {col}")
         
-        return vol_clusters[:3]
+        result = vol_clusters[:3]
+        tprint_debug(f"✅ Volatility clustering complete: {len(result)} clusters found")
+        return result
     
     def _detect_trend_cycles_vectorbt(self, features: pd.DataFrame) -> List[int]:
         """Detect trend cycles using VectorBT-optimized features."""
+        tprint_debug("🔍 Detecting trend cycles using VectorBT features...")
+        
         if features.empty:
+            tprint_warning("⚠️ Empty features DataFrame provided for trend cycle detection")
             return []
         
         cycle_lengths = []
         sma_cols = [col for col in features.columns if col.startswith('sma_')]
         
         if not sma_cols:
+            tprint_warning("⚠️ No SMA columns found in features for trend cycle detection")
             return []
         
+        tprint_debug(f"📊 Found {len(sma_cols)} SMA columns: {sma_cols}")
+        
         for col in sma_cols:
+            tprint_debug(f"🔍 Processing SMA column: {col}")
             sma_series = features[col].dropna()
+            
             if len(sma_series) < 20:
+                tprint_warning(f"⚠️ Skipping {col}: insufficient data ({len(sma_series)} points)")
                 continue
             
             try:
                 peaks, _ = find_peaks(sma_series, distance=5)
                 troughs, _ = find_peaks(-sma_series, distance=5)
                 
+                tprint_debug(f"📊 Found {len(peaks)} peaks and {len(troughs)} troughs in {col}")
+                
                 all_extrema = sorted(list(peaks) + list(troughs))
                 for i in range(1, len(all_extrema)):
                     cycle_length = all_extrema[i] - all_extrema[i-1]
                     cycle_lengths.append(cycle_length)
-            except Exception:
+                    tprint_debug(f"✅ Added cycle length: {cycle_length} from {col}")
+                    
+            except Exception as e:
+                tprint_warning(f"⚠️ Peak detection failed for {col}: {e}")
                 continue
         
         if cycle_lengths:
             from collections import Counter
             most_common = Counter(cycle_lengths).most_common(3)
-            return [length for length, count in most_common]
+            result = [length for length, count in most_common]
+            tprint_debug(f"✅ Trend cycle detection complete: {len(result)} cycles found")
+            return result
         
+        tprint_warning("⚠️ No trend cycles detected")
         return []
     
     def _analyze_volume_patterns_vectorbt(self, features: pd.DataFrame) -> Dict[str, Any]:
         """Analyze volume patterns using VectorBT-optimized features."""
+        tprint_debug("🔍 Analyzing volume patterns using VectorBT features...")
+        
+        if features.empty:
+            tprint_warning("⚠️ Empty features DataFrame provided for volume pattern analysis")
+            return {'spike_periods': [], 'volume_trend': []}
+        
         volume_patterns = {'spike_periods': [], 'volume_trend': []}
         
         volume_sma_5 = features.get('volume_sma_5', pd.Series())
         volume_sma_20 = features.get('volume_sma_20', pd.Series())
         
+        tprint_debug(f"📊 Volume SMA columns available: 5-period={not volume_sma_5.empty}, 20-period={not volume_sma_20.empty}")
+        
         if not volume_sma_5.empty and not volume_sma_20.empty:
+            tprint_debug("🔍 Analyzing volume spikes...")
             vol_spikes = volume_sma_5 > volume_sma_20 * 1.5
             spike_periods = PeriodAnalysisUtils.find_pattern_periods(vol_spikes)
             volume_patterns['spike_periods'] = spike_periods
+            tprint_debug(f"✅ Found {len(spike_periods)} volume spike periods")
+        else:
+            tprint_warning("⚠️ Volume SMA columns not available for spike analysis")
         
+        tprint_debug("🔍 Analyzing volume trends...")
         volume_patterns['volume_trend'] = self._detect_trend_cycles_vectorbt(features)
         
+        tprint_debug(f"✅ Volume pattern analysis complete: {volume_patterns}")
         return volume_patterns
     
     def _detect_regime_changes_vectorbt(self, data: pd.DataFrame, features: Optional[pd.DataFrame] = None) -> List[int]:
         """Detect market regime changes using VectorBT-optimized features."""
+        tprint_debug("🔍 Detecting market regime changes using VectorBT...")
+        
         if 'close' not in data.columns:
+            tprint_warning("⚠️ Missing 'close' column for regime detection")
             return []
         
         if len(data) < 50:
+            tprint_warning(f"⚠️ Insufficient data for regime detection: {len(data)} < 50 required")
             return []
         
         try:
             # Use pre-computed volatility features if available
             if features is not None and 'volatility_20' in features.columns:
+                tprint_debug("📊 Using pre-computed volatility features for regime detection")
                 volatility = features['volatility_20'].dropna()
             else:
+                tprint_debug("📊 Calculating volatility manually for regime detection")
                 if not self.rolling_optimizer:
+                    tprint_warning("⚠️ Rolling optimizer not available for regime detection")
                     return []
                 
                 returns = data['close'].pct_change().dropna()
                 if len(returns) == 0:
+                    tprint_warning("⚠️ No valid returns calculated for regime detection")
                     return []
                 
                 volatility = self.rolling_optimizer.rolling_std(returns, window=20)
             
             if volatility.empty or volatility.isna().all():
+                tprint_warning("⚠️ Invalid volatility data for regime detection")
                 return []
             
             vol_threshold = volatility.quantile(0.7)
             if pd.isna(vol_threshold):
+                tprint_warning("⚠️ Invalid volatility threshold for regime detection")
                 return []
             
+            tprint_debug(f"📊 Volatility threshold: {vol_threshold:.6f}")
             regime_changes = volatility > vol_threshold
             regime_lengths = PeriodAnalysisUtils.find_pattern_periods(regime_changes)
             
-            return regime_lengths[:3]
-        except Exception:
+            result = regime_lengths[:3]
+            tprint_debug(f"✅ Regime detection complete: {len(result)} regime periods found")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Regime detection failed: {e}")
+            tprint_error(f"📊 Error type: {type(e).__name__}")
             return []
     
     def _detect_seasonality(self, series: pd.Series) -> List[int]:
         """Detect seasonal patterns."""
+        tprint_debug("🔍 Detecting seasonal patterns...")
+        
         if len(series) < 100:
+            tprint_warning(f"⚠️ Insufficient data for seasonality detection: {len(series)} < 100 required")
             return []
         
         try:
             # Get timeframe from series index
             timeframe_minutes = PeriodAnalysisUtils.get_timeframe_minutes(pd.DataFrame(index=series.index))
+            tprint_debug(f"📊 Detected timeframe: {timeframe_minutes} minutes")
             
             # Look for daily, weekly patterns
             daily_period = 24 * 60 // timeframe_minutes
             weekly_period = daily_period * 7
             
+            tprint_debug(f"📊 Calculated periods - daily: {daily_period}, weekly: {weekly_period}")
+            
             seasonal_periods = []
             for period in [daily_period, weekly_period]:
                 if 2 <= period <= 200:  # Reasonable range
                     seasonal_periods.append(period)
+                    tprint_debug(f"✅ Added seasonal period: {period}")
+                else:
+                    tprint_debug(f"⚠️ Skipped period {period}: outside reasonable range [2, 200]")
             
+            tprint_debug(f"✅ Seasonality detection complete: {len(seasonal_periods)} periods found")
             return seasonal_periods
-        except Exception:
+            
+        except Exception as e:
+            tprint_error(f"❌ Seasonality detection failed: {e}")
+            tprint_error(f"📊 Error type: {type(e).__name__}")
             return []
     
     def detect_market_cycles(self, data: pd.DataFrame) -> List[int]:
@@ -493,16 +596,22 @@ class PeriodAnalyzer:
                 rolling_stats = self.rolling_optimizer.get_performance_stats()
                 if rolling_stats:
                     stats.update(rolling_stats)
-            except Exception:
-                pass
+                    tprint_debug("✅ Added VectorBT rolling optimizer stats")
+                else:
+                    tprint_warning("⚠️ VectorBT rolling optimizer returned empty stats")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT rolling optimizer stats: {e}")
         
         if self.vectorization_manager:
             try:
                 vectorization_stats = self.vectorization_manager.get_performance_stats()
                 if vectorization_stats:
                     stats.update(vectorization_stats)
-            except Exception:
-                pass
+                    tprint_debug("✅ Added VectorBT vectorization manager stats")
+                else:
+                    tprint_warning("⚠️ VectorBT vectorization manager returned empty stats")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT vectorization manager stats: {e}")
         
         # Calculate efficiency metrics
         if stats['total_operations'] > 0:
@@ -531,11 +640,13 @@ class PeriodAnalyzer:
         if self.rolling_optimizer:
             try:
                 self.rolling_optimizer.reset_stats()
-            except Exception:
-                pass
+                tprint_debug("✅ VectorBT rolling optimizer stats reset")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to reset VectorBT rolling optimizer stats: {e}")
         
         if self.vectorization_manager:
             try:
                 self.vectorization_manager.reset_stats()
-            except Exception:
-                pass
+                tprint_debug("✅ VectorBT vectorization manager stats reset")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to reset VectorBT vectorization manager stats: {e}")

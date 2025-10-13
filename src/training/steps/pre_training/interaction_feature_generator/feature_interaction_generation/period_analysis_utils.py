@@ -39,7 +39,7 @@ class PeriodAnalysisUtils:
                           required_columns: Optional[List[str]] = None,
                           operation_name: str = "operation") -> None:
         """
-        Validate DataFrame with comprehensive error checking.
+        Validate DataFrame with comprehensive error checking and detailed logging.
         
         Args:
             data: DataFrame to validate
@@ -50,19 +50,38 @@ class PeriodAnalysisUtils:
         Raises:
             ValidationError: If validation fails
         """
+        tprint_debug(f"🔍 Validating DataFrame for {operation_name}...")
+        
+        # Type validation
         if not isinstance(data, pd.DataFrame):
+            tprint_error(f"❌ {operation_name}: Invalid data type - expected pandas DataFrame, got {type(data).__name__}")
             raise ValidationError(f"{operation_name}: Expected pandas DataFrame, got {type(data).__name__}")
         
+        # Empty DataFrame check
         if len(data) == 0:
+            tprint_error(f"❌ {operation_name}: DataFrame is empty")
             raise ValidationError(f"{operation_name}: DataFrame cannot be empty")
         
+        # Length validation
         if len(data) < min_length:
+            tprint_error(f"❌ {operation_name}: Insufficient data - got {len(data)} rows, need at least {min_length}")
             raise ValidationError(f"{operation_name}: Insufficient data ({len(data)} < {min_length} required)")
         
+        # Column validation
         if required_columns:
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
+                available_columns = list(data.columns)
+                tprint_error(f"❌ {operation_name}: Missing required columns: {missing_columns}")
+                tprint_error(f"📊 Available columns: {available_columns}")
                 raise ValidationError(f"{operation_name}: Missing required columns: {missing_columns}")
+        
+        # Data quality checks
+        if data.isnull().all().any():
+            null_columns = data.columns[data.isnull().all()].tolist()
+            tprint_warning(f"⚠️ {operation_name}: Found columns with all null values: {null_columns}")
+        
+        tprint_debug(f"✅ DataFrame validation passed - shape: {data.shape}, columns: {list(data.columns)}")
     
     @staticmethod
     def validate_series(series: pd.Series,
@@ -129,7 +148,7 @@ class PeriodAnalysisUtils:
                      *args, 
                      **kwargs) -> Any:
         """
-        Safely execute an operation with error handling and logging.
+        Safely execute an operation with comprehensive error handling and logging.
         
         Args:
             operation_func: Function to execute
@@ -144,16 +163,36 @@ class PeriodAnalysisUtils:
             AnalysisError: If operation fails
         """
         tprint_debug(f"🔍 Starting {operation_name}...")
+        tprint_debug(f"📊 Operation args: {len(args)} positional, {len(kwargs)} keyword")
         start_time = time.time()
         
         try:
             result = operation_func(*args, **kwargs)
             execution_time = time.time() - start_time
+            
+            # Validate result
+            if result is None:
+                tprint_warning(f"⚠️ {operation_name} returned None - this may indicate an issue")
+            elif isinstance(result, (list, dict)) and len(result) == 0:
+                tprint_warning(f"⚠️ {operation_name} returned empty {type(result).__name__}")
+            
             tprint_success(f"✅ {operation_name} completed in {execution_time:.3f}s")
+            tprint_debug(f"📊 Result type: {type(result).__name__}, size: {getattr(result, '__len__', lambda: 'N/A')()}")
             return result
+            
+        except ValidationError as e:
+            execution_time = time.time() - start_time
+            tprint_error(f"❌ {operation_name} validation failed after {execution_time:.3f}s: {e}")
+            raise AnalysisError(f"{operation_name} validation failed: {e}") from e
+        except AnalysisError as e:
+            execution_time = time.time() - start_time
+            tprint_error(f"❌ {operation_name} analysis failed after {execution_time:.3f}s: {e}")
+            raise
         except Exception as e:
             execution_time = time.time() - start_time
             tprint_error(f"❌ {operation_name} failed after {execution_time:.3f}s: {e}")
+            tprint_error(f"📊 Error type: {type(e).__name__}")
+            tprint_error(f"📊 Error details: {str(e)}")
             raise AnalysisError(f"{operation_name} failed: {e}") from e
     
     @staticmethod

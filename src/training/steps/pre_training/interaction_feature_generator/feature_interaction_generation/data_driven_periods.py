@@ -239,9 +239,12 @@ def get_data_driven_periods(data: pd.DataFrame,
     tprint_info(f"🚀 Getting data-driven periods (data_shape: {data.shape}, target: {target_timeframe})")
     tprint_debug(f"📊 Configuration: max_periods={max_periods}, vectorbt={enable_vectorbt}, parallel={enable_parallel}, memory_efficient={memory_efficient}")
     
-    # Fast fail for invalid inputs
+    # Fast fail for invalid inputs with comprehensive validation
+    tprint_debug("🔍 Validating input parameters...")
+    
     if not isinstance(data, pd.DataFrame):
         tprint_error("❌ Invalid input: expected pandas DataFrame")
+        tprint_error(f"📊 Got: {type(data).__name__}")
         raise ValueError("Expected pandas DataFrame, got {type(data).__name__}")
     
     if len(data) == 0:
@@ -250,23 +253,48 @@ def get_data_driven_periods(data: pd.DataFrame,
     
     if not isinstance(max_periods, int) or max_periods <= 0:
         tprint_error("❌ Invalid max_periods: must be positive integer")
+        tprint_error(f"📊 Got: {max_periods} (type: {type(max_periods).__name__})")
         raise ValueError("max_periods must be a positive integer")
     
+    tprint_debug(f"✅ Input validation passed - data shape: {data.shape}, max_periods: {max_periods}")
+    
     try:
+        tprint_debug("🔧 Creating DataDrivenPeriodSelector instance...")
         selector = DataDrivenPeriodSelector(
             max_periods=max_periods,
             enable_vectorbt=enable_vectorbt,
             enable_parallel=enable_parallel,
             memory_efficient=memory_efficient
         )
+        
+        tprint_debug("🔍 Selecting optimal periods...")
         result = selector.select_optimal_periods(data, target_timeframe)
         
+        if result is None:
+            tprint_error("❌ Selector returned None result")
+            raise RuntimeError("Period selector returned None result")
+        
+        if not hasattr(result, 'optimal_periods') or result.optimal_periods is None:
+            tprint_error("❌ Invalid result structure - missing optimal_periods")
+            raise RuntimeError("Invalid result structure from period selector")
+        
         tprint_success(f"✅ Data-driven periods retrieved: {result.optimal_periods}")
+        tprint_debug(f"📊 Result confidence: {getattr(result, 'confidence_score', 'N/A')}")
         return result.optimal_periods
         
+    except ValidationError as e:
+        tprint_error(f"❌ Validation failed: {e}")
+        tprint_error("📊 This indicates invalid input parameters")
+        raise RuntimeError(f"Validation failed: {e}") from e
+    except AnalysisError as e:
+        tprint_error(f"❌ Analysis failed: {e}")
+        tprint_error("📊 This indicates a problem with data analysis")
+        raise RuntimeError(f"Analysis failed: {e}") from e
     except Exception as e:
         tprint_error(f"❌ Failed to get data-driven periods: {e}")
-        raise RuntimeError(f"Failed to get data-driven periods: {e}")
+        tprint_error(f"📊 Error type: {type(e).__name__}")
+        tprint_error("📊 This indicates an unexpected error")
+        raise RuntimeError(f"Failed to get data-driven periods: {e}") from e
 
 
 def get_data_driven_periods_with_stats(data: pd.DataFrame, 

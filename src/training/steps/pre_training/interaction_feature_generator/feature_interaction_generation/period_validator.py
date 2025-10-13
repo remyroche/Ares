@@ -184,10 +184,13 @@ class PeriodValidator:
                             vol_stability = 1 / (rolling_vol.std() + 1e-8)
                             score += vol_stability
                             score_components['stability'] = vol_stability
+                            tprint_debug(f"📊 Period {period}: stability score = {vol_stability:.6f}")
                         else:
+                            tprint_warning(f"⚠️ Period {period}: insufficient returns data for stability calculation")
                             score_components['stability'] = 0
                     except Exception as e:
-                        tprint_debug(f"⚠️ Stability calculation failed for period {period}: {e}")
+                        tprint_warning(f"⚠️ Stability calculation failed for period {period}: {e}")
+                        tprint_debug(f"📊 Error type: {type(e).__name__}")
                         score_components['stability'] = 0
                 
                 scores.append((score, period))
@@ -381,17 +384,31 @@ class PeriodValidator:
                 try:
                     returns = data['close'].pct_change().dropna()
                     stability_scores = []
+                    tprint_debug(f"📊 Calculating stability scores for {len(valid_periods[:3])} periods")
+                    
                     for period in valid_periods[:3]:  # Check top 3 periods
                         if len(returns) > period:
                             rolling_vol = returns.rolling(period).std()
                             if not rolling_vol.empty:
                                 stability = 1 / (rolling_vol.std() + 1e-8)
                                 stability_scores.append(stability)
+                                tprint_debug(f"📊 Period {period}: stability = {stability:.6f}")
+                            else:
+                                tprint_warning(f"⚠️ Period {period}: empty rolling volatility")
+                        else:
+                            tprint_warning(f"⚠️ Period {period}: insufficient returns data")
                     
                     if stability_scores:
                         quality_metrics['stability_score'] = np.mean(stability_scores)
-                except Exception:
-                    pass
+                        tprint_debug(f"📊 Average stability score: {quality_metrics['stability_score']:.6f}")
+                    else:
+                        tprint_warning("⚠️ No valid stability scores calculated")
+                        quality_metrics['stability_score'] = 0.0
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Stability score calculation failed: {e}")
+                    tprint_debug(f"📊 Error type: {type(e).__name__}")
+                    quality_metrics['stability_score'] = 0.0
             
             # Calculate confidence score
             quality_metrics['confidence_score'] = self.calculate_confidence_score(periods, characteristics)

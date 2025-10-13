@@ -36,6 +36,49 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
+# Import enhanced Pareto front utilities from ml_commons
+try:
+    from src.utils.ml_common.optimization.pareto import (
+        Solution, ParetoFront, ParetoOptimizer, compute_pareto_front,
+        select_knee_point, compute_hypervolume, scalarize_financial_goals,
+        filter_by_constraints, DEFAULT_FINANCIAL_WEIGHTS, get_pareto_front
+    )
+    from src.utils.ml_common.optimization.shared_utils.evolutionary_search import (
+        NSGA2Optimizer, SPEA2Optimizer, GeneticAlgorithmOptimizer,
+        EvolutionaryConfig, EvolutionaryResult, Individual
+    )
+    ML_COMMONS_PARETO_AVAILABLE = True
+    tprint_info("✅ ML Commons Pareto utilities imported successfully")
+except ImportError as e:
+    ML_COMMONS_PARETO_AVAILABLE = False
+    tprint_warning(f"⚠️ ML Commons Pareto utilities not available: {e}")
+    # Define fallback classes
+    class Solution:
+        def __init__(self, *args, **kwargs): pass
+    class ParetoFront:
+        def __init__(self, *args, **kwargs): pass
+    class ParetoOptimizer:
+        def __init__(self, *args, **kwargs): pass
+    def compute_pareto_front(*args, **kwargs): return []
+    def select_knee_point(*args, **kwargs): return None
+    def compute_hypervolume(*args, **kwargs): return 0.0
+    def scalarize_financial_goals(*args, **kwargs): return 0.0
+    def filter_by_constraints(*args, **kwargs): return []
+    DEFAULT_FINANCIAL_WEIGHTS = {}
+    def get_pareto_front(*args, **kwargs): return None
+    class NSGA2Optimizer:
+        def __init__(self, *args, **kwargs): pass
+    class SPEA2Optimizer:
+        def __init__(self, *args, **kwargs): pass
+    class GeneticAlgorithmOptimizer:
+        def __init__(self, *args, **kwargs): pass
+    class EvolutionaryConfig:
+        def __init__(self, *args, **kwargs): pass
+    class EvolutionaryResult:
+        def __init__(self, *args, **kwargs): pass
+    class Individual:
+        def __init__(self, *args, **kwargs): pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -480,26 +523,66 @@ class ProfitCenteredObjective(ObjectiveFunction):
 
 class MultiObjectiveFeatureSelector:
     """
-    Multi-objective feature selector using explicit objectives.
+    Enhanced multi-objective feature selector using explicit objectives.
+    
+    Now integrated with ml_commons Pareto front utilities for advanced
+    multi-objective optimization and evolutionary algorithms.
     """
     
     def __init__(self, objectives: List[ObjectiveFunction], 
                  weights: Optional[Dict[str, float]] = None,
                  max_features: int = 50,
-                 min_features: int = 5):
+                 min_features: int = 5,
+                 use_ml_commons: bool = True,
+                 use_evolutionary: bool = True,
+                 optimization_algorithm: str = "auto"):
         """
-        Initialize multi-objective feature selector.
+        Initialize enhanced multi-objective feature selector.
         
         Args:
             objectives: List of objective functions
             weights: Optional weights for objectives
             max_features: Maximum number of features to select
             min_features: Minimum number of features to select
+            use_ml_commons: Whether to use ml_commons Pareto utilities
+            use_evolutionary: Whether to use evolutionary algorithms
+            optimization_algorithm: Algorithm to use ("auto", "nsga2", "spea2", "ga")
         """
         self.objectives = objectives
         self.weights = weights or {obj.name: 1.0 for obj in objectives}
         self.max_features = max_features
         self.min_features = min_features
+        self.use_ml_commons = use_ml_commons and ML_COMMONS_PARETO_AVAILABLE
+        self.use_evolutionary = use_evolutionary and ML_COMMONS_PARETO_AVAILABLE
+        self.optimization_algorithm = optimization_algorithm
+        
+        # Initialize ml_commons utilities if available
+        if self.use_ml_commons:
+            self.pareto_front = get_pareto_front()
+            self.pareto_optimizer = ParetoOptimizer()
+            tprint_info("✅ ML Commons Pareto utilities initialized")
+        else:
+            self.pareto_front = None
+            self.pareto_optimizer = None
+        
+        # Initialize evolutionary algorithms if available
+        if self.use_evolutionary:
+            self.evolutionary_config = EvolutionaryConfig(
+                population_size=min(100, max(50, len(objectives) * 20)),
+                max_generations=50,
+                use_nsga2=True,
+                use_spea2=True,
+                use_genetic_algorithm=True
+            )
+            self.nsga2_optimizer = NSGA2Optimizer(self.evolutionary_config)
+            self.spea2_optimizer = SPEA2Optimizer(self.evolutionary_config)
+            self.ga_optimizer = GeneticAlgorithmOptimizer(self.evolutionary_config)
+            tprint_info("✅ Evolutionary algorithms initialized")
+        else:
+            self.evolutionary_config = None
+            self.nsga2_optimizer = None
+            self.spea2_optimizer = None
+            self.ga_optimizer = None
         
         # Validate weights sum to 1
         total_weight = sum(self.weights.values())
@@ -508,28 +591,232 @@ class MultiObjectiveFeatureSelector:
             # Normalize weights
             self.weights = {k: v/total_weight for k, v in self.weights.items()}
         
-        tprint_info(f"Initialized MultiObjectiveFeatureSelector with {len(objectives)} objectives")
+        tprint_info(f"Initialized Enhanced MultiObjectiveFeatureSelector with {len(objectives)} objectives")
+        if self.use_ml_commons:
+            tprint_info("✅ ML Commons integration enabled")
+        if self.use_evolutionary:
+            tprint_info("✅ Evolutionary optimization enabled")
     
     def select_features(self, features: pd.DataFrame, 
                        targets: pd.Series,
-                       cv_splits: Optional[List[Any]] = None) -> MultiObjectiveResult:
+                       cv_splits: Optional[List[Any]] = None,
+                       use_evolutionary: bool = None) -> MultiObjectiveResult:
         """
-        Select features using multi-objective optimization.
+        Select features using enhanced multi-objective optimization.
         
         Args:
             features: Feature DataFrame
             targets: Target series
             cv_splits: Optional CV splits for stability calculation
+            use_evolutionary: Override evolutionary algorithm usage
             
         Returns:
             MultiObjectiveResult with selected features and objective values
         """
-        tprint_info(f"Starting multi-objective feature selection for {features.shape[1]} features")
+        tprint_info(f"Starting enhanced multi-objective feature selection for {features.shape[1]} features")
         
         # Set CV splits for stability objective
         for obj in self.objectives:
             if isinstance(obj, StabilityObjective):
                 obj.cv_splits = cv_splits
+        
+        # Choose optimization method
+        use_evo = use_evolutionary if use_evolutionary is not None else self.use_evolutionary
+        
+        if use_evo and self.use_evolutionary:
+            tprint_info("🧬 Using evolutionary algorithm for feature selection")
+            return self._evolutionary_feature_selection(features, targets, cv_splits)
+        elif self.use_ml_commons:
+            tprint_info("🎯 Using ML Commons Pareto optimization for feature selection")
+            return self._pareto_feature_selection(features, targets, cv_splits)
+        else:
+            tprint_info("📊 Using standard multi-objective optimization")
+            return self._standard_feature_selection(features, targets, cv_splits)
+    
+    def _evolutionary_feature_selection(self, features: pd.DataFrame, 
+                                      targets: pd.Series,
+                                      cv_splits: Optional[List[Any]] = None) -> MultiObjectiveResult:
+        """Use evolutionary algorithms for feature selection."""
+        try:
+            tprint_info("🧬 Starting evolutionary feature selection")
+            
+            # Define parameter space for feature selection
+            feature_names = features.columns.tolist()
+            parameter_space = {}
+            
+            for i, feature in enumerate(feature_names):
+                parameter_space[f'feature_{i}'] = {
+                    'type': 'categorical',
+                    'choices': [True, False]  # Include or exclude feature
+                }
+            
+            # Define objective functions for evolutionary algorithm
+            def create_objective_function(obj_func):
+                def wrapper(parameters):
+                    # Extract selected features
+                    selected_features = [
+                        feature_names[i] for i, param_name in enumerate(parameter_space.keys())
+                        if parameters[param_name]
+                    ]
+                    
+                    if not selected_features:
+                        return 0.0
+                    
+                    # Evaluate objective
+                    result = obj_func.evaluate(features, targets, selected_features)
+                    return result.value if result.is_valid else 0.0
+                return wrapper
+            
+            objective_functions = [create_objective_function(obj) for obj in self.objectives]
+            
+            # Run evolutionary optimization
+            if self.optimization_algorithm == "nsga2" or self.optimization_algorithm == "auto":
+                result = self.nsga2_optimizer.optimize(objective_functions, parameter_space)
+            elif self.optimization_algorithm == "spea2":
+                result = self.spea2_optimizer.optimize(objective_functions, parameter_space)
+            elif self.optimization_algorithm == "ga":
+                result = self.ga_optimizer.optimize(objective_functions, parameter_space)
+            else:
+                result = self.nsga2_optimizer.optimize(objective_functions, parameter_space)
+            
+            if not result.success:
+                tprint_warning("⚠️ Evolutionary optimization failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, cv_splits)
+            
+            # Extract best solution
+            if result.pareto_front:
+                best_individual = result.pareto_front[0]
+            elif result.best_individuals:
+                best_individual = result.best_individuals[0]
+            else:
+                tprint_warning("⚠️ No solutions found from evolutionary optimization")
+                return self._standard_feature_selection(features, targets, cv_splits)
+            
+            # Convert to feature selection result
+            selected_features = [
+                feature_names[i] for i, param_name in enumerate(parameter_space.keys())
+                if best_individual.parameters[param_name]
+            ]
+            
+            # Evaluate objectives for selected features
+            objective_values = {}
+            for i, obj in enumerate(self.objectives):
+                result_obj = obj.evaluate(features, targets, selected_features)
+                objective_values[obj.name] = result_obj.value if result_obj.is_valid else 0.0
+            
+            tprint_success(f"✅ Evolutionary feature selection completed: {len(selected_features)} features selected")
+            
+            return MultiObjectiveResult(
+                selected_features=selected_features,
+                objective_values=objective_values,
+                pareto_front=[],  # Could be populated with all Pareto solutions
+                optimization_metadata={
+                    'method': 'evolutionary',
+                    'algorithm': self.optimization_algorithm,
+                    'execution_time': result.execution_time,
+                    'generations': result.final_generation,
+                    'population_size': self.evolutionary_config.population_size,
+                    'convergence_reached': result.convergence_info.get('convergence_reached', False)
+                },
+                is_valid=True
+            )
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Evolutionary feature selection failed: {e}")
+            return self._standard_feature_selection(features, targets, cv_splits)
+    
+    def _pareto_feature_selection(self, features: pd.DataFrame, 
+                                targets: pd.Series,
+                                cv_splits: Optional[List[Any]] = None) -> MultiObjectiveResult:
+        """Use ML Commons Pareto optimization for feature selection."""
+        try:
+            tprint_info("🎯 Starting Pareto-optimized feature selection")
+            
+            # Generate candidate feature sets
+            candidate_sets = self._generate_candidate_sets(features.columns.tolist())
+            
+            # Convert to Solution objects for Pareto optimization
+            solutions = []
+            for candidate_set in candidate_sets:
+                objective_values = {}
+                is_valid = True
+                
+                for obj in self.objectives:
+                    result = obj.evaluate(features, targets, candidate_set)
+                    objective_values[obj.name] = result.value
+                    
+                    if not result.is_valid:
+                        is_valid = False
+                        break
+                
+                if is_valid:
+                    solution = Solution(
+                        metrics=objective_values,
+                        params={'features': candidate_set}
+                    )
+                    solutions.append(solution)
+            
+            if not solutions:
+                tprint_warning("⚠️ No valid solutions found for Pareto optimization")
+                return self._standard_feature_selection(features, targets, cv_splits)
+            
+            # Define objectives for Pareto optimization
+            objectives = {obj.name: 'max' if obj.is_higher_better else 'min' for obj in self.objectives}
+            
+            # Compute Pareto front
+            pareto_solutions = compute_pareto_front(solutions, objectives)
+            
+            if not pareto_solutions:
+                tprint_warning("⚠️ No Pareto-optimal solutions found")
+                return self._standard_feature_selection(features, targets, cv_splits)
+            
+            # Select best solution using knee point or weighted scoring
+            if self.pareto_optimizer:
+                best_solution = self.pareto_optimizer.select_best(pareto_solutions, objectives)
+            else:
+                best_solution = select_knee_point(pareto_solutions, objectives, self.weights)
+            
+            if best_solution is None:
+                best_solution = pareto_solutions[0]
+            
+            # Extract results
+            selected_features = best_solution.params['features']
+            objective_values = best_solution.metrics
+            
+            # Convert Pareto front to expected format
+            pareto_front = []
+            for solution in pareto_solutions:
+                pareto_front.append({
+                    'features': solution.params['features'],
+                    'objective_values': solution.metrics,
+                    'n_features': len(solution.params['features'])
+                })
+            
+            tprint_success(f"✅ Pareto-optimized feature selection completed: {len(selected_features)} features selected")
+            
+            return MultiObjectiveResult(
+                selected_features=selected_features,
+                objective_values=objective_values,
+                pareto_front=pareto_front,
+                optimization_metadata={
+                    'method': 'pareto',
+                    'n_candidates': len(solutions),
+                    'n_pareto': len(pareto_solutions),
+                    'weights': self.weights,
+                    'objectives': objectives
+                },
+                is_valid=True
+            )
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Pareto feature selection failed: {e}")
+            return self._standard_feature_selection(features, targets, cv_splits)
+    
+    def _standard_feature_selection(self, features: pd.DataFrame, 
+                                  targets: pd.Series,
+                                  cv_splits: Optional[List[Any]] = None) -> MultiObjectiveResult:
+        """Standard multi-objective feature selection (original method)."""
+        tprint_info("📊 Using standard multi-objective feature selection")
         
         # Generate candidate feature sets
         candidate_sets = self._generate_candidate_sets(features.columns.tolist())
@@ -581,6 +868,7 @@ class MultiObjectiveFeatureSelector:
             objective_values=objective_values,
             pareto_front=pareto_front,
             optimization_metadata={
+                'method': 'standard',
                 'n_candidates': len(candidate_sets),
                 'n_valid': len(pareto_front),
                 'weights': self.weights,
@@ -627,6 +915,138 @@ class MultiObjectiveFeatureSelector:
             results[obj.name] = result
         
         return results
+    
+    def analyze_pareto_front(self, pareto_front: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Analyze Pareto front using ml_commons utilities."""
+        if not self.use_ml_commons or not pareto_front:
+            return {}
+        
+        try:
+            tprint_info("🔍 Analyzing Pareto front with ml_commons utilities")
+            
+            # Convert to Solution objects
+            solutions = []
+            for solution_data in pareto_front:
+                solution = Solution(
+                    metrics=solution_data['objective_values'],
+                    params={'features': solution_data['features']}
+                )
+                solutions.append(solution)
+            
+            # Define objectives
+            objectives = {obj.name: 'max' if obj.is_higher_better else 'min' for obj in self.objectives}
+            
+            # Compute hypervolume
+            reference_point = {obj.name: 0.0 for obj in self.objectives}
+            hypervolume = compute_hypervolume(solutions, objectives, reference_point)
+            
+            # Analyze diversity
+            if self.pareto_front:
+                diversity_metrics = self.pareto_front.compute_diversity_metrics(solutions, objectives)
+            else:
+                diversity_metrics = {}
+            
+            # Cluster Pareto front
+            if self.pareto_front and len(solutions) > 3:
+                cluster_results = self.pareto_front.cluster_pareto_front(solutions, objectives, n_clusters=3)
+            else:
+                cluster_results = {}
+            
+            analysis = {
+                'hypervolume': hypervolume,
+                'diversity_metrics': diversity_metrics,
+                'cluster_analysis': cluster_results,
+                'n_solutions': len(solutions),
+                'n_objectives': len(objectives)
+            }
+            
+            tprint_success(f"✅ Pareto front analysis completed: hypervolume={hypervolume:.4f}")
+            return analysis
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Pareto front analysis failed: {e}")
+            return {}
+    
+    def get_financial_score(self, objective_values: Dict[str, float]) -> float:
+        """Get financial score using ml_commons scalarization."""
+        if not self.use_ml_commons:
+            # Fallback to simple weighted sum
+            return sum(
+                self.weights.get(obj.name, 1.0) * objective_values.get(obj.name, 0.0)
+                for obj in self.objectives
+            )
+        
+        try:
+            # Use financial weights if available
+            financial_weights = DEFAULT_FINANCIAL_WEIGHTS if DEFAULT_FINANCIAL_WEIGHTS else self.weights
+            return scalarize_financial_goals(objective_values, financial_weights)
+        except Exception as e:
+            tprint_warning(f"⚠️ Financial scoring failed: {e}")
+            return 0.0
+    
+    def filter_by_constraints(self, pareto_front: List[Dict[str, Any]], 
+                            constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Filter Pareto front by constraints using ml_commons utilities."""
+        if not self.use_ml_commons or not pareto_front:
+            return pareto_front
+        
+        try:
+            # Convert to Solution objects
+            solutions = []
+            for solution_data in pareto_front:
+                solution = Solution(
+                    metrics=solution_data['objective_values'],
+                    params={'features': solution_data['features']}
+                )
+                solutions.append(solution)
+            
+            # Filter by constraints
+            filtered_solutions = filter_by_constraints(solutions, constraints)
+            
+            # Convert back to expected format
+            filtered_front = []
+            for solution in filtered_solutions:
+                filtered_front.append({
+                    'features': solution.params['features'],
+                    'objective_values': solution.metrics,
+                    'n_features': len(solution.params['features'])
+                })
+            
+            tprint_info(f"✅ Constraint filtering: {len(filtered_front)}/{len(pareto_front)} solutions remain")
+            return filtered_front
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Constraint filtering failed: {e}")
+            return pareto_front
+    
+    def get_enhanced_summary(self) -> Dict[str, Any]:
+        """Get enhanced summary with ml_commons metrics."""
+        summary = {
+            'objectives': [obj.name for obj in self.objectives],
+            'weights': self.weights,
+            'max_features': self.max_features,
+            'min_features': self.min_features,
+            'ml_commons_enabled': self.use_ml_commons,
+            'evolutionary_enabled': self.use_evolutionary,
+            'optimization_algorithm': self.optimization_algorithm
+        }
+        
+        if self.use_ml_commons:
+            summary.update({
+                'pareto_front_available': self.pareto_front is not None,
+                'pareto_optimizer_available': self.pareto_optimizer is not None
+            })
+        
+        if self.use_evolutionary:
+            summary.update({
+                'nsga2_available': self.nsga2_optimizer is not None,
+                'spea2_available': self.spea2_optimizer is not None,
+                'ga_available': self.ga_optimizer is not None,
+                'population_size': self.evolutionary_config.population_size if self.evolutionary_config else 0,
+                'max_generations': self.evolutionary_config.max_generations if self.evolutionary_config else 0
+            })
+        
+        return summary
 
 
 # Convenience functions
@@ -641,6 +1061,28 @@ def create_default_objectives() -> List[ObjectiveFunction]:
         MutualInformationObjective(),
         ProfitCenteredObjective()
     ]
+
+
+def create_enhanced_feature_selector(objectives: Optional[List[ObjectiveFunction]] = None,
+                                   weights: Optional[Dict[str, float]] = None,
+                                   max_features: int = 50,
+                                   min_features: int = 5,
+                                   use_ml_commons: bool = True,
+                                   use_evolutionary: bool = True,
+                                   optimization_algorithm: str = "auto") -> MultiObjectiveFeatureSelector:
+    """Create an enhanced multi-objective feature selector with ml_commons integration."""
+    if objectives is None:
+        objectives = create_default_objectives()
+    
+    return MultiObjectiveFeatureSelector(
+        objectives=objectives,
+        weights=weights,
+        max_features=max_features,
+        min_features=min_features,
+        use_ml_commons=use_ml_commons,
+        use_evolutionary=use_evolutionary,
+        optimization_algorithm=optimization_algorithm
+    )
 
 
 def create_performance_objectives() -> List[ObjectiveFunction]:

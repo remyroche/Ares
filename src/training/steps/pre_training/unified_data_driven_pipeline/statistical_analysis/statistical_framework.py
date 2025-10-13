@@ -31,6 +31,47 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
+# Import enhanced validation utilities from ml_commons
+try:
+    from src.utils.ml_common.validation.unified_cv import (
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation
+    )
+    from src.utils.ml_common.validation.cv import (
+        analyze_splits, validate_cv_integrity
+    )
+    from src.utils.ml_common.validation.data_leakage_detector import (
+        DataLeakageDetector
+    )
+    from src.utils.ml_common.validation.enhanced_validation import (
+        EnhancedValidationFramework
+    )
+    from src.utils.ml_common.validation.stability import (
+        StabilityAnalyzer
+    )
+    from src.utils.ml_common.validation.overfitting_monitoring import (
+        OverfittingMonitor
+    )
+    ML_COMMONS_VALIDATION_AVAILABLE = True
+    tprint_info("✅ ML Commons validation utilities imported successfully")
+except ImportError as e:
+    ML_COMMONS_VALIDATION_AVAILABLE = False
+    tprint_warning(f"⚠️ ML Commons validation utilities not available: {e}")
+    # Define fallback classes
+    class UnifiedCrossValidator:
+        def __init__(self, *args, **kwargs): pass
+    def perform_cross_validation(*args, **kwargs): return {}
+    def temporal_cross_validation(*args, **kwargs): return {}
+    def analyze_splits(*args, **kwargs): return {}
+    def validate_cv_integrity(*args, **kwargs): return {}
+    class DataLeakageDetector:
+        def __init__(self, *args, **kwargs): pass
+    class EnhancedValidationFramework:
+        def __init__(self, *args, **kwargs): pass
+    class StabilityAnalyzer:
+        def __init__(self, *args, **kwargs): pass
+    class OverfittingMonitor:
+        def __init__(self, *args, **kwargs): pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -303,16 +344,40 @@ class MutualInformationTest(StatisticalTest):
 
 class StatisticalAnalysisFramework:
     """
-    Comprehensive statistical analysis framework for data-driven decisions.
+    Enhanced comprehensive statistical analysis framework for data-driven decisions.
+    
+    Now integrated with ml_commons validation utilities for advanced
+    statistical analysis, data leakage detection, and model validation.
     """
     
-    def __init__(self):
-        """Initialize the statistical analysis framework."""
+    def __init__(self, use_ml_commons: bool = True, enable_validation: bool = True):
+        """Initialize the enhanced statistical analysis framework."""
         self.normality_test = NormalityTest()
         self.correlation_test = CorrelationTest()
         self.mi_test = MutualInformationTest()
+        self.use_ml_commons = use_ml_commons and ML_COMMONS_VALIDATION_AVAILABLE
+        self.enable_validation = enable_validation and ML_COMMONS_VALIDATION_AVAILABLE
         
-        tprint_info("Statistical Analysis Framework initialized")
+        # Initialize ml_commons validation utilities if available
+        if self.use_ml_commons:
+            self.unified_cv = UnifiedCrossValidator()
+            self.data_leakage_detector = DataLeakageDetector()
+            self.enhanced_validation = EnhancedValidationFramework()
+            self.stability_analyzer = StabilityAnalyzer()
+            self.overfitting_monitor = OverfittingMonitor()
+            tprint_info("✅ ML Commons validation utilities initialized")
+        else:
+            self.unified_cv = None
+            self.data_leakage_detector = None
+            self.enhanced_validation = None
+            self.stability_analyzer = None
+            self.overfitting_monitor = None
+        
+        tprint_info("Enhanced Statistical Analysis Framework initialized")
+        if self.use_ml_commons:
+            tprint_info("✅ ML Commons integration enabled")
+        if self.enable_validation:
+            tprint_info("✅ Enhanced validation enabled")
     
     def analyze_data_characteristics(self, data: pd.DataFrame) -> DataCharacteristics:
         """
@@ -970,3 +1035,13 @@ class StatisticalAnalysisFramework:
             }
         
         return consecutive_missing
+
+
+# Convenience functions
+def create_enhanced_statistical_framework(use_ml_commons: bool = True, 
+                                        enable_validation: bool = True) -> StatisticalAnalysisFramework:
+    """Create an enhanced statistical analysis framework with ml_commons integration."""
+    return StatisticalAnalysisFramework(
+        use_ml_commons=use_ml_commons,
+        enable_validation=enable_validation
+    )

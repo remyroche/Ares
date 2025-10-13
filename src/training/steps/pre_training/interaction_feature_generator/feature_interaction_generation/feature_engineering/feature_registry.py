@@ -64,8 +64,8 @@ class FeatureFamily(Enum):
     PRICE_RETURNS = "price_returns"
     VOLATILITY = "volatility"
     MEAN_REVERSION = "mean_reversion"
-    LIQUIDITY_MICRO = "liquidity_micro"
-    ANCHORS_TOD = "anchors_tod"
+    TREND = "trend"
+    VOLUME = "volume"
     CONTEXT = "context"
 
 

@@ -767,6 +767,52 @@ class VectorBTRollingOptimizer:
             stats['gpu_usage_rate'] = stats['gpu_operations'] / stats['total_operations']
         return stats
     
+    def cleanup(self) -> None:
+        """Clean up resources and perform memory management."""
+        tprint("🧹 Cleaning up VectorBT rolling optimizer resources")
+        
+        try:
+            # Clear any caches or temporary data
+            if hasattr(self, '_operation_cache'):
+                self._operation_cache.clear()
+                tprint("✅ Operation cache cleared")
+            
+            # Reset performance stats
+            self.performance_stats = {
+                'vectorbt_operations': 0,
+                'pandas_fallbacks': 0,
+                'numpy_fallbacks': 0,
+                'gpu_operations': 0,
+                'memory_optimizations': 0,
+                'chunk_operations': 0,
+                'parallel_operations': 0,
+                'total_operations': 0,
+                'total_time': 0.0,
+                'errors': 0,
+                'fast_failures': 0,
+                'validation_errors': 0
+            }
+            tprint("✅ Performance stats reset")
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint("✅ Garbage collection completed")
+            
+        except Exception as e:
+            tprint_error(f"❌ ERROR: VectorBT rolling optimizer cleanup failed: {e}")
+            raise RuntimeError(f"VectorBT rolling optimizer cleanup failed: {e}")
+        
+        tprint("✅ VectorBT rolling optimizer cleanup completed")
+    
+    def __enter__(self) -> 'VectorBTRollingOptimizer':
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit with cleanup."""
+        self.cleanup()
+    
     def _validate_init_parameters(self, enable_gpu: bool, enable_parallel: bool, 
                                  memory_efficient: bool, chunk_size: int):
         """Validate initialization parameters with detailed error reporting."""

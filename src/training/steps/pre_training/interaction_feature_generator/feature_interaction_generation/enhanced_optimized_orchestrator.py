@@ -852,12 +852,178 @@ class EnhancedOptimizedInteractionOrchestrator:
             'method': 'rf_shap_enhanced'
         }
     
+    async def _generate_rf_shap_interactions(self, features: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+        """Generate interaction features using Random Forest and SHAP for intelligent feature selection."""
+        try:
+            import shap
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
+            import numpy as np
+            
+            tprint_debug("🌲 Generating RF/SHAP-based interactions...")
+            
+            # Get target column
+            target_column = pipeline_state.get('target_column', 'target')
+            if target_column not in features.columns:
+                # Try fallback targets
+                for fallback in ['analyst_target', 'tactician_target', 'close']:
+                    if fallback in features.columns:
+                        target_column = fallback
+                        break
+                else:
+                    tprint_warning("⚠️ No valid target found for RF/SHAP interactions")
+                    return pd.DataFrame(index=features.index)
+            
+            # Prepare data
+            feature_cols = [col for col in features.columns if col != target_column]
+            if len(feature_cols) < 2:
+                tprint_warning("⚠️ Insufficient features for interaction generation")
+                return pd.DataFrame(index=features.index)
+            
+            X = features[feature_cols].values
+            y = features[target_column].values
+            
+            # Remove NaN values
+            valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+            X = X[valid_mask]
+            y = y[valid_mask]
+            
+            if len(X) < 100:
+                tprint_warning("⚠️ Insufficient data for RF/SHAP interactions")
+                return pd.DataFrame(index=features.index)
+            
+            # Split data for training
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42
+            )
+            
+            # Scale features
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            # Train Random Forest
+            rf = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=42,
+                n_jobs=-1
+            )
+            rf.fit(X_train_scaled, y_train)
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(rf)
+            shap_values = explainer.shap_values(X_test_scaled)
+            
+            # Find important feature interactions using SHAP
+            interaction_features = self._extract_shap_interactions(
+                X_test_scaled, shap_values, feature_cols, rf, scaler
+            )
+            
+            return interaction_features
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ SHAP not available: {e}")
+            return await self._generate_basic_interactions(features)
+        except Exception as e:
+            tprint_error(f"❌ RF/SHAP interaction generation failed: {e}")
+            return await self._generate_basic_interactions(features)
+    
+    def _extract_shap_interactions(self, X: np.ndarray, shap_values: np.ndarray, 
+                                 feature_names: List[str], rf_model, scaler) -> pd.DataFrame:
+        """Extract interaction features based on SHAP values and feature importance."""
+        try:
+            import numpy as np
+            from itertools import combinations
+            
+            # Get feature importance
+            feature_importance = rf_model.feature_importances_
+            
+            # Select top features based on importance
+            top_features_idx = np.argsort(feature_importance)[-min(20, len(feature_names)):]
+            top_features = [feature_names[i] for i in top_features_idx]
+            
+            # Generate interaction features
+            interaction_data = {}
+            
+            # 1. Ratio interactions for top features
+            for i, j in combinations(top_features_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    # Avoid division by zero
+                    ratio_feature = X[:, i] / (X[:, j] + 1e-8)
+                    interaction_data[f"{feature1}_div_{feature2}"] = ratio_feature
+            
+            # 2. Product interactions for highly important features
+            top_5_idx = top_features_idx[-5:]
+            for i, j in combinations(top_5_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    product_feature = X[:, i] * X[:, j]
+                    interaction_data[f"{feature1}_mul_{feature2}"] = product_feature
+            
+            # 3. Difference interactions for trend features
+            for i, j in combinations(top_features_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    diff_feature = X[:, i] - X[:, j]
+                    interaction_data[f"{feature1}_sub_{feature2}"] = diff_feature
+            
+            # 4. SHAP-based weighted combinations
+            shap_weights = np.abs(shap_values).mean(axis=0)
+            for i, j in combinations(top_features_idx, 2):
+                if i != j and shap_weights[i] > 0.01 and shap_weights[j] > 0.01:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    weight1, weight2 = shap_weights[i], shap_weights[j]
+                    weighted_sum = (weight1 * X[:, i] + weight2 * X[:, j]) / (weight1 + weight2)
+                    interaction_data[f"{feature1}_wsum_{feature2}"] = weighted_sum
+            
+            # Convert to DataFrame
+            if interaction_data:
+                interaction_df = pd.DataFrame(interaction_data)
+                # Remove any infinite or NaN values
+                interaction_df = interaction_df.replace([np.inf, -np.inf], np.nan)
+                interaction_df = interaction_df.fillna(0)
+                return interaction_df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_error(f"❌ SHAP interaction extraction failed: {e}")
+            return pd.DataFrame()
+    
+    async def _generate_basic_interactions(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Fallback basic interaction generation."""
+        try:
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+            
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=True,
+                enable_cross_timeframe=False,
+                max_interactions=15,  # Reduced for basic fallback
+                interaction_types=['ratio', 'product', 'difference'],
+                min_valid_ratio=0.8,
+                max_constant_ratio=0.1
+            )
+            
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            return feature_generator.generate_interaction_features(features)
+            
+        except Exception as e:
+            tprint_error(f"❌ Basic interaction generation failed: {e}")
+            return pd.DataFrame(index=features.index)
+    
     async def _interaction_pruning_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Interaction pruning stage."""
+        """Enhanced interaction pruning stage with multiple pruning strategies."""
         if not self.interaction_pruning:
             return {'status': 'skipped', 'reason': 'disabled'}
         
-        tprint_debug("✂️ Interaction pruning stage...")
+        tprint_debug("✂️ Enhanced interaction pruning stage...")
         
         # Get interaction features
         if 'interaction_features' in context.pipeline_state:
@@ -887,20 +1053,195 @@ class EnhancedOptimizedInteractionOrchestrator:
         if len(feature_names) == 0:
             return {'status': 'skipped', 'reason': 'no_features_after_target_removal'}
         
-        # Perform interaction pruning
-        pruning_result = self.interaction_pruning.prune_interactions_for_data(
-            features, target, feature_names
-        )
-        
-        # Store result
-        context.pipeline_state['interaction_pruning_result'] = pruning_result
-        
-        return {
-            'status': 'completed',
-            'selected_interactions': len(pruning_result.selected_interactions),
-            'rejected_interactions': len(pruning_result.rejected_interactions),
-            'selection_rate': pruning_result.performance_metrics.get('selection_rate', 0.0)
-        }
+        # Apply enhanced pruning with multiple strategies
+        try:
+            pruned_features = await self._apply_enhanced_interaction_pruning(
+                features, target, feature_names, context.pipeline_state
+            )
+            
+            # Update context with pruned features
+            context.pipeline_state['interaction_features'] = pruned_features
+            context.pipeline_state['interaction_pruning_result'] = {
+                'selected_interactions': list(pruned_features.columns),
+                'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
+                'pruning_method': 'enhanced_multi_strategy'
+            }
+            
+            return {
+                'status': 'completed',
+                'selected_interactions': len(pruned_features.columns),
+                'rejected_interactions': len(feature_names) - len(pruned_features.columns),
+                'selection_rate': len(pruned_features.columns) / len(feature_names) if feature_names else 0.0,
+                'method': 'enhanced_multi_strategy'
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced interaction pruning failed: {e}")
+            # Fallback to basic pruning
+            return await self._basic_interaction_pruning(features, target, feature_names, context)
+    
+    async def _apply_enhanced_interaction_pruning(self, features: pd.DataFrame, target: pd.Series, 
+                                                feature_names: List[str], pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+        """Apply enhanced interaction pruning using multiple strategies."""
+        try:
+            import numpy as np
+            from sklearn.feature_selection import mutual_info_regression, f_regression
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.linear_model import LassoCV
+            from sklearn.preprocessing import StandardScaler
+            from scipy.stats import spearmanr
+            import pandas as pd
+            
+            tprint_debug("🔧 Applying enhanced interaction pruning...")
+            
+            # Prepare data
+            X = features[feature_names].values
+            y = target.values
+            
+            # Remove NaN values
+            valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+            X = X[valid_mask]
+            y = y[valid_mask]
+            
+            if len(X) < 50:
+                tprint_warning("⚠️ Insufficient data for enhanced pruning")
+                return features[feature_names]
+            
+            # Strategy 1: Variance-based filtering
+            variance_threshold = 0.01
+            feature_variance = np.var(X, axis=0)
+            high_variance_mask = feature_variance > variance_threshold
+            tprint_debug(f"📊 Variance filtering: {np.sum(high_variance_mask)}/{len(feature_names)} features passed")
+            
+            # Strategy 2: Correlation-based filtering
+            correlation_threshold = 0.95
+            corr_matrix = np.corrcoef(X.T)
+            high_corr_pairs = []
+            for i in range(len(feature_names)):
+                for j in range(i+1, len(feature_names)):
+                    if abs(corr_matrix[i, j]) > correlation_threshold:
+                        high_corr_pairs.append((i, j))
+            
+            # Remove one feature from each highly correlated pair
+            features_to_remove = set()
+            for i, j in high_corr_pairs:
+                if i not in features_to_remove and j not in features_to_remove:
+                    # Keep the feature with higher variance
+                    if feature_variance[i] > feature_variance[j]:
+                        features_to_remove.add(j)
+                    else:
+                        features_to_remove.add(i)
+            
+            tprint_debug(f"📊 Correlation filtering: removed {len(features_to_remove)} highly correlated features")
+            
+            # Strategy 3: Mutual Information filtering
+            mi_scores = mutual_info_regression(X, y, random_state=42)
+            mi_threshold = np.percentile(mi_scores, 25)  # Keep top 75%
+            high_mi_mask = mi_scores > mi_threshold
+            tprint_debug(f"📊 MI filtering: {np.sum(high_mi_mask)}/{len(feature_names)} features passed")
+            
+            # Strategy 4: F-statistic filtering
+            f_scores, _ = f_regression(X, y)
+            f_threshold = np.percentile(f_scores, 25)  # Keep top 75%
+            high_f_mask = f_scores > f_threshold
+            tprint_debug(f"📊 F-statistic filtering: {np.sum(high_f_mask)}/{len(feature_names)} features passed")
+            
+            # Strategy 5: Lasso regularization
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            lasso = LassoCV(cv=5, random_state=42, max_iter=1000)
+            lasso.fit(X_scaled, y)
+            lasso_mask = np.abs(lasso.coef_) > 1e-6
+            tprint_debug(f"📊 Lasso filtering: {np.sum(lasso_mask)}/{len(feature_names)} features passed")
+            
+            # Strategy 6: Random Forest importance
+            rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
+            rf.fit(X, y)
+            rf_importance = rf.feature_importances_
+            rf_threshold = np.percentile(rf_importance, 25)  # Keep top 75%
+            high_rf_mask = rf_importance > rf_threshold
+            tprint_debug(f"📊 RF importance filtering: {np.sum(high_rf_mask)}/{len(feature_names)} features passed")
+            
+            # Combine all filtering strategies
+            combined_mask = (
+                high_variance_mask & 
+                high_mi_mask & 
+                high_f_mask & 
+                lasso_mask & 
+                high_rf_mask
+            )
+            
+            # Remove highly correlated features
+            for idx in features_to_remove:
+                if idx < len(combined_mask):
+                    combined_mask[idx] = False
+            
+            # Apply final filtering
+            selected_features = [feature_names[i] for i in range(len(feature_names)) if combined_mask[i]]
+            
+            tprint_success(f"✅ Enhanced pruning selected {len(selected_features)}/{len(feature_names)} features")
+            
+            # Return pruned features
+            if selected_features:
+                return features[selected_features]
+            else:
+                # Fallback: return top 10 features by combined score
+                combined_scores = (
+                    mi_scores / np.max(mi_scores) + 
+                    f_scores / np.max(f_scores) + 
+                    rf_importance / np.max(rf_importance)
+                )
+                top_indices = np.argsort(combined_scores)[-10:]
+                fallback_features = [feature_names[i] for i in top_indices]
+                return features[fallback_features]
+                
+        except Exception as e:
+            tprint_error(f"❌ Enhanced pruning failed: {e}")
+            return features[feature_names]
+    
+    async def _basic_interaction_pruning(self, features: pd.DataFrame, target: pd.Series, 
+                                       feature_names: List[str], context: ExecutionContext) -> Dict[str, Any]:
+        """Basic interaction pruning fallback."""
+        try:
+            # Simple correlation-based pruning
+            corr_threshold = 0.9
+            corr_matrix = features[feature_names].corr().abs()
+            
+            # Find highly correlated pairs
+            high_corr_pairs = []
+            for i in range(len(feature_names)):
+                for j in range(i+1, len(feature_names)):
+                    if corr_matrix.iloc[i, j] > corr_threshold:
+                        high_corr_pairs.append((feature_names[i], feature_names[j]))
+            
+            # Remove one feature from each pair
+            features_to_remove = set()
+            for feat1, feat2 in high_corr_pairs:
+                if feat1 not in features_to_remove and feat2 not in features_to_remove:
+                    features_to_remove.add(feat2)  # Remove the second feature
+            
+            selected_features = [f for f in feature_names if f not in features_to_remove]
+            
+            # Update context
+            context.pipeline_state['interaction_features'] = features[selected_features]
+            
+            return {
+                'status': 'completed',
+                'selected_interactions': len(selected_features),
+                'rejected_interactions': len(features_to_remove),
+                'selection_rate': len(selected_features) / len(feature_names) if feature_names else 0.0,
+                'method': 'basic_correlation'
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Basic pruning failed: {e}")
+            return {
+                'status': 'failed',
+                'selected_interactions': 0,
+                'rejected_interactions': len(feature_names),
+                'selection_rate': 0.0,
+                'method': 'failed'
+            }
     
     async def _cross_timeframe_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Cross-timeframe features stage with actual feature generation."""

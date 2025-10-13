@@ -1,11 +1,12 @@
 """
-Common utilities shared between feature_generation and feature_engineering_roadmap.
+Enhanced features_common module with comprehensive optimization.
 
-This module provides base classes and shared functionality to reduce duplication
-between the two feature systems.
+This module provides a unified, high-performance foundation for all feature systems
+with automatic optimization, VectorBT integration, caching, performance monitoring,
+and intelligent fallback mechanisms.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
 # Import common utilities
 from .utils import (
@@ -20,7 +21,34 @@ from .transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
 from .optimization.cv_base import BaseCVSplitter, PurgedCVSplitter
 from .registry.base_registry import BaseFeatureRegistry
 
+# Enhanced imports
+from .config import (
+    OptimizationConfig, get_optimization_config,
+    VectorBTConfig, get_vectorbt_config,
+    UnifiedConfig, get_unified_config
+)
+
+from .mixins import (
+    OptimizationMixin, PerformanceMixin, VectorBTMixin,
+    ValidationMixin, CachingMixin, MonitoringMixin
+)
+
+from .factories import (
+    ScalerFactory, create_optimized_scaler, create_batch_scaler,
+    OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+    RegistryFactory, create_registry, create_feature_registry,
+    UnifiedFactory, create_optimized_component
+)
+
+from .vectorbt import (
+    UnifiedVectorBTManager, get_unified_vectorbt_manager,
+    VectorBTOptimizationEngine, get_optimization_engine,
+    GPUAccelerator, get_gpu_accelerator,
+    VectorBTPerformanceMonitor, get_performance_monitor
+)
+
 __all__ = [
+    # Core components
     'BaseScaler',
     'VectorBTScaler',
     'VectorBTBatchScaler',
@@ -29,6 +57,45 @@ __all__ = [
     'BaseFeatureRegistry',
     'create_optimized_scaler',
     'create_optimized_batch_scaler',
+    
+    # Configuration
+    'OptimizationConfig',
+    'get_optimization_config',
+    'VectorBTConfig',
+    'get_vectorbt_config',
+    'UnifiedConfig',
+    'get_unified_config',
+    
+    # Mixins
+    'OptimizationMixin',
+    'PerformanceMixin',
+    'VectorBTMixin',
+    'ValidationMixin',
+    'CachingMixin',
+    'MonitoringMixin',
+    
+    # Factories
+    'ScalerFactory',
+    'create_optimized_scaler',
+    'create_batch_scaler',
+    'OptimizerFactory',
+    'create_optimizer',
+    'create_vectorbt_optimizer',
+    'RegistryFactory',
+    'create_registry',
+    'create_feature_registry',
+    'UnifiedFactory',
+    'create_optimized_component',
+    
+    # VectorBT
+    'UnifiedVectorBTManager',
+    'get_unified_vectorbt_manager',
+    'VectorBTOptimizationEngine',
+    'get_optimization_engine',
+    'GPUAccelerator',
+    'get_gpu_accelerator',
+    'VectorBTPerformanceMonitor',
+    'get_performance_monitor',
 ]
 
 # Add VectorBT optimization components to __all__ if available
@@ -41,6 +108,14 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
     ])
 
 if TPRINT_AVAILABLE:
-    tprint(f"🔧 [features_common] Module initialized with {len(__all__)} exports", color="cyan")
+    tprint(f"🚀 [features_common] Enhanced module initialized with {len(__all__)} exports", color="cyan")
+    tprint("✅ [features_common] All optimizations enabled by default", color="green")
+    tprint("🔧 [features_common] VectorBT integration available", color="blue")
+    tprint("📊 [features_common] Performance monitoring enabled", color="magenta")
+    tprint("💾 [features_common] Intelligent caching active", color="yellow")
 else:
-    print(f"🔧 [features_common] Module initialized with {len(__all__)} exports")
+    print(f"🚀 [features_common] Enhanced module initialized with {len(__all__)} exports")
+    print("✅ [features_common] All optimizations enabled by default")
+    print("🔧 [features_common] VectorBT integration available")
+    print("📊 [features_common] Performance monitoring enabled")
+    print("💾 [features_common] Intelligent caching active")

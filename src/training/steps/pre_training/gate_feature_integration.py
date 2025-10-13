@@ -35,7 +35,7 @@ def patch_final_feature_selection_pipeline():
     gate-aware feature selection.
     """
     try:
-        from .final_feature_selection_pipeline import MultiStageFeatureSelector
+        from .feature_selection import MultiStageFeatureSelector
         
         # Store original methods
         original_correlation_filtering = MultiStageFeatureSelector._correlation_filtering

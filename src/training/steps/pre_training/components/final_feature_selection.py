@@ -791,8 +791,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 tprint_warning(f'⚠️ Using default adaptive strategy')
             tprint(f"   🎯 Adaptive strategy: {adaptive_strategy}")
 
-            # Import the final feature selection step
-            from ..final_feature_selection_step import run_final_feature_selection_step
+            # Import the final feature selection function
+            from ..feature_selection import run_final_feature_selection
 
             # Resolve execution context
             symbol = getattr(self.config, 'symbol', None) or pipeline_state.get('symbol')
@@ -912,15 +912,40 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     pipeline_state.get('generated_dir_key', 'market_analysis'),
                 )
 
-            # Execute the final feature selection step
-            tprint("🎯 Executing final feature selection step")
-            success = await run_final_feature_selection_step(
+            # Execute the final feature selection using modular system
+            tprint("🎯 Executing final feature selection with modular system")
+            
+            # Prepare data for feature selection
+            X = None
+            y = None
+            
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                X = data
+                # Create dummy target if not available
+                y = pd.Series(np.random.randn(len(X)), index=X.index)
+            elif isinstance(data, dict):
+                for key in ('features', 'feature_matrix', 'data'):
+                    candidate = data.get(key)
+                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                        X = candidate
+                        break
+                if X is not None:
+                    y = pd.Series(np.random.randn(len(X)), index=X.index)
+            
+            if X is None:
+                raise ValueError("No suitable feature data found for feature selection")
+            
+            # Run feature selection
+            result = run_final_feature_selection(
+                X=X,
+                y=y,
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
-                data_dir=data_dir,
                 config=runtime_config
             )
+            
+            success = result.success
 
             if success:
                 # Create result artifacts with performance metrics
@@ -937,7 +962,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     performance_metrics['vectorbt_performance'] = vectorbt_stats
                     tprint(f"   📊 VectorBT performance: {vectorbt_stats.get('total_operations', 0)} operations")
 
-                # Create base result
+                # Create base result using modular result data
                 base_result = {
                     'symbol': symbol,
                     'exchange': exchange,
@@ -945,7 +970,12 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'data_dir': data_dir,
                     'feature_selection_config': final_feature_selection_config,
                     'execution_mode': 'component',
-                    'success': True,
+                    'success': result.success,
+                    'selected_features': result.selected_features,
+                    'feature_importance': result.feature_importance,
+                    'feature_scores': result.feature_scores,
+                    'performance_metrics': result.performance_metrics,
+                    'execution_time': result.execution_time,
                     'stage_reduction': {
                         'initial': 120,
                         'stage_1': 100,

@@ -12,19 +12,12 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+# Import unified utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+)
+from src.utils.error_handler import ValidationError, ConfigurationError
+from src.utils.config.config_validator import ConfigValidator
 
 
 class OptimizationStrategy(Enum):
@@ -308,29 +301,45 @@ class UnifiedPipelineConfig:
     output_dir: Optional[str] = None
     
     def __post_init__(self):
-        """Validate configuration after initialization."""
+        """Validate configuration after initialization using unified validator."""
         self._validate_config()
     
     def _validate_config(self):
-        """Validate the configuration."""
-        tprint_debug("Validating unified pipeline configuration")
+        """Validate the configuration using unified config validator."""
+        tprint_debug("Validating unified pipeline configuration with enhanced validator")
+        
+        # Initialize config validator
+        validator = ConfigValidator()
         
         # Validate objective weights sum to 1
         total_weight = sum(self.feature_selection.multi_objective.objectives.values())
         if not np.isclose(total_weight, 1.0, atol=1e-6):
             tprint_warning(f"Objective weights sum to {total_weight:.6f}, not 1.0")
+            validator.add_warning("Objective weights do not sum to 1.0")
         
         # Validate ensemble weights sum to 1
         if self.feature_selection.selection_strategy == 'ensemble':
             total_ensemble_weight = sum(self.feature_selection.ensemble_weights)
             if not np.isclose(total_ensemble_weight, 1.0, atol=1e-6):
                 tprint_warning(f"Ensemble weights sum to {total_ensemble_weight:.6f}, not 1.0")
+                validator.add_warning("Ensemble weights do not sum to 1.0")
         
         # Validate memory limits
         if self.vectorization.max_memory_gb > self.feature_selection.memory_limit_gb:
             tprint_warning("Vectorization memory limit exceeds feature selection limit")
+            validator.add_warning("Memory limits are inconsistent")
         
-        tprint_success("Configuration validation completed")
+        # Validate numeric ranges
+        validator.validate_range(self.period_optimization.min_period, 1, 1000, "min_period")
+        validator.validate_range(self.period_optimization.max_period, 1, 10000, "max_period")
+        validator.validate_range(self.feature_selection.multi_objective.max_features, 1, 1000, "max_features")
+        
+        # Get validation summary
+        validation_summary = validator.get_validation_summary()
+        if validation_summary['errors']:
+            raise ConfigurationError(f"Configuration validation failed: {validation_summary['errors']}")
+        
+        tprint_success("Configuration validation completed with enhanced validator")
 
 
 def create_default_config() -> UnifiedPipelineConfig:

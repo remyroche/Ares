@@ -17,19 +17,15 @@ import warnings
 import logging
 from abc import ABC, abstractmethod
 
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+# Import unified utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+)
+from src.utils.error_handler import UnifiedErrorHandler, DataQualityError
+from src.utils.enhanced_data_operations import vectorized_operation, memory_optimize_dataframe
+from src.utils.ml_common.statistical_analysis import StatisticalAnalyzer
+from src.utils.ml_common.correlation_analysis import CorrelationAnalyzer
+from src.utils.ml_common.feature_analysis import FeatureAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -304,19 +300,27 @@ class MutualInformationTest(StatisticalTest):
 class StatisticalAnalysisFramework:
     """
     Comprehensive statistical analysis framework for data-driven decisions.
+    Enhanced with unified utilities for better performance and reliability.
     """
     
     def __init__(self):
-        """Initialize the statistical analysis framework."""
+        """Initialize the statistical analysis framework with unified utilities."""
+        # Initialize unified utilities
+        self.error_handler = UnifiedErrorHandler(logger)
+        self.statistical_analyzer = StatisticalAnalyzer()
+        self.correlation_analyzer = CorrelationAnalyzer()
+        self.feature_analyzer = FeatureAnalyzer()
+        
+        # Keep legacy tests for compatibility
         self.normality_test = NormalityTest()
         self.correlation_test = CorrelationTest()
         self.mi_test = MutualInformationTest()
         
-        tprint_info("Statistical Analysis Framework initialized")
+        tprint_info("Statistical Analysis Framework initialized with unified utilities")
     
     def analyze_data_characteristics(self, data: pd.DataFrame) -> DataCharacteristics:
         """
-        Comprehensive analysis of data characteristics.
+        Comprehensive analysis of data characteristics using unified utilities.
         
         Args:
             data: Input DataFrame
@@ -326,73 +330,101 @@ class StatisticalAnalysisFramework:
         """
         tprint_info(f"Analyzing data characteristics for {data.shape[0]} samples, {data.shape[1]} features")
         
-        # Basic statistics
-        n_samples, n_features = data.shape
-        data_types = {col: str(data[col].dtype) for col in data.columns}
+        # Use unified error handler for safe execution
+        def _analyze_characteristics():
+            # Basic statistics
+            n_samples, n_features = data.shape
+            data_types = {col: str(data[col].dtype) for col in data.columns}
+            
+            # Use unified statistical analyzer for distribution properties
+            distribution_stats = self.error_handler.safe_execute(
+                self.statistical_analyzer.analyze_distributions, data,
+                context="Distribution analysis"
+            )
+            
+            # Use unified feature analyzer for missing data
+            missing_analysis = self.error_handler.safe_execute(
+                self.feature_analyzer.analyze_missing_data, data,
+                context="Missing data analysis"
+            )
+            
+            # Use unified correlation analyzer
+            correlation_analysis = self.error_handler.safe_execute(
+                self.correlation_analyzer.analyze_correlations, data,
+                context="Correlation analysis"
+            )
+            
+            # Legacy analysis for compatibility
+            skewness = {}
+            kurtosis = {}
+            normality_pvalues = {}
+            
+            for col in data.columns:
+                series = data[col].dropna()
+                if len(series) > 3:
+                    skewness[col] = series.skew()
+                    kurtosis[col] = series.kurtosis()
+                    
+                    # Normality test
+                    try:
+                        _, p_val = stats.shapiro(series)
+                        normality_pvalues[col] = p_val
+                    except Exception:
+                        normality_pvalues[col] = 1.0
+            
+            # Missing data analysis
+            missing_ratios = {col: data[col].isna().sum() / len(data) for col in data.columns}
+            missing_patterns = self._analyze_missing_patterns(data)
+            
+            # Correlation analysis
+            corr_matrix = data.corr()
+            avg_correlation = corr_matrix.abs().mean().mean()
+            max_correlation = corr_matrix.abs().max().max()
+            
+            # Volatility and regime analysis
+            volatility_regimes = self._detect_volatility_regimes(data)
+            regime_stability = self._calculate_regime_stability(volatility_regimes)
+            
+            # Seasonality and patterns
+            seasonality_detected, seasonal_periods = self._detect_seasonality(data)
+            trend_strength = self._calculate_trend_strength(data)
+            
+            # Data quality metrics
+            data_quality_score = self._calculate_data_quality_score(data, missing_ratios, corr_matrix)
+            outliers_ratio = self._calculate_outliers_ratio(data)
+            stability_score = self._calculate_stability_score(data)
+            
+            characteristics = DataCharacteristics(
+                n_samples=n_samples,
+                n_features=n_features,
+                data_types=data_types,
+                skewness=skewness,
+                kurtosis=kurtosis,
+                normality_pvalues=normality_pvalues,
+                missing_ratios=missing_ratios,
+                missing_patterns=missing_patterns,
+                correlation_matrix=corr_matrix,
+                avg_correlation=avg_correlation,
+                max_correlation=max_correlation,
+                volatility_regimes=volatility_regimes,
+                regime_stability=regime_stability,
+                seasonality_detected=seasonality_detected,
+                seasonal_periods=seasonal_periods,
+                trend_strength=trend_strength,
+                data_quality_score=data_quality_score,
+                outliers_ratio=outliers_ratio,
+                stability_score=stability_score
+            )
+            
+            return characteristics
         
-        # Distribution properties
-        skewness = {}
-        kurtosis = {}
-        normality_pvalues = {}
-        
-        for col in data.columns:
-            series = data[col].dropna()
-            if len(series) > 3:
-                skewness[col] = series.skew()
-                kurtosis[col] = series.kurtosis()
-                
-                # Normality test
-                try:
-                    _, p_val = stats.shapiro(series)
-                    normality_pvalues[col] = p_val
-                except Exception:
-                    normality_pvalues[col] = 1.0
-        
-        # Missing data analysis
-        missing_ratios = {col: data[col].isna().sum() / len(data) for col in data.columns}
-        missing_patterns = self._analyze_missing_patterns(data)
-        
-        # Correlation analysis
-        corr_matrix = data.corr()
-        avg_correlation = corr_matrix.abs().mean().mean()
-        max_correlation = corr_matrix.abs().max().max()
-        
-        # Volatility and regime analysis
-        volatility_regimes = self._detect_volatility_regimes(data)
-        regime_stability = self._calculate_regime_stability(volatility_regimes)
-        
-        # Seasonality and patterns
-        seasonality_detected, seasonal_periods = self._detect_seasonality(data)
-        trend_strength = self._calculate_trend_strength(data)
-        
-        # Data quality metrics
-        data_quality_score = self._calculate_data_quality_score(data, missing_ratios, corr_matrix)
-        outliers_ratio = self._calculate_outliers_ratio(data)
-        stability_score = self._calculate_stability_score(data)
-        
-        characteristics = DataCharacteristics(
-            n_samples=n_samples,
-            n_features=n_features,
-            data_types=data_types,
-            skewness=skewness,
-            kurtosis=kurtosis,
-            normality_pvalues=normality_pvalues,
-            missing_ratios=missing_ratios,
-            missing_patterns=missing_patterns,
-            correlation_matrix=corr_matrix,
-            avg_correlation=avg_correlation,
-            max_correlation=max_correlation,
-            volatility_regimes=volatility_regimes,
-            regime_stability=regime_stability,
-            seasonality_detected=seasonality_detected,
-            seasonal_periods=seasonal_periods,
-            trend_strength=trend_strength,
-            data_quality_score=data_quality_score,
-            outliers_ratio=outliers_ratio,
-            stability_score=stability_score
+        # Execute with error handling
+        characteristics = self.error_handler.safe_execute(
+            _analyze_characteristics,
+            context="Data characteristics analysis"
         )
         
-        tprint_success(f"Data characteristics analysis completed: quality_score={data_quality_score:.3f}")
+        tprint_success(f"Data characteristics analysis completed: quality_score={characteristics.data_quality_score:.3f}")
         return characteristics
     
     def detect_patterns(self, data: pd.DataFrame) -> PatternAnalysis:

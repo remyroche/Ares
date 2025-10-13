@@ -19,6 +19,9 @@ from src.utils.tprint import (
 # Import configuration classes
 from .config import FeatureSelectionConfig, FeatureSelectionResult
 
+# Import enhanced pipeline
+from .enhanced_pipeline import EnhancedMultiStageFeatureSelector
+
 # Import hardware optimization tools
 try:
     from src.utils.hardware import (
@@ -404,6 +407,19 @@ class MultiStageFeatureSelector:
                 raise ValueError(error_msg)
             
             tprint_success("   ✅ Fast fail validation passed")
+            
+            # Check if new enhanced pipeline is enabled
+            if hasattr(self.config, 'enable_new_pipeline') and self.config.enable_new_pipeline:
+                tprint("🚀 Using enhanced multi-stage pipeline")
+                tprint_info("   📊 Stage 1: mRMR + Spearman combination (70% mRMR + 30% Spearman)")
+                tprint_info("   📊 Stage 2: Progressive refinement using LGBM-SHAP and LASSO ensemble")
+                
+                # Use enhanced pipeline
+                enhanced_selector = EnhancedMultiStageFeatureSelector(self.config)
+                return enhanced_selector.select_features(X, y, symbol, exchange, timeframe)
+            
+            # Fallback to original pipeline
+            tprint("📊 Using original 3-stage pipeline")
             
             # Set thread limits
             tprint_debug("🔧 Setting thread limits")

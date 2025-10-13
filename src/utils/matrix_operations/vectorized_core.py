@@ -338,6 +338,8 @@ class VectorizedProcessingCore:
             from ..hardware.m1_gpu_utils import get_m1_gpu_manager
             from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
             from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+        except ImportError:
+            pass
 
 # VectorBT imports for native optimization
 try:

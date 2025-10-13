@@ -541,45 +541,104 @@ class EnhancedOptimizedInteractionOrchestrator:
                 'reason': 'small_dataset'
             }
         
-        # Perform early filtering
-        target_column = context.pipeline_state.get('target_column', 'target')
-        
-        # FIXED: Check if target column exists, use fallback if not
-        if target_column not in data.columns:
-            # Try common target column names
-            for fallback in ['analyst_target', 'tactician_target', 'close', 'high', 'low', 'open']:
-                if fallback in data.columns:
-                    target_column = fallback
-                    tprint_info(f"🔄 Using fallback target column: {target_column}")
-                    break
-            else:
-                # Skip early filtering if no valid target found but still set filtered_features
-                tprint_warning(f"⚠️ No valid target column found, skipping early filtering")
-                exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
-                all_features = [col for col in data.columns if col not in exclude_cols]
-                context.pipeline_state['filtered_features'] = all_features
-                return {
-                    'status': 'skipped',
-                    'selected_features': all_features,
-                    'rejected_features': [],
-                    'reason': 'no_target_column'
-                }
-        
-        filtering_result = self.early_filtering.filter_features(data, target_column)
+        # Apply mRMR-based early filtering
+        filtered_features = await self._apply_mrmr_early_filtering(data, context.pipeline_state)
         
         # Update context with filtered features
-        context.pipeline_state['early_filtering_result'] = filtering_result
-        context.pipeline_state['filtered_features'] = filtering_result.selected_features
+        context.pipeline_state['filtered_features'] = filtered_features
+        
+        # Calculate filtering metrics
+        exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+        all_features = [col for col in data.columns if col not in exclude_cols]
+        rejected_features = [col for col in all_features if col not in filtered_features]
         
         return {
             'status': 'completed',
-            'selected_features': len(filtering_result.selected_features),
-            'rejected_features': len(filtering_result.rejected_features),
-            'filtering_efficiency': filtering_result.performance_metrics.get('filtering_efficiency', 0.0)
+            'selected_features': len(filtered_features),
+            'rejected_features': len(rejected_features),
+            'filtering_efficiency': len(filtered_features) / len(all_features) if all_features else 0.0,
+            'method': 'mrmr_enhanced'
         }
     
+    async def _apply_mrmr_early_filtering(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> List[str]:
+        """Apply mRMR-based early filtering to select the most relevant and non-redundant features."""
+        try:
+            from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            
+            tprint_debug("🔍 Applying mRMR early filtering...")
+            
+            # Prepare features and target
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            feature_cols = [col for col in data.columns if col not in exclude_cols]
+            
+            if not feature_cols:
+                tprint_warning("⚠️ No features available for mRMR filtering")
+                return []
+            
+            # Get target column
+            target_column = pipeline_state.get('target_column', 'target')
+            if target_column not in data.columns:
+                # Try fallback targets
+                for fallback in ['analyst_target', 'tactician_target', 'close']:
+                    if fallback in data.columns:
+                        target_column = fallback
+                        break
+                else:
+                    tprint_warning("⚠️ No valid target found for mRMR filtering")
+                    return feature_cols
+            
+            # Prepare data for mRMR
+            X = data[feature_cols].values
+            y = data[target_column].values
+            
+            # Remove any rows with NaN values
+            valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+            X = X[valid_mask]
+            y = y[valid_mask]
+            
+            if len(X) < 50:
+                tprint_warning("⚠️ Insufficient data for mRMR filtering after cleaning")
+                return feature_cols
+            
+            # Configure mRMR selector
+            config = VectorBTFeatureSelectionConfig(
+                mrmr_max_features=min(50, len(feature_cols)),  # Select up to 50 features
+                mrmr_alpha=0.7,  # Weight for relevance
+                mrmr_beta=0.3,   # Weight for redundancy
+                chunk_size=1000,
+                enable_parallel_processing=True
+            )
+            
+            # Initialize and run mRMR selector
+            mrmr_selector = VectorBTMRMRSelector(config)
+            result = mrmr_selector.select_features(
+                X, y, 
+                k=min(50, len(feature_cols)),
+                feature_names=feature_cols
+            )
+            
+            if result['success']:
+                selected_features = result['selected_features']
+                tprint_success(f"✅ mRMR filtering selected {len(selected_features)} features from {len(feature_cols)}")
+                return selected_features
+            else:
+                tprint_warning(f"⚠️ mRMR filtering failed: {result.get('error_message', 'Unknown error')}")
+                return feature_cols
+                
+        except ImportError as e:
+            tprint_warning(f"⚠️ mRMR selector not available: {e}")
+            # Fallback to basic filtering
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            return [col for col in data.columns if col not in exclude_cols]
+        except Exception as e:
+            tprint_error(f"❌ mRMR filtering failed: {e}")
+            # Fallback to basic filtering
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            return [col for col in data.columns if col not in exclude_cols]
+    
     async def _feature_engineering_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Feature engineering stage with actual feature generation."""
+        """Feature engineering stage with actual feature generation using Stage 2 filtered features."""
         tprint_debug("🏗️ Feature engineering stage...")
         
         # Convert data back to DataFrame if needed
@@ -600,6 +659,14 @@ class EnhancedOptimizedInteractionOrchestrator:
         missing_cols = set(required_cols) - set(data.columns)
         if missing_cols:
             raise RuntimeError(f"CRITICAL: Missing required columns for feature generation: {missing_cols}")
+        
+        # Use filtered features from Stage 2 if available
+        filtered_features = context.pipeline_state.get('filtered_features', [])
+        if filtered_features:
+            tprint_info(f"🔍 Using {len(filtered_features)} pre-filtered features from Stage 2")
+            # Filter data to only include the selected features plus required OHLCV columns
+            keep_cols = list(set(required_cols + filtered_features))
+            data = data[keep_cols]
         
         # Check for all-NaN data
         if data.isnull().all().all():
@@ -749,8 +816,8 @@ class EnhancedOptimizedInteractionOrchestrator:
         }
     
     async def _interaction_generation_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Interaction generation stage with actual feature generation."""
-        tprint_debug("🔗 Interaction generation stage...")
+        """Interaction generation stage using Random Forest and SHAP for intelligent feature interactions."""
+        tprint_debug("🔗 Interaction generation stage with RF/SHAP approach...")
         
         # Get generated features
         if 'generated_features' in context.pipeline_state:
@@ -761,46 +828,13 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Use VectorBT optimized interaction feature generation with fast-fail validation
-        from .vectorbt_optimized_feature_generator import (
-            VectorBTOptimizedFeatureGenerator, VectorBTFeatureConfig
-        )
-        
-        # Create VectorBT feature generation config for interactions
-        vectorbt_config = VectorBTFeatureConfig(
-            enable_vectorbt_rolling=self.config.enable_vectorbt_rolling,
-            vectorbt_window_threshold=self.config.vectorbt_rolling_window_threshold,
-            vectorbt_correlation_threshold=self.config.vectorbt_correlation_threshold,
-            enable_gpu=self.config.vectorbt_rolling_use_gpu,
-            enable_parallel=self.config.vectorbt_rolling_parallel,
-            chunk_size=self.config.vectorbt_chunk_size,
-            memory_limit_gb=self.config.vectorbt_memory_limit_gb
-        )
-        
-        # Generate interaction features using VectorBT optimized generator - fast-fail on error
+        # Generate interaction features using Random Forest + SHAP approach
         try:
-            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
-                tprint_info("🚀 Using VectorBT optimized interaction feature generation")
-                feature_generator = VectorBTOptimizedFeatureGenerator(vectorbt_config)
-                interaction_features = feature_generator.generate_interaction_features(features)
-            else:
-                tprint_info("⚠️ Using fallback interaction feature generation (VectorBT not available)")
-                from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
-                feature_config = FeatureGenerationConfig(
-                    enable_technical_indicators=False,
-                    enable_rolling_stats=False,
-                    enable_interaction_features=True,
-                    enable_cross_timeframe=False,
-                    max_interactions=50,
-                    interaction_types=['ratio', 'product', 'difference', 'sum'],
-                    min_valid_ratio=0.8,  # Require 80% valid values
-                    max_constant_ratio=0.1  # Allow max 10% constant features
-                )
-                feature_generator = ImprovedFeatureGenerator(feature_config)
-                interaction_features = feature_generator.generate_interaction_features(features)
+            interaction_features = await self._generate_rf_shap_interactions(features, context.pipeline_state)
         except Exception as e:
-            tprint_warning(f"⚠️ Interaction feature generation failed: {e}")
-            interaction_features = pd.DataFrame(index=features.index)
+            tprint_warning(f"⚠️ RF/SHAP interaction generation failed: {e}")
+            # Fallback to basic interaction generation
+            interaction_features = await self._generate_basic_interactions(features)
         
         # CRITICAL: Fast-fail if no interaction features generated
         if interaction_features.empty or len(interaction_features.columns) == 0:
@@ -814,15 +848,182 @@ class EnhancedOptimizedInteractionOrchestrator:
         
         return {
             'status': 'completed',
-            'interaction_features': len(interaction_features.columns)
+            'interaction_features': len(interaction_features.columns),
+            'method': 'rf_shap_enhanced'
         }
     
+    async def _generate_rf_shap_interactions(self, features: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+        """Generate interaction features using Random Forest and SHAP for intelligent feature selection."""
+        try:
+            import shap
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.model_selection import train_test_split
+            from sklearn.preprocessing import StandardScaler
+            import numpy as np
+            
+            tprint_debug("🌲 Generating RF/SHAP-based interactions...")
+            
+            # Get target column
+            target_column = pipeline_state.get('target_column', 'target')
+            if target_column not in features.columns:
+                # Try fallback targets
+                for fallback in ['analyst_target', 'tactician_target', 'close']:
+                    if fallback in features.columns:
+                        target_column = fallback
+                        break
+                else:
+                    tprint_warning("⚠️ No valid target found for RF/SHAP interactions")
+                    return pd.DataFrame(index=features.index)
+            
+            # Prepare data
+            feature_cols = [col for col in features.columns if col != target_column]
+            if len(feature_cols) < 2:
+                tprint_warning("⚠️ Insufficient features for interaction generation")
+                return pd.DataFrame(index=features.index)
+            
+            X = features[feature_cols].values
+            y = features[target_column].values
+            
+            # Remove NaN values
+            valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+            X = X[valid_mask]
+            y = y[valid_mask]
+            
+            if len(X) < 100:
+                tprint_warning("⚠️ Insufficient data for RF/SHAP interactions")
+                return pd.DataFrame(index=features.index)
+            
+            # Split data for training
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42
+            )
+            
+            # Scale features
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_test_scaled = scaler.transform(X_test)
+            
+            # Train Random Forest
+            rf = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10,
+                min_samples_split=5,
+                min_samples_leaf=2,
+                random_state=42,
+                n_jobs=-1
+            )
+            rf.fit(X_train_scaled, y_train)
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(rf)
+            shap_values = explainer.shap_values(X_test_scaled)
+            
+            # Find important feature interactions using SHAP
+            interaction_features = self._extract_shap_interactions(
+                X_test_scaled, shap_values, feature_cols, rf, scaler
+            )
+            
+            return interaction_features
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ SHAP not available: {e}")
+            return await self._generate_basic_interactions(features)
+        except Exception as e:
+            tprint_error(f"❌ RF/SHAP interaction generation failed: {e}")
+            return await self._generate_basic_interactions(features)
+    
+    def _extract_shap_interactions(self, X: np.ndarray, shap_values: np.ndarray, 
+                                 feature_names: List[str], rf_model, scaler) -> pd.DataFrame:
+        """Extract interaction features based on SHAP values and feature importance."""
+        try:
+            import numpy as np
+            from itertools import combinations
+            
+            # Get feature importance
+            feature_importance = rf_model.feature_importances_
+            
+            # Select top features based on importance
+            top_features_idx = np.argsort(feature_importance)[-min(20, len(feature_names)):]
+            top_features = [feature_names[i] for i in top_features_idx]
+            
+            # Generate interaction features
+            interaction_data = {}
+            
+            # 1. Ratio interactions for top features
+            for i, j in combinations(top_features_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    # Avoid division by zero
+                    ratio_feature = X[:, i] / (X[:, j] + 1e-8)
+                    interaction_data[f"{feature1}_div_{feature2}"] = ratio_feature
+            
+            # 2. Product interactions for highly important features
+            top_5_idx = top_features_idx[-5:]
+            for i, j in combinations(top_5_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    product_feature = X[:, i] * X[:, j]
+                    interaction_data[f"{feature1}_mul_{feature2}"] = product_feature
+            
+            # 3. Difference interactions for trend features
+            for i, j in combinations(top_features_idx, 2):
+                if i != j:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    diff_feature = X[:, i] - X[:, j]
+                    interaction_data[f"{feature1}_sub_{feature2}"] = diff_feature
+            
+            # 4. SHAP-based weighted combinations
+            shap_weights = np.abs(shap_values).mean(axis=0)
+            for i, j in combinations(top_features_idx, 2):
+                if i != j and shap_weights[i] > 0.01 and shap_weights[j] > 0.01:
+                    feature1, feature2 = feature_names[i], feature_names[j]
+                    weight1, weight2 = shap_weights[i], shap_weights[j]
+                    weighted_sum = (weight1 * X[:, i] + weight2 * X[:, j]) / (weight1 + weight2)
+                    interaction_data[f"{feature1}_wsum_{feature2}"] = weighted_sum
+            
+            # Convert to DataFrame
+            if interaction_data:
+                interaction_df = pd.DataFrame(interaction_data)
+                # Remove any infinite or NaN values
+                interaction_df = interaction_df.replace([np.inf, -np.inf], np.nan)
+                interaction_df = interaction_df.fillna(0)
+                return interaction_df
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_error(f"❌ SHAP interaction extraction failed: {e}")
+            return pd.DataFrame()
+    
+    async def _generate_basic_interactions(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Fallback basic interaction generation."""
+        try:
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+            
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=True,
+                enable_cross_timeframe=False,
+                max_interactions=15,  # Reduced for basic fallback
+                interaction_types=['ratio', 'product', 'difference'],
+                min_valid_ratio=0.8,
+                max_constant_ratio=0.1
+            )
+            
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            return feature_generator.generate_interaction_features(features)
+            
+        except Exception as e:
+            tprint_error(f"❌ Basic interaction generation failed: {e}")
+            return pd.DataFrame(index=features.index)
+    
     async def _interaction_pruning_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Interaction pruning stage."""
+        """Enhanced interaction pruning stage using OptimizedFeatureSelectionEngine - fast fail."""
         if not self.interaction_pruning:
             return {'status': 'skipped', 'reason': 'disabled'}
         
-        tprint_debug("✂️ Interaction pruning stage...")
+        tprint_debug("✂️ Interaction pruning stage using OptimizedFeatureSelectionEngine...")
         
         # Get interaction features
         if 'interaction_features' in context.pipeline_state:
@@ -833,39 +1034,79 @@ class EnhancedOptimizedInteractionOrchestrator:
         if features.empty or len(features.columns) == 0:
             return {'status': 'skipped', 'reason': 'no_interaction_features'}
         
-        # Get target
+        # Get target column - fast fail if not found
         target_column = context.pipeline_state.get('target_column', 'target')
-        
-        # FIXED: Better target handling
-        if target_column in features.columns:
-            target = features[target_column]
-        elif len(features.columns) > 0:
-            target = features.iloc[:, 0]
-            target_column = features.columns[0]
-            tprint_info(f"🔄 Using fallback target column: {target_column}")
-        else:
-            return {'status': 'skipped', 'reason': 'no_valid_target'}
+        if target_column not in features.columns:
+            raise ValueError(f"CRITICAL: Target column '{target_column}' not found in interaction features")
         
         # Get feature names
         feature_names = [col for col in features.columns if col != target_column]
         
         if len(feature_names) == 0:
-            return {'status': 'skipped', 'reason': 'no_features_after_target_removal'}
+            raise ValueError("CRITICAL: No interaction features found after removing target column")
         
-        # Perform interaction pruning
-        pruning_result = self.interaction_pruning.prune_interactions_for_data(
-            features, target, feature_names
+        # Fast fail: Call OptimizedFeatureSelectionEngine directly
+        from src.training.steps.market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
+        
+        # Initialize the optimized feature selection engine
+        selection_engine = OptimizedFeatureSelectionEngine(
+            use_hardware_accel=True,
+            cache_size=1000,
+            use_vectorbt=True
         )
         
-        # Store result
-        context.pipeline_state['interaction_pruning_result'] = pruning_result
+        # Target: Reduce to 50 features (or all if fewer)
+        target_feature_count = min(50, len(feature_names))
+        selection_stages = [target_feature_count]
+        
+        tprint_info(f"🎯 Reducing {len(feature_names)} interaction features to {target_feature_count}")
+        
+        # Perform feature selection - fast fail on any error
+        selection_result = selection_engine.select_features(
+            features_df=features,
+            target_column=target_column,
+            selection_stages=selection_stages
+        )
+        
+        if 'error' in selection_result:
+            raise RuntimeError(f"CRITICAL: Feature selection failed: {selection_result['error']}")
+        
+        # Extract selected features - fast fail if no results
+        if 'final_features' not in selection_result:
+            raise RuntimeError("CRITICAL: No final features returned from selection engine")
+        
+        if isinstance(selection_result['final_features'], list):
+            selected_features = selection_result['final_features']
+            if target_column not in selected_features:
+                selected_features.append(target_column)
+            pruned_features = features[selected_features]
+        else:
+            pruned_features = selection_result['final_features']
+        
+        if pruned_features.empty or len(pruned_features.columns) == 0:
+            raise RuntimeError("CRITICAL: No features selected after pruning")
+        
+        # Update context with pruned features
+        context.pipeline_state['interaction_features'] = pruned_features
+        context.pipeline_state['interaction_pruning_result'] = {
+            'selected_interactions': list(pruned_features.columns),
+            'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
+            'pruning_method': 'optimized_feature_selection_engine',
+            'target_achieved': len(pruned_features.columns) <= target_feature_count
+        }
+        
+        tprint_success(f"✅ Interaction pruning completed: {len(pruned_features.columns)} features selected")
         
         return {
             'status': 'completed',
-            'selected_interactions': len(pruning_result.selected_interactions),
-            'rejected_interactions': len(pruning_result.rejected_interactions),
-            'selection_rate': pruning_result.performance_metrics.get('selection_rate', 0.0)
+            'selected_interactions': len(pruned_features.columns),
+            'rejected_interactions': len(feature_names) - len(pruned_features.columns),
+            'selection_rate': len(pruned_features.columns) / len(feature_names),
+            'method': 'optimized_feature_selection_engine',
+            'target_achieved': len(pruned_features.columns) <= target_feature_count
         }
+    
+    
     
     async def _cross_timeframe_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Cross-timeframe features stage with HTF-aware interaction templates."""

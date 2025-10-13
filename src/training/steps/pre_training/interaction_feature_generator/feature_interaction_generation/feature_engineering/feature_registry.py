@@ -64,8 +64,8 @@ class FeatureFamily(Enum):
     PRICE_RETURNS = "price_returns"
     VOLATILITY = "volatility"
     MEAN_REVERSION = "mean_reversion"
-    LIQUIDITY_MICRO = "liquidity_micro"
-    ANCHORS_TOD = "anchors_tod"
+    TREND = "trend"
+    VOLUME = "volume"
     CONTEXT = "context"
 
 
@@ -243,8 +243,144 @@ class MeanReversionFeatures:
         return 100 - (100 / (1 + rs))
 
 
-class LiquidityMicroFeatures:
-    """Liquidity and microstructure features (6 total, book-optional)."""
+class TrendFeatures:
+    """Trend and momentum features (8 total)."""
+    
+    @staticmethod
+    def adx(data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Average Directional Index (ADX)."""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Calculate True Range
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
+        # Calculate Directional Movement
+        dm_plus = high.diff()
+        dm_minus = -low.diff()
+        
+        dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
+        dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
+        
+        # Smooth the values
+        atr = tr.rolling(period).mean()
+        di_plus = 100 * pd.Series(dm_plus, index=data.index).rolling(period).mean() / atr
+        di_minus = 100 * pd.Series(dm_minus, index=data.index).rolling(period).mean() / atr
+        
+        # Calculate ADX
+        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+        adx = dx.rolling(period).mean()
+        
+        return adx
+    
+    @staticmethod
+    def macd(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """MACD (Moving Average Convergence Divergence)."""
+        ema_fast = data['close'].ewm(span=fast).mean()
+        ema_slow = data['close'].ewm(span=slow).mean()
+        macd_line = ema_fast - ema_slow
+        return macd_line
+    
+    @staticmethod
+    def macd_signal(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """MACD Signal Line."""
+        ema_fast = data['close'].ewm(span=fast).mean()
+        ema_slow = data['close'].ewm(span=slow).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal).mean()
+        return signal_line
+    
+    @staticmethod
+    def macd_histogram(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+        """MACD Histogram."""
+        ema_fast = data['close'].ewm(span=fast).mean()
+        ema_slow = data['close'].ewm(span=slow).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal).mean()
+        return macd_line - signal_line
+    
+    @staticmethod
+    def ichimoku_base(data: pd.DataFrame, period: int = 26) -> pd.Series:
+        """Ichimoku Base Line (Tenkan-sen)."""
+        high_9 = data['high'].rolling(9).max()
+        low_9 = data['low'].rolling(9).min()
+        return (high_9 + low_9) / 2
+    
+    @staticmethod
+    def ichimoku_conversion(data: pd.DataFrame, period: int = 26) -> pd.Series:
+        """Ichimoku Conversion Line (Kijun-sen)."""
+        high_26 = data['high'].rolling(26).max()
+        low_26 = data['low'].rolling(26).min()
+        return (high_26 + low_26) / 2
+    
+    @staticmethod
+    def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.2) -> pd.Series:
+        """Parabolic SAR (Stop and Reverse)."""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        # Initialize arrays
+        sar = np.zeros(len(data))
+        trend = np.zeros(len(data))
+        af = np.zeros(len(data))
+        ep = np.zeros(len(data))
+        
+        # Initial values
+        sar[0] = low.iloc[0]
+        trend[0] = 1
+        af[0] = step
+        ep[0] = high.iloc[0]
+        
+        for i in range(1, len(data)):
+            if trend[i-1] == 1:  # Uptrend
+                sar[i] = sar[i-1] + af[i-1] * (ep[i-1] - sar[i-1])
+                if low.iloc[i] <= sar[i]:
+                    trend[i] = -1
+                    sar[i] = ep[i-1]
+                    af[i] = step
+                    ep[i] = low.iloc[i]
+                else:
+                    trend[i] = 1
+                    if high.iloc[i] > ep[i-1]:
+                        ep[i] = high.iloc[i]
+                        af[i] = min(af[i-1] + step, max_step)
+                    else:
+                        ep[i] = ep[i-1]
+                        af[i] = af[i-1]
+            else:  # Downtrend
+                sar[i] = sar[i-1] + af[i-1] * (ep[i-1] - sar[i-1])
+                if high.iloc[i] >= sar[i]:
+                    trend[i] = 1
+                    sar[i] = ep[i-1]
+                    af[i] = step
+                    ep[i] = high.iloc[i]
+                else:
+                    trend[i] = -1
+                    if low.iloc[i] < ep[i-1]:
+                        ep[i] = low.iloc[i]
+                        af[i] = min(af[i-1] + step, max_step)
+                    else:
+                        ep[i] = ep[i-1]
+                        af[i] = af[i-1]
+        
+        return pd.Series(sar, index=data.index)
+    
+    @staticmethod
+    def williams_r(data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Williams %R indicator."""
+        highest_high = data['high'].rolling(period).max()
+        lowest_low = data['low'].rolling(period).min()
+        wr = -100 * (highest_high - data['close']) / (highest_high - lowest_low)
+        return wr
+
+
+class VolumeFeatures:
+    """Volume and liquidity features (8 total)."""
     
     @staticmethod
     def volume_z18(data: pd.DataFrame) -> pd.Series:
@@ -254,79 +390,73 @@ class LiquidityMicroFeatures:
         return (data['volume'] - volume_mean) / volume_std
     
     @staticmethod
-    def tradecount_z18(data: pd.DataFrame) -> pd.Series:
-        """Trade count z-score over 18 bars (requires trade_count)."""
-        if 'trade_count' not in data.columns:
-            return pd.Series(index=data.index, dtype=float)
-        tc_mean = data['trade_count'].rolling(18).mean()
-        tc_std = data['trade_count'].rolling(18).std()
-        return (data['trade_count'] - tc_mean) / tc_std
+    def volume_ma_ratio(data: pd.DataFrame) -> pd.Series:
+        """Volume to MA ratio."""
+        volume_ma = data['volume'].rolling(20).mean()
+        return data['volume'] / volume_ma
     
     @staticmethod
-    def spread_z18(data: pd.DataFrame) -> pd.Series:
-        """Spread z-score over 18 bars (requires bid/ask)."""
-        if 'bid' not in data.columns or 'ask' not in data.columns:
-            return pd.Series(index=data.index, dtype=float)
-        spread = (data['ask'] - data['bid']) / data['close']
-        spread_mean = spread.rolling(18).mean()
-        spread_std = spread.rolling(18).std()
-        return (spread - spread_mean) / spread_std
+    def volume_price_trend(data: pd.DataFrame) -> pd.Series:
+        """Volume Price Trend (VPT)."""
+        r1 = np.log(data['close'] / data['close'].shift(1))
+        vpt = (r1 * data['volume']).cumsum()
+        return vpt
     
     @staticmethod
-    def dollarvol_z18(data: pd.DataFrame) -> pd.Series:
-        """Dollar volume z-score over 18 bars."""
-        dollar_vol = data['volume'] * data['close']
-        dv_mean = dollar_vol.rolling(18).mean()
-        dv_std = dollar_vol.rolling(18).std()
-        return (dollar_vol - dv_mean) / dv_std
+    def on_balance_volume(data: pd.DataFrame) -> pd.Series:
+        """On Balance Volume (OBV)."""
+        price_change = data['close'].diff()
+        obv = np.where(price_change > 0, data['volume'], 
+                      np.where(price_change < 0, -data['volume'], 0)).cumsum()
+        return pd.Series(obv, index=data.index)
     
     @staticmethod
-    def ofi_proxy(data: pd.DataFrame) -> pd.Series:
-        """Order flow imbalance proxy (requires bid/ask sizes)."""
-        if 'bid_size' not in data.columns or 'ask_size' not in data.columns:
-            return pd.Series(index=data.index, dtype=float)
-        # Simple OFI proxy: (bid_size - ask_size) / (bid_size + ask_size)
-        total_size = data['bid_size'] + data['ask_size']
-        return (data['bid_size'] - data['ask_size']) / total_size
+    def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
+        """Money Flow Index (MFI)."""
+        typical_price = (data['high'] + data['low'] + data['close']) / 3
+        money_flow = typical_price * data['volume']
+        
+        positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(period).sum()
+        negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(period).sum()
+        
+        mfi = 100 - (100 / (1 + positive_flow / negative_flow))
+        return mfi
     
     @staticmethod
-    def microprice_dev(data: pd.DataFrame) -> pd.Series:
-        """Microprice deviation (requires bid/ask)."""
-        if 'bid' not in data.columns or 'ask' not in data.columns:
-            return pd.Series(index=data.index, dtype=float)
-        microprice = (data['bid'] + data['ask']) / 2
-        return (data['close'] - microprice) / data['close']
-
-
-class AnchorsTODFeatures:
-    """Anchors and time-of-day features (4 total)."""
+    def ease_of_movement(data: pd.DataFrame) -> pd.Series:
+        """Ease of Movement indicator."""
+        distance_moved = ((data['high'] + data['low']) / 2) - ((data['high'].shift(1) + data['low'].shift(1)) / 2)
+        box_height = data['volume'] / (data['high'] - data['low'])
+        return distance_moved / box_height
     
     @staticmethod
-    def vwap_session_dist(data: pd.DataFrame) -> pd.Series:
-        """Session-causal VWAP distance (resets per session)."""
-        # This would need session information - simplified for now
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_session = vwap.rolling(12).mean()  # Simplified session VWAP
-        return (data['close'] - vwap_session) / vwap_session
+    def volume_rate_of_change(data: pd.DataFrame, period: int = 10) -> pd.Series:
+        """Volume Rate of Change."""
+        return data['volume'].pct_change(period) * 100
     
     @staticmethod
-    def vwap_roll12_dist(data: pd.DataFrame) -> pd.Series:
-        """Rolling VWAP 12-bar distance within session."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_roll = vwap.rolling(12).mean()
-        return (data['close'] - vwap_roll) / vwap_roll
-    
-    @staticmethod
-    def open30(data: pd.DataFrame) -> pd.Series:
-        """1 if within first 30 minutes of session."""
-        # This would need proper session timing - simplified for now
-        return pd.Series(0, index=data.index)  # Placeholder
-    
-    @staticmethod
-    def last30(data: pd.DataFrame) -> pd.Series:
-        """1 if within last 30 minutes of session."""
-        # This would need proper session timing - simplified for now
-        return pd.Series(0, index=data.index)  # Placeholder
+    def klinger_volume_oscillator(data: pd.DataFrame, fast: int = 34, slow: int = 55) -> pd.Series:
+        """Klinger Volume Oscillator."""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        volume = data['volume']
+        
+        # Calculate trend
+        trend = np.where(close > close.shift(1), 1, -1)
+        
+        # Calculate DM and CM
+        dm = high - low
+        cm = np.where(trend == trend.shift(1), dm + dm.shift(1), dm)
+        
+        # Calculate VF
+        vf = volume * trend * abs(2 * (dm / cm) - 1)
+        
+        # Calculate KVO
+        ema_fast = pd.Series(vf, index=data.index).ewm(span=fast).mean()
+        ema_slow = pd.Series(vf, index=data.index).ewm(span=slow).mean()
+        
+        return ema_fast - ema_slow
 
 
 class ContextFeatures:
@@ -420,32 +550,44 @@ class FeatureRegistry:
                                               'R1 autocorr', 'autocorr(r1, lag=1)'))
         ]
         
-        # Liquidity/Micro features (6, book-optional)
-        liquidity_micro = [
-            ('p/volume_z18', FeatureMetadata(['volume'], 18, 0.2, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                           'Volume z-score', 'z-score over 18 bars')),
-            ('p/tradecount_z18', FeatureMetadata(['trade_count'], 18, 0.2, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                               'Trade count z-score', 'z-score over 18 bars')),
-            ('p/spread_z18', FeatureMetadata(['bid', 'ask', 'close'], 18, 0.2, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                           'Spread z-score', 'z-score of (ask-bid)/close')),
-            ('p/dollarvol_z18', FeatureMetadata(['volume', 'close'], 18, 0.2, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                              'Dollar vol z-score', 'z-score of volume*close')),
-            ('p/ofi_proxy', FeatureMetadata(['bid_size', 'ask_size'], 1, 0.1, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                          'OFI proxy', '(bid_size - ask_size) / (bid_size + ask_size)')),
-            ('p/microprice_dev', FeatureMetadata(['bid', 'ask', 'close'], 1, 0.1, True, FeatureFamily.LIQUIDITY_MICRO, 
-                                               'Microprice dev', '(C - microprice) / C'))
+        # Trend features (8)
+        trend = [
+            ('p/adx', FeatureMetadata(['high', 'low', 'close'], 14, 0.5, True, FeatureFamily.TREND, 
+                                    'ADX', 'Average Directional Index')),
+            ('p/macd', FeatureMetadata(['close'], 26, 0.3, True, FeatureFamily.TREND, 
+                                     'MACD', 'Moving Average Convergence Divergence')),
+            ('p/macd_signal', FeatureMetadata(['close'], 26, 0.3, True, FeatureFamily.TREND, 
+                                            'MACD Signal', 'MACD Signal Line')),
+            ('p/macd_histogram', FeatureMetadata(['close'], 26, 0.3, True, FeatureFamily.TREND, 
+                                               'MACD Histogram', 'MACD - Signal Line')),
+            ('p/ichimoku_base', FeatureMetadata(['high', 'low'], 26, 0.4, True, FeatureFamily.TREND, 
+                                              'Ichimoku Base', 'Tenkan-sen (9-period)')),
+            ('p/ichimoku_conversion', FeatureMetadata(['high', 'low'], 26, 0.4, True, FeatureFamily.TREND, 
+                                                    'Ichimoku Conversion', 'Kijun-sen (26-period)')),
+            ('p/parabolic_sar', FeatureMetadata(['high', 'low', 'close'], 1, 0.2, True, FeatureFamily.TREND, 
+                                              'Parabolic SAR', 'Stop and Reverse')),
+            ('p/williams_r', FeatureMetadata(['high', 'low', 'close'], 14, 0.2, True, FeatureFamily.TREND, 
+                                           'Williams %R', 'Williams Percent Range'))
         ]
         
-        # Anchors & TOD features (4)
-        anchors_tod = [
-            ('p/vwap_session_dist', FeatureMetadata(['high', 'low', 'close'], 12, 0.3, True, FeatureFamily.ANCHORS_TOD, 
-                                                   'Session VWAP dist', 'Distance to session VWAP')),
-            ('p/vwap_roll12_dist', FeatureMetadata(['high', 'low', 'close'], 12, 0.3, True, FeatureFamily.ANCHORS_TOD, 
-                                                 'Rolling VWAP dist', 'Distance to rolling VWAP')),
-            ('p/open30', FeatureMetadata([], 0, 0.0, True, FeatureFamily.ANCHORS_TOD, 
-                                       'First 30min', '1 if within first 30min of session')),
-            ('p/last30', FeatureMetadata([], 0, 0.0, True, FeatureFamily.ANCHORS_TOD, 
-                                       'Last 30min', '1 if within last 30min of session'))
+        # Volume features (8)
+        volume = [
+            ('p/volume_z18', FeatureMetadata(['volume'], 18, 0.2, True, FeatureFamily.VOLUME, 
+                                           'Volume z-score', 'z-score over 18 bars')),
+            ('p/volume_ma_ratio', FeatureMetadata(['volume'], 20, 0.2, True, FeatureFamily.VOLUME, 
+                                                'Volume MA ratio', 'Volume to MA ratio')),
+            ('p/volume_price_trend', FeatureMetadata(['close', 'volume'], 1, 0.3, True, FeatureFamily.VOLUME, 
+                                                   'Volume Price Trend', 'VPT indicator')),
+            ('p/on_balance_volume', FeatureMetadata(['close', 'volume'], 1, 0.2, True, FeatureFamily.VOLUME, 
+                                                  'On Balance Volume', 'OBV indicator')),
+            ('p/money_flow_index', FeatureMetadata(['high', 'low', 'close', 'volume'], 14, 0.4, True, FeatureFamily.VOLUME, 
+                                                 'Money Flow Index', 'MFI indicator')),
+            ('p/ease_of_movement', FeatureMetadata(['high', 'low', 'volume'], 1, 0.2, True, FeatureFamily.VOLUME, 
+                                                 'Ease of Movement', 'EOM indicator')),
+            ('p/volume_rate_of_change', FeatureMetadata(['volume'], 10, 0.2, True, FeatureFamily.VOLUME, 
+                                                      'Volume ROC', 'Volume Rate of Change')),
+            ('p/klinger_volume_oscillator', FeatureMetadata(['high', 'low', 'close', 'volume'], 55, 0.5, True, FeatureFamily.VOLUME, 
+                                                          'Klinger Volume Osc', 'KVO indicator'))
         ]
         
         # Context features (2, optional)
@@ -457,7 +599,7 @@ class FeatureRegistry:
         ]
         
         # Register all features
-        all_features = price_returns + volatility + mean_reversion + liquidity_micro + anchors_tod + context
+        all_features = price_returns + volatility + mean_reversion + trend + volume + context
         
         for name, metadata in all_features:
             self.features[name] = metadata
@@ -489,18 +631,24 @@ class FeatureRegistry:
             'p/rsi14': MeanReversionFeatures.rsi14,
             'p/stochk14': MeanReversionFeatures.stochk14,
             'p/autocorr_r1_w': MeanReversionFeatures.autocorr_r1_w,
-            # Liquidity / microstructure
-            'p/volume_z18': LiquidityMicroFeatures.volume_z18,
-            'p/tradecount_z18': LiquidityMicroFeatures.tradecount_z18,
-            'p/spread_z18': LiquidityMicroFeatures.spread_z18,
-            'p/dollarvol_z18': LiquidityMicroFeatures.dollarvol_z18,
-            'p/ofi_proxy': LiquidityMicroFeatures.ofi_proxy,
-            'p/microprice_dev': LiquidityMicroFeatures.microprice_dev,
-            # Anchors / TOD
-            'p/vwap_session_dist': AnchorsTODFeatures.vwap_session_dist,
-            'p/vwap_roll12_dist': AnchorsTODFeatures.vwap_roll12_dist,
-            'p/open30': AnchorsTODFeatures.open30,
-            'p/last30': AnchorsTODFeatures.last30,
+            # Trend features
+            'p/adx': TrendFeatures.adx,
+            'p/macd': TrendFeatures.macd,
+            'p/macd_signal': TrendFeatures.macd_signal,
+            'p/macd_histogram': TrendFeatures.macd_histogram,
+            'p/ichimoku_base': TrendFeatures.ichimoku_base,
+            'p/ichimoku_conversion': TrendFeatures.ichimoku_conversion,
+            'p/parabolic_sar': TrendFeatures.parabolic_sar,
+            'p/williams_r': TrendFeatures.williams_r,
+            # Volume features
+            'p/volume_z18': VolumeFeatures.volume_z18,
+            'p/volume_ma_ratio': VolumeFeatures.volume_ma_ratio,
+            'p/volume_price_trend': VolumeFeatures.volume_price_trend,
+            'p/on_balance_volume': VolumeFeatures.on_balance_volume,
+            'p/money_flow_index': VolumeFeatures.money_flow_index,
+            'p/ease_of_movement': VolumeFeatures.ease_of_movement,
+            'p/volume_rate_of_change': VolumeFeatures.volume_rate_of_change,
+            'p/klinger_volume_oscillator': VolumeFeatures.klinger_volume_oscillator,
             # Context
             'p/beta30': ContextFeatures.beta30,
             'p/mkt_dispersion': ContextFeatures.mkt_dispersion,

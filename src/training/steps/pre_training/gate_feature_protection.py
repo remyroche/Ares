@@ -14,6 +14,7 @@ Key Features:
 
 import pandas as pd
 import numpy as np
+import warnings
 from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 import logging
@@ -438,6 +439,8 @@ class GateFeatureProtector:
         try:
             from sklearn.feature_selection import RFE
             from sklearn.ensemble import RandomForestRegressor
+        except ImportError:
+            pass
 
 # VectorBT imports for native optimization
 try:
@@ -472,22 +475,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            # Use RandomForest for RFE
-            estimator = RandomForestRegressor(n_estimators=50, random_state=42)
-            
-            # Select top 50% of features
-            n_features = max(10, len(features.columns) // 2)
-            selector = RFE(estimator, n_features_to_select=n_features)
-            
-            selector.fit(features, target)
-            selected_features = features.columns[selector.support_]
-            
-            return features[selected_features]
-            
-        except Exception as e:
-            self.logger.warning(f"RFE selection failed: {e}, keeping all features")
-            return features
     
     def _apply_variance_filtering(self, features: pd.DataFrame) -> pd.DataFrame:
         """Apply variance filtering to non-gate features."""

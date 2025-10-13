@@ -23,17 +23,15 @@ Usage:
     )
     
     # Get unified operations instance
-    ops = get_unified_matrix_operations()
-    result = ops.matrix_multiply(A, B)
-    
-    # Get vectorized processing core
-    core = get_vectorized_processing_core()
-    optimized_data = core.optimize_dataframe_for_processing(df)
-    
-    # Get batch processor
-    batch_processor = get_batch_matrix_processor()
-    results = batch_processor.batch_matrix_multiply(matrices_a, matrices_b)
 """
+
+# Import logger
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 # Core unified operations
 try:

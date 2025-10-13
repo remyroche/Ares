@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import gc
 import logging
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
 from collections import deque
@@ -17,6 +18,13 @@ import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
 import datetime
+
+# Import logger
+try:
+    from src.utils.logger import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
 
 # Conditional imports for optional dependencies
 try:
@@ -338,6 +346,8 @@ class VectorizedProcessingCore:
             from ..hardware.m1_gpu_utils import get_m1_gpu_manager
             from ..hardware.m1_memory_optimizer import get_m1_memory_optimizer
             from ..hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+        except ImportError:
+            pass
 
 # VectorBT imports for native optimization
 try:
@@ -373,15 +383,31 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            self.m1_available = True
-        except ImportError:
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
-            self.m1_available = False
+# M1 optimizations
+try:
+    from src.utils.hardware.m1_optimizations import (
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
+    )
+    M1_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    M1_OPTIMIZATIONS_AVAILABLE = False
+
+class VectorizedCore:
+    """Core vectorized operations with M1 optimizations."""
+    
+    def __init__(self, hardware_config: Optional[HardwareConfig] = None):
+        self.m1_available = False
+        if M1_OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                self.m1_available = True
+            except ImportError:
+                self.m1_gpu_manager = None
+                self.m1_memory_optimizer = None
+                self.m1_cpu_optimizer = None
+                self.m1_available = False
 
         # Initialize hardware integration
         self._initialize_hardware_integration(hardware_config)
@@ -1022,7 +1048,7 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
@@ -1052,5 +1078,5 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)

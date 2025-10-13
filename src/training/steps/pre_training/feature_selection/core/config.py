@@ -6,22 +6,19 @@ pipeline, including base configurations, model-specific settings, and validation
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from src.utils.tprint import tprint_debug
 
 
 @dataclass
 class BaseFeatureSelectionConfig:
     """Base configuration for multi-stage feature selection."""
-    # Stage targets
+    # Initial features
     initial_features: int = 120
-    stage_1_target: int = 100
-    stage_2_target: int = 80
-    stage_3_target: int = 60
 
     # Model configuration
     model_type: str = 'regime_detection'
-    target_features: int = 80
+    target_features: int = 60  # Default target set to 60
     min_features: int = 60
     max_features: int = 100
     priority_categories: List[str] = field(default_factory=lambda: ['volatility', 'structural', 'volume_regime', 'statistical'])
@@ -155,6 +152,80 @@ class AdvancedSelectionConfig:
         'stability': 0.4
     })
 
+
+@dataclass
+class NewPipelineConfig:
+    """Configuration for the new multi-stage pipeline."""
+    
+    # Pipeline stages
+    enable_new_pipeline: bool = True
+    
+    # Stage 1: mRMR + Spearman combination
+    stage1_mrmr_weight: float = 0.7
+    stage1_spearman_weight: float = 0.3
+    stage1_target_ratio: float = 0.5  # Select top 50% above target
+    
+    # Stage 2: Progressive refinement
+    stage2_enable_progressive_refinement: bool = True
+    
+    # Bootstrap stability and CV threshold
+    stage2_bootstrap_cv_threshold: int = 40  # Use bootstrap stability and CV when 40+ features away from target
+    
+    # LGBM-SHAP configuration
+    lgbm_params: Dict[str, Any] = field(default_factory=lambda: {
+        'n_estimators': 100,
+        'learning_rate': 0.1,
+        'max_depth': 6,
+        'num_leaves': 31,
+        'min_child_samples': 20,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'reg_alpha': 0.1,
+        'reg_lambda': 0.1,
+        'random_state': 42,
+        'verbose': -1
+    })
+    
+    # SHAP configuration
+    shap_sample_size: int = 1000
+    shap_max_features: int = 200
+    shap_explainer_type: str = 'tree'  # 'tree', 'linear', 'kernel'
+    
+    # LASSO ensemble configuration
+    lasso_alpha_range: Tuple[float, float] = (0.001, 1.0)
+    lasso_cv_folds: int = 5
+    lasso_n_alphas: int = 50
+    
+    # RFE configuration
+    rfe_step_size: float = 0.10  # Remove 10% of features above target in each RFE round
+    rfe_min_features: int = 10
+    rfe_cv_folds: int = 3
+    rfe_early_stopping: bool = True
+    rfe_early_stopping_patience: int = 3
+    rfe_use_percentage_step: bool = True  # Use percentage-based step size instead of fixed
+    
+    # Bootstrap stability configuration
+    bootstrap_n_samples: int = 100
+    bootstrap_sample_ratio: float = 0.8
+    stability_threshold: float = 0.6
+    
+    # Cross-validation configuration
+    cv_folds: int = 5
+    cv_scoring: str = 'neg_mean_squared_error'
+    
+    # Ensemble weights
+    ensemble_weights: Dict[str, float] = field(default_factory=lambda: {
+        'lgbm_shap': 0.4,
+        'lasso_ensemble': 0.3,
+        'rfe': 0.2,
+        'bootstrap_stability': 0.1
+    })
+    
+    # VectorBT optimization
+    enable_vectorbt_optimization: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_enable_parallel: bool = True
+
     # Entropy stability filtering
     enable_entropy_balancing: bool = True
     entropy_num_slices: int = 12
@@ -183,6 +254,9 @@ class AdvancedSelectionConfig:
 class FeatureSelectionConfig(BaseFeatureSelectionConfig):
     """Complete configuration combining all sub-configs."""
     
+    # Custom parameters for additional configuration
+    custom_params: Dict[str, Any] = field(default_factory=dict)
+    
     def __post_init__(self):
         """Initialize sub-configurations."""
         tprint_debug("🔧 Initializing feature selection configuration sub-configs")
@@ -190,9 +264,10 @@ class FeatureSelectionConfig(BaseFeatureSelectionConfig):
         self.quality_config = QualityThresholdsConfig()
         self.validation_config = ValidationConfig()
         self.advanced_config = AdvancedSelectionConfig()
+        self.new_pipeline_config = NewPipelineConfig()
         
         # Merge parameters from sub-configs for backward compatibility
-        for config in [self.model_config, self.quality_config, self.validation_config, self.advanced_config]:
+        for config in [self.model_config, self.quality_config, self.validation_config, self.advanced_config, self.new_pipeline_config]:
             for attr, value in config.__dict__.items():
                 if not hasattr(self, attr):
                     setattr(self, attr, value)

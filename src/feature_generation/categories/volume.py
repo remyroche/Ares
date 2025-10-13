@@ -1,14 +1,17 @@
 """
 Advanced Volume Feature Generator
 
-This module provides feature generators for advanced volume-based indicators,
-including volume moving averages, ratios, rate of change, and other volume metrics.
-Enhanced with VectorBT for maximum performance.
-Fully optimized with VectorBT for maximum performance.
+This module provides comprehensive volume feature generators for quantitative finance,
+including advanced volume analysis, OBV, AD, MFI, VWAP, and volume profile analysis.
 
 Key Features:
+- On-Balance Volume (OBV) with VectorBT optimization
+- Accumulation/Distribution Line (AD) with advanced metrics
+- Money Flow Index (MFI) and related indicators
+- Volume Rate of Change and momentum indicators
+- Volume-weighted average price (VWAP) with VectorBT
+- Volume profile analysis and clustering
 - VectorBT-optimized rolling operations
-- Advanced volume analysis features
 - Memory-efficient processing
 - GPU acceleration support
 - Comprehensive volume indicators
@@ -19,6 +22,7 @@ import pandas as pd
 import warnings
 import logging
 from typing import Any, Dict, List, Optional, Union
+from dataclasses import dataclass
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
@@ -28,6 +32,7 @@ try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from vectorbt.indicators import OBV, AD, MFI, ADOSC, AROONOSC
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -47,7 +52,19 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+    OBV = None
+    AD = None
+    MFI = None
+    ADOSC = None
+    AROONOSC = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Import tprint for consistent logging
+try:
+    from src.utils.tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
 
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
@@ -3386,4 +3403,260 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
             return (data - median) / mad
         else:
             return data
+
+
+# ============================================================================
+# ADVANCED VOLUME FEATURES
+# ============================================================================
+
+@dataclass
+class VolumeConfig:
+    """Configuration for advanced volume features."""
+    enable_obv: bool = True
+    enable_ad: bool = True
+    enable_mfi: bool = True
+    enable_vwap: bool = True
+    enable_volume_profile: bool = True
+    obv_window: int = 20
+    ad_window: int = 20
+    mfi_window: int = 14
+    vwap_window: int = 20
+    volume_profile_bins: int = 10
+
+
+class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
+    """
+    Advanced volume features with VectorBT optimization.
+    
+    This generator creates comprehensive volume features including OBV, AD, MFI,
+    VWAP, and volume profile analysis with full VectorBT optimization.
+    
+    Key Features:
+    - On-Balance Volume (OBV) with VectorBT optimization
+    - Accumulation/Distribution Line (AD) with advanced metrics
+    - Money Flow Index (MFI) and related indicators
+    - Volume Rate of Change and momentum indicators
+    - Volume-weighted average price (VWAP) with VectorBT
+    - Volume profile analysis and clustering
+    
+    Parameters:
+    - config: VolumeConfig object with generator parameters
+    
+    Returns:
+    - Dict[str, np.ndarray]: Dictionary of advanced volume features
+    
+    Example:
+        >>> config = VolumeConfig(enable_obv=True, enable_vwap=True)
+        >>> generator = AdvancedVolumeFeatures(config)
+        >>> features = generator.generate_features(data)
+        >>> print(f"Generated {len(features)} advanced volume features")
+    """
+    
+    def __init__(self, config: Optional[VolumeConfig] = None):
+        if config is None:
+            config = VolumeConfig()
+        
+        self.volume_config = config
+        
+        feature_config = FeatureConfig(
+            name="advanced_volume_features",
+            category=FeatureCategory.VOLUME,
+            description="Advanced volume features with VectorBT optimization",
+            required_columns=["close", "volume"],
+            optional_columns=["high", "low", "open"],
+            default_lookback=20,
+            min_lookback=10,
+            max_lookback=100,
+            parameters={}
+        )
+        
+        super().__init__(feature_config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = None
+        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+            try:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            except Exception as e:
+                tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate advanced volume features."""
+        features = self.generate_features(data, **kwargs)
+        
+        # Return the first feature as representative
+        if features:
+            first_feature_name = list(features.keys())[0]
+            return pd.Series(features[first_feature_name], index=data.index[:len(features[first_feature_name])])
+        else:
+            return pd.Series(np.zeros(len(data)), index=data.index)
+    
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
+        """Generate all advanced volume features."""
+        features = {}
+        
+        try:
+            # On-Balance Volume (OBV)
+            if self.volume_config.enable_obv and VECTORBT_AVAILABLE and OBV is not None:
+                try:
+                    obv = OBV.run(data['close'], data['volume'])
+                    features['obv'] = obv.values
+                    features['obv_sma'] = rolling_mean(obv, window=self.volume_config.obv_window).values
+                except Exception as e:
+                    tprint(f"⚠️ OBV calculation failed: {e}")
+            
+            # Accumulation/Distribution Line (AD)
+            if self.volume_config.enable_ad and VECTORBT_AVAILABLE and AD is not None:
+                try:
+                    ad = AD.run(data['high'], data['low'], data['close'], data['volume'])
+                    features['ad'] = ad.values
+                    features['ad_sma'] = rolling_mean(ad, window=self.volume_config.ad_window).values
+                except Exception as e:
+                    tprint(f"⚠️ AD calculation failed: {e}")
+            
+            # Money Flow Index (MFI)
+            if self.volume_config.enable_mfi and VECTORBT_AVAILABLE and MFI is not None:
+                try:
+                    mfi = MFI.run(data['high'], data['low'], data['close'], data['volume'], window=self.volume_config.mfi_window)
+                    features['mfi'] = mfi.values
+                except Exception as e:
+                    tprint(f"⚠️ MFI calculation failed: {e}")
+            
+            # Volume-Weighted Average Price (VWAP)
+            if self.volume_config.enable_vwap and VECTORBT_AVAILABLE:
+                try:
+                    typical_price = (data['high'] + data['low'] + data['close']) / 3
+                    vwap = (typical_price * data['volume']).rolling(window=self.volume_config.vwap_window).sum() / data['volume'].rolling(window=self.volume_config.vwap_window).sum()
+                    features['vwap'] = vwap.values
+                    features['vwap_ratio'] = (data['close'] / vwap).values
+                except Exception as e:
+                    tprint(f"⚠️ VWAP calculation failed: {e}")
+            
+            # Volume Rate of Change
+            try:
+                volume_roc = data['volume'].pct_change(periods=5)
+                features['volume_roc'] = volume_roc.values
+            except Exception as e:
+                tprint(f"⚠️ Volume ROC calculation failed: {e}")
+            
+            # Volume Profile Analysis
+            if self.volume_config.enable_volume_profile:
+                try:
+                    volume_profile = self._calculate_volume_profile(data)
+                    features.update(volume_profile)
+                except Exception as e:
+                    tprint(f"⚠️ Volume profile calculation failed: {e}")
+            
+        except Exception as e:
+            tprint(f"⚠️ Advanced volume features generation failed: {e}")
+        
+        return features
+    
+    def _calculate_volume_profile(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """Calculate volume profile features."""
+        features = {}
+        
+        try:
+            if 'high' not in data.columns or 'low' not in data.columns:
+                return features
+            
+            # Price range
+            price_range = data['high'] - data['low']
+            price_center = (data['high'] + data['low']) / 2
+            
+            # Volume-weighted price
+            volume_weighted_price = (data['close'] * data['volume']).rolling(window=20).sum() / data['volume'].rolling(window=20).sum()
+            
+            # Volume profile features
+            features['volume_profile_center'] = price_center.values
+            features['volume_profile_range'] = price_range.values
+            features['volume_profile_vwp'] = volume_weighted_price.values
+            
+            # Volume clustering
+            volume_ma = data['volume'].rolling(window=20).mean()
+            volume_clustering = (data['volume'] / volume_ma).values
+            features['volume_clustering'] = volume_clustering
+            
+        except Exception as e:
+            tprint(f"⚠️ Volume profile calculation failed: {e}")
+        
+        return features
+
+
+# ============================================================================
+# FACTORY FUNCTIONS
+# ============================================================================
+
+def create_advanced_volume_generators() -> List[FeatureGenerator]:
+    """Create advanced volume feature generators."""
+    generators = []
+    
+    # Different volume configurations
+    configs = [
+        VolumeConfig(enable_obv=True, enable_ad=True, enable_mfi=True, enable_vwap=True),
+        VolumeConfig(enable_obv=True, enable_ad=False, enable_mfi=True, enable_vwap=True),
+        VolumeConfig(enable_obv=False, enable_ad=True, enable_mfi=True, enable_vwap=True),
+    ]
+    
+    for config in configs:
+        generators.append(AdvancedVolumeFeatures(config))
+    
+    return generators
+
+
+def process_advanced_volume_features_batch(data: pd.DataFrame, 
+                                         generators: Optional[List[FeatureGenerator]] = None,
+                                         use_vectorbt: bool = True,
+                                         **kwargs) -> pd.DataFrame:
+    """
+    Process advanced volume features in batch using VectorBT optimizations.
+    
+    Args:
+        data: Input OHLCV data
+        generators: List of feature generators (uses default if None)
+        use_vectorbt: Whether to use VectorBT batch processing
+        **kwargs: Additional parameters
+        
+    Returns:
+        DataFrame with generated advanced volume features
+    """
+    if generators is None:
+        generators = create_advanced_volume_generators()
+    
+    if use_vectorbt and OPTIMIZATION_AVAILABLE:
+        try:
+            # Use unified optimization system for batch processing
+            from ..utils.unified_optimization_system import get_unified_optimization_system
+            unified_optimizer = get_unified_optimization_system()
+            
+            # Process features in batch
+            result = unified_optimizer.process_features_batch(data, generators, **kwargs)
+            return result
+            
+        except Exception as e:
+            warnings.warn(f"VectorBT batch processing failed: {e}, using sequential processing")
+            return _process_advanced_volume_features_sequential(data, generators, **kwargs)
+    else:
+        return _process_advanced_volume_features_sequential(data, generators, **kwargs)
+
+
+def _process_advanced_volume_features_sequential(data: pd.DataFrame, 
+                                               generators: List[FeatureGenerator],
+                                               **kwargs) -> pd.DataFrame:
+    """Process advanced volume features sequentially (fallback)."""
+    results = []
+    
+    for generator in generators:
+        try:
+            feature_result = generator._generate_feature(data, **kwargs)
+            if not feature_result.empty:
+                results.append(feature_result)
+        except Exception as e:
+            warnings.warn(f"Generator {generator.__class__.__name__} failed: {e}")
+            continue
+    
+    if results:
+        return pd.concat(results, axis=1)
+    else:
+        return pd.DataFrame(index=data.index)
 

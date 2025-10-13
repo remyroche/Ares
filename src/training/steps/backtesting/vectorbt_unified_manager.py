@@ -225,13 +225,14 @@ class VectorBTUnifiedManager:
     
     async def rolling_statistics(self, data: Union[pd.Series, pd.DataFrame], 
                                window: int, operations: List[str] = None) -> Dict[str, Any]:
-        """Calculate rolling statistics using VectorBT."""
+        """Calculate rolling statistics using VectorBT with enhanced optimization."""
         if operations is None:
             operations = ['mean', 'std', 'min', 'max', 'skew', 'kurt']
         
         async def _calculate_rolling_stats():
             results = {}
             
+            # Use VectorBTRollingOptimizer for enhanced performance
             for op in operations:
                 if hasattr(self.rolling_optimizer, f'rolling_{op}'):
                     func = getattr(self.rolling_optimizer, f'rolling_{op}')
@@ -247,6 +248,135 @@ class VectorBTUnifiedManager:
         )
         
         return result.result if result.success else {}
+    
+    async def calculate_rolling_metrics_enhanced(self, data: Union[pd.Series, pd.DataFrame], 
+                                               windows: List[int] = None) -> Dict[str, Any]:
+        """
+        Calculate enhanced rolling metrics using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input data
+            windows: List of window sizes
+            
+        Returns:
+            Dictionary of rolling metrics
+        """
+        if windows is None:
+            windows = [5, 10, 20, 50, 100]
+        
+        async def _calculate_enhanced_rolling_metrics():
+            results = {}
+            
+            for window in windows:
+                window_results = {}
+                
+                # Use VectorBTRollingOptimizer for each operation
+                if hasattr(data, 'close'):
+                    close_prices = data['close']
+                    
+                    window_results['mean'] = self.rolling_optimizer.rolling_mean(close_prices, window=window)
+                    window_results['std'] = self.rolling_optimizer.rolling_std(close_prices, window=window)
+                    window_results['min'] = self.rolling_optimizer.rolling_min(close_prices, window=window)
+                    window_results['max'] = self.rolling_optimizer.rolling_max(close_prices, window=window)
+                    window_results['skew'] = self.rolling_optimizer.rolling_skew(close_prices, window=window)
+                    window_results['kurt'] = self.rolling_optimizer.rolling_kurt(close_prices, window=window)
+                
+                results[f'window_{window}'] = window_results
+            
+            return results
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.ROLLING_STATISTICS,
+            _calculate_enhanced_rolling_metrics
+        )
+        
+        return result.result if result.success else {}
+    
+    async def calculate_technical_indicators_enhanced(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Calculate enhanced technical indicators using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input OHLCV data
+            
+        Returns:
+            Dictionary of technical indicators
+        """
+        async def _calculate_enhanced_technical_indicators():
+            results = {}
+            
+            if 'close' in data.columns:
+                close_prices = data['close']
+                
+                # Moving averages
+                results['sma_20'] = self.rolling_optimizer.rolling_mean(close_prices, window=20)
+                results['sma_50'] = self.rolling_optimizer.rolling_mean(close_prices, window=50)
+                results['sma_200'] = self.rolling_optimizer.rolling_mean(close_prices, window=200)
+                
+                # Volatility
+                results['volatility_20'] = self.rolling_optimizer.rolling_std(close_prices, window=20)
+                results['volatility_50'] = self.rolling_optimizer.rolling_std(close_prices, window=50)
+                
+                # Price ranges
+                if 'high' in data.columns and 'low' in data.columns:
+                    high_prices = data['high']
+                    low_prices = data['low']
+                    
+                    # ATR calculation
+                    if hasattr(self.rolling_optimizer, 'rolling_atr'):
+                        results['atr_20'] = self.rolling_optimizer.rolling_atr(
+                            high_prices, low_prices, close_prices, window=20
+                        )
+                        results['atr_50'] = self.rolling_optimizer.rolling_atr(
+                            high_prices, low_prices, close_prices, window=50
+                        )
+            
+            return results
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.TECHNICAL_INDICATORS,
+            _calculate_enhanced_technical_indicators
+        )
+        
+        return result.result if result.success else {}
+    
+    async def optimize_parameter_evaluation(self, objective_function: Callable, 
+                                          parameters: Dict[str, Any],
+                                          data: Optional[pd.DataFrame] = None) -> Any:
+        """
+        Optimize parameter evaluation using VectorBT enhancements.
+        
+        Args:
+            objective_function: Function to evaluate parameters
+            parameters: Parameters to evaluate
+            data: Optional data for optimization context
+            
+        Returns:
+            Evaluation result
+        """
+        async def _optimized_evaluation():
+            # Use VectorBTRollingOptimizer for data preprocessing if data is available
+            if data is not None and len(data) > 1000:
+                # Calculate rolling metrics using VectorBTRollingOptimizer
+                rolling_metrics = await self.calculate_rolling_metrics_enhanced(data)
+                technical_indicators = await self.calculate_technical_indicators_enhanced(data)
+                
+                # Add to parameters for the objective function
+                enhanced_parameters = parameters.copy()
+                enhanced_parameters['rolling_metrics'] = rolling_metrics
+                enhanced_parameters['technical_indicators'] = technical_indicators
+                enhanced_parameters['vectorbt_optimized'] = True
+                
+                return await objective_function(enhanced_parameters)
+            else:
+                return await objective_function(parameters)
+        
+        result = await self.execute_operation(
+            VectorBTOperationType.PARAMETER_OPTIMIZATION,
+            _optimized_evaluation
+        )
+        
+        return result.result if result.success else None
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""

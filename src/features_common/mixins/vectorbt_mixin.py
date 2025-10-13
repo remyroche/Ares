@@ -98,6 +98,13 @@ class VectorBTMixin:
             return False
         
         data_size = len(data) if hasattr(data, '__len__') else 0
+        
+        # Prefer VectorBT by default if enabled and data meets threshold
+        if (self.config.vectorbt.prefer_vectorbt and 
+            data_size >= self.config.vectorbt.data_size_threshold):
+            return True
+        
+        # Fallback to original logic
         return self.config.should_use_vectorbt(data_size)
     
     def vectorbt_operation(self, 

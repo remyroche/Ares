@@ -24,7 +24,7 @@ class VectorBTConfig:
     # Core VectorBT settings
     enable_vectorbt: bool = True
     fallback_to_pandas: bool = True
-    data_size_threshold: int = 1000
+    data_size_threshold: int = 100  # Lower threshold to use VectorBT more often
     
     # Performance settings
     enable_parallel_processing: bool = True
@@ -42,6 +42,7 @@ class VectorBTConfig:
     optimization_level: str = 'aggressive'  # 'conservative', 'balanced', 'aggressive'
     enable_vectorization: bool = True
     enable_compilation: bool = True
+    prefer_vectorbt: bool = True  # Prefer VectorBT over pandas when available
     
     # Memory management
     enable_memory_pooling: bool = True

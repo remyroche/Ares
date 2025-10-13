@@ -126,8 +126,15 @@ class OptimizationMixin:
         """Determine the best optimization strategy for the given data."""
         data_size = len(data) if hasattr(data, '__len__') else 0
         
-        # VectorBT optimization for large datasets
-        if self.should_use_vectorbt(data):
+        # Prefer VectorBT by default if available and suitable
+        if (self.config.vectorbt.enable_vectorbt and 
+            self.config.vectorbt.prefer_vectorbt and
+            data_size >= self.config.vectorbt.data_size_threshold and
+            self._is_vectorbt_suitable(data)):
+            return 'vectorbt'
+        
+        # VectorBT optimization for large datasets (fallback)
+        elif self.should_use_vectorbt(data):
             return 'vectorbt'
         
         # Batch processing for medium datasets

@@ -64,7 +64,7 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
     - set_state: Restore state from persistence
     """
     
-    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 1000,
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 100,
                  use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):
         """
         Initialize the enhanced scaler with all optimizations.

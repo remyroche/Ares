@@ -26,7 +26,7 @@ class BackwardCompatibleBaseScaler(EnhancedBaseScaler):
     """
     
     def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, 
-                 vectorbt_threshold: int = 1000, use_optimizer: bool = True, 
+                 vectorbt_threshold: int = 100, use_optimizer: bool = True, 
                  use_unified_manager: bool = True, enable_verbose_logging: bool = False,
                  **kwargs):
         """

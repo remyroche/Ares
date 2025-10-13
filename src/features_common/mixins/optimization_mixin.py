@@ -86,28 +86,52 @@ class OptimizationMixin:
             
         Returns:
             Result of the optimized operation
+            
+        Raises:
+            RuntimeError: If optimization fails and fallback is not available
         """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
         if not self._optimization_enabled:
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [OptimizationMixin] Optimization disabled, using direct operation", color="yellow")
             return operation_func(data, *args, **kwargs)
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [OptimizationMixin] Starting auto-optimization for {operation_func.__name__ if hasattr(operation_func, '__name__') else 'operation'}", color="cyan")
         
         start_time = time.time()
         self._optimization_stats['total_operations'] += 1
         
         try:
             # Determine optimization strategy
+            if TPRINT_AVAILABLE:
+                tprint("🔍 [OptimizationMixin] Determining optimization strategy", color="blue")
+            
             strategy = self._determine_optimization_strategy(data)
+            
+            if TPRINT_AVAILABLE:
+                tprint(f"📊 [OptimizationMixin] Selected strategy: {strategy}", color="green")
             
             # Apply optimization
             if strategy == 'vectorbt':
+                if TPRINT_AVAILABLE:
+                    tprint("🚀 [OptimizationMixin] Applying VectorBT optimization", color="green")
                 result = self._apply_vectorbt_optimization(operation_func, data, *args, **kwargs)
                 self._optimization_stats['optimized_operations'] += 1
             elif strategy == 'batch':
+                if TPRINT_AVAILABLE:
+                    tprint("📦 [OptimizationMixin] Applying batch optimization", color="green")
                 result = self._apply_batch_optimization(operation_func, data, *args, **kwargs)
                 self._optimization_stats['optimized_operations'] += 1
             elif strategy == 'memory':
+                if TPRINT_AVAILABLE:
+                    tprint("💾 [OptimizationMixin] Applying memory optimization", color="green")
                 result = self._apply_memory_optimization(operation_func, data, *args, **kwargs)
                 self._optimization_stats['optimized_operations'] += 1
             else:
+                if TPRINT_AVAILABLE:
+                    tprint("🔄 [OptimizationMixin] Using direct operation (no optimization)", color="yellow")
                 result = operation_func(data, *args, **kwargs)
                 self._optimization_stats['fallback_operations'] += 1
             
@@ -115,12 +139,32 @@ class OptimizationMixin:
             execution_time = time.time() - start_time
             self._track_performance(execution_time, strategy)
             
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [OptimizationMixin] Operation completed in {execution_time:.4f}s using {strategy}", color="green")
+            
             return result
             
         except Exception as e:
-            logger.warning(f"Optimization failed: {e}, using fallback")
+            error_msg = f"Optimization failed: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [OptimizationMixin] {error_msg}, using fallback", color="red")
+            logger.warning(error_msg)
             self._optimization_stats['fallback_operations'] += 1
-            return operation_func(data, *args, **kwargs)
+            
+            try:
+                # Attempt fallback
+                if TPRINT_AVAILABLE:
+                    tprint("🔄 [OptimizationMixin] Attempting fallback operation", color="yellow")
+                result = operation_func(data, *args, **kwargs)
+                if TPRINT_AVAILABLE:
+                    tprint("✅ [OptimizationMixin] Fallback operation successful", color="green")
+                return result
+            except Exception as fallback_error:
+                error_msg = f"Both optimization and fallback failed: {fallback_error}"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [OptimizationMixin] {error_msg}", color="red")
+                self._log_error(error_msg)
+                raise RuntimeError(error_msg) from fallback_error
     
     def _determine_optimization_strategy(self, data: Union[pd.Series, pd.DataFrame]) -> str:
         """Determine the best optimization strategy for the given data."""

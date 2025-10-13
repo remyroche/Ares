@@ -115,29 +115,62 @@ class VectorBTMixin:
             
         Returns:
             Result of the operation
+            
+        Raises:
+            RuntimeError: If both VectorBT and fallback operations fail
         """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTMixin] Starting VectorBT operation for {operation_func.__name__ if hasattr(operation_func, '__name__') else 'operation'}", color="cyan")
+        
         self._vectorbt_stats['total_operations'] += 1
         
         if not self.should_use_vectorbt(data):
             # Use pandas fallback
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [VectorBTMixin] VectorBT not suitable, using pandas fallback", color="yellow")
             self._vectorbt_stats['pandas_fallbacks'] += 1
             return operation_func(data, *args, **kwargs)
         
         try:
             # Try VectorBT optimization
+            if TPRINT_AVAILABLE:
+                tprint("🚀 [VectorBTMixin] Attempting VectorBT optimization", color="green")
+            
             result = self._execute_vectorbt_operation(operation_func, data, *args, **kwargs)
             self._vectorbt_stats['vectorbt_operations'] += 1
             
             # Track performance improvement
             self._track_performance_improvement(data, result, operation_func)
             
+            if TPRINT_AVAILABLE:
+                tprint("✅ [VectorBTMixin] VectorBT operation completed successfully", color="green")
+            
             return result
             
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            error_msg = f"VectorBT operation failed: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTMixin] {error_msg}, using pandas fallback", color="red")
+            logger.warning(error_msg)
             self._vectorbt_stats['optimization_failures'] += 1
             self._vectorbt_stats['pandas_fallbacks'] += 1
-            return operation_func(data, *args, **kwargs)
+            
+            try:
+                # Attempt pandas fallback
+                if TPRINT_AVAILABLE:
+                    tprint("🔄 [VectorBTMixin] Attempting pandas fallback", color="yellow")
+                result = operation_func(data, *args, **kwargs)
+                if TPRINT_AVAILABLE:
+                    tprint("✅ [VectorBTMixin] Pandas fallback successful", color="green")
+                return result
+            except Exception as fallback_error:
+                error_msg = f"Both VectorBT and pandas fallback failed: {fallback_error}"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [VectorBTMixin] {error_msg}", color="red")
+                self._log_error(error_msg)
+                raise RuntimeError(error_msg) from fallback_error
     
     def _execute_vectorbt_operation(self, 
                                    operation_func: Callable,

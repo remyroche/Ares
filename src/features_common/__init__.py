@@ -47,6 +47,14 @@ from .vectorbt import (
     VectorBTPerformanceMonitor, get_performance_monitor
 )
 
+# Error handling and logging
+from .error_handling import (
+    FeaturesCommonError, ValidationError, OptimizationError, VectorBTError, ConfigurationError, SilentFailureError,
+    ensure_no_silent_failures, validate_input_data, safe_execute, validate_configuration, check_system_health, report_silent_failures
+)
+
+from .logging_config import get_logger, log_operation
+
 __all__ = [
     # Core components
     'BaseScaler',
@@ -96,6 +104,22 @@ __all__ = [
     'get_gpu_accelerator',
     'VectorBTPerformanceMonitor',
     'get_performance_monitor',
+    
+    # Error handling and logging
+    'FeaturesCommonError',
+    'ValidationError',
+    'OptimizationError',
+    'VectorBTError',
+    'ConfigurationError',
+    'SilentFailureError',
+    'ensure_no_silent_failures',
+    'validate_input_data',
+    'safe_execute',
+    'validate_configuration',
+    'check_system_health',
+    'report_silent_failures',
+    'get_logger',
+    'log_operation',
 ]
 
 # Add VectorBT optimization components to __all__ if available

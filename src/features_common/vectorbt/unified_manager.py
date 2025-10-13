@@ -151,14 +151,42 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
             
         Returns:
             Result of the operation
+            
+        Raises:
+            ValueError: If operation is not registered
+            RuntimeError: If operation execution fails
         """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [UnifiedVectorBTManager] Executing operation: {operation_name}", color="cyan")
+        
         if operation_name not in self._operation_registry:
-            raise ValueError(f"Unknown operation: {operation_name}")
+            error_msg = f"Unknown operation: {operation_name}. Available operations: {list(self._operation_registry.keys())}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [UnifiedVectorBTManager] {error_msg}", color="red")
+            raise ValueError(error_msg)
         
         operation_func = self._operation_registry[operation_name]
         
-        # Use the unified optimization system
-        return self.auto_optimize_operation(operation_func, data, *args, **kwargs)
+        try:
+            # Use the unified optimization system
+            if TPRINT_AVAILABLE:
+                tprint(f"🚀 [UnifiedVectorBTManager] Using unified optimization for {operation_name}", color="green")
+            
+            result = self.auto_optimize_operation(operation_func, data, *args, **kwargs)
+            
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [UnifiedVectorBTManager] Operation {operation_name} completed successfully", color="green")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Operation {operation_name} failed: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [UnifiedVectorBTManager] {error_msg}", color="red")
+            self._log_error(error_msg)
+            raise RuntimeError(error_msg) from e
     
     def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int = 20, **kwargs) -> Any:
         """Optimized rolling mean operation."""

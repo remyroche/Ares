@@ -63,7 +63,15 @@ class ValidationMixin:
             
         Returns:
             Tuple of (is_valid, list_of_warnings)
+            
+        Raises:
+            ValueError: If critical validation fails
         """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔍 [ValidationMixin] Starting validation for {data_name}", color="cyan")
+        
         self._validation_stats['total_validations'] += 1
         
         warnings = []
@@ -71,29 +79,56 @@ class ValidationMixin:
         
         try:
             # Check if data is empty
+            if TPRINT_AVAILABLE:
+                tprint(f"🔍 [ValidationMixin] Checking if {data_name} is empty", color="blue")
+            
             if self._is_empty(data):
-                warnings.append(f"{data_name} is empty")
+                warning_msg = f"{data_name} is empty"
+                warnings.append(warning_msg)
+                if TPRINT_AVAILABLE:
+                    tprint(f"⚠️  [ValidationMixin] {warning_msg}", color="yellow")
                 if self._validation_rules['strict_mode']:
                     is_valid = False
+                    if TPRINT_AVAILABLE:
+                        tprint(f"❌ [ValidationMixin] Empty data in strict mode", color="red")
             
             # Check data type
+            if TPRINT_AVAILABLE:
+                tprint(f"🔍 [ValidationMixin] Checking data type for {data_name}", color="blue")
+            
             if not isinstance(data, (pd.Series, pd.DataFrame)):
-                warnings.append(f"{data_name} must be a pandas Series or DataFrame")
+                warning_msg = f"{data_name} must be a pandas Series or DataFrame"
+                warnings.append(warning_msg)
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [ValidationMixin] {warning_msg}", color="red")
                 is_valid = False
             
             # Check for numeric data
             if self._validation_rules['check_numeric']:
+                if TPRINT_AVAILABLE:
+                    tprint(f"🔍 [ValidationMixin] Checking numeric data for {data_name}", color="blue")
+                
                 if isinstance(data, pd.Series):
                     if not pd.api.types.is_numeric_dtype(data):
-                        warnings.append(f"{data_name} must be numeric")
+                        warning_msg = f"{data_name} must be numeric"
+                        warnings.append(warning_msg)
+                        if TPRINT_AVAILABLE:
+                            tprint(f"⚠️  [ValidationMixin] {warning_msg}", color="yellow")
                         if self._validation_rules['strict_mode']:
                             is_valid = False
+                            if TPRINT_AVAILABLE:
+                                tprint(f"❌ [ValidationMixin] Non-numeric data in strict mode", color="red")
                 elif isinstance(data, pd.DataFrame):
                     non_numeric_cols = data.select_dtypes(exclude=[np.number]).columns.tolist()
                     if non_numeric_cols:
-                        warnings.append(f"{data_name} contains non-numeric columns: {non_numeric_cols}")
+                        warning_msg = f"{data_name} contains non-numeric columns: {non_numeric_cols}"
+                        warnings.append(warning_msg)
+                        if TPRINT_AVAILABLE:
+                            tprint(f"⚠️  [ValidationMixin] {warning_msg}", color="yellow")
                         if self._validation_rules['strict_mode']:
                             is_valid = False
+                            if TPRINT_AVAILABLE:
+                                tprint(f"❌ [ValidationMixin] Non-numeric columns in strict mode", color="red")
             
             # Check for finite values
             if self._validation_rules['check_finite']:

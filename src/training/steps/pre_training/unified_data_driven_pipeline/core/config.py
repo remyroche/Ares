@@ -296,7 +296,9 @@ class UnifiedPipelineConfig:
     
     # Pipeline settings
     enable_period_optimization: bool = True
+    enable_feature_lookback_optimization: bool = True
     enable_interaction_generation: bool = True
+    enable_htf_interactions: bool = True
     enable_feature_selection: bool = True
     
     # Data validation

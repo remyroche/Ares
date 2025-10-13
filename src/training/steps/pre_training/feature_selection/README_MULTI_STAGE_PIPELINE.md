@@ -190,15 +190,7 @@ See `examples/multi_stage_feature_selection_example.py` for comprehensive usage 
 
 ## Migration from Legacy Code
 
-The new pipeline is backward compatible. Existing code using `MultiStageFeatureSelector` will continue to work, but new code should use `MultiStageFeatureSelectionPipeline`.
-
-### Legacy Code
-```python
-from src.training.steps.pre_training.feature_selection import MultiStageFeatureSelector
-
-selector = MultiStageFeatureSelector(config)
-result = selector.select_features(X, y, symbol, exchange, timeframe)
-```
+The legacy `MultiStageFeatureSelector` class has been removed. All code should now use the new `MultiStageFeatureSelectionPipeline`.
 
 ### New Code
 ```python

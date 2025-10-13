@@ -868,8 +868,8 @@ class EnhancedOptimizedInteractionOrchestrator:
         }
     
     async def _cross_timeframe_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Cross-timeframe features stage with actual feature generation."""
-        tprint_debug("⏰ Cross-timeframe features stage...")
+        """Cross-timeframe features stage with HTF-aware interaction templates."""
+        tprint_debug("⏰ Cross-timeframe features stage with HTF-aware interactions...")
         
         # Get generated features
         if 'generated_features' in context.pipeline_state:
@@ -880,51 +880,98 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Use VectorBT optimized cross-timeframe feature generation with fast-fail validation
-        from .vectorbt_optimized_feature_generator import (
-            VectorBTOptimizedFeatureGenerator, VectorBTFeatureConfig
-        )
-        
-        # Create VectorBT feature generation config for cross-timeframe
-        vectorbt_config = VectorBTFeatureConfig(
-            enable_vectorbt_rolling=self.config.enable_vectorbt_rolling,
-            vectorbt_window_threshold=self.config.vectorbt_rolling_window_threshold,
-            vectorbt_correlation_threshold=self.config.vectorbt_correlation_threshold,
-            enable_gpu=self.config.vectorbt_rolling_use_gpu,
-            enable_parallel=self.config.vectorbt_rolling_parallel,
-            chunk_size=self.config.vectorbt_chunk_size,
-            memory_limit_gb=self.config.vectorbt_memory_limit_gb,
-            rolling_windows=[5, 15, 30, 60]  # Cross-timeframe periods
-        )
-        
-        # Generate cross-timeframe features using VectorBT optimized generator - fast-fail on error
+        # Import HTF-aware interaction templates
         try:
-            if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
-                tprint_info("🚀 Using VectorBT optimized cross-timeframe feature generation")
-                feature_generator = VectorBTOptimizedFeatureGenerator(vectorbt_config)
-                cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+            from ..cross_timeframe_generation.interaction_templates import HTFInteractionTemplates
+            from ..cross_timeframe_generation.config import PipelineConfig
+            
+            # Create HTF interaction templates configuration
+            htf_config = PipelineConfig(
+                base_timeframe_minutes=5,  # Base timeframe in minutes
+                max_cost_ms=25.0,
+                max_features=120,
+                max_correlation=0.8
+            )
+            
+            # Initialize HTF interaction templates
+            htf_templates = HTFInteractionTemplates(htf_config)
+            
+            # Generate HTF-aware interactions
+            tprint_info("🚀 Using HTF-aware interaction templates for cross-timeframe features")
+            
+            # Create mock materialized HTFs for demonstration
+            # In a real implementation, these would come from the HTF materialization stage
+            materialized_htfs = {}
+            
+            # Generate basic HTF features for different timeframes
+            for period in [5, 15, 30, 60]:
+                for col in features.select_dtypes(include=[np.number]).columns:
+                    # Create HTF trend features
+                    htf_trend = features[col].rolling(period).mean()
+                    materialized_htfs[f'htf_trend_{period}m_{col}'] = htf_trend
+                    
+                    # Create HTF volatility features
+                    htf_vol = features[col].rolling(period).std()
+                    materialized_htfs[f'htf_vol_{period}m_{col}'] = htf_vol
+                    
+                    # Create HTF momentum features
+                    htf_mom = features[col].pct_change(period)
+                    materialized_htfs[f'htf_mom_{period}m_{col}'] = htf_mom
+            
+            # Generate HTF-aware interactions
+            htf_interactions = htf_templates.generate_interactions(
+                materialized_htfs=materialized_htfs,
+                base_features=features,
+                targets=None  # No targets available at this stage
+            )
+            
+            # Convert interactions to DataFrame
+            if htf_interactions:
+                cross_timeframe_features = pd.DataFrame({
+                    interaction.name: interaction.feature_series 
+                    for interaction in htf_interactions
+                })
+                tprint_success(f"✅ Generated {len(cross_timeframe_features.columns)} HTF-aware cross-timeframe interactions")
             else:
-                tprint_info("⚠️ Using fallback cross-timeframe feature generation (VectorBT not available)")
-                from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
-                feature_config = FeatureGenerationConfig(
-                    enable_technical_indicators=False,
-                    enable_rolling_stats=False,
-                    enable_interaction_features=False,
-                    enable_cross_timeframe=True,
-                    cross_timeframe_periods=[5, 15, 30, 60],
-                    min_valid_ratio=0.8,  # Require 80% valid values
-                    max_constant_ratio=0.1  # Allow max 10% constant features
-                )
-                feature_generator = ImprovedFeatureGenerator(feature_config)
-                cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+                tprint_warning("⚠️ No HTF-aware interactions generated")
+                cross_timeframe_features = pd.DataFrame(index=features.index)
+                
+        except ImportError as e:
+            tprint_warning(f"⚠️ HTF-aware templates not available: {e}, using fallback")
+            # Fallback to basic cross-timeframe features
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=False,
+                enable_cross_timeframe=True,
+                cross_timeframe_periods=[5, 15, 30, 60],
+                min_valid_ratio=0.8,
+                max_constant_ratio=0.1
+            )
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+            
         except Exception as e:
-            tprint_warning(f"⚠️ Cross-timeframe feature generation failed: {e}")
-            cross_timeframe_features = pd.DataFrame(index=features.index)
+            tprint_warning(f"⚠️ HTF-aware cross-timeframe generation failed: {e}, using fallback")
+            # Fallback to basic cross-timeframe features
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=False,
+                enable_cross_timeframe=True,
+                cross_timeframe_periods=[5, 15, 30, 60],
+                min_valid_ratio=0.8,
+                max_constant_ratio=0.1
+            )
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
         
         # CRITICAL: Fast-fail if no cross-timeframe features generated
         if cross_timeframe_features.empty or len(cross_timeframe_features.columns) == 0:
             tprint_warning("⚠️ No cross-timeframe features generated - this may be expected for some datasets")
-            cross_timeframe_features = pd.DataFrame(index=features.index)  # Create empty DataFrame with correct index
+            cross_timeframe_features = pd.DataFrame(index=features.index)
         else:
             tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} validated cross-timeframe features")
         

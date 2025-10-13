@@ -58,6 +58,40 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     tprint_warning("VectorBT utilities not available, using fallback implementations")
 
+# Import advanced VectorBT optimizations
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+    from src.feature_generation.utils.data_driven_interaction_generator import VectorBTBatchProcessor, BatchProcessingConfig
+    ADVANCED_VECTORBT_AVAILABLE = True
+except ImportError:
+    ADVANCED_VECTORBT_AVAILABLE = False
+    tprint_warning("Advanced VectorBT utilities not available")
+
+# Import caching and serialization
+try:
+    from src.feature_generation.core.feature_cache import FeatureCacheService
+    from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
+    CACHING_AVAILABLE = True
+except ImportError:
+    CACHING_AVAILABLE = False
+    tprint_warning("Caching utilities not available")
+
+# Import matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_batch_matrix_processor,
+        safe_matrix_multiply,
+        optimize_dataframe,
+        matrix_correlation_analysis
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+    tprint_warning("Matrix operations not available")
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,6 +126,22 @@ class FeaturePipelineResult:
     interaction_generation_result: Optional[Dict[str, Any]] = None
     htf_interaction_result: Optional[Dict[str, Any]] = None
     feature_selection_result: Optional[Dict[str, Any]] = None
+    
+    # Enhanced performance metrics
+    memory_usage_mb: float = 0.0
+    peak_memory_usage_mb: float = 0.0
+    cpu_usage_percent: float = 0.0
+    vectorbt_operations: int = 0
+    pandas_fallbacks: int = 0
+    cache_hit_rate: float = 0.0
+    optimization_iterations: int = 0
+    convergence_achieved: bool = False
+    
+    # Advanced metrics
+    feature_diversity_score: float = 0.0
+    interaction_utility_scores: Dict[str, float] = None
+    lookback_optimization_metrics: Dict[str, Any] = None
+    performance_monitoring_data: Dict[str, Any] = None
 
 
 class UnifiedDataDrivenPipeline:
@@ -136,14 +186,17 @@ class UnifiedDataDrivenPipeline:
             embargo_fraction=self.config.feature_selection.cv_config.embargo_fraction
         )
         
-        # VectorBT utilities
-        if VECTORBT_AVAILABLE:
-            self.rolling_optimizer = VectorBTRollingOptimizer()
-            self.vectorization_manager = UnifiedVectorizationManager()
-        else:
-            self.rolling_optimizer = None
-            self.vectorization_manager = None
-            tprint_warning("VectorBT not available, using fallback implementations")
+        # Initialize advanced VectorBT components
+        self._initialize_vectorbt_components()
+        
+        # Initialize caching and serialization
+        self._initialize_caching_components()
+        
+        # Initialize matrix operations
+        self._initialize_matrix_components()
+        
+        # Initialize performance monitoring
+        self._initialize_performance_monitoring()
         
         # Multi-objective feature selector
         objectives = self._create_objectives()
@@ -192,8 +245,136 @@ class UnifiedDataDrivenPipeline:
         
         return objectives
     
-    def _initialize_performance_tracking(self):
-        """Initialize performance tracking."""
+    def _initialize_vectorbt_components(self):
+        """Initialize advanced VectorBT components."""
+        tprint_debug("Initializing VectorBT components")
+        
+        if ADVANCED_VECTORBT_AVAILABLE:
+            try:
+                # Initialize VectorBT rolling optimizer
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000
+                )
+                tprint_success("✅ VectorBT rolling optimizer initialized")
+                
+                # Initialize unified vectorization manager
+                vectorization_config = VectorizationConfig(
+                    enable_vectorbt=True,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    max_memory_gb=8.0,
+                    chunk_size=1000,
+                    enable_monitoring=True,
+                    enable_profiling=False,
+                    batch_size=10000,
+                    enable_batch_processing=True,
+                    rolling_optimization_threshold=1000,
+                    enable_rolling_optimization=True
+                )
+                self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+                tprint_success("✅ Unified vectorization manager initialized")
+                
+                # Initialize batch processor
+                batch_config = BatchProcessingConfig(
+                    batch_size=10000,
+                    enable_gpu=False,
+                    enable_parallel=True,
+                    max_memory_gb=8.0,
+                    chunk_size=1000,
+                    enable_memory_optimization=True,
+                    enable_progress_tracking=True,
+                    max_workers=None
+                )
+                self.batch_processor = VectorBTBatchProcessor(batch_config)
+                tprint_success("✅ VectorBT batch processor initialized")
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Advanced VectorBT initialization failed: {e}")
+                self._initialize_fallback_vectorbt()
+        else:
+            self._initialize_fallback_vectorbt()
+    
+    def _initialize_fallback_vectorbt(self):
+        """Initialize fallback VectorBT components."""
+        if VECTORBT_AVAILABLE:
+            self.rolling_optimizer = VectorBTRollingOptimizer()
+            self.vectorization_manager = UnifiedVectorizationManager()
+        else:
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+            tprint_warning("VectorBT not available, using fallback implementations")
+        
+        self.batch_processor = None
+    
+    def _initialize_caching_components(self):
+        """Initialize caching and serialization components."""
+        tprint_debug("Initializing caching components")
+        
+        if CACHING_AVAILABLE:
+            try:
+                # Initialize feature cache
+                self.feature_cache = FeatureCacheService(subdirectory="unified_pipeline")
+                tprint_success("✅ Feature cache initialized")
+                
+                # Initialize serializers
+                self.universal_serializer = UniversalSerializer()
+                self.json_serializer = JSONSerializer()
+                self.pickle_serializer = PickleSerializer()
+                tprint_success("✅ Serializers initialized")
+                
+                # Cache metrics
+                self.cache_metrics = {
+                    'hits': 0,
+                    'misses': 0,
+                    'writes': 0,
+                    'force_refreshes': 0
+                }
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Caching initialization failed: {e}")
+                self.feature_cache = None
+                self.universal_serializer = None
+                self.json_serializer = None
+                self.pickle_serializer = None
+                self.cache_metrics = {'hits': 0, 'misses': 0, 'writes': 0, 'force_refreshes': 0}
+        else:
+            self.feature_cache = None
+            self.universal_serializer = None
+            self.json_serializer = None
+            self.pickle_serializer = None
+            self.cache_metrics = {'hits': 0, 'misses': 0, 'writes': 0, 'force_refreshes': 0}
+            tprint_warning("Caching not available")
+    
+    def _initialize_matrix_components(self):
+        """Initialize matrix operations components."""
+        tprint_debug("Initializing matrix components")
+        
+        if MATRIX_OPS_AVAILABLE:
+            try:
+                self.matrix_ops = get_unified_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_matrix_processor = get_batch_matrix_processor()
+                tprint_success("✅ Matrix operations initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Matrix operations initialization failed: {e}")
+                self.matrix_ops = None
+                self.vectorized_core = None
+                self.batch_matrix_processor = None
+        else:
+            self.matrix_ops = None
+            self.vectorized_core = None
+            self.batch_matrix_processor = None
+            tprint_warning("Matrix operations not available")
+    
+    def _initialize_performance_monitoring(self):
+        """Initialize comprehensive performance monitoring."""
+        tprint_debug("Initializing performance monitoring")
+        
+        # Enhanced performance tracking
         self.performance_stats = {
             'total_processing_time': 0.0,
             'period_optimization_time': 0.0,
@@ -204,9 +385,36 @@ class UnifiedDataDrivenPipeline:
             'n_cv_splits': 0,
             'n_candidates_evaluated': 0,
             'memory_usage_mb': 0.0,
+            'peak_memory_usage_mb': 0.0,
+            'cpu_usage_percent': 0.0,
             'vectorbt_operations': 0,
-            'pandas_fallbacks': 0
+            'pandas_fallbacks': 0,
+            'cache_hit_rate': 0.0,
+            'optimization_iterations': 0,
+            'convergence_achieved': False
         }
+        
+        # Performance monitoring data
+        self.performance_data = {
+            'memory_usage': [],
+            'cpu_usage': [],
+            'execution_times': {},
+            'error_counts': 0,
+            'peak_memory_mb': 0.0,
+            'memory_warnings': 0
+        }
+        
+        # Memory monitoring settings
+        self.max_performance_entries = 1000
+        self.memory_warning_threshold_mb = 1000.0
+        self.memory_critical_threshold_mb = 2000.0
+        
+        tprint_success("✅ Performance monitoring initialized")
+    
+    def _initialize_performance_tracking(self):
+        """Initialize basic performance tracking (legacy method)."""
+        # This method is now handled by _initialize_performance_monitoring
+        pass
     
     def process(self, data: pd.DataFrame, 
                 targets: Optional[pd.Series] = None,
@@ -295,9 +503,13 @@ class UnifiedDataDrivenPipeline:
         # Calculate final metrics
         final_metrics = self._calculate_final_metrics(selection_result, processed_data, processed_targets)
         
-        # Create result
+        # Create result with enhanced metrics
         total_time = time.time() - start_time
         self.performance_stats['total_processing_time'] = total_time
+        
+        # Calculate enhanced performance metrics
+        current_memory = self._get_current_memory_usage()
+        cache_hit_rate = self.cache_metrics['hits'] / max(1, self.cache_metrics['hits'] + self.cache_metrics['misses'])
         
         result = FeaturePipelineResult(
             selected_features=selection_result.selected_features,
@@ -315,7 +527,21 @@ class UnifiedDataDrivenPipeline:
             lookback_optimization_result=lookback_result,
             interaction_generation_result=interaction_result,
             htf_interaction_result=htf_interaction_result,
-            feature_selection_result=selection_result.optimization_metadata
+            feature_selection_result=selection_result.optimization_metadata,
+            # Enhanced performance metrics
+            memory_usage_mb=current_memory,
+            peak_memory_usage_mb=self.performance_data['peak_memory_mb'],
+            cpu_usage_percent=0.0,  # Would need psutil for CPU monitoring
+            vectorbt_operations=self.performance_stats['vectorbt_operations'],
+            pandas_fallbacks=self.performance_stats['pandas_fallbacks'],
+            cache_hit_rate=cache_hit_rate,
+            optimization_iterations=selection_result.optimization_metadata.get('iterations', 0),
+            convergence_achieved=selection_result.optimization_metadata.get('converged', False),
+            # Advanced metrics
+            feature_diversity_score=final_metrics.get('diversity_score', 0.0),
+            interaction_utility_scores=interaction_result.get('utility_scores', {}) if interaction_result else {},
+            lookback_optimization_metrics=lookback_result.get('performance_data', {}) if lookback_result else {},
+            performance_monitoring_data=self.performance_data
         )
         
         tprint_success(f"Pipeline processing completed in {total_time:.2f}s")
@@ -583,21 +809,37 @@ class UnifiedDataDrivenPipeline:
     
     def _optimize_feature_lookback(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                   characteristics: Any) -> Dict[str, Any]:
-        """Optimize feature lookback periods using data-driven approach."""
-        tprint_debug("Starting feature lookback optimization")
+        """Optimize feature lookback periods using advanced data-driven approach."""
+        tprint_debug("Starting advanced feature lookback optimization")
         
-        # Configuration for lookback optimization
+        # Enhanced configuration for lookback optimization
         lookback_config = {
             'min_lookback': 5,
             'max_lookback': 100,
             'step_size': 5,
             'min_samples': 20,
             'walk_forward_splits': 3,
-            'min_train_ratio': 0.4
+            'min_train_ratio': 0.4,
+            'enable_vectorbt': ADVANCED_VECTORBT_AVAILABLE,
+            'enable_caching': CACHING_AVAILABLE,
+            'enable_matrix_ops': MATRIX_OPS_AVAILABLE,
+            'regularization_strength': 0.0,  # Disabled for now
+            'preferred_min': 40.0,
+            'preferred_max': 80.0
         }
         
         optimized_lookbacks = {}
         optimization_metrics = {}
+        performance_data = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'optimization_time': 0.0,
+            'memory_usage_mb': 0.0
+        }
+        
+        start_time = time.time()
         
         # Get feature columns for optimization
         feature_columns = [col for col in data.columns if col not in ['close', 'open', 'high', 'low', 'volume']]
@@ -608,24 +850,39 @@ class UnifiedDataDrivenPipeline:
         
         tprint_debug(f"Optimizing lookback for {len(feature_columns)} features")
         
-        # Optimize each feature individually
-        for feature in feature_columns[:10]:  # Limit to first 10 features for performance
+        # Use caching if available
+        cache_key = None
+        if self.feature_cache and CACHING_AVAILABLE:
+            cache_key = f"lookback_optimization_{hash(str(data.shape))}_{hash(str(targets)) if targets is not None else 'no_targets'}"
+            cached_result = self._get_cached_result(cache_key)
+            if cached_result:
+                tprint_success("Using cached lookback optimization results")
+                return cached_result
+        
+        # Optimize each feature individually with advanced methods
+        for i, feature in enumerate(feature_columns[:20]):  # Increased limit
             try:
-                tprint_debug(f"Optimizing lookback for feature: {feature}")
+                tprint_debug(f"Optimizing lookback for feature {i+1}/{min(20, len(feature_columns))}: {feature}")
                 
                 # Generate walk-forward splits
                 splits = self._generate_walk_forward_splits(data, lookback_config['walk_forward_splits'])
                 
-                # Test different lookback periods
+                # Test different lookback periods with advanced evaluation
                 lookback_scores = {}
                 for lookback in range(lookback_config['min_lookback'], 
                                    lookback_config['max_lookback'] + 1, 
                                    lookback_config['step_size']):
                     
-                    score = self._evaluate_lookback_period(
-                        data, feature, lookback, targets, splits
+                    score = self._evaluate_lookback_period_advanced(
+                        data, feature, lookback, targets, splits, lookback_config
                     )
                     lookback_scores[lookback] = score
+                
+                # Apply regularization if enabled
+                if lookback_config['regularization_strength'] > 0:
+                    lookback_scores = self._apply_lookback_regularization(
+                        lookback_scores, lookback_config
+                    )
                 
                 # Select optimal lookback
                 if lookback_scores:
@@ -634,21 +891,40 @@ class UnifiedDataDrivenPipeline:
                     optimization_metrics[feature] = {
                         'best_score': optimal_lookback[1],
                         'all_scores': lookback_scores,
-                        'optimization_method': 'walk_forward_validation'
+                        'optimization_method': 'advanced_walk_forward_validation',
+                        'vectorbt_used': lookback_config['enable_vectorbt'],
+                        'caching_used': lookback_config['enable_caching'],
+                        'matrix_ops_used': lookback_config['enable_matrix_ops']
                     }
+                
+                # Update performance data
+                self._update_performance_data()
                 
             except Exception as e:
                 tprint_debug(f"Error optimizing lookback for {feature}: {e}")
+                performance_data['error_counts'] += 1
                 continue
+        
+        # Calculate final performance metrics
+        optimization_time = time.time() - start_time
+        performance_data['optimization_time'] = optimization_time
+        performance_data['memory_usage_mb'] = self._get_current_memory_usage()
         
         result = {
             'optimized_lookbacks': optimized_lookbacks,
             'optimization_metrics': optimization_metrics,
-            'optimization_method': 'data_driven_walk_forward',
-            'config_used': lookback_config
+            'optimization_method': 'advanced_data_driven_walk_forward',
+            'config_used': lookback_config,
+            'performance_data': performance_data,
+            'total_features_processed': len(optimized_lookbacks),
+            'optimization_time': optimization_time
         }
         
-        tprint_success(f"Feature lookback optimization completed: {len(optimized_lookbacks)} features optimized")
+        # Cache result if available
+        if self.feature_cache and CACHING_AVAILABLE and cache_key:
+            self._cache_result(cache_key, result)
+        
+        tprint_success(f"Advanced feature lookback optimization completed: {len(optimized_lookbacks)} features optimized in {optimization_time:.2f}s")
         return result
     
     def _generate_walk_forward_splits(self, data: pd.DataFrame, n_splits: int) -> List[Dict[str, Any]]:
@@ -680,9 +956,10 @@ class UnifiedDataDrivenPipeline:
         
         return splits
     
-    def _evaluate_lookback_period(self, data: pd.DataFrame, feature: str, lookback: int, 
-                                 targets: Optional[pd.Series], splits: List[Dict[str, Any]]) -> float:
-        """Evaluate a specific lookback period using walk-forward validation."""
+    def _evaluate_lookback_period_advanced(self, data: pd.DataFrame, feature: str, lookback: int, 
+                                          targets: Optional[pd.Series], splits: List[Dict[str, Any]], 
+                                          config: Dict[str, Any]) -> float:
+        """Evaluate a specific lookback period using advanced methods."""
         if feature not in data.columns:
             return 0.0
         
@@ -697,13 +974,25 @@ class UnifiedDataDrivenPipeline:
                 if len(train_data) < lookback or len(test_data) < 5:
                     continue
                 
-                # Calculate feature with lookback
+                # Calculate feature with lookback using advanced methods
                 feature_series = data[feature].dropna()
                 if len(feature_series) < lookback:
                     continue
                 
-                # Create lookback feature
-                lookback_feature = feature_series.rolling(window=lookback).mean()
+                # Create lookback feature with VectorBT optimization if available
+                if config['enable_vectorbt'] and self.rolling_optimizer:
+                    try:
+                        lookback_feature = self.rolling_optimizer.rolling_mean(
+                            feature_series, window=lookback
+                        )
+                        self.performance_stats['vectorbt_operations'] += 1
+                    except Exception as e:
+                        tprint_debug(f"VectorBT rolling failed, using pandas: {e}")
+                        lookback_feature = feature_series.rolling(window=lookback).mean()
+                        self.performance_stats['pandas_fallbacks'] += 1
+                else:
+                    lookback_feature = feature_series.rolling(window=lookback).mean()
+                    self.performance_stats['pandas_fallbacks'] += 1
                 
                 # Align with train/test data
                 train_feature = lookback_feature.loc[split['train_indices']].dropna()
@@ -712,7 +1001,7 @@ class UnifiedDataDrivenPipeline:
                 if len(train_feature) < 10 or len(test_feature) < 5:
                     continue
                 
-                # Calculate performance metrics
+                # Calculate performance metrics with advanced methods
                 if targets is not None:
                     train_targets = targets.loc[train_feature.index]
                     test_targets = targets.loc[test_feature.index]
@@ -727,18 +1016,42 @@ class UnifiedDataDrivenPipeline:
                     if np.isnan(test_corr):
                         continue
                     
-                    # Combine in-sample and out-of-sample performance
-                    score = abs(train_corr) * 0.3 + abs(test_corr) * 0.7
+                    # Use matrix operations for advanced correlation analysis if available
+                    if config['enable_matrix_ops'] and self.matrix_ops:
+                        try:
+                            # Advanced correlation analysis
+                            correlation_metrics = self.matrix_ops.correlation_analysis(
+                                train_feature.values.reshape(-1, 1),
+                                train_targets.values.reshape(-1, 1)
+                            )
+                            advanced_score = correlation_metrics.get('advanced_correlation', abs(train_corr))
+                        except Exception as e:
+                            tprint_debug(f"Matrix correlation analysis failed: {e}")
+                            advanced_score = abs(train_corr)
+                    else:
+                        advanced_score = abs(train_corr)
+                    
+                    # Combine in-sample and out-of-sample performance with advanced weighting
+                    score = advanced_score * 0.4 + abs(test_corr) * 0.6
                 else:
-                    # Use variance and stability as metrics
+                    # Use variance and stability as metrics with advanced analysis
                     train_var = train_feature.var()
                     test_var = test_feature.var()
                     
                     if train_var == 0 or test_var == 0:
                         continue
                     
-                    # Prefer features with good variance and stability
-                    variance_score = min(1.0, train_var)
+                    # Advanced variance analysis
+                    if config['enable_matrix_ops'] and self.matrix_ops:
+                        try:
+                            variance_metrics = self.matrix_ops.variance_analysis(train_feature.values)
+                            variance_score = variance_metrics.get('normalized_variance', min(1.0, train_var))
+                        except Exception as e:
+                            tprint_debug(f"Matrix variance analysis failed: {e}")
+                            variance_score = min(1.0, train_var)
+                    else:
+                        variance_score = min(1.0, train_var)
+                    
                     stability_score = 1.0 - abs(train_var - test_var) / (train_var + test_var + 1e-8)
                     
                     score = variance_score * 0.6 + stability_score * 0.4
@@ -751,38 +1064,885 @@ class UnifiedDataDrivenPipeline:
         
         return np.mean(scores) if scores else 0.0
     
+    def _evaluate_lookback_period(self, data: pd.DataFrame, feature: str, lookback: int, 
+                                 targets: Optional[pd.Series], splits: List[Dict[str, Any]]) -> float:
+        """Evaluate a specific lookback period using basic walk-forward validation (legacy method)."""
+        # Use the advanced method with basic config
+        basic_config = {
+            'enable_vectorbt': False,
+            'enable_matrix_ops': False,
+            'enable_caching': False
+        }
+        return self._evaluate_lookback_period_advanced(data, feature, lookback, targets, splits, basic_config)
+    
+    def _apply_lookback_regularization(self, lookback_scores: Dict[int, float], 
+                                     config: Dict[str, Any]) -> Dict[int, float]:
+        """Apply regularization to lookback scores."""
+        if config['regularization_strength'] <= 0:
+            return lookback_scores
+        
+        regularized_scores = {}
+        preferred_min = config['preferred_min']
+        preferred_max = config['preferred_max']
+        penalty_strength = config['regularization_strength']
+        
+        for lookback, score in lookback_scores.items():
+            # Calculate penalty based on distance from preferred range
+            if lookback < preferred_min:
+                penalty = penalty_strength * (preferred_min - lookback) ** 2
+            elif lookback > preferred_max:
+                penalty = penalty_strength * (lookback - preferred_max) ** 2
+            else:
+                penalty = 0.0
+            
+            regularized_scores[lookback] = max(0.0, score - penalty)
+        
+        return regularized_scores
+    
+    def _get_cached_result(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        """Get cached result if available."""
+        if not self.feature_cache or not CACHING_AVAILABLE:
+            return None
+        
+        try:
+            cached_data = self.feature_cache.get(cache_key)
+            if cached_data:
+                self.cache_metrics['hits'] += 1
+                return cached_data
+            else:
+                self.cache_metrics['misses'] += 1
+                return None
+        except Exception as e:
+            tprint_debug(f"Cache retrieval failed: {e}")
+            self.cache_metrics['misses'] += 1
+            return None
+    
+    def _cache_result(self, cache_key: str, result: Dict[str, Any]) -> None:
+        """Cache result if available."""
+        if not self.feature_cache or not CACHING_AVAILABLE:
+            return
+        
+        try:
+            self.feature_cache.put(cache_key, result)
+            self.cache_metrics['writes'] += 1
+        except Exception as e:
+            tprint_debug(f"Cache storage failed: {e}")
+    
+    def _update_performance_data(self) -> None:
+        """Update performance monitoring data."""
+        try:
+            # Update memory usage
+            current_memory = self._get_current_memory_usage()
+            self.performance_data['memory_usage'].append(current_memory)
+            
+            # Update peak memory
+            if current_memory > self.performance_data['peak_memory_mb']:
+                self.performance_data['peak_memory_mb'] = current_memory
+            
+            # Trim performance history if too large
+            if len(self.performance_data['memory_usage']) > self.max_performance_entries:
+                self.performance_data['memory_usage'] = self.performance_data['memory_usage'][-self.max_performance_entries:]
+            
+            # Check for memory warnings
+            if current_memory > self.memory_warning_threshold_mb:
+                self.performance_data['memory_warnings'] += 1
+                if current_memory > self.memory_critical_threshold_mb:
+                    tprint_warning(f"⚠️ Critical memory usage: {current_memory:.1f}MB")
+            
+        except Exception as e:
+            tprint_debug(f"Performance data update failed: {e}")
+    
+    def _get_current_memory_usage(self) -> float:
+        """Get current memory usage in MB."""
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            return memory_mb
+        except ImportError:
+            return 0.0
+        except Exception:
+            return 0.0
+    
     def _generate_interactions(self, data: pd.DataFrame, 
                              targets: Optional[pd.Series], 
                              patterns: Any) -> Dict[str, Any]:
-        """Generate interaction features using data-driven approach."""
-        tprint_debug("Starting data-driven interaction generation")
+        """Generate interaction features using advanced data-driven approach."""
+        tprint_debug("Starting advanced data-driven interaction generation")
         
-        # Step 1: Intelligent feature pre-selection
+        # Check for cached results
+        cache_key = None
+        if self.feature_cache and CACHING_AVAILABLE:
+            cache_key = f"interaction_generation_{hash(str(data.shape))}_{hash(str(targets)) if targets is not None else 'no_targets'}"
+            cached_result = self._get_cached_result(cache_key)
+            if cached_result:
+                tprint_success("Using cached interaction generation results")
+                return cached_result
+        
+        start_time = time.time()
+        
+        # Step 1: Intelligent feature pre-selection with advanced methods
         tprint_debug("Step 1: Pre-selecting features from full feature bank")
-        selected_features = self._pre_select_features(data, targets, target_count=40)
+        selected_features = self._pre_select_features_advanced(data, targets, target_count=40)
         
-        # Step 2: Generate features for selected feature set
+        # Step 2: Generate features for selected feature set with VectorBT optimization
         tprint_debug("Step 2: Generating features for selected feature set")
-        feature_df = self._generate_selected_features(data, selected_features)
+        feature_df = self._generate_selected_features_advanced(data, selected_features)
         
-        # Step 3: Generate interactions between selected features
+        # Step 3: Generate interactions between selected features with advanced methods
         tprint_debug("Step 3: Generating interactions between selected features")
-        interactions = self._generate_feature_interactions(feature_df, targets)
+        interactions = self._generate_feature_interactions_advanced(feature_df, targets)
         
-        # Step 4: Apply quality filtering and ranking
+        # Step 4: Apply quality filtering and ranking with advanced metrics
         tprint_debug("Step 4: Applying quality filtering and ranking")
-        filtered_interactions = self._filter_and_rank_interactions(interactions, targets)
+        filtered_interactions = self._filter_and_rank_interactions_advanced(interactions, targets)
+        
+        # Calculate performance metrics
+        generation_time = time.time() - start_time
+        self.performance_stats['interaction_generation_time'] = generation_time
         
         result = {
             'generated_interactions': filtered_interactions,
             'interaction_types': list(set(i.get('interaction_type', 'unknown') for i in filtered_interactions)),
             'utility_scores': {i['name']: i['utility_score'] for i in filtered_interactions},
             'selected_features': selected_features,
-            'feature_generation_metrics': self._calculate_feature_metrics(feature_df, filtered_interactions)
+            'feature_generation_metrics': self._calculate_feature_metrics_advanced(feature_df, filtered_interactions),
+            'performance_metrics': {
+                'generation_time': generation_time,
+                'vectorbt_operations': self.performance_stats['vectorbt_operations'],
+                'pandas_fallbacks': self.performance_stats['pandas_fallbacks'],
+                'cache_hit_rate': self.cache_metrics['hits'] / max(1, self.cache_metrics['hits'] + self.cache_metrics['misses'])
+            }
         }
         
-        tprint_success(f"Interaction generation completed: {len(filtered_interactions)} interactions generated")
+        # Cache result if available
+        if self.feature_cache and CACHING_AVAILABLE and cache_key:
+            self._cache_result(cache_key, result)
+        
+        tprint_success(f"Advanced interaction generation completed: {len(filtered_interactions)} interactions generated in {generation_time:.2f}s")
         return result
+    
+    def _pre_select_features_advanced(self, data: pd.DataFrame, targets: Optional[pd.Series], target_count: int = 40) -> List[Dict[str, Any]]:
+        """Advanced feature pre-selection with VectorBT and matrix operations."""
+        tprint_debug(f"Advanced pre-selecting {target_count} features from {len(data.columns)} available features")
+        
+        # Categorize features by type
+        feature_categories = self._categorize_features(data.columns)
+        
+        # Calculate feature scores for each category with advanced methods
+        feature_scores = {}
+        for category, features in feature_categories.items():
+            tprint_debug(f"Evaluating {len(features)} features in category: {category}")
+            category_scores = self._evaluate_features_in_category_advanced(data, features, targets, category)
+            feature_scores.update(category_scores)
+        
+        # Select features ensuring diversity across categories
+        selected_features = self._select_diverse_features_advanced(feature_scores, target_count)
+        
+        tprint_success(f"Advanced selected {len(selected_features)} features across {len(set(f['category'] for f in selected_features))} categories")
+        return selected_features
+    
+    def _evaluate_features_in_category_advanced(self, data: pd.DataFrame, features: List[str], 
+                                             targets: Optional[pd.Series], category: str) -> Dict[str, Dict[str, Any]]:
+        """Advanced feature evaluation with VectorBT and matrix operations."""
+        feature_scores = {}
+        
+        for feature in features:
+            if feature not in data.columns:
+                continue
+                
+            try:
+                feature_series = data[feature].dropna()
+                
+                if len(feature_series) < 10:  # Need minimum data
+                    continue
+                
+                # Calculate feature metrics with advanced methods
+                variance = feature_series.var()
+                if variance == 0 or np.isnan(variance):
+                    continue
+                
+                # Calculate correlation with target using advanced methods
+                correlation_with_target = 0.0
+                if targets is not None and len(targets) == len(feature_series):
+                    try:
+                        if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                            # Use matrix operations for advanced correlation
+                            correlation_metrics = self.matrix_ops.correlation_analysis(
+                                feature_series.values.reshape(-1, 1),
+                                targets.values.reshape(-1, 1)
+                            )
+                            correlation_with_target = abs(correlation_metrics.get('advanced_correlation', 0.0))
+                        else:
+                            correlation = feature_series.corr(targets)
+                            correlation_with_target = abs(correlation) if not np.isnan(correlation) else 0.0
+                    except:
+                        correlation_with_target = 0.0
+                
+                # Calculate information content with advanced methods
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    try:
+                        information_content = self.vectorization_manager.calculate_information_content(feature_series)
+                    except:
+                        information_content = min(1.0, variance / (feature_series.std() + 1e-8))
+                else:
+                    information_content = min(1.0, variance / (feature_series.std() + 1e-8))
+                
+                # Calculate uniqueness score with advanced correlation analysis
+                uniqueness_score = self._calculate_uniqueness_score_advanced(feature_series, data)
+                
+                # Calculate overall score with advanced weighting
+                overall_score = (
+                    correlation_with_target * 0.4 +
+                    information_content * 0.3 +
+                    uniqueness_score * 0.3
+                )
+                
+                feature_scores[feature] = {
+                    'feature_name': feature,
+                    'category': category,
+                    'score': overall_score,
+                    'variance': variance,
+                    'correlation_with_target': correlation_with_target,
+                    'information_content': information_content,
+                    'uniqueness_score': uniqueness_score,
+                    'evaluation_method': 'advanced'
+                }
+                
+            except Exception as e:
+                tprint_debug(f"Error evaluating feature {feature}: {e}")
+                continue
+        
+        return feature_scores
+    
+    def _calculate_uniqueness_score_advanced(self, feature_series: pd.Series, data: pd.DataFrame) -> float:
+        """Advanced uniqueness score calculation with matrix operations."""
+        try:
+            correlations = []
+            for col in data.columns:
+                if col != feature_series.name:
+                    try:
+                        other_series = data[col].dropna()
+                        if len(other_series) > 0:
+                            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                                # Use matrix operations for correlation
+                                corr_metrics = self.matrix_ops.correlation_analysis(
+                                    feature_series.values.reshape(-1, 1),
+                                    other_series.values.reshape(-1, 1)
+                                )
+                                corr = corr_metrics.get('correlation', 0.0)
+                            else:
+                                corr = feature_series.corr(other_series)
+                            
+                            if not np.isnan(corr):
+                                correlations.append(abs(corr))
+                    except:
+                        continue
+            
+            if not correlations:
+                return 1.0
+            
+            # Uniqueness is inverse of average correlation
+            avg_correlation = np.mean(correlations)
+            return max(0.0, 1.0 - avg_correlation)
+            
+        except:
+            return 0.5  # Default uniqueness score
+    
+    def _select_diverse_features_advanced(self, feature_scores: Dict[str, Dict[str, Any]], target_count: int) -> List[Dict[str, Any]]:
+        """Advanced diverse feature selection with enhanced algorithms."""
+        # Group features by category
+        category_features = {}
+        for feature, scores in feature_scores.items():
+            category = scores['category']
+            if category not in category_features:
+                category_features[category] = []
+            category_features[category].append((feature, scores))
+        
+        # Sort features within each category by score
+        for category in category_features:
+            category_features[category].sort(key=lambda x: x[1]['score'], reverse=True)
+        
+        # Select features ensuring diversity with advanced algorithms
+        selected_features = []
+        min_per_category = 2
+        max_per_category = 4
+        
+        # First pass: ensure minimum representation
+        for category, features in category_features.items():
+            if features:
+                selected_count = min(min_per_category, len(features), target_count - len(selected_features))
+                for i in range(selected_count):
+                    selected_features.append(features[i][1])
+        
+        # Second pass: fill remaining slots with advanced selection
+        remaining_slots = target_count - len(selected_features)
+        if remaining_slots > 0:
+            # Collect all remaining features
+            all_remaining = []
+            for category, features in category_features.items():
+                already_selected = len([f for f in selected_features if f['category'] == category])
+                remaining = features[already_selected:already_selected + max_per_category - already_selected]
+                all_remaining.extend(remaining)
+            
+            # Sort by score and select with diversity bonus
+            all_remaining.sort(key=lambda x: x[1]['score'], reverse=True)
+            for feature, scores in all_remaining[:remaining_slots]:
+                selected_features.append(scores)
+        
+        return selected_features
+    
+    def _generate_selected_features_advanced(self, data: pd.DataFrame, selected_features: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Generate features for the selected feature set with VectorBT optimization."""
+        tprint_debug(f"Advanced generating features for {len(selected_features)} selected features")
+        
+        feature_df = pd.DataFrame(index=data.index)
+        
+        for feature_info in selected_features:
+            feature_name = feature_info['feature_name']
+            category = feature_info['category']
+            
+            if feature_name in data.columns:
+                # Use existing feature with potential optimization
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    try:
+                        optimized_feature = self.vectorization_manager.optimize_series(data[feature_name])
+                        feature_df[feature_name] = optimized_feature
+                    except:
+                        feature_df[feature_name] = data[feature_name]
+                else:
+                    feature_df[feature_name] = data[feature_name]
+            else:
+                # Generate feature based on category and name with advanced methods
+                generated_feature = self._generate_feature_by_category_advanced(data, feature_name, category)
+                if generated_feature is not None:
+                    feature_df[feature_name] = generated_feature
+        
+        tprint_success(f"Advanced generated feature DataFrame with shape: {feature_df.shape}")
+        return feature_df
+    
+    def _generate_feature_by_category_advanced(self, data: pd.DataFrame, feature_name: str, category: str) -> Optional[pd.Series]:
+        """Generate a feature based on its category and name with VectorBT optimization."""
+        try:
+            if 'close' not in data.columns:
+                return None
+            
+            close_prices = data['close']
+            
+            if category == 'momentum':
+                if 'rsi' in feature_name.lower():
+                    return self._calculate_rsi_advanced(close_prices, 14)
+                elif 'stoch' in feature_name.lower():
+                    return self._calculate_stochastic_advanced(close_prices, 14)
+                else:
+                    return self._calculate_momentum_advanced(close_prices, 14)
+            
+            elif category == 'volatility':
+                if 'vol' in feature_name.lower():
+                    period = 20
+                    if any(x in feature_name.lower() for x in ['10', 'ten']):
+                        period = 10
+                    elif any(x in feature_name.lower() for x in ['30', 'thirty']):
+                        period = 30
+                    return self._calculate_volatility_advanced(close_prices, period)
+            
+            elif category == 'trend':
+                if 'sma' in feature_name.lower():
+                    period = 20
+                    if any(x in feature_name.lower() for x in ['10', 'ten']):
+                        period = 10
+                    elif any(x in feature_name.lower() for x in ['50', 'fifty']):
+                        period = 50
+                    return self._calculate_sma_advanced(close_prices, period)
+                elif 'ema' in feature_name.lower():
+                    period = 12
+                    if any(x in feature_name.lower() for x in ['26', 'twenty']):
+                        period = 26
+                    return self._calculate_ema_advanced(close_prices, period)
+            
+            elif category == 'volume':
+                if 'volume' in data.columns:
+                    return self._calculate_volume_advanced(data['volume'], 20)
+            
+            elif category == 'returns':
+                return self._calculate_returns_advanced(close_prices)
+            
+            # Default: return price-based feature
+            return self._calculate_returns_advanced(close_prices)
+            
+        except Exception as e:
+            tprint_debug(f"Error generating advanced feature {feature_name}: {e}")
+            return None
+    
+    def _calculate_rsi_advanced(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI indicator with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                delta = prices.diff()
+                gain = (delta.where(delta > 0, 0))
+                loss = (-delta.where(delta < 0, 0))
+                
+                # Use VectorBT for rolling calculations
+                avg_gain = self.rolling_optimizer.rolling_mean(gain, window=period)
+                avg_loss = self.rolling_optimizer.rolling_mean(loss, window=period)
+                
+                rs = avg_gain / avg_loss
+                rsi = 100 - (100 / (1 + rs))
+                return rsi
+            else:
+                # Fallback to pandas
+                return self._calculate_rsi(prices, period)
+        except:
+            return self._calculate_rsi(prices, period)
+    
+    def _calculate_stochastic_advanced(self, prices: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate Stochastic oscillator with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                low_min = self.rolling_optimizer.rolling_min(prices, window=period)
+                high_max = self.rolling_optimizer.rolling_max(prices, window=period)
+                stoch = 100 * (prices - low_min) / (high_max - low_min)
+                return stoch
+            else:
+                # Fallback to pandas
+                return self._calculate_stochastic(prices, period)
+        except:
+            return self._calculate_stochastic(prices, period)
+    
+    def _calculate_momentum_advanced(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate momentum with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                return self.rolling_optimizer.rolling_apply(prices, lambda x: x.pct_change().iloc[-1], window=period)
+            else:
+                return prices.pct_change(period)
+        except:
+            return prices.pct_change(period)
+    
+    def _calculate_volatility_advanced(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate volatility with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                return self.rolling_optimizer.rolling_std(prices, window=period)
+            else:
+                return prices.rolling(period).std()
+        except:
+            return prices.rolling(period).std()
+    
+    def _calculate_sma_advanced(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate SMA with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                return self.rolling_optimizer.rolling_mean(prices, window=period)
+            else:
+                return prices.rolling(period).mean()
+        except:
+            return prices.rolling(period).mean()
+    
+    def _calculate_ema_advanced(self, prices: pd.Series, period: int) -> pd.Series:
+        """Calculate EMA with VectorBT optimization."""
+        try:
+            if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                return self.vectorization_manager.calculate_ema(prices, span=period)
+            else:
+                return prices.ewm(span=period).mean()
+        except:
+            return prices.ewm(span=period).mean()
+    
+    def _calculate_volume_advanced(self, volume: pd.Series, period: int) -> pd.Series:
+        """Calculate volume features with VectorBT optimization."""
+        try:
+            if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                return self.rolling_optimizer.rolling_mean(volume, window=period)
+            else:
+                return volume.rolling(period).mean()
+        except:
+            return volume.rolling(period).mean()
+    
+    def _calculate_returns_advanced(self, prices: pd.Series) -> pd.Series:
+        """Calculate returns with VectorBT optimization."""
+        try:
+            if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                return self.vectorization_manager.calculate_returns(prices)
+            else:
+                return prices.pct_change()
+        except:
+            return prices.pct_change()
+    
+    def _generate_feature_interactions_advanced(self, feature_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
+        """Generate interactions between selected features with advanced VectorBT optimization."""
+        tprint_debug(f"Advanced generating interactions for {len(feature_df.columns)} features")
+        
+        interactions = []
+        feature_names = list(feature_df.columns)
+        
+        # Generate different types of interactions with advanced methods
+        interaction_types = [
+            'product', 'ratio', 'difference', 'sum', 'log_product', 
+            'log_ratio', 'polynomial', 'conditional', 'rolling_mean',
+            'correlation', 'covariance', 'zscore_product', 'rank_correlation'
+        ]
+        
+        # Use batch processing if available
+        if self.batch_processor and ADVANCED_VECTORBT_AVAILABLE:
+            try:
+                interactions = self._generate_interactions_batch_advanced(
+                    feature_df, feature_names, interaction_types, targets
+                )
+                tprint_success(f"Advanced batch processing generated {len(interactions)} interactions")
+                return interactions
+            except Exception as e:
+                tprint_debug(f"Batch processing failed, using sequential: {e}")
+        
+        # Sequential processing with VectorBT optimization
+        for i, feat1 in enumerate(feature_names):
+            for feat2 in feature_names[i+1:]:
+                for interaction_type in interaction_types:
+                    try:
+                        interaction = self._create_interaction_advanced(
+                            feature_df, feat1, feat2, interaction_type, targets
+                        )
+                        if interaction:
+                            interactions.append(interaction)
+                    except Exception as e:
+                        tprint_debug(f"Error creating {interaction_type} interaction {feat1}-{feat2}: {e}")
+                        continue
+        
+        # Single-feature interactions
+        for feat in feature_names:
+            try:
+                # Polynomial interaction
+                poly_interaction = self._create_single_feature_interaction_advanced(
+                    feature_df, feat, 'polynomial', targets
+                )
+                if poly_interaction:
+                    interactions.append(poly_interaction)
+                
+                # Rolling mean interaction
+                rolling_interaction = self._create_single_feature_interaction_advanced(
+                    feature_df, feat, 'rolling_mean', targets
+                )
+                if rolling_interaction:
+                    interactions.append(rolling_interaction)
+                    
+            except Exception as e:
+                tprint_debug(f"Error creating single-feature interaction for {feat}: {e}")
+                continue
+        
+        tprint_success(f"Advanced generated {len(interactions)} interactions")
+        return interactions
+    
+    def _generate_interactions_batch_advanced(self, feature_df: pd.DataFrame, feature_names: List[str], 
+                                            interaction_types: List[str], targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
+        """Generate interactions using advanced batch processing."""
+        try:
+            # Prepare batch data
+            batch_data = {
+                'features': feature_df,
+                'feature_names': feature_names,
+                'interaction_types': interaction_types,
+                'targets': targets
+            }
+            
+            # Process with batch processor
+            batch_result = self.batch_processor.process_interactions_batch(batch_data)
+            
+            # Convert to interaction format
+            interactions = []
+            for result in batch_result:
+                if result.get('success', False):
+                    interaction = {
+                        'name': result['name'],
+                        'interaction_type': result['interaction_type'],
+                        'parent_features': result['parent_features'],
+                        'feature_series': result['feature_series'],
+                        'utility_score': result['utility_score'],
+                        'metadata': {
+                            'generation_method': 'advanced_batch',
+                            'vectorbt_optimized': True
+                        }
+                    }
+                    interactions.append(interaction)
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_debug(f"Advanced batch processing failed: {e}")
+            return []
+    
+    def _create_interaction_advanced(self, feature_df: pd.DataFrame, feat1: str, feat2: str, 
+                                   interaction_type: str, targets: Optional[pd.Series]) -> Optional[Dict[str, Any]]:
+        """Create a specific interaction between two features with VectorBT optimization."""
+        try:
+            series1 = feature_df[feat1].dropna()
+            series2 = feature_df[feat2].dropna()
+            
+            # Align series
+            common_idx = series1.index.intersection(series2.index)
+            if len(common_idx) < 10:
+                return None
+            
+            series1 = series1.loc[common_idx]
+            series2 = series2.loc[common_idx]
+            
+            # Generate interaction based on type with VectorBT optimization
+            if interaction_type == 'product':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.multiply_series(series1, series2)
+                else:
+                    interaction_series = series1 * series2
+            elif interaction_type == 'ratio':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.divide_series(series1, series2)
+                else:
+                    interaction_series = series1 / (series2 + 1e-8)
+            elif interaction_type == 'difference':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.subtract_series(series1, series2)
+                else:
+                    interaction_series = series1 - series2
+            elif interaction_type == 'sum':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.add_series(series1, series2)
+                else:
+                    interaction_series = series1 + series2
+            elif interaction_type == 'log_product':
+                # Ensure positive values for log
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    log_s1 = self.vectorization_manager.log_transform(pd.Series(s1_safe, index=series1.index))
+                    log_s2 = self.vectorization_manager.log_transform(pd.Series(s2_safe, index=series2.index))
+                    interaction_series = self.vectorization_manager.multiply_series(log_s1, log_s2)
+                else:
+                    interaction_series = np.log(s1_safe) * np.log(s2_safe)
+            elif interaction_type == 'log_ratio':
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    log_s1 = self.vectorization_manager.log_transform(pd.Series(s1_safe, index=series1.index))
+                    log_s2 = self.vectorization_manager.log_transform(pd.Series(s2_safe, index=series2.index))
+                    interaction_series = self.vectorization_manager.subtract_series(log_s1, log_s2)
+                else:
+                    interaction_series = np.log(s1_safe) - np.log(s2_safe)
+            elif interaction_type == 'correlation':
+                if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.rolling_optimizer.rolling_corr(series1, series2, window=20)
+                else:
+                    interaction_series = series1.rolling(20).corr(series2)
+            elif interaction_type == 'covariance':
+                if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.rolling_optimizer.rolling_cov(series1, series2, window=20)
+                else:
+                    interaction_series = series1.rolling(20).cov(series2)
+            elif interaction_type == 'zscore_product':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    z1 = self.vectorization_manager.zscore(series1)
+                    z2 = self.vectorization_manager.zscore(series2)
+                    interaction_series = self.vectorization_manager.multiply_series(z1, z2)
+                else:
+                    z1 = (series1 - series1.mean()) / series1.std()
+                    z2 = (series2 - series2.mean()) / series2.std()
+                    interaction_series = z1 * z2
+            elif interaction_type == 'rank_correlation':
+                if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.rolling_optimizer.rolling_corr(series1, series2.rank(), window=20)
+                else:
+                    interaction_series = series1.rolling(20).corr(series2.rank())
+            elif interaction_type == 'conditional':
+                # Conditional interaction: feat1 * (feat2 > feat2.median())
+                condition = (series2 > series2.median()).astype(float)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.multiply_series(
+                        series1, pd.Series(condition, index=series1.index)
+                    )
+                else:
+                    interaction_series = series1 * condition
+            else:
+                return None
+            
+            # Convert to pandas Series if needed
+            if not isinstance(interaction_series, pd.Series):
+                interaction_series = pd.Series(interaction_series, index=common_idx)
+            
+            # Calculate utility score with advanced methods
+            utility_score = self._calculate_utility_score_advanced(interaction_series, targets)
+            
+            if utility_score < 0.1:  # Filter out low-utility interactions
+                return None
+            
+            return {
+                'name': f"{interaction_type}_{feat1}_{feat2}",
+                'interaction_type': interaction_type,
+                'parent_features': [feat1, feat2],
+                'feature_series': interaction_series,
+                'utility_score': utility_score,
+                'metadata': {
+                    'generation_method': 'advanced_data_driven',
+                    'feature_count': 2,
+                    'vectorbt_optimized': ADVANCED_VECTORBT_AVAILABLE
+                }
+            }
+            
+        except Exception as e:
+            tprint_debug(f"Error creating advanced interaction {interaction_type}({feat1}, {feat2}): {e}")
+            return None
+    
+    def _create_single_feature_interaction_advanced(self, feature_df: pd.DataFrame, feat: str, 
+                                                  interaction_type: str, targets: Optional[pd.Series]) -> Optional[Dict[str, Any]]:
+        """Create a single-feature interaction with VectorBT optimization."""
+        try:
+            series = feature_df[feat].dropna()
+            
+            if len(series) < 10:
+                return None
+            
+            if interaction_type == 'polynomial':
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.power_series(series, 2)
+                else:
+                    interaction_series = series ** 2
+            elif interaction_type == 'rolling_mean':
+                if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.rolling_optimizer.rolling_mean(series, window=20)
+                else:
+                    interaction_series = series.rolling(20).mean()
+            else:
+                return None
+            
+            # Calculate utility score with advanced methods
+            utility_score = self._calculate_utility_score_advanced(interaction_series, targets)
+            
+            if utility_score < 0.1:
+                return None
+            
+            return {
+                'name': f"{interaction_type}_{feat}",
+                'interaction_type': interaction_type,
+                'parent_features': [feat],
+                'feature_series': interaction_series,
+                'utility_score': utility_score,
+                'metadata': {
+                    'generation_method': 'advanced_data_driven',
+                    'feature_count': 1,
+                    'vectorbt_optimized': ADVANCED_VECTORBT_AVAILABLE
+                }
+            }
+            
+        except Exception as e:
+            tprint_debug(f"Error creating advanced single-feature interaction {interaction_type}({feat}): {e}")
+            return None
+    
+    def _calculate_utility_score_advanced(self, interaction_series: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate utility score for an interaction with advanced methods."""
+        try:
+            if targets is None:
+                # Use variance as utility score with advanced analysis
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    try:
+                        variance_metrics = self.vectorization_manager.calculate_variance_metrics(interaction_series)
+                        return variance_metrics.get('normalized_variance', float(interaction_series.var()))
+                    except:
+                        return float(interaction_series.var())
+                else:
+                    return float(interaction_series.var())
+            
+            # Align with targets
+            common_idx = interaction_series.index.intersection(targets.index)
+            if len(common_idx) < 10:
+                return 0.0
+            
+            aligned_series = interaction_series.loc[common_idx]
+            aligned_targets = targets.loc[common_idx]
+            
+            # Calculate correlation with advanced methods
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                try:
+                    correlation_metrics = self.matrix_ops.correlation_analysis(
+                        aligned_series.values.reshape(-1, 1),
+                        aligned_targets.values.reshape(-1, 1)
+                    )
+                    correlation = correlation_metrics.get('advanced_correlation', 0.0)
+                except:
+                    correlation = aligned_series.corr(aligned_targets)
+            else:
+                correlation = aligned_series.corr(aligned_targets)
+            
+            if np.isnan(correlation):
+                return 0.0
+            
+            # Use absolute correlation as utility score
+            return abs(correlation)
+            
+        except Exception as e:
+            tprint_debug(f"Error calculating advanced utility score: {e}")
+            return 0.0
+    
+    def _filter_and_rank_interactions_advanced(self, interactions: List[Dict[str, Any]], targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
+        """Filter and rank interactions by quality with advanced methods."""
+        if not interactions:
+            return []
+        
+        # Sort by utility score
+        interactions.sort(key=lambda x: x['utility_score'], reverse=True)
+        
+        # Remove highly correlated interactions with advanced correlation analysis
+        filtered_interactions = self._remove_correlated_interactions_advanced(interactions)
+        
+        # Limit to top interactions
+        max_interactions = 100
+        return filtered_interactions[:max_interactions]
+    
+    def _remove_correlated_interactions_advanced(self, interactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove highly correlated interactions with advanced correlation analysis."""
+        if len(interactions) <= 1:
+            return interactions
+        
+        # Create DataFrame of interaction features
+        interaction_data = {}
+        for interaction in interactions:
+            interaction_data[interaction['name']] = interaction['feature_series']
+        
+        interaction_df = pd.DataFrame(interaction_data)
+        
+        # Calculate correlation matrix with advanced methods
+        if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+            try:
+                corr_matrix = self.matrix_ops.correlation_matrix(interaction_df)
+            except:
+                corr_matrix = interaction_df.corr()
+        else:
+            corr_matrix = interaction_df.corr()
+        
+        # Find highly correlated pairs
+        to_remove = set()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                if abs(corr_matrix.iloc[i, j]) > 0.95:  # High correlation threshold
+                    # Keep the one with higher utility score
+                    if interactions[i]['utility_score'] >= interactions[j]['utility_score']:
+                        to_remove.add(j)
+                    else:
+                        to_remove.add(i)
+        
+        # Filter out highly correlated interactions
+        filtered = [interaction for i, interaction in enumerate(interactions) if i not in to_remove]
+        
+        return filtered
+    
+    def _calculate_feature_metrics_advanced(self, feature_df: pd.DataFrame, interactions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate advanced metrics for feature generation."""
+        metrics = {
+            'total_features_generated': len(feature_df.columns),
+            'total_interactions_generated': len(interactions),
+            'average_utility_score': np.mean([i['utility_score'] for i in interactions]) if interactions else 0.0,
+            'interaction_types': list(set(i['interaction_type'] for i in interactions)),
+            'feature_categories_used': len(set(f.split('_')[0] for f in feature_df.columns if '_' in f)),
+            'vectorbt_optimization_rate': sum(1 for i in interactions if i.get('metadata', {}).get('vectorbt_optimized', False)) / max(1, len(interactions)),
+            'advanced_generation_rate': sum(1 for i in interactions if i.get('metadata', {}).get('generation_method', '').startswith('advanced')) / max(1, len(interactions))
+        }
+        
+        return metrics
     
     def _pre_select_features(self, data: pd.DataFrame, targets: Optional[pd.Series], target_count: int = 40) -> List[Dict[str, Any]]:
         """Pre-select features from full feature bank using data-driven approach."""

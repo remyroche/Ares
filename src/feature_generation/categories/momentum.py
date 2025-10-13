@@ -124,14 +124,15 @@ logger = logging.getLogger(__name__)
 # Optional GPU acceleration
 try:
     import cupy as cp
-# Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
-from ..core.feature_bank import get_global_feature_bank
     CUPY_AVAILABLE = True
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
+
+# Centralized utility imports
+from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from ..core.feature_bank import get_global_feature_bank
 
 # LegacyRSIGenerator, LegacyMACDGenerator, LegacyStochasticGenerator, and LegacyWilliamsRGenerator removed - use VectorBT versions instead
 
@@ -374,7 +375,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentumclass AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
+            return momentum
+
+class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
     """Generator for 15-minute timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -410,7 +413,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
                 return momentum
         else:
             momentum = returns.rolling(self.lookback).mean()
-            return momentumclass AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
+            return momentum
+
+class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
     """Generator for 1-hour timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -435,7 +440,9 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         """Generate 1-hour momentum feature."""
         returns = data['close'].pct_change()
         momentum = returns.rolling(self.lookback).mean()
-        return momentumclass AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
+        return momentum
+
+class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
     """Generator for momentum alignment across timeframes."""
 
     def __init__(self, lookback: int = 20):

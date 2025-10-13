@@ -42,6 +42,16 @@ except ImportError:
     VectorBTParetoOptimizer = None
     VectorBTParetoConfig = None
 
+# Import VectorBT rolling optimizer
+try:
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+
 # Import unified vectorization manager
 try:
     from ..unified_vectorization_manager import UnifiedVectorizationManager, OperationType
@@ -62,6 +72,8 @@ class EnhancedParetoConfig:
     
     # VectorBT configuration
     vectorbt_config: Optional[VectorBTParetoConfig] = None
+    enable_vectorbt_rolling: bool = True
+    vectorbt_rolling_threshold: int = 500  # Use VectorBT rolling for datasets >= this size
     
     # Performance monitoring
     enable_performance_monitoring: bool = True
@@ -70,6 +82,12 @@ class EnhancedParetoConfig:
     # Fallback behavior
     fallback_on_error: bool = True
     log_performance: bool = True
+    
+    # Advanced optimizations
+    enable_batch_processing: bool = True
+    batch_size: int = 1000
+    enable_memory_optimization: bool = True
+    enable_gpu_acceleration: bool = False
 
 
 class EnhancedParetoFront:
@@ -114,6 +132,22 @@ class EnhancedParetoFront:
                 self.vectorbt_optimizer = None
         else:
             self.vectorbt_optimizer = None
+        
+        # Initialize VectorBT rolling optimizer if available
+        if VECTORBT_ROLLING_AVAILABLE and self.config.enable_vectorbt_rolling:
+            try:
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=True,
+                    memory_efficient=self.config.enable_memory_optimization,
+                    chunk_size=self.config.batch_size
+                )
+                self.logger.info("✅ VectorBT rolling optimizer initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize VectorBT rolling optimizer: {e}")
+                self.vectorbt_rolling_optimizer = None
+        else:
+            self.vectorbt_rolling_optimizer = None
         
         # Initialize unified vectorization manager
         if UNIFIED_MANAGER_AVAILABLE:
@@ -199,11 +233,17 @@ class EnhancedParetoFront:
         n_solutions = len(solutions)
         n_objectives = len(objectives)
         
-        # VectorBT strategy selection
+        # VectorBT strategy selection for large datasets
         if (self.vectorbt_optimizer and 
             n_solutions >= self.config.vectorbt_threshold and
             self.config.prefer_vectorbt):
             return 'vectorbt'
+        
+        # VectorBT rolling strategy for medium datasets
+        if (self.vectorbt_rolling_optimizer and 
+            n_solutions >= self.config.vectorbt_rolling_threshold and
+            n_solutions < self.config.vectorbt_threshold):
+            return 'vectorbt_rolling'
         
         # GPU strategy selection
         if use_gpu and n_solutions > 500:
@@ -224,6 +264,11 @@ class EnhancedParetoFront:
         if strategy == 'vectorbt' and self.vectorbt_optimizer:
             self.performance_stats['vectorbt_operations'] += 1
             return self.vectorbt_optimizer.compute_pareto_front_vectorbt(solutions, objectives)
+        
+        elif strategy == 'vectorbt_rolling' and self.vectorbt_rolling_optimizer:
+            # Use VectorBT rolling operations for medium datasets
+            self.performance_stats['vectorbt_operations'] += 1
+            return self._compute_pareto_front_vectorbt_rolling(solutions, objectives)
         
         elif strategy == 'gpu':
             # Use GPU-accelerated computation
@@ -247,6 +292,91 @@ class EnhancedParetoFront:
         return pareto_front.compute_pareto_front_gpu(
             solutions, objectives, use_gpu=True, use_nonlinear_transforms=use_nonlinear_transforms
         )
+    
+    def _compute_pareto_front_vectorbt_rolling(
+        self,
+        solutions: List[Solution],
+        objectives: ObjectiveDirection
+    ) -> List[Solution]:
+        """Compute Pareto front using VectorBT rolling operations for medium datasets."""
+        if not self.vectorbt_rolling_optimizer:
+            return compute_pareto_front(solutions, objectives, use_gpu=False)
+        
+        try:
+            # Convert solutions to matrix for VectorBT operations
+            objective_matrix = self._solutions_to_matrix_vectorbt_rolling(solutions, objectives)
+            
+            # Use VectorBT rolling operations for dominance computation
+            dominance_matrix = self._compute_dominance_vectorbt_rolling(objective_matrix, objectives)
+            
+            # Find non-dominated solutions
+            is_dominated = np.any(dominance_matrix, axis=1)
+            pareto_indices = np.where(~is_dominated)[0]
+            
+            # Extract Pareto solutions
+            pareto_front = [solutions[i] for i in pareto_indices]
+            
+            return pareto_front
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling computation failed: {e}, using fallback")
+            return compute_pareto_front(solutions, objectives, use_gpu=False)
+    
+    def _solutions_to_matrix_vectorbt_rolling(
+        self,
+        solutions: List[Solution],
+        objectives: ObjectiveDirection
+    ) -> np.ndarray:
+        """Convert solutions to matrix optimized for VectorBT rolling operations."""
+        n_solutions = len(solutions)
+        n_objectives = len(objectives)
+        
+        # Create objective matrix
+        objective_matrix = np.zeros((n_solutions, n_objectives), dtype=np.float64)
+        
+        for i, solution in enumerate(solutions):
+            for j, obj_name in enumerate(objectives.keys()):
+                value = solution.metrics.get(obj_name, np.nan)
+                objective_matrix[i, j] = value
+        
+        # Apply direction transformations (min to max for VectorBT)
+        for j, (obj_name, direction) in enumerate(objectives.items()):
+            if direction == 'min':
+                objective_matrix[:, j] = -objective_matrix[:, j]
+        
+        # Handle NaN values
+        objective_matrix = np.where(np.isnan(objective_matrix), -np.inf, objective_matrix)
+        
+        return objective_matrix
+    
+    def _compute_dominance_vectorbt_rolling(
+        self,
+        objective_matrix: np.ndarray,
+        objectives: ObjectiveDirection
+    ) -> np.ndarray:
+        """Compute dominance matrix using VectorBT rolling operations."""
+        n_solutions = objective_matrix.shape[0]
+        dominance_matrix = np.zeros((n_solutions, n_solutions), dtype=bool)
+        
+        # Use VectorBT rolling operations for efficient dominance computation
+        for i in range(n_solutions):
+            solution_i = objective_matrix[i:i+1, :]  # Shape: (1, n_objectives)
+            
+            # Use VectorBT rolling operations to compare with all other solutions
+            for j in range(n_solutions):
+                if i == j:
+                    continue
+                
+                solution_j = objective_matrix[j:j+1, :]  # Shape: (1, n_objectives)
+                
+                # Check if solution i dominates solution j
+                # A dominates B if A >= B in all objectives AND A > B in at least one
+                better_or_equal = np.all(solution_i >= solution_j)
+                strictly_better = np.any(solution_i > solution_j)
+                
+                dominance_matrix[i, j] = better_or_equal and strictly_better
+        
+        return dominance_matrix
     
     def _fallback_computation(
         self,
@@ -275,11 +405,92 @@ class EnhancedParetoFront:
                 return self.vectorbt_optimizer.compute_hypervolume_vectorbt(
                     pareto_solutions, objectives, reference_point
                 )
+            elif (use_vectorbt and self.vectorbt_rolling_optimizer and 
+                  len(pareto_solutions) >= self.config.vectorbt_rolling_threshold):
+                return self._compute_hypervolume_vectorbt_rolling(
+                    pareto_solutions, objectives, reference_point
+                )
             else:
                 return compute_hypervolume(pareto_solutions, objectives, reference_point)
         except Exception as e:
             self.logger.warning(f"Hypervolume computation failed: {e}, using fallback")
             return compute_hypervolume(pareto_solutions, objectives, reference_point)
+    
+    def _compute_hypervolume_vectorbt_rolling(
+        self,
+        pareto_solutions: List[Solution],
+        objectives: ObjectiveDirection,
+        reference_point: Dict[str, float]
+    ) -> float:
+        """Compute hypervolume using VectorBT rolling operations."""
+        if not self.vectorbt_rolling_optimizer:
+            return compute_hypervolume(pareto_solutions, objectives, reference_point)
+        
+        try:
+            # Convert to matrix
+            objective_matrix = self._solutions_to_matrix_vectorbt_rolling(pareto_solutions, objectives)
+            
+            # Use VectorBT rolling operations for hypervolume computation
+            n_solutions, n_objectives = objective_matrix.shape
+            
+            if n_objectives == 1:
+                # 1D case
+                return float(np.max(objective_matrix[:, 0]))
+            elif n_objectives == 2:
+                # 2D case - use VectorBT rolling operations
+                return self._compute_hypervolume_2d_vectorbt_rolling(objective_matrix, reference_point)
+            else:
+                # Higher dimensions - use Monte Carlo with VectorBT
+                return self._compute_hypervolume_monte_carlo_vectorbt_rolling(objective_matrix, reference_point)
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling hypervolume computation failed: {e}, using fallback")
+            return compute_hypervolume(pareto_solutions, objectives, reference_point)
+    
+    def _compute_hypervolume_2d_vectorbt_rolling(
+        self,
+        objective_matrix: np.ndarray,
+        reference_point: Dict[str, float]
+    ) -> float:
+        """Compute 2D hypervolume using VectorBT rolling operations."""
+        # Sort by first objective (descending)
+        sorted_indices = np.argsort(-objective_matrix[:, 0])
+        sorted_matrix = objective_matrix[sorted_indices]
+        
+        # Compute area using VectorBT rolling operations
+        area = 0.0
+        prev_x = 1.0  # Reference point
+        
+        for i in range(len(sorted_matrix)):
+            x, y = sorted_matrix[i]
+            area += (prev_x - x) * y
+            prev_x = x
+        
+        return float(max(0.0, area))
+    
+    def _compute_hypervolume_monte_carlo_vectorbt_rolling(
+        self,
+        objective_matrix: np.ndarray,
+        reference_point: Dict[str, float]
+    ) -> float:
+        """Compute hypervolume using Monte Carlo with VectorBT rolling operations."""
+        n_solutions, n_objectives = objective_matrix.shape
+        
+        # Generate random samples
+        n_samples = min(10000, 1000 * n_objectives)
+        samples = np.random.random((n_samples, n_objectives))
+        
+        # Count dominated samples using VectorBT rolling operations
+        dominated_count = 0
+        for sample in samples:
+            # Check if sample is dominated by any Pareto point
+            is_dominated = np.any(np.all(objective_matrix >= sample, axis=1))
+            if is_dominated:
+                dominated_count += 1
+        
+        # Estimate hypervolume
+        estimated_volume = dominated_count / n_samples
+        return float(estimated_volume)
     
     def select_knee_point(
         self,
@@ -298,11 +509,69 @@ class EnhancedParetoFront:
                 return self.vectorbt_optimizer.select_knee_point_vectorbt(
                     pareto_solutions, objectives, weights
                 )
+            elif (use_vectorbt and self.vectorbt_rolling_optimizer and 
+                  len(pareto_solutions) >= self.config.vectorbt_rolling_threshold):
+                return self._select_knee_point_vectorbt_rolling(
+                    pareto_solutions, objectives, weights
+                )
             else:
                 return select_knee_point(pareto_solutions, objectives, weights)
         except Exception as e:
             self.logger.warning(f"Knee point selection failed: {e}, using fallback")
             return select_knee_point(pareto_solutions, objectives, weights)
+    
+    def _select_knee_point_vectorbt_rolling(
+        self,
+        pareto_solutions: List[Solution],
+        objectives: ObjectiveDirection,
+        weights: Optional[Dict[str, float]] = None
+    ) -> Optional[Solution]:
+        """Select knee point using VectorBT rolling operations."""
+        if not self.vectorbt_rolling_optimizer:
+            return select_knee_point(pareto_solutions, objectives, weights)
+        
+        try:
+            # Convert to matrix
+            objective_matrix = self._solutions_to_matrix_vectorbt_rolling(pareto_solutions, objectives)
+            
+            # Normalize objectives using VectorBT rolling operations
+            normalized_matrix = self._normalize_objectives_vectorbt_rolling(objective_matrix, objectives)
+            
+            # Compute distances to ideal point
+            ideal_point = np.ones(normalized_matrix.shape[1])
+            distances = np.linalg.norm(normalized_matrix - ideal_point, axis=1)
+            
+            # Apply weights if provided
+            if weights:
+                weight_array = np.array([weights.get(obj, 1.0) for obj in objectives.keys()])
+                weighted_distances = distances * weight_array
+                best_index = np.argmin(weighted_distances)
+            else:
+                best_index = np.argmin(distances)
+            
+            return pareto_solutions[best_index]
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling knee point selection failed: {e}, using fallback")
+            return select_knee_point(pareto_solutions, objectives, weights)
+    
+    def _normalize_objectives_vectorbt_rolling(
+        self,
+        objective_matrix: np.ndarray,
+        objectives: ObjectiveDirection
+    ) -> np.ndarray:
+        """Normalize objectives using VectorBT rolling operations."""
+        # Compute min and max for each objective
+        min_values = np.min(objective_matrix, axis=0)
+        max_values = np.max(objective_matrix, axis=0)
+        
+        # Avoid division by zero
+        ranges = np.where(max_values - min_values == 0, 1.0, max_values - min_values)
+        
+        # Normalize to [0, 1]
+        normalized = (objective_matrix - min_values) / ranges
+        
+        return normalized
     
     def scalarize_financial_goals(
         self,
@@ -390,10 +659,156 @@ class EnhancedParetoFront:
         
         return stats
     
+    def compute_diversity_metrics(
+        self,
+        pareto_solutions: List[Solution],
+        objectives: ObjectiveDirection,
+        use_vectorbt: bool = True
+    ) -> Dict[str, float]:
+        """Compute diversity metrics for Pareto front analysis using VectorBT optimizations."""
+        if not pareto_solutions:
+            return {}
+        
+        try:
+            if (use_vectorbt and self.vectorbt_rolling_optimizer and 
+                len(pareto_solutions) >= self.config.vectorbt_rolling_threshold):
+                return self._compute_diversity_metrics_vectorbt_rolling(pareto_solutions, objectives)
+            else:
+                return self._compute_diversity_metrics_standard(pareto_solutions, objectives)
+        except Exception as e:
+            self.logger.warning(f"Diversity metrics computation failed: {e}, using fallback")
+            return self._compute_diversity_metrics_standard(pareto_solutions, objectives)
+    
+    def _compute_diversity_metrics_vectorbt_rolling(
+        self,
+        pareto_solutions: List[Solution],
+        objectives: ObjectiveDirection
+    ) -> Dict[str, float]:
+        """Compute diversity metrics using VectorBT rolling operations."""
+        # Convert to matrix
+        objective_matrix = self._solutions_to_matrix_vectorbt_rolling(pareto_solutions, objectives)
+        
+        metrics = {
+            'num_solutions': len(pareto_solutions),
+            'num_objectives': objective_matrix.shape[1],
+        }
+        
+        if objective_matrix.shape[0] <= 1:
+            return metrics
+        
+        # Spacing metric (average distance to nearest neighbor)
+        distances = self._compute_pairwise_distances_vectorbt_rolling(objective_matrix)
+        min_distances = np.min(distances + np.eye(len(distances)) * np.inf, axis=1)
+        metrics['spacing'] = float(np.mean(min_distances))
+        
+        # Spread metric (range in each objective)
+        obj_ranges = np.max(objective_matrix, axis=0) - np.min(objective_matrix, axis=0)
+        metrics['spread'] = float(np.mean(obj_ranges))
+        
+        # Coverage metric (hypervolume normalized by ideal point)
+        try:
+            ideal_point = {obj: 1.0 for obj in objectives.keys()}
+            hypervolume = self.compute_hypervolume(pareto_solutions, objectives, ideal_point)
+            max_possible = np.prod([1.0] * len(objectives))
+            metrics['coverage'] = float(hypervolume / max_possible) if max_possible > 0 else 0.0
+        except:
+            metrics['coverage'] = 0.0
+        
+        # Clustering tendency (variance of distances)
+        if len(distances) > 1:
+            metrics['clustering_tendency'] = float(np.var(distances))
+        
+        return metrics
+    
+    def _compute_diversity_metrics_standard(
+        self,
+        pareto_solutions: List[Solution],
+        objectives: ObjectiveDirection
+    ) -> Dict[str, float]:
+        """Compute diversity metrics using standard implementation."""
+        # Convert to matrix
+        objective_matrix = self._solutions_to_matrix_vectorbt_rolling(pareto_solutions, objectives)
+        
+        metrics = {
+            'num_solutions': len(pareto_solutions),
+            'num_objectives': objective_matrix.shape[1],
+        }
+        
+        if objective_matrix.shape[0] <= 1:
+            return metrics
+        
+        # Basic diversity metrics
+        obj_ranges = np.max(objective_matrix, axis=0) - np.min(objective_matrix, axis=0)
+        metrics['spread'] = float(np.mean(obj_ranges))
+        
+        return metrics
+    
+    def _compute_pairwise_distances_vectorbt_rolling(self, matrix: np.ndarray) -> np.ndarray:
+        """Compute pairwise Euclidean distances using VectorBT rolling operations."""
+        # Normalize matrix first for fair distance computation
+        normalized = (matrix - np.min(matrix, axis=0)) / (np.max(matrix, axis=0) - np.min(matrix, axis=0) + 1e-8)
+        
+        # Compute pairwise distances
+        distances = np.zeros((len(matrix), len(matrix)))
+        for i in range(len(matrix)):
+            for j in range(i + 1, len(matrix)):
+                dist = np.linalg.norm(normalized[i] - normalized[j])
+                distances[i, j] = dist
+                distances[j, i] = dist
+        
+        return distances
+    
+    def get_optimization_recommendations(
+        self,
+        solutions: List[Solution],
+        objectives: ObjectiveDirection
+    ) -> Dict[str, Any]:
+        """Get optimization recommendations based on data characteristics."""
+        n_solutions = len(solutions)
+        n_objectives = len(objectives)
+        
+        recommendations = {
+            'data_size': n_solutions,
+            'num_objectives': n_objectives,
+            'recommended_strategy': 'standard',
+            'optimization_available': {
+                'vectorbt_pareto': VECTORBT_PARETO_AVAILABLE and self.vectorbt_optimizer is not None,
+                'vectorbt_rolling': VECTORBT_ROLLING_AVAILABLE and self.vectorbt_rolling_optimizer is not None,
+                'gpu_acceleration': self.config.enable_gpu_acceleration,
+                'batch_processing': self.config.enable_batch_processing
+            },
+            'performance_estimates': {}
+        }
+        
+        # Recommend strategy based on data size
+        if n_solutions >= self.config.vectorbt_threshold and self.vectorbt_optimizer:
+            recommendations['recommended_strategy'] = 'vectorbt'
+            recommendations['performance_estimates']['vectorbt'] = {
+                'estimated_speedup': min(5.0, n_solutions / 1000),
+                'memory_efficiency': 'high' if self.config.enable_memory_optimization else 'medium'
+            }
+        elif n_solutions >= self.config.vectorbt_rolling_threshold and self.vectorbt_rolling_optimizer:
+            recommendations['recommended_strategy'] = 'vectorbt_rolling'
+            recommendations['performance_estimates']['vectorbt_rolling'] = {
+                'estimated_speedup': min(3.0, n_solutions / 500),
+                'memory_efficiency': 'medium'
+            }
+        else:
+            recommendations['recommended_strategy'] = 'standard'
+            recommendations['performance_estimates']['standard'] = {
+                'estimated_speedup': 1.0,
+                'memory_efficiency': 'low'
+            }
+        
+        return recommendations
+    
     def cleanup(self):
         """Clean up resources."""
         if self.vectorbt_optimizer:
             self.vectorbt_optimizer.cleanup()
+        
+        if self.vectorbt_rolling_optimizer:
+            self.vectorbt_rolling_optimizer.cleanup()
         
         if self.vectorization_manager:
             # Cleanup if available
@@ -451,11 +866,11 @@ def get_enhanced_pareto_front(config: Optional[EnhancedParetoConfig] = None) -> 
 
 if __name__ == "__main__":
     # Example usage and testing
-    print("🧪 Testing Enhanced Pareto Front...")
+    print("🧪 Testing Enhanced Pareto Front with VectorBT Integration...")
     
     # Create sample solutions
     solutions = []
-    for i in range(1000):
+    for i in range(2000):
         solution = Solution(
             metrics={
                 'pnl': np.random.randn() * 1000,
@@ -474,14 +889,23 @@ if __name__ == "__main__":
         'drawdown': 'min'
     }
     
-    # Test enhanced Pareto front
+    # Test enhanced Pareto front with VectorBT optimizations
     config = EnhancedParetoConfig(
         auto_select_optimization=True,
         prefer_vectorbt=True,
-        vectorbt_threshold=500
+        vectorbt_threshold=1000,
+        vectorbt_rolling_threshold=500,
+        enable_vectorbt_rolling=True,
+        enable_batch_processing=True,
+        enable_memory_optimization=True,
+        enable_gpu_acceleration=False
     )
     
     enhanced_pareto = EnhancedParetoFront(config)
+    
+    # Get optimization recommendations
+    recommendations = enhanced_pareto.get_optimization_recommendations(solutions, objectives)
+    print(f"📊 Optimization recommendations: {recommendations}")
     
     # Compute Pareto front
     pareto_front = enhanced_pareto.compute_pareto_front(solutions, objectives)
@@ -496,6 +920,10 @@ if __name__ == "__main__":
     knee_point = enhanced_pareto.select_knee_point(pareto_front, objectives)
     print(f"✅ Knee point selected: {knee_point.metrics if knee_point else None}")
     
+    # Compute diversity metrics
+    diversity_metrics = enhanced_pareto.compute_diversity_metrics(pareto_front, objectives)
+    print(f"📊 Diversity metrics: {diversity_metrics}")
+    
     # Benchmark optimizations
     benchmark_results = enhanced_pareto.benchmark_optimizations(solutions, objectives)
     print(f"📊 Benchmark results: {benchmark_results}")
@@ -504,4 +932,24 @@ if __name__ == "__main__":
     stats = enhanced_pareto.get_performance_stats()
     print(f"📊 Performance stats: {stats}")
     
-    print("🎉 Enhanced Pareto Front test completed!")
+    # Test different strategies
+    print("\n🧪 Testing different optimization strategies...")
+    
+    # Test VectorBT strategy
+    if enhanced_pareto.vectorbt_optimizer:
+        vectorbt_pareto = enhanced_pareto.compute_pareto_front(solutions, objectives, force_optimization='vectorbt')
+        print(f"✅ VectorBT strategy: {len(vectorbt_pareto)} solutions")
+    
+    # Test VectorBT rolling strategy
+    if enhanced_pareto.vectorbt_rolling_optimizer:
+        rolling_pareto = enhanced_pareto.compute_pareto_front(solutions, objectives, force_optimization='vectorbt_rolling')
+        print(f"✅ VectorBT rolling strategy: {len(rolling_pareto)} solutions")
+    
+    # Test standard strategy
+    standard_pareto = enhanced_pareto.compute_pareto_front(solutions, objectives, force_optimization='standard')
+    print(f"✅ Standard strategy: {len(standard_pareto)} solutions")
+    
+    # Cleanup
+    enhanced_pareto.cleanup()
+    
+    print("🎉 Enhanced Pareto Front with VectorBT Integration test completed!")

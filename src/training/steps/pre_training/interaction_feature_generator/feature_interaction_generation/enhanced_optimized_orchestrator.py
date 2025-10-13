@@ -1019,11 +1019,11 @@ class EnhancedOptimizedInteractionOrchestrator:
             return pd.DataFrame(index=features.index)
     
     async def _interaction_pruning_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Enhanced interaction pruning stage using OptimizedFeatureSelectionEngine - fast fail."""
+        """Enhanced interaction pruning stage using MultiStageFeatureSelectionPipeline - fast fail."""
         if not self.interaction_pruning:
             return {'status': 'skipped', 'reason': 'disabled'}
         
-        tprint_debug("✂️ Interaction pruning stage using OptimizedFeatureSelectionEngine...")
+        tprint_debug("✂️ Interaction pruning stage using MultiStageFeatureSelectionPipeline...")
         
         # Get interaction features
         if 'interaction_features' in context.pipeline_state:
@@ -1045,43 +1045,55 @@ class EnhancedOptimizedInteractionOrchestrator:
         if len(feature_names) == 0:
             raise ValueError("CRITICAL: No interaction features found after removing target column")
         
-        # Fast fail: Call OptimizedFeatureSelectionEngine directly
-        from src.training.steps.market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
+        # Fast fail: Call MultiStageFeatureSelectionPipeline directly
+        from src.training.steps.pre_training.feature_selection.core.multi_stage_pipeline import MultiStageFeatureSelectionPipeline
+        from src.training.steps.pre_training.feature_selection.core.config import FeatureSelectionConfig
         
-        # Initialize the optimized feature selection engine
-        selection_engine = OptimizedFeatureSelectionEngine(
-            use_hardware_accel=True,
-            cache_size=1000,
-            use_vectorbt=True
-        )
+        # Initialize the multi-stage feature selection pipeline
+        config = FeatureSelectionConfig()
+        config.target_features = min(50, len(feature_names))  # Target: Reduce to 50 features (or all if fewer)
+        config.enable_vectorbt_optimization = True
+        config.vectorbt_enable_parallel = True
+        config.vectorbt_memory_efficient = True
         
-        # Target: Reduce to 50 features (or all if fewer)
-        target_feature_count = min(50, len(feature_names))
-        selection_stages = [target_feature_count]
+        selection_pipeline = MultiStageFeatureSelectionPipeline(config)
         
-        tprint_info(f"🎯 Reducing {len(feature_names)} interaction features to {target_feature_count}")
+        tprint_info(f"🎯 Reducing {len(feature_names)} interaction features to {config.target_features}")
+        
+        # Prepare data for the pipeline
+        X = features[feature_names]
+        y = features[target_column]
         
         # Perform feature selection - fast fail on any error
-        selection_result = selection_engine.select_features(
-            features_df=features,
-            target_column=target_column,
-            selection_stages=selection_stages
-        )
+        try:
+            selection_result = selection_pipeline.select_features(
+                X=X,
+                y=y,
+                symbol=context.pipeline_state.get('symbol', 'BTCUSDT'),
+                exchange=context.pipeline_state.get('exchange', 'binance'),
+                timeframe=context.pipeline_state.get('timeframe', '15m')
+            )
+        finally:
+            # Cleanup pipeline resources
+            selection_pipeline.cleanup()
         
-        if 'error' in selection_result:
-            raise RuntimeError(f"CRITICAL: Feature selection failed: {selection_result['error']}")
+        # Check if selection was successful
+        if not selection_result.success:
+            error_msg = getattr(selection_result, 'error_message', 'Unknown error')
+            raise RuntimeError(f"CRITICAL: Feature selection failed: {error_msg}")
         
-        # Extract selected features - fast fail if no results
-        if 'final_features' not in selection_result:
-            raise RuntimeError("CRITICAL: No final features returned from selection engine")
+        # Extract selected features from the pipeline result
+        selected_features = selection_result.selected_features
         
-        if isinstance(selection_result['final_features'], list):
-            selected_features = selection_result['final_features']
-            if target_column not in selected_features:
-                selected_features.append(target_column)
-            pruned_features = features[selected_features]
-        else:
-            pruned_features = selection_result['final_features']
+        if not selected_features or len(selected_features) == 0:
+            raise RuntimeError("CRITICAL: No features selected after pruning")
+        
+        # Ensure target column is included
+        if target_column not in selected_features:
+            selected_features.append(target_column)
+        
+        # Create pruned features DataFrame
+        pruned_features = features[selected_features]
         
         if pruned_features.empty or len(pruned_features.columns) == 0:
             raise RuntimeError("CRITICAL: No features selected after pruning")
@@ -1091,8 +1103,10 @@ class EnhancedOptimizedInteractionOrchestrator:
         context.pipeline_state['interaction_pruning_result'] = {
             'selected_interactions': list(pruned_features.columns),
             'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
-            'pruning_method': 'optimized_feature_selection_engine',
-            'target_achieved': len(pruned_features.columns) <= target_feature_count
+            'pruning_method': 'multi_stage_feature_selection_pipeline',
+            'target_achieved': len(pruned_features.columns) <= config.target_features,
+            'stage_results': selection_result.stage_results,
+            'performance_metrics': selection_result.performance_metrics
         }
         
         tprint_success(f"✅ Interaction pruning completed: {len(pruned_features.columns)} features selected")
@@ -1102,8 +1116,10 @@ class EnhancedOptimizedInteractionOrchestrator:
             'selected_interactions': len(pruned_features.columns),
             'rejected_interactions': len(feature_names) - len(pruned_features.columns),
             'selection_rate': len(pruned_features.columns) / len(feature_names),
-            'method': 'optimized_feature_selection_engine',
-            'target_achieved': len(pruned_features.columns) <= target_feature_count
+            'method': 'multi_stage_feature_selection_pipeline',
+            'target_achieved': len(pruned_features.columns) <= config.target_features,
+            'execution_time': selection_result.execution_time,
+            'stage_results': selection_result.stage_results
         }
     
     

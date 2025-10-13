@@ -148,38 +148,51 @@ class CoreOptimizer:
         if base_constraints is None:
             base_constraints = LookbackConstraints()
         
-        # Apply mode-specific optimizations
-        if execution_mode in ["light", "blank"]:
-            # OPTIMIZATION 1: Reduce bootstrap resampling to 2
-            base_constraints.n_bootstrap_samples = 2
-            
-            # OPTIMIZATION 2: Reduce CV folds to 2
+        # Apply mode-specific optimizations with proper parameter scaling
+        if execution_mode == "blank":
+            # Most aggressive optimization for blank mode
+            base_constraints.max_lookback = min(base_constraints.max_lookback, 20)
+            base_constraints.search_step = max(base_constraints.search_step, 5)
             base_constraints.cv_folds = 2
-            
-            # OPTIMIZATION 3: Enable Bayesian optimization for faster convergence
-            base_constraints.use_bayesian_optimization = True
-            
-            # OPTIMIZATION 4: Coarser grid search for light mode
-            if execution_mode == "light":
-                base_constraints.search_step = 10
-            else:  # blank mode
-                base_constraints.search_step = 7
-            
-            # OPTIMIZATION 5: Enhanced caching
+            base_constraints.n_bootstrap_samples = 1
+            base_constraints.use_bayesian_optimization = False
             base_constraints.enable_enhanced_caching = True
+            base_constraints.min_stability_score = 0.3
+            base_constraints.regularization_strength = 0.2
             
-            tprint_info(f"🚀 Mode-aware optimization enabled for {execution_mode.upper()} mode:")
-            tprint_info(f"   → Bootstrap samples: {base_constraints.n_bootstrap_samples}")
-            tprint_info(f"   → CV folds: {base_constraints.cv_folds}")
-            tprint_info(f"   → Grid search step: {base_constraints.search_step}")
-            tprint_info(f"   → Bayesian optimization: {base_constraints.use_bayesian_optimization}")
-            tprint_info(f"   → Enhanced caching: {base_constraints.enable_enhanced_caching}")
-        else:
-            # Full mode - use default settings
-            base_constraints.execution_mode = "full"
-            tprint_info(f"🎯 Using FULL mode optimization (highest accuracy)")
+        elif execution_mode == "light":
+            # Moderate optimization for light mode
+            base_constraints.max_lookback = min(base_constraints.max_lookback, 40)
+            base_constraints.search_step = max(base_constraints.search_step, 3)
+            base_constraints.cv_folds = 3
+            base_constraints.n_bootstrap_samples = 2
+            base_constraints.use_bayesian_optimization = False
+            base_constraints.enable_enhanced_caching = True
+            base_constraints.min_stability_score = 0.5
+            base_constraints.regularization_strength = 0.15
+            
+        else:  # full mode
+            # Full optimization with all features
+            base_constraints.max_lookback = min(base_constraints.max_lookback, 100)
+            base_constraints.search_step = 1
+            base_constraints.cv_folds = 5
+            base_constraints.n_bootstrap_samples = 10
+            base_constraints.use_bayesian_optimization = True
+            base_constraints.enable_enhanced_caching = True
+            base_constraints.min_stability_score = 0.7
+            base_constraints.regularization_strength = 0.1
         
         base_constraints.execution_mode = execution_mode
+        
+        tprint_info(f"🚀 Mode-aware optimization enabled for {execution_mode.upper()} mode:")
+        tprint_info(f"   📊 Max lookback: {base_constraints.max_lookback}")
+        tprint_info(f"   📊 Search step: {base_constraints.search_step}")
+        tprint_info(f"   📊 CV folds: {base_constraints.cv_folds}")
+        tprint_info(f"   📊 Bootstrap samples: {base_constraints.n_bootstrap_samples}")
+        tprint_info(f"   📊 Bayesian optimization: {base_constraints.use_bayesian_optimization}")
+        tprint_info(f"   📊 Min stability score: {base_constraints.min_stability_score}")
+        tprint_info(f"   📊 Regularization strength: {base_constraints.regularization_strength}")
+        
         return base_constraints
 
     def __init__(self, logger=None, rng: Optional['np.random.Generator'] = None):
@@ -1268,9 +1281,20 @@ class CoreOptimizer:
 
             # Calculate convergence metrics
             convergence_achieved = self._check_convergence(all_scores)
-            tprint_debug(
-                f"📈 Grid search convergence {'achieved' if convergence_achieved else 'not achieved'} with {trials} trials"
-            )
+            if not convergence_achieved:
+                tprint_warning(f"⚠️ Feature '{feature_name}' did not converge:")
+                tprint_warning(f"   - Scores: {all_scores[-3:] if len(all_scores) >= 3 else all_scores}")
+                if len(all_scores) >= 3:
+                    recent_scores = all_scores[-3:]
+                    score_std = np.std(recent_scores)
+                    score_mean = np.mean(recent_scores)
+                    cv = score_std / (score_mean + 1e-8)
+                    max_change = max(recent_scores) - min(recent_scores)
+                    tprint_warning(f"   - CV: {cv:.4f} (threshold: 0.1)")
+                    tprint_warning(f"   - Max change: {max_change:.6f} (threshold: 0.001)")
+                    tprint_warning(f"   - No improvement: {len(set(recent_scores)) == 1}")
+            else:
+                tprint_debug(f"📈 Grid search convergence achieved with {trials} trials")
 
             return OptimizationResult(
                 best_lookback_period=best_lookback,
@@ -1477,9 +1501,19 @@ class CoreOptimizer:
                     continue
 
             convergence_achieved = self._check_convergence(all_scores)
-            tprint_debug(
-                f"📈 Random search convergence {'achieved' if convergence_achieved else 'not achieved'} after {trials} trials"
-            )
+            if not convergence_achieved:
+                tprint_warning(f"⚠️ Feature '{feature_name}' did not converge (random search):")
+                tprint_warning(f"   - Scores: {all_scores[-3:] if len(all_scores) >= 3 else all_scores}")
+                if len(all_scores) >= 3:
+                    recent_scores = all_scores[-3:]
+                    score_std = np.std(recent_scores)
+                    score_mean = np.mean(recent_scores)
+                    cv = score_std / (score_mean + 1e-8)
+                    max_change = max(recent_scores) - min(recent_scores)
+                    tprint_warning(f"   - CV: {cv:.4f} (threshold: 0.1)")
+                    tprint_warning(f"   - Max change: {max_change:.6f} (threshold: 0.001)")
+            else:
+                tprint_debug(f"📈 Random search convergence achieved after {trials} trials")
 
             return OptimizationResult(
                 best_lookback_period=best_lookback,
@@ -3629,22 +3663,41 @@ class CoreOptimizer:
             return 0.0
 
     def _check_convergence(self, scores: List[float]) -> bool:
-        """Check if optimization has converged."""
+        """Enhanced convergence check with multiple criteria."""
         tprint_debug("🧠 Entering _check_convergence")
         try:
-            if len(scores) < 5:
+            if len(scores) < 3:  # Reduced minimum for faster convergence
                 return False
             
-            # Check if the last few scores are stable
-            recent_scores = scores[-5:]
+            # Use last 3 scores instead of 5 for faster convergence
+            recent_scores = scores[-3:]
+            
+            # Criterion 1: Coefficient of variation (relaxed to 10%)
             score_std = np.std(recent_scores)
             score_mean = np.mean(recent_scores)
-            
-            # Converged if coefficient of variation is small
             cv = score_std / (score_mean + 1e-8)
-            return cv < 0.05  # 5% coefficient of variation threshold
+            cv_converged = cv < 0.1  # Relaxed to 10%
             
-        except Exception:
+            # Criterion 2: No improvement for 3 consecutive trials
+            no_improvement = len(set(recent_scores)) == 1
+            
+            # Criterion 3: Score plateau (very small changes)
+            max_change = max(recent_scores) - min(recent_scores)
+            plateau = max_change < 0.001
+            
+            # Criterion 4: All scores are very similar (within 0.1% of mean)
+            relative_variation = score_std / (abs(score_mean) + 1e-8)
+            similar_scores = relative_variation < 0.001
+            
+            converged = cv_converged or no_improvement or plateau or similar_scores
+            
+            if converged:
+                tprint_debug(f"🎯 Convergence achieved: cv={cv:.4f}, no_imp={no_improvement}, plateau={plateau}, similar={similar_scores}")
+            
+            return converged
+            
+        except Exception as e:
+            tprint_debug(f"⚠️ Convergence check failed: {e}")
             return False
 
     def _update_performance_metrics(self, result: OptimizationResult, optimization_time: float) -> None:

@@ -49,7 +49,7 @@ The `DataDrivenPeriodSelector` has been successfully refactored to address the c
 
 ### 2. **Refactored Main Class**
 
-#### `DataDrivenPeriodSelector` (`data_driven_periods_refactored.py`)
+#### `DataDrivenPeriodSelector` (`data_driven_periods.py`)
 - **Purpose**: Main API class with backward compatibility
 - **Key Features**:
   - Delegates to internal `PeriodSelector` instance
@@ -58,15 +58,15 @@ The `DataDrivenPeriodSelector` has been successfully refactored to address the c
   - Simplified implementation using focused classes
   - Enhanced error handling and validation
 
-### 3. **Updated Original Module**
+### 3. **Integrated Implementation**
 
 #### `data_driven_periods.py`
-- **Purpose**: Backward compatibility wrapper
+- **Purpose**: Main implementation with integrated refactored architecture
 - **Key Features**:
-  - Imports from refactored implementation
-  - Re-exports all public APIs
+  - Contains the full refactored implementation
   - Maintains 100% backward compatibility
-  - Clean, minimal interface
+  - Clean, integrated interface
+  - All focused classes imported and used internally
 
 ## Code Duplication Elimination
 
@@ -114,13 +114,12 @@ The `DataDrivenPeriodSelector` has been successfully refactored to address the c
 
 ```
 src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation/
-├── data_driven_periods.py                    # Backward compatibility wrapper
-├── data_driven_periods_refactored.py         # Main refactored implementation
+├── data_driven_periods.py                    # Main implementation with refactored architecture
 ├── period_analysis_utils.py                  # Common utilities
 ├── period_analyzer.py                        # Data analysis component
 ├── period_validator.py                       # Validation and ranking component
 ├── period_selector.py                        # Selection coordination component
-└── test_refactored_period_selector.py        # Test suite
+└── test_period_selector.py                   # Test suite
 ```
 
 ## Backward Compatibility

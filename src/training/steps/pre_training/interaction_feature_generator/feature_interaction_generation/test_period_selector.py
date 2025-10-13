@@ -1,8 +1,8 @@
 """
-Test script for the refactored DataDrivenPeriodSelector implementation.
+Test script for the DataDrivenPeriodSelector implementation.
 
-This script tests the new focused architecture and verifies that the refactoring
-maintains backward compatibility while improving code organization.
+This script tests the focused architecture and verifies that the implementation
+maintains backward compatibility while providing improved code organization.
 """
 
 import pandas as pd
@@ -227,7 +227,7 @@ def test_backward_compatibility():
 
 def main():
     """Run all tests."""
-    print("🚀 Starting refactored DataDrivenPeriodSelector tests...\n")
+    print("🚀 Starting DataDrivenPeriodSelector tests...\n")
     
     tests = [
         ("Basic Functionality", test_basic_functionality),

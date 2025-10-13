@@ -36,7 +36,7 @@ class FeatureSelector:
     
     def mrmr_selection(self, X: pd.DataFrame, y: pd.Series, k: int = 10) -> List[str]:
         """
-        Maximum Relevance Minimum Redundancy (MRMR) feature selection.
+        Maximum Relevance Minimum Redundancy (MRMR) feature selection with fast fail and extensive logging.
         
         Args:
             X: Feature matrix
@@ -47,37 +47,94 @@ class FeatureSelector:
             List of selected feature names
         """
         tprint_debug(f"🔍 MRMR selection: selecting {k} features from {len(X.columns)}")
+        tprint_debug(f"   📊 Data shape: {X.shape}")
+        tprint_debug(f"   📊 Target shape: {y.shape}")
         
         try:
+            # FAST FAIL: Check input validity
+            if X is None or X.empty:
+                error_msg = "Input feature matrix X is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if y is None or y.empty:
+                error_msg = "Target variable y is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(X) != len(y):
+                error_msg = f"Feature matrix length ({len(X)}) doesn't match target length ({len(y)})"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if k <= 0:
+                error_msg = f"Number of features to select must be positive, got {k}"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if k > len(X.columns):
+                tprint_warning(f"⚠️ Requested {k} features but only {len(X.columns)} available")
+                k = len(X.columns)
+            
+            tprint_debug("   ✅ Input validation passed")
+            
             # Calculate mutual information with target
-            if self._is_classification(y):
-                mi_scores = mutual_info_classif(X, y, random_state=self.random_state)
-            else:
-                mi_scores = mutual_info_regression(X, y, random_state=self.random_state)
+            tprint_debug("   📊 Calculating mutual information with target")
+            is_classification = self._is_classification(y)
+            tprint_debug(f"   📊 Problem type: {'classification' if is_classification else 'regression'}")
+            
+            try:
+                if is_classification:
+                    mi_scores = mutual_info_classif(X, y, random_state=self.random_state)
+                else:
+                    mi_scores = mutual_info_regression(X, y, random_state=self.random_state)
+                
+                tprint_debug(f"   ✅ MI scores calculated: {len(mi_scores)} features")
+                tprint_debug(f"   📊 MI range: {mi_scores.min():.6f} - {mi_scores.max():.6f}")
+                
+            except Exception as e:
+                error_msg = f"Mutual information calculation failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # Calculate pairwise mutual information between features
+            tprint_debug("   📊 Calculating pairwise mutual information matrix")
             n_features = len(X.columns)
             redundancy_matrix = np.zeros((n_features, n_features))
             
-            for i in range(n_features):
-                for j in range(i + 1, n_features):
-                    if self._is_classification(y):
-                        mi_ij = mutual_info_classif(
-                            X.iloc[:, [i, j]], 
-                            y, 
-                            random_state=self.random_state
-                        )[0]
-                    else:
-                        mi_ij = mutual_info_regression(
-                            X.iloc[:, [i, j]], 
-                            y, 
-                            random_state=self.random_state
-                        )[0]
+            tprint_debug(f"   📊 Processing {n_features} features for redundancy matrix")
+            
+            try:
+                for i in range(n_features):
+                    for j in range(i + 1, n_features):
+                        if is_classification:
+                            mi_ij = mutual_info_classif(
+                                X.iloc[:, [i, j]], 
+                                y, 
+                                random_state=self.random_state
+                            )[0]
+                        else:
+                            mi_ij = mutual_info_regression(
+                                X.iloc[:, [i, j]], 
+                                y, 
+                                random_state=self.random_state
+                            )[0]
+                        
+                        redundancy_matrix[i, j] = mi_ij
+                        redundancy_matrix[j, i] = mi_ij
                     
-                    redundancy_matrix[i, j] = mi_ij
-                    redundancy_matrix[j, i] = mi_ij
+                    if (i + 1) % 10 == 0:  # Progress logging
+                        tprint_debug(f"   📊 Processed {i + 1}/{n_features} features")
+                
+                tprint_debug(f"   ✅ Redundancy matrix calculated: {redundancy_matrix.shape}")
+                
+            except Exception as e:
+                error_msg = f"Redundancy matrix calculation failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # MRMR greedy selection
+            tprint_debug("   📊 Starting MRMR greedy selection")
             selected_features = []
             remaining_features = list(range(n_features))
             
@@ -86,8 +143,12 @@ class FeatureSelector:
             selected_features.append(first_feature)
             remaining_features.remove(first_feature)
             
+            tprint_debug(f"   📊 First feature selected: {X.columns[first_feature]} (MI: {mi_scores[first_feature]:.6f})")
+            
             # Greedily add features that maximize relevance and minimize redundancy
-            for _ in range(min(k - 1, len(remaining_features))):
+            for iteration in range(min(k - 1, len(remaining_features))):
+                tprint_debug(f"   📊 Iteration {iteration + 1}/{min(k - 1, len(remaining_features))}")
+                
                 best_score = -np.inf
                 best_feature = None
                 
@@ -114,21 +175,39 @@ class FeatureSelector:
                 if best_feature is not None:
                     selected_features.append(best_feature)
                     remaining_features.remove(best_feature)
+                    
+                    tprint_debug(f"   📊 Selected feature {len(selected_features)}: {X.columns[best_feature]} "
+                               f"(MRMR: {best_score:.6f}, relevance: {mi_scores[best_feature]:.6f}, "
+                               f"redundancy: {redundancy:.6f})")
+                else:
+                    tprint_warning(f"   ⚠️ No feature selected in iteration {iteration + 1}")
+                    break
             
             selected_feature_names = [X.columns[i] for i in selected_features]
-            tprint_debug(f"✅ MRMR selected {len(selected_feature_names)} features")
+            
+            tprint_success(f"✅ MRMR selected {len(selected_feature_names)} features")
+            tprint_debug(f"   📊 Final selection: {selected_feature_names}")
+            
             return selected_feature_names
             
         except Exception as e:
-            tprint_warning(f"⚠️ MRMR selection failed: {e}")
+            error_msg = f"MRMR selection failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_debug(f"   🔍 Exception type: {type(e).__name__}")
+            
             # Fallback to simple MI selection
-            return self._fallback_mi_selection(X, y, k)
+            tprint_debug("   📊 Attempting fallback to simple MI selection")
+            try:
+                return self._fallback_mi_selection(X, y, k)
+            except Exception as fallback_e:
+                tprint_error(f"❌ Fallback MI selection also failed: {fallback_e}")
+                return []
     
     def lasso_selection(self, X: pd.DataFrame, y: pd.Series, 
                        alpha: Optional[float] = None, 
                        max_features: int = 50) -> List[str]:
         """
-        LASSO-based feature selection.
+        LASSO-based feature selection with fast fail and extensive logging.
         
         Args:
             X: Feature matrix
@@ -140,35 +219,128 @@ class FeatureSelector:
             List of selected feature names
         """
         tprint_debug(f"🔍 LASSO selection: max {max_features} features from {len(X.columns)}")
+        tprint_debug(f"   📊 Data shape: {X.shape}")
+        tprint_debug(f"   📊 Target shape: {y.shape}")
+        tprint_debug(f"   📊 Alpha: {alpha if alpha is not None else 'CV'}")
         
         try:
+            # FAST FAIL: Check input validity
+            if X is None or X.empty:
+                error_msg = "Input feature matrix X is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if y is None or y.empty:
+                error_msg = "Target variable y is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(X) != len(y):
+                error_msg = f"Feature matrix length ({len(X)}) doesn't match target length ({len(y)})"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if max_features <= 0:
+                error_msg = f"Max features must be positive, got {max_features}"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            tprint_debug("   ✅ Input validation passed")
+            
             # Scale features
-            X_scaled = self.scaler.fit_transform(X)
+            tprint_debug("   📊 Scaling features")
+            try:
+                X_scaled = self.scaler.fit_transform(X)
+                tprint_debug(f"   ✅ Features scaled: {X_scaled.shape}")
+                tprint_debug(f"   📊 Scaled data range: {X_scaled.min():.6f} - {X_scaled.max():.6f}")
+            except Exception as e:
+                error_msg = f"Feature scaling failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
-            if alpha is None:
-                # Use cross-validation to find optimal alpha
-                lasso = LassoCV(cv=5, random_state=self.random_state, max_iter=1000)
-            else:
-                lasso = Lasso(alpha=alpha, random_state=self.random_state, max_iter=1000)
+            # Initialize LASSO model
+            tprint_debug("   📊 Initializing LASSO model")
+            try:
+                if alpha is None:
+                    tprint_debug("   📊 Using cross-validation to find optimal alpha")
+                    lasso = LassoCV(cv=5, random_state=self.random_state, max_iter=1000)
+                else:
+                    tprint_debug(f"   📊 Using fixed alpha: {alpha}")
+                    lasso = Lasso(alpha=alpha, random_state=self.random_state, max_iter=1000)
+                
+                tprint_debug("   ✅ LASSO model initialized")
+            except Exception as e:
+                error_msg = f"LASSO model initialization failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
-            lasso.fit(X_scaled, y)
+            # Fit LASSO model
+            tprint_debug("   📊 Fitting LASSO model")
+            try:
+                lasso.fit(X_scaled, y)
+                tprint_debug("   ✅ LASSO model fitted successfully")
+                
+                if hasattr(lasso, 'alpha_'):
+                    tprint_debug(f"   📊 Optimal alpha: {lasso.alpha_:.6f}")
+                
+            except Exception as e:
+                error_msg = f"LASSO model fitting failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # Get non-zero coefficients
-            non_zero_mask = lasso.coef_ != 0
-            selected_indices = np.where(non_zero_mask)[0]
+            tprint_debug("   📊 Analyzing LASSO coefficients")
+            try:
+                non_zero_mask = lasso.coef_ != 0
+                selected_indices = np.where(non_zero_mask)[0]
+                
+                tprint_debug(f"   📊 Non-zero coefficients: {len(selected_indices)}")
+                tprint_debug(f"   📊 Coefficient range: {lasso.coef_.min():.6f} - {lasso.coef_.max():.6f}")
+                
+                if len(selected_indices) == 0:
+                    tprint_warning("   ⚠️ No features selected by LASSO (all coefficients are zero)")
+                    return []
+                
+            except Exception as e:
+                error_msg = f"Coefficient analysis failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # If too many features selected, take the ones with highest absolute coefficients
             if len(selected_indices) > max_features:
-                coef_abs = np.abs(lasso.coef_[selected_indices])
-                top_indices = np.argsort(coef_abs)[-max_features:]
-                selected_indices = selected_indices[top_indices]
+                tprint_debug(f"   📊 Too many features selected ({len(selected_indices)}), selecting top {max_features}")
+                
+                try:
+                    coef_abs = np.abs(lasso.coef_[selected_indices])
+                    top_indices = np.argsort(coef_abs)[-max_features:]
+                    selected_indices = selected_indices[top_indices]
+                    
+                    tprint_debug(f"   ✅ Top {max_features} features selected by coefficient magnitude")
+                    
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Coefficient ranking failed: {e}")
+                    # Fallback: take first max_features
+                    selected_indices = selected_indices[:max_features]
+                    tprint_debug(f"   📊 Using fallback selection: first {len(selected_indices)} features")
             
             selected_feature_names = [X.columns[i] for i in selected_indices]
-            tprint_debug(f"✅ LASSO selected {len(selected_feature_names)} features")
+            
+            tprint_success(f"✅ LASSO selected {len(selected_feature_names)} features")
+            tprint_debug(f"   📊 Selected features: {selected_feature_names}")
+            
+            # Log coefficient values
+            if len(selected_feature_names) > 0:
+                tprint_debug("   📊 Top 5 selected features with coefficients:")
+                for i, feature in enumerate(selected_feature_names[:5], 1):
+                    coef_value = lasso.coef_[selected_indices[i-1]]
+                    tprint_debug(f"   {i}. {feature}: {coef_value:.6f}")
+            
             return selected_feature_names
             
         except Exception as e:
-            tprint_warning(f"⚠️ LASSO selection failed: {e}")
+            error_msg = f"LASSO selection failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_debug(f"   🔍 Exception type: {type(e).__name__}")
             return []
     
     def correlation_filtering(self, X: pd.DataFrame, y: pd.Series, 

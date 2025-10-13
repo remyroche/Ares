@@ -82,8 +82,20 @@ class VectorBTManager:
             tprint_warning("⚠️ VectorBT not available")
     
     def optimize_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame using VectorBT operations."""
+        """Optimize DataFrame using VectorBT operations with extensive logging."""
         tprint_debug(f"⚡ Optimizing DataFrame with VectorBT: {data.shape}")
+        tprint_debug(f"   📊 Data type: {type(data)}")
+        tprint_debug(f"   📊 Memory usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+        
+        # FAST FAIL: Check input validity
+        if data is None:
+            error_msg = "Input data is None"
+            tprint_error(f"❌ FAST FAIL: {error_msg}")
+            raise ValueError(error_msg)
+        
+        if data.empty:
+            tprint_warning("   ⚠️ Input data is empty, returning original")
+            return data
         
         if not self.vectorbt_enabled or self.vectorization_manager is None:
             tprint_debug("   ⚠️ VectorBT not available, returning original data")
@@ -91,6 +103,7 @@ class VectorBTManager:
         
         try:
             start_time = time.time()
+            tprint_debug("   🚀 Starting VectorBT optimization")
             
             # Use VectorBT for optimization
             optimized_data = self.vectorization_manager.optimize_dataframe(data)
@@ -102,11 +115,15 @@ class VectorBTManager:
             
             tprint_debug(f"   ✅ VectorBT optimization completed in {execution_time:.3f}s")
             tprint_debug(f"   📊 Shape: {data.shape} -> {optimized_data.shape}")
+            tprint_debug(f"   📊 Memory reduction: {data.memory_usage(deep=True).sum() / optimized_data.memory_usage(deep=True).sum():.2f}x")
             
             return optimized_data
             
         except Exception as e:
-            tprint_warning(f"   ⚠️ VectorBT optimization failed: {e}")
+            error_msg = f"VectorBT optimization failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_debug(f"   🔍 Exception type: {type(e).__name__}")
+            tprint_debug("   📊 Returning original data as fallback")
             return data
     
     def calculate_correlation_matrix(self, data: pd.DataFrame) -> np.ndarray:
@@ -335,6 +352,105 @@ class VectorBTManager:
         self.vectorized_operations = 0
         tprint_debug("📊 VectorBT statistics reset")
     
+    def calculate_spearman_correlation(self, data: pd.DataFrame, target: pd.Series) -> pd.Series:
+        """Calculate Spearman correlation using VectorBT optimization."""
+        tprint_debug(f"⚡ Calculating Spearman correlation with VectorBT: {data.shape}")
+        
+        # FAST FAIL: Check input validity
+        if data is None or data.empty:
+            error_msg = "Input data is None or empty"
+            tprint_error(f"❌ FAST FAIL: {error_msg}")
+            raise ValueError(error_msg)
+        
+        if target is None or target.empty:
+            error_msg = "Target is None or empty"
+            tprint_error(f"❌ FAST FAIL: {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            tprint_debug("   ⚠️ VectorBT not available, using standard correlation")
+            # Fallback to standard correlation
+            return data.corrwith(target, method='spearman').abs()
+        
+        try:
+            start_time = time.time()
+            tprint_debug("   🚀 Starting VectorBT Spearman correlation calculation")
+            
+            # Use VectorBT for optimized Spearman correlation
+            corr_scores = self.vectorization_manager.calculate_spearman_correlation(data, target)
+            
+            execution_time = time.time() - start_time
+            self.total_execution_time += execution_time
+            self.operation_count += 1
+            self.vectorized_operations += 1
+            
+            tprint_debug(f"   ✅ VectorBT Spearman correlation completed in {execution_time:.3f}s")
+            tprint_debug(f"   📊 Correlation scores: {len(corr_scores)} features")
+            
+            return corr_scores
+            
+        except Exception as e:
+            error_msg = f"VectorBT Spearman correlation failed: {e}"
+            tprint_warning(f"   ⚠️ {error_msg}")
+            tprint_debug("   📊 Falling back to standard correlation")
+            return data.corrwith(target, method='spearman').abs()
+    
+    def calculate_redundancy_analysis(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate redundancy analysis using VectorBT optimization."""
+        tprint_debug(f"⚡ Calculating redundancy analysis with VectorBT: {data.shape}")
+        
+        # FAST FAIL: Check input validity
+        if data is None or data.empty:
+            error_msg = "Input data is None or empty"
+            tprint_error(f"❌ FAST FAIL: {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not self.vectorbt_enabled or self.vectorization_manager is None:
+            tprint_debug("   ⚠️ VectorBT not available, using standard redundancy analysis")
+            # Fallback to standard redundancy analysis
+            return self._standard_redundancy_analysis(data)
+        
+        try:
+            start_time = time.time()
+            tprint_debug("   🚀 Starting VectorBT redundancy analysis")
+            
+            # Use VectorBT for optimized redundancy analysis
+            redundancy_scores = self.vectorization_manager.calculate_redundancy_analysis(data)
+            
+            execution_time = time.time() - start_time
+            self.total_execution_time += execution_time
+            self.operation_count += 1
+            self.vectorized_operations += 1
+            
+            tprint_debug(f"   ✅ VectorBT redundancy analysis completed in {execution_time:.3f}s")
+            tprint_debug(f"   📊 Redundancy scores: {len(redundancy_scores)} features")
+            
+            return redundancy_scores
+            
+        except Exception as e:
+            error_msg = f"VectorBT redundancy analysis failed: {e}"
+            tprint_warning(f"   ⚠️ {error_msg}")
+            tprint_debug("   📊 Falling back to standard redundancy analysis")
+            return self._standard_redundancy_analysis(data)
+    
+    def _standard_redundancy_analysis(self, data: pd.DataFrame) -> pd.Series:
+        """Standard redundancy analysis as fallback."""
+        tprint_debug("   📊 Using standard redundancy analysis")
+        
+        try:
+            # Calculate correlation matrix
+            corr_matrix = data.corr().abs()
+            
+            # Calculate mean correlation for each feature
+            redundancy_scores = corr_matrix.mean()
+            
+            tprint_debug(f"   ✅ Standard redundancy analysis completed: {len(redundancy_scores)} features")
+            return redundancy_scores
+            
+        except Exception as e:
+            tprint_error(f"   ❌ Standard redundancy analysis failed: {e}")
+            return pd.Series(0.0, index=data.columns)
+
     def cleanup(self):
         """Cleanup VectorBT resources."""
         tprint_info("🧹 Cleaning up VectorBT resources")

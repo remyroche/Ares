@@ -51,12 +51,18 @@ try:
         FeatureGenerator,
         FeatureCategory,
         FeatureRegistry,
+        VectorizedFeatureGenerator,
         get_feature_generator,
         get_feature_bank,
         register_feature_generator,
         list_available_features,
         list_available_categories
     )
+    # New utility mixins
+    from .core.optimization_mixin import OptimizationMixin
+    from .core.rolling_operations_mixin import RollingOperationsMixin
+    from .core.generator_factory import GeneratorFactory, get_generator_factory, create_generator
+    from .core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
     CORE_AVAILABLE = True
 except ImportError as e:
     CORE_AVAILABLE = False
@@ -262,11 +268,20 @@ if CORE_AVAILABLE:
         "FeatureGenerator", 
         "FeatureCategory",
         "FeatureRegistry",
+        "VectorizedFeatureGenerator",
         "get_feature_generator",
         "get_feature_bank",
         "register_feature_generator",
         "list_available_features",
-        "list_available_categories"
+        "list_available_categories",
+        # New utility mixins
+        "OptimizationMixin",
+        "RollingOperationsMixin",
+        "VectorBTOptimizationMixin",
+        # Factory pattern
+        "GeneratorFactory",
+        "get_generator_factory",
+        "create_generator"
     ])
 
 # Base calculations

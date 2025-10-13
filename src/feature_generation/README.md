@@ -11,6 +11,10 @@ This is the **general-purpose feature generation system** for exploration, backt
 - ✅ **Category-Based Organization** - Momentum, volatility, volume, oscillators, and more
 - ✅ **Performance Optimized** - Matrix operations, GPU acceleration, caching support
 - ✅ **Extensible** - Easy to add new feature generators by inheriting from base classes
+- ✅ **Consolidated Architecture** - Eliminated 100+ duplicate methods, single source of truth
+- ✅ **Utility Mixins** - OptimizationMixin, RollingOperationsMixin for enhanced functionality
+- ✅ **Factory Pattern** - Programmatic generator creation with GeneratorFactory
+- ✅ **VectorBT Integration** - Native VectorBT optimization for maximum performance
 
 ## When to Use
 
@@ -24,17 +28,44 @@ Use `feature_generation/` for:
 
 **DO NOT use for:** End-to-end roadmap training (use `feature_engineering_roadmap/` instead)
 
+## New Features (v2.0)
+
+### 🚀 Consolidated Architecture
+- **Eliminated 100+ duplicate methods** - All common methods now in base class
+- **Single source of truth** - `VectorizedFeatureGenerator` provides common functionality
+- **Backward compatible** - Existing code continues to work without changes
+
+### 🛠️ Utility Mixins
+- **OptimizationMixin** - Memory optimization, data compression, chunked processing
+- **RollingOperationsMixin** - Enhanced rolling operations with VectorBT optimization
+- **VectorBTOptimizationMixin** - VectorBT-specific optimizations and GPU acceleration
+
+### 🏭 Factory Pattern
+- **GeneratorFactory** - Programmatic generator creation
+- **Batch operations** - Create multiple generators efficiently
+- **Template system** - Create generators from templates
+
+### 📚 Enhanced Documentation
+- **Migration Guide** - Step-by-step migration instructions
+- **Code Examples** - Comprehensive usage examples
+- **Performance Monitoring** - Built-in performance tracking
+
 ## Quick Start
 
-### Basic Usage
+### Basic Usage (New Approach)
 
 ```python
-from src.feature_generation.categories.momentum import RSIGenerator
-from src.feature_generation.categories.volatility import ATRGenerator
-from src.feature_generation.core.feature_registry import FeatureRegistry
+from src.feature_generation import (
+    VectorizedFeatureGenerator,
+    OptimizationMixin,
+    RollingOperationsMixin,
+    GeneratorFactory,
+    FeatureConfig,
+    FeatureCategory
+)
 import pandas as pd
 
-# Load your data
+# Create sample data
 data = pd.DataFrame({
     'open': [...],
     'high': [...],
@@ -43,9 +74,20 @@ data = pd.DataFrame({
     'volume': [...]
 })
 
-# Create generators
-rsi_gen = RSIGenerator(period=14)
-atr_gen = ATRGenerator(period=20)
+# Method 1: Using base class with mixins
+class MyFeatureGenerator(VectorizedFeatureGenerator, OptimizationMixin, RollingOperationsMixin):
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Use inherited methods
+        optimized_data = self.optimize_dataframe_processing(data)
+        return self.rolling_mean(optimized_data['close'], window=20)
+
+# Method 2: Using factory pattern
+factory = GeneratorFactory()
+generator = factory.create_vectorized_generator(
+    name="sma_20",
+    category=FeatureCategory.CUSTOM,
+    required_columns=["close"]
+)
 
 # Generate features
 rsi_result = rsi_gen.generate(data)

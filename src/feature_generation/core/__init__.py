@@ -7,7 +7,7 @@ and management.
 """
 
 from .feature_bank import FeatureBank
-from .feature_generator import FeatureGenerator, FeatureCategory
+from .feature_generator import FeatureGenerator, FeatureCategory, VectorizedFeatureGenerator
 from .feature_registry import FeatureRegistry
 from .factory import (
     get_feature_generator,
@@ -16,6 +16,12 @@ from .factory import (
     list_available_features,
     list_available_categories
 )
+# New utility mixins
+from .optimization_mixin import OptimizationMixin
+from .rolling_operations_mixin import RollingOperationsMixin
+from .vectorbt_optimization_mixin import VectorBTOptimizationMixin
+# Factory pattern
+from .generator_factory import GeneratorFactory, get_generator_factory, create_generator
 
 def _initialize_default_bank():
     """Initialize the default feature bank with standard generators."""
@@ -34,10 +40,19 @@ __all__ = [
     "FeatureGenerator", 
     "FeatureCategory",
     "FeatureRegistry",
+    "VectorizedFeatureGenerator",
     "get_feature_generator",
     "get_feature_bank",
     "register_feature_generator",
     "list_available_features",
     "list_available_categories",
+    # New utility mixins
+    "OptimizationMixin",
+    "RollingOperationsMixin",
+    "VectorBTOptimizationMixin",
+    # Factory pattern
+    "GeneratorFactory",
+    "get_generator_factory",
+    "create_generator",
     "_initialize_default_bank"
 ]

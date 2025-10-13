@@ -160,10 +160,22 @@ class NewPipelineConfig:
     # Pipeline stages
     enable_new_pipeline: bool = True
     
-    # Stage 1: mRMR + Spearman combination
-    stage1_mrmr_weight: float = 0.7
-    stage1_spearman_weight: float = 0.3
+    # Stage 1: Enhanced Multi-Method Scoring (mRMR + Distance Correlation + HSIC)
+    stage1_mrmr_weight: float = 0.5
+    stage1_distance_correlation_weight: float = 0.3
+    stage1_hsic_weight: float = 0.2
+    stage1_spearman_weight: float = 0.0  # Deprecated, replaced by distance correlation
     stage1_target_ratio: float = 0.5  # Select top 50% above target
+    
+    # HSIC configuration
+    hsic_kernel: str = 'rbf'  # 'rbf', 'linear', 'poly'
+    hsic_gamma: Optional[float] = None  # Auto if None
+    hsic_sample_size: int = 1000  # Subsample for large datasets
+    hsic_enable_subsampling: bool = True
+    
+    # Distance correlation configuration
+    distance_correlation_sample_size: int = 1000  # Subsample for large datasets
+    distance_correlation_enable_subsampling: bool = True
     
     # Stage 2: Progressive refinement
     stage2_enable_progressive_refinement: bool = True

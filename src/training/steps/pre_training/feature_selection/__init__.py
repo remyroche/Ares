@@ -12,7 +12,6 @@ Key Components:
 """
 
 from .core import (
-    MultiStageFeatureSelector,
     FeatureSelector,
     FeatureSelectionOptimizer,
     FeatureSelectionConfig,
@@ -79,13 +78,12 @@ def run_final_feature_selection(
 
 __all__ = [
     # Core modules
-    'MultiStageFeatureSelector',
     'FeatureSelector', 
     'FeatureSelectionOptimizer',
     'FeatureSelectionConfig',
     'FeatureSelectionResult',
     
-    # New pipeline
+    # Multi-stage pipeline
     'MultiStageFeatureSelectionPipeline',
     'run_multi_stage_feature_selection',
     

@@ -20,7 +20,7 @@ def test_file_structure():
         "__init__.py",
         "core/__init__.py",
         "core/config.py",
-        "core/pipeline.py", 
+        "core/multi_stage_pipeline.py", 
         "core/selector.py",
         "core/optimizer.py",
         "hardware/__init__.py",

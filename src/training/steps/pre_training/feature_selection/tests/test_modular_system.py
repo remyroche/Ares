@@ -50,11 +50,14 @@ def test_core_modules():
     
     try:
         from src.training.steps.pre_training.feature_selection.core import (
-            MultiStageFeatureSelector,
             FeatureSelector,
             FeatureSelectionOptimizer,
             FeatureSelectionConfig,
             FeatureSelectionResult
+        )
+        
+        from src.training.steps.pre_training.feature_selection import (
+            MultiStageFeatureSelectionPipeline
         )
         
         # Test configuration
@@ -81,10 +84,10 @@ def test_core_modules():
         tprint_success("   ✅ FeatureSelectionOptimizer working")
         
         # Test pipeline
-        pipeline = MultiStageFeatureSelector(config)
+        pipeline = MultiStageFeatureSelectionPipeline(config)
         result = pipeline.select_features(X, y)
         assert isinstance(result, FeatureSelectionResult), "Should return FeatureSelectionResult"
-        tprint_success("   ✅ MultiStageFeatureSelector working")
+        tprint_success("   ✅ MultiStageFeatureSelectionPipeline working")
         
         return True
         

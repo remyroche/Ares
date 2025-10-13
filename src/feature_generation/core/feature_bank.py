@@ -42,8 +42,8 @@ class FeatureBankConfig:
     state_cache_namespace: str = "feature_bank"
     state_cache_ttl_seconds: Optional[int] = None
     
-    # Auto-optimization settings
-    enable_auto_optimization: bool = True
+    # Auto-optimization settings (disabled by default for backward compatibility)
+    enable_auto_optimization: bool = False
     default_optimization_level: str = "balanced"  # "conservative", "balanced", "aggressive"
     auto_optimization_config: Optional[AutoOptimizationConfig] = None
 
@@ -75,10 +75,14 @@ class FeatureBank:
         # Initialize generator factory
         self.generator_factory = GeneratorFactory()
         
-        # Initialize auto-optimization configuration
-        if self.config.auto_optimization_config is None:
-            self.config.auto_optimization_config = AutoOptimizationConfig()
-            self.config.auto_optimization_config.optimization_level = OptimizationLevel(self.config.default_optimization_level)
+        # Initialize auto-optimization configuration (only if enabled)
+        if self.config.enable_auto_optimization:
+            if self.config.auto_optimization_config is None:
+                self.config.auto_optimization_config = AutoOptimizationConfig()
+                self.config.auto_optimization_config.optimization_level = OptimizationLevel(self.config.default_optimization_level)
+            tprint("✅ Auto-optimization enabled for FeatureBank")
+        else:
+            tprint("ℹ️ Auto-optimization disabled for FeatureBank (backward compatibility mode)")
         
         # Initialize matrix operations if enabled
         self.matrix_ops = None
@@ -268,6 +272,7 @@ class FeatureBank:
                 
                 # Convert generators to auto-optimized versions if auto-optimization is enabled
                 if self.config.enable_auto_optimization:
+                    tprint(f"🔄 Converting {len(generators)} generators to auto-optimized versions...")
                     auto_optimized_generators = []
                     for generator in generators:
                         auto_optimized_gen = self._convert_to_auto_optimized(generator)
@@ -275,7 +280,7 @@ class FeatureBank:
                     generators = auto_optimized_generators
                     tprint(f"✅ Created {len(generators)} auto-optimized generators for {category.value}")
                 else:
-                    tprint(f"✅ Created {len(generators)} generators for {category.value}")
+                    tprint(f"✅ Created {len(generators)} standard generators for {category.value} (backward compatibility mode)")
                 
                 return generators
             else:

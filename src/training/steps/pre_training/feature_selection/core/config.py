@@ -21,7 +21,7 @@ class BaseFeatureSelectionConfig:
 
     # Model configuration
     model_type: str = 'regime_detection'
-    target_features: int = 80
+    target_features: int = 60  # Default target set to 60
     min_features: int = 60
     max_features: int = 100
     priority_categories: List[str] = field(default_factory=lambda: ['volatility', 'structural', 'volume_regime', 'statistical'])
@@ -170,13 +170,10 @@ class NewPipelineConfig:
     
     # Stage 2: Progressive refinement
     stage2_enable_progressive_refinement: bool = True
-    stage2_initial_batch_size: int = 10  # Remove features in batches of 10 initially
-    stage2_medium_batch_size: int = 5   # Then in batches of 5
-    stage2_final_batch_size: int = 1    # Finally remove individually
+    stage2_removal_percentage: float = 0.10  # Remove 10% of features above target, rounded down
     
-    # Progressive refinement thresholds
-    stage2_large_batch_threshold: float = 0.3  # Use large batches when >30% above target
-    stage2_medium_batch_threshold: float = 0.15  # Use medium batches when >15% above target
+    # Bootstrap stability and CV threshold
+    stage2_bootstrap_cv_threshold: int = 40  # Use bootstrap stability and CV when 40+ features away from target
     
     # LGBM-SHAP configuration
     lgbm_params: Dict[str, Any] = field(default_factory=lambda: {

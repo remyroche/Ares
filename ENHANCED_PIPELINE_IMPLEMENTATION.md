@@ -31,13 +31,10 @@ class NewPipelineConfig:
     
     # Stage 2: Progressive refinement
     stage2_enable_progressive_refinement: bool = True
-    stage2_initial_batch_size: int = 10  # Remove features in batches of 10 initially
-    stage2_medium_batch_size: int = 5   # Then in batches of 5
-    stage2_final_batch_size: int = 1    # Finally remove individually
+    stage2_removal_percentage: float = 0.10  # Remove 10% of features above target, rounded down
     
-    # Progressive refinement thresholds
-    stage2_large_batch_threshold: float = 0.3  # Use large batches when >30% above target
-    stage2_medium_batch_threshold: float = 0.15  # Use medium batches when >15% above target
+    # Bootstrap stability and CV threshold
+    stage2_bootstrap_cv_threshold: int = 40  # Use bootstrap stability and CV when 40+ features away from target
     
     # LGBM-SHAP configuration
     lgbm_params: Dict[str, Any] = {...}
@@ -93,18 +90,23 @@ Located in: `src/training/steps/pre_training/feature_selection/core/enhanced_pip
 ### **4. Stage 2: Progressive Refinement**
 
 **Process:**
-1. **Dynamic Batch Sizing**: 
-   - Large batches (10 features) when >30% above target
-   - Medium batches (5 features) when >15% above target
-   - Individual removal (1 feature) when close to target
+1. **Percentage-Based Batch Sizing**: 
+   - Removes 10% of features above target (rounded down)
+   - Provides good balance between efficiency and precision
+   - Minimum batch size of 1 feature
 
 2. **Ensemble Feature Scoring**:
    - **LGBM-SHAP**: 40% weight - Tree-based feature importance with SHAP values
    - **LASSO Ensemble**: 30% weight - Regularized linear model with cross-validation
    - **RFE**: 20% weight - Recursive feature elimination
-   - **Bootstrap Stability**: 10% weight - Stability across bootstrap samples
+   - **Bootstrap Stability**: 10% weight - Only used when 40+ features away from target
 
-3. **Progressive Removal**: Remove lowest-scoring features in determined batch sizes
+3. **Bootstrap/CV Threshold**: 
+   - Bootstrap stability and CV only activated when 40+ features away from target
+   - Reduces computational overhead when close to target
+   - Maintains precision for final refinement steps
+
+4. **Progressive Removal**: Remove lowest-scoring features in calculated batch sizes
 
 ### **5. Integration with Existing System**
 
@@ -155,9 +157,8 @@ config.stage1_spearman_weight = 0.2
 config.stage1_target_ratio = 0.6  # Select top 60% above target
 
 # Stage 2 configuration
-config.stage2_initial_batch_size = 15
-config.stage2_medium_batch_size = 8
-config.stage2_final_batch_size = 2
+config.stage2_removal_percentage = 0.15  # Remove 15% of features above target
+config.stage2_bootstrap_cv_threshold = 30  # Use bootstrap/CV when 30+ features away
 
 # Ensemble weights
 config.ensemble_weights = {

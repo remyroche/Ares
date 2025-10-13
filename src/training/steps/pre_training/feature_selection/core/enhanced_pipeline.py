@@ -256,7 +256,8 @@ class EnhancedMultiStageFeatureSelector:
         """
         Stage 2: Progressive refinement using LGBM-SHAP and LASSO ensemble.
         
-        Removes features progressively: batches of 10, then 5, then individually.
+        Removes 10% of features above target (rounded down) for good balance.
+        Uses bootstrap stability and CV only when 40+ features away from target.
         """
         tprint_debug("🔍 Stage 2: Progressive refinement")
         tprint_debug(f"   📊 Input features: {len(current_features)}")
@@ -267,6 +268,8 @@ class EnhancedMultiStageFeatureSelector:
             current_features = current_features.copy()
             
             tprint_debug(f"   📊 Target features: {target_features}")
+            tprint_debug(f"   📊 Removal percentage: {self.config.stage2_removal_percentage:.1%}")
+            tprint_debug(f"   📊 Bootstrap/CV threshold: {self.config.stage2_bootstrap_cv_threshold} features")
             
             # Progressive refinement loop
             refinement_steps = []
@@ -274,16 +277,21 @@ class EnhancedMultiStageFeatureSelector:
             
             while len(current_features) > target_features:
                 step += 1
-                tprint_debug(f"   📊 Refinement step {step}: {len(current_features)} features remaining")
+                features_above_target = len(current_features) - target_features
+                tprint_debug(f"   📊 Refinement step {step}: {len(current_features)} features remaining ({features_above_target} above target)")
                 
-                # Determine batch size based on how far we are from target
-                excess_ratio = (len(current_features) - target_features) / target_features
-                batch_size = self._determine_batch_size(excess_ratio)
+                # Calculate batch size as 10% of features above target, rounded down
+                batch_size = max(1, int(features_above_target * self.config.stage2_removal_percentage))
+                tprint_debug(f"   📊 Calculated batch size: {batch_size} (10% of {features_above_target} above target)")
                 
-                tprint_debug(f"   📊 Using batch size: {batch_size}")
+                # Determine if we should use bootstrap stability and CV
+                use_bootstrap_cv = features_above_target >= self.config.stage2_bootstrap_cv_threshold
+                tprint_debug(f"   📊 Use bootstrap stability and CV: {use_bootstrap_cv} (threshold: {self.config.stage2_bootstrap_cv_threshold})")
                 
                 # Calculate feature importance using ensemble methods
-                feature_scores = self._calculate_ensemble_feature_scores(X[current_features], y)
+                feature_scores = self._calculate_ensemble_feature_scores(
+                    X[current_features], y, use_bootstrap_cv=use_bootstrap_cv
+                )
                 
                 # Select features to remove
                 features_to_remove = self._select_features_to_remove(
@@ -300,6 +308,8 @@ class EnhancedMultiStageFeatureSelector:
                     'features_remaining': len(current_features),
                     'features_removed': len(features_to_remove),
                     'batch_size': batch_size,
+                    'features_above_target': features_above_target,
+                    'use_bootstrap_cv': use_bootstrap_cv,
                     'features_removed_list': features_to_remove
                 })
                 
@@ -314,7 +324,7 @@ class EnhancedMultiStageFeatureSelector:
                 'selected_features': current_features,
                 'refinement_steps': refinement_steps,
                 'target_count': target_features,
-                'method': 'progressive_refinement'
+                'method': 'progressive_refinement_percentage_based'
             }
             
         except Exception as e:
@@ -361,7 +371,8 @@ class EnhancedMultiStageFeatureSelector:
             tprint_warning(f"   ⚠️ Spearman calculation failed: {e}")
             return pd.Series(0.0, index=X.columns)
     
-    def _calculate_ensemble_feature_scores(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+    def _calculate_ensemble_feature_scores(self, X: pd.DataFrame, y: pd.Series, 
+                                         use_bootstrap_cv: bool = False) -> Dict[str, float]:
         """Calculate ensemble feature scores using multiple methods."""
         try:
             ensemble_scores = {}
@@ -379,9 +390,13 @@ class EnhancedMultiStageFeatureSelector:
             rfe_scores = self._calculate_rfe_scores(X, y)
             ensemble_scores.update(rfe_scores)
             
-            # Bootstrap stability scores
-            stability_scores = self._calculate_bootstrap_stability_scores(X, y)
-            ensemble_scores.update(stability_scores)
+            # Bootstrap stability scores (only when threshold is met)
+            if use_bootstrap_cv:
+                tprint_debug("   📊 Using bootstrap stability and CV (40+ features away from target)")
+                stability_scores = self._calculate_bootstrap_stability_scores(X, y)
+                ensemble_scores.update(stability_scores)
+            else:
+                tprint_debug("   📊 Skipping bootstrap stability (within 40 features of target)")
             
             # Combine scores with ensemble weights
             final_scores = self._combine_ensemble_scores(ensemble_scores)
@@ -550,14 +565,6 @@ class EnhancedMultiStageFeatureSelector:
             tprint_warning(f"   ⚠️ Score combination failed: {e}")
             return {}
     
-    def _determine_batch_size(self, excess_ratio: float) -> int:
-        """Determine batch size based on excess ratio."""
-        if excess_ratio > self.config.stage2_large_batch_threshold:
-            return self.config.stage2_initial_batch_size
-        elif excess_ratio > self.config.stage2_medium_batch_threshold:
-            return self.config.stage2_medium_batch_size
-        else:
-            return self.config.stage2_final_batch_size
     
     def _select_features_to_remove(self, features: List[str], scores: Dict[str, float], 
                                  batch_size: int) -> List[str]:

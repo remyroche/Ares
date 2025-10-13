@@ -2999,7 +2999,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     def _evaluate_parameters_vectorbt_optimized(self, objective_function: callable, 
                                               parameters: Dict[str, Any]) -> float:
         """
-        Enhanced parameter evaluation using VectorBT optimization.
+        Enhanced parameter evaluation using VectorBT optimization with VectorBTRollingOptimizer.
         
         Args:
             objective_function: Function to evaluate parameters
@@ -3015,30 +3015,47 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             start_time = time.time()
             
+            # Use VectorBTRollingOptimizer for enhanced data preprocessing
+            optimized_data = None
+            if hasattr(self, 'training_data') and self.training_data is not None:
+                optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
+            
+            # Create operation context for VectorBT optimization
+            operation_context = {
+                'data_size': len(self.training_data) if hasattr(self, 'training_data') else 1000,
+                'data_dimensions': self.training_data.shape if hasattr(self, 'training_data') else (1000, 10),
+                'parameters': parameters,
+                'optimized_data': optimized_data,
+                'rolling_optimizer': self.rolling_optimizer
+            }
+            
             # Use UnifiedVectorizationManager for intelligent optimization
             operation_config = OperationConfig(
-                operation_type=OperationType.BACKTESTING,
-                data_size=len(self.training_data) if hasattr(self, 'training_data') else 1000,
-                data_dimensions=self.training_data.shape if hasattr(self, 'training_data') else (1000, 10),
+                operation_type=OperationType.VECTORBT_BACKTESTING,
+                data_size=operation_context['data_size'],
+                data_dimensions=operation_context['data_dimensions'],
                 memory_budget_mb=self.config.get('memory_budget_mb', 2048),
                 time_budget_seconds=self.config.get('time_budget_seconds', 60),
                 parallel_workers=self.max_workers
             )
             
-            # Optimize the objective function execution
+            # Optimize the objective function execution with VectorBT
             with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
-                result = self.vectorization_manager.optimize_operation(
-                    objective_function, 
-                    parameters, 
-                    operation_config
-                )
+                # Use VectorBTRollingOptimizer for enhanced processing
+                if hasattr(objective_function, '__vectorbt_optimized__'):
+                    result = objective_function(parameters, operation_context)
+                else:
+                    # Create optimized objective function
+                    optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
+                    result = optimized_obj_func(parameters, operation_context)
             
             # Update VectorBT statistics
             execution_time = time.time() - start_time
             self.vectorbt_stats['vectorization_operations'] += 1
             self.vectorbt_stats['total_vectorbt_time'] += execution_time
+            self.vectorbt_stats['rolling_operations'] += 1
             
-            return result.result if hasattr(result, 'result') else result
+            return result
             
         except Exception as e:
             self.logger.warning(f"VectorBT optimization failed, falling back to standard evaluation: {e}")
@@ -3047,7 +3064,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     def _evaluate_parameters_batch_vectorbt(self, parameter_sets: List[Dict[str, Any]], 
                                           objective_function: callable) -> List[float]:
         """
-        Evaluate multiple parameter sets in batch using VectorBT optimization.
+        Evaluate multiple parameter sets in batch using VectorBT optimization with VectorBTRollingOptimizer.
         
         Args:
             parameter_sets: List of parameter dictionaries to evaluate
@@ -3063,27 +3080,46 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             start_time = time.time()
             
+            # Use VectorBTRollingOptimizer for enhanced batch processing
+            optimized_data = None
+            if hasattr(self, 'training_data') and self.training_data is not None:
+                optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
+            
+            # Create operation context for VectorBT optimization
+            operation_context = {
+                'data_size': len(self.training_data) if hasattr(self, 'training_data') else 1000,
+                'data_dimensions': self.training_data.shape if hasattr(self, 'training_data') else (1000, 10),
+                'optimized_data': optimized_data,
+                'rolling_optimizer': self.rolling_optimizer
+            }
+            
             # Use VectorBT optimization manager for batch processing
             operation_config = OperationConfig(
-                operation_type=OperationType.BACKTESTING,
-                data_size=len(self.training_data) if hasattr(self, 'training_data') else 1000,
-                data_dimensions=self.training_data.shape if hasattr(self, 'training_data') else (1000, 10),
+                operation_type=OperationType.VECTORBT_BACKTESTING,
+                data_size=operation_context['data_size'],
+                data_dimensions=operation_context['data_dimensions'],
                 parallel_workers=self.max_workers
             )
             
             # Process in batches for memory efficiency
-            batch_size = min(10, len(parameter_sets))  # Adjust based on memory
+            batch_size = min(self.config.get('batch_size', 10), len(parameter_sets))
             results = []
             
             for i in range(0, len(parameter_sets), batch_size):
                 batch = parameter_sets[i:i + batch_size]
                 
                 # Use VectorBT optimization for batch processing
-                batch_results = self.optimization_manager.optimize_batch_operation(
-                    objective_function, 
-                    batch, 
-                    operation_config
-                )
+                if hasattr(self.optimization_manager, 'optimize_batch_operation'):
+                    batch_results = self.optimization_manager.optimize_batch_operation(
+                        objective_function, 
+                        batch, 
+                        operation_config
+                    )
+                else:
+                    # Fallback to VectorBTRollingOptimizer batch processing
+                    batch_results = self._process_batch_with_vectorbt_rolling(
+                        batch, objective_function, operation_context
+                    )
                 
                 results.extend(batch_results)
             
@@ -3097,6 +3133,48 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.warning(f"VectorBT batch optimization failed, falling back to sequential evaluation: {e}")
             return [objective_function(params) for params in parameter_sets]
+    
+    def _process_batch_with_vectorbt_rolling(self, parameter_batch: List[Dict[str, Any]],
+                                           objective_function: callable,
+                                           operation_context: Dict[str, Any]) -> List[float]:
+        """
+        Process a batch of parameters using VectorBTRollingOptimizer.
+        
+        Args:
+            parameter_batch: Batch of parameters to process
+            objective_function: Function to evaluate parameters
+            operation_context: Context for optimization
+            
+        Returns:
+            List of evaluation scores
+        """
+        try:
+            rolling_optimizer = operation_context.get('rolling_optimizer')
+            optimized_data = operation_context.get('optimized_data')
+            
+            if rolling_optimizer is None:
+                # Fallback to standard evaluation
+                return [objective_function(params) for params in parameter_batch]
+            
+            # Use VectorBTRollingOptimizer for parallel batch processing
+            if hasattr(rolling_optimizer, 'process_batch_parallel'):
+                return rolling_optimizer.process_batch_parallel(
+                    parameter_batch, objective_function, optimized_data
+                )
+            
+            # Fallback: sequential processing with VectorBT optimizations
+            results = []
+            for params in parameter_batch:
+                # Create optimized objective function
+                optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
+                result = optimized_obj_func(params, operation_context)
+                results.append(result)
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBTRollingOptimizer batch processing failed: {e}")
+            return [objective_function(params) for params in parameter_batch]
     
     def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame, 
                                           window: int = 252) -> Dict[str, pd.Series]:
@@ -3194,6 +3272,183 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.warning(f"VectorBT data optimization failed: {e}")
             return data
+    
+    def _optimize_data_for_vectorbt_enhanced(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Enhanced data optimization using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Optimized DataFrame with VectorBT enhancements
+        """
+        if not self.vectorbt_enabled or self.rolling_optimizer is None:
+            return data
+        
+        try:
+            # Use existing memory optimizer
+            if self.memory_optimizer:
+                data = self.memory_optimizer.optimize_dataframe(data)
+            
+            # Enhanced VectorBT-specific optimizations
+            if self.rolling_optimizer:
+                data = self.rolling_optimizer._optimize_data_types(data)
+                
+                # Precompute common rolling features for faster access
+                if hasattr(self.rolling_optimizer, 'precompute_rolling_features'):
+                    rolling_features = self.rolling_optimizer.precompute_rolling_features(
+                        data, 
+                        windows=[5, 10, 20, 50, 100],
+                        operations=['mean', 'std', 'min', 'max', 'skew', 'kurt']
+                    )
+                    data = data.join(rolling_features)
+                
+                # Memory optimization
+                if hasattr(self.rolling_optimizer, 'optimize_memory_usage'):
+                    data = self.rolling_optimizer.optimize_memory_usage(data)
+            
+            return data
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced VectorBT data optimization failed: {e}")
+            return data
+    
+    def _create_vectorbt_optimized_objective(self, original_function: callable) -> callable:
+        """
+        Create a VectorBT-optimized version of the objective function.
+        
+        Args:
+            original_function: Original objective function
+            
+        Returns:
+            VectorBT-optimized objective function
+        """
+        def optimized_function(parameters: Dict[str, Any], 
+                              operation_context: Optional[Dict[str, Any]] = None) -> float:
+            """
+            VectorBT-optimized objective function.
+            """
+            try:
+                # Extract data and rolling optimizer from context
+                optimized_data = operation_context.get('optimized_data') if operation_context else None
+                rolling_optimizer = operation_context.get('rolling_optimizer') if operation_context else None
+                
+                # Use VectorBT for data preprocessing if data is available
+                if optimized_data is not None and rolling_optimizer is not None:
+                    # Calculate rolling metrics using VectorBTRollingOptimizer
+                    rolling_metrics = self._calculate_rolling_metrics_vectorbt(
+                        optimized_data, rolling_optimizer
+                    )
+                    
+                    # Calculate technical indicators using VectorBTRollingOptimizer
+                    technical_indicators = self._calculate_technical_indicators_vectorbt(
+                        optimized_data, rolling_optimizer
+                    )
+                    
+                    # Add to parameters for the original function
+                    enhanced_parameters = parameters.copy()
+                    enhanced_parameters['rolling_metrics'] = rolling_metrics
+                    enhanced_parameters['technical_indicators'] = technical_indicators
+                    enhanced_parameters['vectorbt_optimized'] = True
+                    
+                    return original_function(enhanced_parameters)
+                else:
+                    return original_function(parameters)
+                    
+            except Exception as e:
+                self.logger.warning(f"VectorBT optimized objective function failed: {e}")
+                return original_function(parameters)
+        
+        # Mark as VectorBT optimized
+        optimized_function.__vectorbt_optimized__ = True
+        
+        return optimized_function
+    
+    def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame, 
+                                          rolling_optimizer) -> Dict[str, Any]:
+        """
+        Calculate rolling metrics using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input data
+            rolling_optimizer: VectorBTRollingOptimizer instance
+            
+        Returns:
+            Dictionary of rolling metrics
+        """
+        try:
+            results = {}
+            windows = [5, 10, 20, 50, 100]
+            
+            if 'close' in data.columns:
+                close_prices = data['close']
+                
+                for window in windows:
+                    window_results = {}
+                    
+                    # Use VectorBT rolling operations
+                    window_results['mean'] = rolling_optimizer.rolling_mean(close_prices, window=window)
+                    window_results['std'] = rolling_optimizer.rolling_std(close_prices, window=window)
+                    window_results['min'] = rolling_optimizer.rolling_min(close_prices, window=window)
+                    window_results['max'] = rolling_optimizer.rolling_max(close_prices, window=window)
+                    window_results['skew'] = rolling_optimizer.rolling_skew(close_prices, window=window)
+                    window_results['kurt'] = rolling_optimizer.rolling_kurt(close_prices, window=window)
+                    
+                    results[f'window_{window}'] = window_results
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling metrics calculation failed: {e}")
+            return {}
+    
+    def _calculate_technical_indicators_vectorbt(self, data: pd.DataFrame, 
+                                               rolling_optimizer) -> Dict[str, Any]:
+        """
+        Calculate technical indicators using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input OHLCV data
+            rolling_optimizer: VectorBTRollingOptimizer instance
+            
+        Returns:
+            Dictionary of technical indicators
+        """
+        try:
+            results = {}
+            
+            if 'close' in data.columns:
+                close_prices = data['close']
+                
+                # Moving averages
+                results['sma_20'] = rolling_optimizer.rolling_mean(close_prices, window=20)
+                results['sma_50'] = rolling_optimizer.rolling_mean(close_prices, window=50)
+                results['sma_200'] = rolling_optimizer.rolling_mean(close_prices, window=200)
+                
+                # Volatility
+                results['volatility_20'] = rolling_optimizer.rolling_std(close_prices, window=20)
+                results['volatility_50'] = rolling_optimizer.rolling_std(close_prices, window=50)
+                
+                # Price ranges
+                if 'high' in data.columns and 'low' in data.columns:
+                    high_prices = data['high']
+                    low_prices = data['low']
+                    
+                    # ATR calculation
+                    if hasattr(rolling_optimizer, 'rolling_atr'):
+                        results['atr_20'] = rolling_optimizer.rolling_atr(
+                            high_prices, low_prices, close_prices, window=20
+                        )
+                        results['atr_50'] = rolling_optimizer.rolling_atr(
+                            high_prices, low_prices, close_prices, window=50
+                        )
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT technical indicators calculation failed: {e}")
+            return {}
     
     def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""

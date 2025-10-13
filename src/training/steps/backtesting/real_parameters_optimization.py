@@ -810,7 +810,7 @@ class RealParametersOptimizer:
             raise
     
     async def _evaluate_parameters(self, objective_function: Callable, parameters: Dict[str, Any]) -> float:
-        """Evaluate objective function with given parameters using VectorBT optimization."""
+        """Evaluate objective function with given parameters using enhanced VectorBT optimization."""
         start_time = time.time()
         self.performance_stats['total_evaluations'] += 1
         
@@ -819,6 +819,30 @@ class RealParametersOptimizer:
             if self.vectorization_manager and self.rolling_optimizer:
                 self.logger.debug("🎯 Using VectorBT-optimized parameter evaluation")
                 
+                # Create operation context for VectorBT optimization
+                operation_context = {
+                    'parameters': parameters,
+                    'rolling_optimizer': self.rolling_optimizer,
+                    'vectorization_manager': self.vectorization_manager
+                }
+                
+                # Use VectorBT for enhanced parameter evaluation
+                with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
+                    if self.memory_optimizer:
+                        with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
+                            # Use VectorBTRollingOptimizer for enhanced processing
+                            if hasattr(objective_function, '__vectorbt_optimized__'):
+                                score = await objective_function(parameters, operation_context)
+                            else:
+                                # Create optimized objective function
+                                optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
+                                score = await optimized_obj_func(parameters, operation_context)
+                    else:
+                        if hasattr(objective_function, '__vectorbt_optimized__'):
+                            score = await objective_function(parameters, operation_context)
+                        else:
+                            optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
+                            score = await optimized_obj_func(parameters, operation_context)
                 # Use VectorBT for enhanced parameter evaluation with batch processing
                 with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
                     if self.memory_optimizer:
@@ -939,6 +963,91 @@ class RealParametersOptimizer:
         else:
             return score > best_score
     
+    def _create_vectorbt_optimized_objective(self, original_function: Callable) -> Callable:
+        """
+        Create a VectorBT-optimized version of the objective function.
+        
+        Args:
+            original_function: Original objective function
+            
+        Returns:
+            VectorBT-optimized objective function
+        """
+        async def optimized_function(parameters: Dict[str, Any], 
+                                   operation_context: Optional[Dict[str, Any]] = None) -> float:
+            """
+            VectorBT-optimized objective function.
+            """
+            try:
+                # Extract rolling optimizer from context
+                rolling_optimizer = operation_context.get('rolling_optimizer') if operation_context else None
+                
+                # Use VectorBT for enhanced processing if available
+                if rolling_optimizer is not None:
+                    # Calculate rolling metrics using VectorBTRollingOptimizer
+                    rolling_metrics = await self._calculate_rolling_metrics_vectorbt(
+                        parameters, rolling_optimizer
+                    )
+                    
+                    # Add to parameters for the original function
+                    enhanced_parameters = parameters.copy()
+                    enhanced_parameters['rolling_metrics'] = rolling_metrics
+                    enhanced_parameters['vectorbt_optimized'] = True
+                    
+                    return await original_function(enhanced_parameters)
+                else:
+                    return await original_function(parameters)
+                    
+            except Exception as e:
+                self.logger.warning(f"VectorBT optimized objective function failed: {e}")
+                return await original_function(parameters)
+        
+        # Mark as VectorBT optimized
+        optimized_function.__vectorbt_optimized__ = True
+        
+        return optimized_function
+    
+    async def _calculate_rolling_metrics_vectorbt(self, parameters: Dict[str, Any], 
+                                                rolling_optimizer) -> Dict[str, Any]:
+        """
+        Calculate rolling metrics using VectorBTRollingOptimizer.
+        
+        Args:
+            parameters: Parameters for the function
+            rolling_optimizer: VectorBTRollingOptimizer instance
+            
+        Returns:
+            Dictionary of rolling metrics
+        """
+        try:
+            # This is a placeholder - in practice, you would extract data from parameters
+            # or use a data source to calculate rolling metrics
+            results = {}
+            
+            # Example: Calculate rolling metrics if data is available in parameters
+            if 'data' in parameters:
+                data = parameters['data']
+                if hasattr(data, 'close'):
+                    close_prices = data['close']
+                    windows = [5, 10, 20, 50, 100]
+                    
+                    for window in windows:
+                        window_results = {}
+                        window_results['mean'] = rolling_optimizer.rolling_mean(close_prices, window=window)
+                        window_results['std'] = rolling_optimizer.rolling_std(close_prices, window=window)
+                        window_results['min'] = rolling_optimizer.rolling_min(close_prices, window=window)
+                        window_results['max'] = rolling_optimizer.rolling_max(close_prices, window=window)
+                        window_results['skew'] = rolling_optimizer.rolling_skew(close_prices, window=window)
+                        window_results['kurt'] = rolling_optimizer.rolling_kurt(close_prices, window=window)
+                        
+                        results[f'window_{window}'] = window_results
+            
+            return results
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling metrics calculation failed: {e}")
+            return {}
+    
     def get_optimization_report(self) -> Dict[str, Any]:
         """Generate optimization report."""
         try:
@@ -962,6 +1071,7 @@ class RealParametersOptimizer:
                 'best_parameters': self.best_parameters,
                 'best_score': self.best_score,
                 'optimization_history': self.optimization_history,
+                'performance_stats': self.performance_stats,
                 'timestamp': datetime.now().isoformat()
             }
             

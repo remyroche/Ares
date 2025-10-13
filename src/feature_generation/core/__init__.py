@@ -22,6 +22,15 @@ from .rolling_operations_mixin import RollingOperationsMixin
 from .vectorbt_optimization_mixin import VectorBTOptimizationMixin
 # Factory pattern
 from .generator_factory import GeneratorFactory, get_generator_factory, create_generator
+# Auto-optimization components
+from .auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
+from .auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
+from .optimization_strategies import (
+    OptimizationStrategy,
+    ConservativeOptimizationStrategy,
+    BalancedOptimizationStrategy,
+    AggressiveOptimizationStrategy
+)
 
 def _initialize_default_bank():
     """Initialize the default feature bank with standard generators."""
@@ -54,5 +63,13 @@ __all__ = [
     "GeneratorFactory",
     "get_generator_factory",
     "create_generator",
+    # Auto-optimization components
+    "AutoOptimizedFeatureGenerator",
+    "AutoOptimizationConfig",
+    "OptimizationLevel",
+    "OptimizationStrategy",
+    "ConservativeOptimizationStrategy",
+    "BalancedOptimizationStrategy",
+    "AggressiveOptimizationStrategy",
     "_initialize_default_bank"
 ]

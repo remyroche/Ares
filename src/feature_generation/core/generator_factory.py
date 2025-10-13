@@ -17,6 +17,8 @@ from abc import ABC, abstractmethod
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
 from .vectorized_feature_generator import VectorizedFeatureGenerator
+from .auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
+from .auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
 from .vectorbt_optimization_mixin import VectorBTOptimizationMixin
 from .optimization_mixin import OptimizationMixin
 from .rolling_operations_mixin import RollingOperationsMixin
@@ -294,6 +296,120 @@ class GeneratorFactory:
                                               optional_columns=new_config.optional_columns,
                                               parameters=new_config.default_parameters
                                           ))
+    
+    def create_auto_optimized_generator(self, name: str, category: FeatureCategory,
+                                      required_columns: List[str], 
+                                      optimization_level: str = "balanced",
+                                      auto_optimization_config: Optional[AutoOptimizationConfig] = None,
+                                      **kwargs) -> Optional[AutoOptimizedFeatureGenerator]:
+        """
+        Create generator with automatic optimization enabled.
+        
+        Args:
+            name: Generator name
+            category: Feature category
+            required_columns: Required input columns
+            optimization_level: Optimization level ("conservative", "balanced", "aggressive")
+            auto_optimization_config: Custom optimization configuration
+            **kwargs: Generator parameters
+            
+        Returns:
+            Auto-optimized generator instance or None if creation fails
+        """
+        try:
+            # Create feature config
+            feature_config = FeatureConfig(
+                name=name,
+                category=category,
+                description=f"Auto-optimized generator: {name}",
+                required_columns=required_columns,
+                parameters=kwargs
+            )
+            
+            # Create auto-optimization config
+            if auto_optimization_config is None:
+                auto_optimization_config = AutoOptimizationConfig()
+                auto_optimization_config.optimization_level = OptimizationLevel(optimization_level)
+            
+            # Create auto-optimized generator
+            generator = AutoOptimizedFeatureGenerator(feature_config, auto_optimization_config)
+            
+            logger.debug(f"Created auto-optimized generator: {name} with {optimization_level} strategy")
+            return generator
+            
+        except Exception as e:
+            logger.error(f"Failed to create auto-optimized generator {name}: {e}")
+            return None
+    
+    def create_generator_with_auto_optimization(self, name: str, 
+                                              generator_class: Type[FeatureGenerator],
+                                              config: FeatureConfig,
+                                              optimization_level: str = "balanced",
+                                              **kwargs) -> Optional[FeatureGenerator]:
+        """
+        Create any generator with auto-optimization enabled.
+        
+        Args:
+            name: Generator name
+            generator_class: Generator class
+            config: Feature configuration
+            optimization_level: Optimization level
+            **kwargs: Additional parameters
+            
+        Returns:
+            Generator instance with auto-optimization or None if creation fails
+        """
+        try:
+            # Create auto-optimization config
+            auto_optimization_config = AutoOptimizationConfig()
+            auto_optimization_config.optimization_level = OptimizationLevel(optimization_level)
+            
+            # Create generator with auto-optimization
+            generator = generator_class(config, auto_optimization_config=auto_optimization_config, **kwargs)
+            
+            logger.debug(f"Created {name} with auto-optimization enabled")
+            return generator
+            
+        except Exception as e:
+            logger.error(f"Failed to create {name} with auto-optimization: {e}")
+            return None
+    
+    def create_batch_auto_optimized_generators(self, generator_specs: List[Dict[str, Any]]) -> List[AutoOptimizedFeatureGenerator]:
+        """
+        Create multiple auto-optimized generators in batch.
+        
+        Args:
+            generator_specs: List of generator specifications
+            
+        Returns:
+            List of created auto-optimized generators
+        """
+        generators = []
+        
+        for spec in generator_specs:
+            name = spec.get('name')
+            if not name:
+                logger.warning("Generator spec missing name, skipping")
+                continue
+            
+            # Extract auto-optimization settings
+            optimization_level = spec.pop('optimization_level', 'balanced')
+            auto_optimization_config = spec.pop('auto_optimization_config', None)
+            
+            generator = self.create_auto_optimized_generator(
+                name=name,
+                category=spec.get('category', FeatureCategory.CUSTOM),
+                required_columns=spec.get('required_columns', []),
+                optimization_level=optimization_level,
+                auto_optimization_config=auto_optimization_config,
+                **spec.get('parameters', {})
+            )
+            
+            if generator:
+                generators.append(generator)
+        
+        logger.info(f"Created {len(generators)} auto-optimized generators in batch")
+        return generators
 
 # Global factory instance
 _global_factory = None

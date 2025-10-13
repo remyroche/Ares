@@ -63,6 +63,15 @@ try:
     from .core.rolling_operations_mixin import RollingOperationsMixin
     from .core.generator_factory import GeneratorFactory, get_generator_factory, create_generator
     from .core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
+    # Auto-optimization components
+    from .core.auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
+    from .core.auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
+    from .core.optimization_strategies import (
+        OptimizationStrategy,
+        ConservativeOptimizationStrategy,
+        BalancedOptimizationStrategy,
+        AggressiveOptimizationStrategy
+    )
     CORE_AVAILABLE = True
 except ImportError as e:
     CORE_AVAILABLE = False
@@ -281,7 +290,15 @@ if CORE_AVAILABLE:
         # Factory pattern
         "GeneratorFactory",
         "get_generator_factory",
-        "create_generator"
+        "create_generator",
+        # Auto-optimization components
+        "AutoOptimizedFeatureGenerator",
+        "AutoOptimizationConfig",
+        "OptimizationLevel",
+        "OptimizationStrategy",
+        "ConservativeOptimizationStrategy",
+        "BalancedOptimizationStrategy",
+        "AggressiveOptimizationStrategy"
     ])
 
 # Base calculations

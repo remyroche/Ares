@@ -16,6 +16,9 @@ import pandas as pd
 import numpy as np
 
 from .feature_generator import FeatureGenerator, FeatureCategory, FeatureResult, FeatureConfig
+from .auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
+from .auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
+from .generator_factory import GeneratorFactory
 from .feature_registry import FeatureRegistry
 from src.utils.unified_cache import UnifiedCache
 from src.utils.tprint import tprint
@@ -38,6 +41,11 @@ class FeatureBankConfig:
     state_cache_dir: str = "data_cache/feature_states"
     state_cache_namespace: str = "feature_bank"
     state_cache_ttl_seconds: Optional[int] = None
+    
+    # Auto-optimization settings
+    enable_auto_optimization: bool = True
+    default_optimization_level: str = "balanced"  # "conservative", "balanced", "aggressive"
+    auto_optimization_config: Optional[AutoOptimizationConfig] = None
 
 class FeatureBank:
     """
@@ -63,6 +71,14 @@ class FeatureBank:
 
         # Initialize feature registry
         self.registry = FeatureRegistry()
+        
+        # Initialize generator factory
+        self.generator_factory = GeneratorFactory()
+        
+        # Initialize auto-optimization configuration
+        if self.config.auto_optimization_config is None:
+            self.config.auto_optimization_config = AutoOptimizationConfig()
+            self.config.auto_optimization_config.optimization_level = OptimizationLevel(self.config.default_optimization_level)
         
         # Initialize matrix operations if enabled
         self.matrix_ops = None
@@ -216,9 +232,9 @@ class FeatureBank:
 
     def _create_default_generators_for_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
         """
-        Create default generators for a given category using existing factory functions.
+        Create default generators for a given category using auto-optimized generators.
         """
-        tprint(f"🔧 Creating generators for category: {category.value}")
+        tprint(f"🔧 Creating auto-optimized generators for category: {category.value}")
         try:
             # Map categories to their creation functions
             category_creators = {
@@ -247,9 +263,20 @@ class FeatureBank:
 
             creator_func = category_creators.get(category)
             if creator_func:
-                tprint(f"🔧 Creating {category.value} features...")
+                tprint(f"🔧 Creating {category.value} features with auto-optimization...")
                 generators = creator_func()
-                tprint(f"✅ Created {len(generators)} generators for {category.value}")
+                
+                # Convert generators to auto-optimized versions if auto-optimization is enabled
+                if self.config.enable_auto_optimization:
+                    auto_optimized_generators = []
+                    for generator in generators:
+                        auto_optimized_gen = self._convert_to_auto_optimized(generator)
+                        auto_optimized_generators.append(auto_optimized_gen)
+                    generators = auto_optimized_generators
+                    tprint(f"✅ Created {len(generators)} auto-optimized generators for {category.value}")
+                else:
+                    tprint(f"✅ Created {len(generators)} generators for {category.value}")
+                
                 return generators
             else:
                 tprint(f"⚠️ No creator function available for category: {category.value}")
@@ -260,6 +287,36 @@ class FeatureBank:
             tprint(f"❌ Failed to create generators for {category.value}: {e}")
             self.logger.warning(f"⚠️ Failed to create generators for {category.value}: {e}")
             return []
+
+    def _convert_to_auto_optimized(self, generator: FeatureGenerator) -> AutoOptimizedFeatureGenerator:
+        """
+        Convert a regular generator to an auto-optimized generator.
+        
+        Args:
+            generator: Original generator
+            
+        Returns:
+            Auto-optimized generator
+        """
+        try:
+            # Create auto-optimized generator with same config
+            auto_optimized_gen = AutoOptimizedFeatureGenerator(
+                config=generator.config,
+                auto_optimization_config=self.config.auto_optimization_config
+            )
+            
+            # Copy any additional state from original generator
+            if hasattr(generator, 'get_state'):
+                state = generator.get_state()
+                if state and hasattr(auto_optimized_gen, 'load_state'):
+                    auto_optimized_gen.load_state(state)
+            
+            return auto_optimized_gen
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to convert {generator.config.name} to auto-optimized: {e}")
+            # Return original generator if conversion fails
+            return generator
 
     def _create_momentum_generators(self) -> List[FeatureGenerator]:
         """Create momentum-specific feature generators."""
@@ -1412,7 +1469,9 @@ class FeatureBank:
         summary = {
             'total_generators': len(self.registry.get_all()),
             'categories': {},
-            'features_by_category': {}
+            'features_by_category': {},
+            'auto_optimization_enabled': self.config.enable_auto_optimization,
+            'optimization_level': self.config.default_optimization_level
         }
         
         for category in self.list_categories():
@@ -1423,6 +1482,121 @@ class FeatureBank:
             ]
         
         return summary
+    
+    def create_auto_optimized_generator(self, name: str, category: FeatureCategory,
+                                      required_columns: List[str], 
+                                      optimization_level: Optional[str] = None,
+                                      **kwargs) -> Optional[AutoOptimizedFeatureGenerator]:
+        """
+        Create an auto-optimized generator using the factory.
+        
+        Args:
+            name: Generator name
+            category: Feature category
+            required_columns: Required input columns
+            optimization_level: Optimization level (uses default if None)
+            **kwargs: Additional parameters
+            
+        Returns:
+            Auto-optimized generator or None if creation fails
+        """
+        if optimization_level is None:
+            optimization_level = self.config.default_optimization_level
+        
+        return self.generator_factory.create_auto_optimized_generator(
+            name=name,
+            category=category,
+            required_columns=required_columns,
+            optimization_level=optimization_level,
+            auto_optimization_config=self.config.auto_optimization_config,
+            **kwargs
+        )
+    
+    def create_auto_optimized_generators_by_category(self, category: FeatureCategory,
+                                                   optimization_level: Optional[str] = None,
+                                                   **kwargs) -> List[AutoOptimizedFeatureGenerator]:
+        """
+        Create auto-optimized generators for a specific category.
+        
+        Args:
+            category: Feature category
+            optimization_level: Optimization level (uses default if None)
+            **kwargs: Additional parameters
+            
+        Returns:
+            List of auto-optimized generators
+        """
+        if optimization_level is None:
+            optimization_level = self.config.default_optimization_level
+        
+        # Get existing generators for the category
+        existing_generators = self.get_generators_by_category(category)
+        
+        # Convert to auto-optimized versions
+        auto_optimized_generators = []
+        for generator in existing_generators:
+            auto_optimized_gen = self._convert_to_auto_optimized(generator)
+            auto_optimized_generators.append(auto_optimized_gen)
+        
+        return auto_optimized_generators
+    
+    def set_optimization_level(self, level: str) -> None:
+        """
+        Set the default optimization level for all generators.
+        
+        Args:
+            level: Optimization level ("conservative", "balanced", "aggressive")
+        """
+        try:
+            self.config.default_optimization_level = level
+            self.config.auto_optimization_config.optimization_level = OptimizationLevel(level)
+            self.logger.info(f"Optimization level set to: {level}")
+        except ValueError:
+            self.logger.error(f"Invalid optimization level: {level}")
+    
+    def enable_auto_optimization(self, enabled: bool = True) -> None:
+        """
+        Enable or disable auto-optimization for the feature bank.
+        
+        Args:
+            enabled: Whether to enable auto-optimization
+        """
+        self.config.enable_auto_optimization = enabled
+        self.logger.info(f"Auto-optimization {'enabled' if enabled else 'disabled'}")
+    
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """
+        Get optimization statistics from all generators.
+        
+        Returns:
+            Dictionary with optimization statistics
+        """
+        stats = {
+            'total_generators': 0,
+            'auto_optimized_generators': 0,
+            'total_optimizations': 0,
+            'total_optimization_time': 0.0,
+            'memory_savings_mb': 0.0,
+            'optimization_levels': {}
+        }
+        
+        for generator in self.registry.get_all():
+            stats['total_generators'] += 1
+            
+            if isinstance(generator, AutoOptimizedFeatureGenerator):
+                stats['auto_optimized_generators'] += 1
+                
+                # Get optimization stats from this generator
+                gen_stats = generator.get_auto_optimization_stats()
+                stats['total_optimizations'] += gen_stats.get('total_optimizations', 0)
+                stats['total_optimization_time'] += gen_stats.get('total_optimization_time', 0.0)
+                stats['memory_savings_mb'] += gen_stats.get('memory_savings_mb', 0.0)
+                
+                # Track optimization levels
+                level = gen_stats.get('strategy_used', 'unknown')
+                stats['optimization_levels'][level] = stats['optimization_levels'].get(level, 0) + 1
+        
+        return stats
 
 # Global feature bank instance
 _global_feature_bank: Optional[FeatureBank] = None

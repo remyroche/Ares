@@ -300,7 +300,7 @@ class RealParametersOptimizer:
             raise
     
     async def _random_search_optimization(self, objective_function: Callable) -> Dict[str, Any]:
-        """Random search optimization."""
+        """Random search optimization with VectorBT batch processing."""
         self.logger.info("🎲 Running random search optimization")
         
         try:
@@ -308,6 +308,11 @@ class RealParametersOptimizer:
             best_parameters = {}
             optimization_history = []
             
+            # Use VectorBT batch processing if available
+            if self.vectorization_manager and self.rolling_optimizer:
+                return await self._random_search_vectorbt_batch(objective_function, best_score, best_parameters, optimization_history)
+            
+            # Standard random search
             for i in range(self.config.n_trials):
                 try:
                     # Generate random parameters
@@ -348,6 +353,125 @@ class RealParametersOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Random search optimization failed: {e}")
             raise
+    
+    async def _random_search_vectorbt_batch(self, objective_function: Callable, best_score: float, 
+                                          best_parameters: Dict[str, Any], optimization_history: List[Dict]) -> Dict[str, Any]:
+        """VectorBT-optimized random search with batch processing."""
+        try:
+            self.logger.info("🎯 Using VectorBT batch processing for random search")
+            
+            # Process in batches for memory efficiency
+            batch_size = min(50, self.config.n_trials // 10)  # Process 10% at a time
+            total_batches = (self.config.n_trials + batch_size - 1) // batch_size
+            
+            for batch_idx in range(total_batches):
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, self.config.n_trials)
+                batch_size_actual = end_idx - start_idx
+                
+                self.logger.info(f"Processing batch {batch_idx + 1}/{total_batches} ({batch_size_actual} trials)")
+                
+                # Generate batch of random parameters
+                batch_params = [self._generate_random_parameters() for _ in range(batch_size_actual)]
+                
+                # Evaluate batch using VectorBT optimization
+                batch_scores = await self._evaluate_parameters_batch(objective_function, batch_params)
+                
+                # Process batch results
+                for i, (params, score) in enumerate(zip(batch_params, batch_scores)):
+                    iteration = start_idx + i + 1
+                    
+                    # Update best if improved
+                    if self._is_better_score(score, best_score):
+                        best_score = score
+                        best_parameters = params.copy()
+                    
+                    # Store history
+                    optimization_history.append({
+                        'iteration': iteration,
+                        'parameters': params.copy(),
+                        'score': score,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                
+                # Log progress
+                self.logger.info(f"Batch {batch_idx + 1} completed. Best score so far: {best_score:.6f}")
+            
+            return {
+                'method': 'random_search_vectorbt_batch',
+                'best_parameters': best_parameters,
+                'best_score': best_score,
+                'optimization_history': optimization_history,
+                'total_evaluations': len(optimization_history)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ VectorBT batch random search failed: {e}")
+            raise
+    
+    async def _evaluate_parameters_batch(self, objective_function: Callable, parameters_list: List[Dict[str, Any]]) -> List[float]:
+        """Evaluate multiple parameter sets in batch using VectorBT optimization."""
+        try:
+            if self.vectorization_manager and self.rolling_optimizer:
+                # Use VectorBT unified manager for batch processing
+                from src.training.steps.backtesting.vectorbt_unified_manager import VectorBTOperationType
+                
+                async def batch_evaluation():
+                    # Process parameters in parallel using VectorBT
+                    tasks = []
+                    for params in parameters_list:
+                        # Optimize parameters for VectorBT
+                        optimized_params = self._optimize_parameters_for_vectorbt(params)
+                        task = objective_function(optimized_params)
+                        tasks.append(task)
+                    
+                    # Execute batch evaluation
+                    scores = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # Handle exceptions
+                    processed_scores = []
+                    for i, score in enumerate(scores):
+                        if isinstance(score, Exception):
+                            self.logger.warning(f"⚠️ Batch evaluation failed for parameter set {i}: {score}")
+                            processed_scores.append(float('-inf') if not self.config.minimize_objective else float('inf'))
+                        else:
+                            processed_scores.append(score)
+                    
+                    return processed_scores
+                
+                # Execute batch with VectorBT operation tracking
+                result = await self.vectorization_manager.execute_operation(
+                    VectorBTOperationType.PARAMETER_OPTIMIZATION,
+                    batch_evaluation
+                )
+                
+                if result.success:
+                    self.performance_stats['vectorbt_operations'] += len(parameters_list)
+                    return result.result
+                else:
+                    # Fallback to sequential evaluation
+                    self.performance_stats['fallbacks'] += 1
+                    return await self._evaluate_parameters_sequential(objective_function, parameters_list)
+            else:
+                # Standard batch evaluation
+                return await self._evaluate_parameters_sequential(objective_function, parameters_list)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Batch evaluation failed, using sequential: {e}")
+            self.performance_stats['fallbacks'] += 1
+            return await self._evaluate_parameters_sequential(objective_function, parameters_list)
+    
+    async def _evaluate_parameters_sequential(self, objective_function: Callable, parameters_list: List[Dict[str, Any]]) -> List[float]:
+        """Sequential evaluation of parameter sets."""
+        scores = []
+        for params in parameters_list:
+            try:
+                score = await self._evaluate_parameters(objective_function, params)
+                scores.append(score)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Sequential evaluation failed: {e}")
+                scores.append(float('-inf') if not self.config.minimize_objective else float('inf'))
+        return scores
     
     async def _bayesian_optimization(self, objective_function: Callable) -> Dict[str, Any]:
         """Bayesian optimization using Optuna."""
@@ -719,6 +843,14 @@ class RealParametersOptimizer:
                         else:
                             optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
                             score = await optimized_obj_func(parameters, operation_context)
+                # Use VectorBT for enhanced parameter evaluation with batch processing
+                with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
+                    if self.memory_optimizer:
+                        with self.memory_optimizer.optimize_for_workload("parameter_evaluation"):
+                            # Use VectorBT unified manager for parameter evaluation
+                            score = await self._evaluate_with_vectorbt(objective_function, parameters)
+                    else:
+                        score = await self._evaluate_with_vectorbt(objective_function, parameters)
                 
                 self.performance_stats['vectorbt_operations'] += 1
                 
@@ -756,6 +888,73 @@ class RealParametersOptimizer:
             self.logger.error(f"❌ Parameter evaluation failed: {e}")
             self.performance_stats['errors'] += 1
             raise
+    
+    async def _evaluate_with_vectorbt(self, objective_function: Callable, parameters: Dict[str, Any]) -> float:
+        """Evaluate parameters using VectorBT optimization utilities."""
+        try:
+            # Use VectorBT unified manager for parameter evaluation
+            from src.training.steps.backtesting.vectorbt_unified_manager import VectorBTOperationType
+            
+            # Define evaluation function that uses VectorBT
+            async def vectorbt_evaluation():
+                # Pre-process parameters for VectorBT optimization
+                optimized_params = self._optimize_parameters_for_vectorbt(parameters)
+                
+                # Execute objective function with optimized parameters
+                return await objective_function(optimized_params)
+            
+            # Execute with VectorBT operation tracking
+            result = await self.vectorization_manager.execute_operation(
+                VectorBTOperationType.PARAMETER_OPTIMIZATION,
+                vectorbt_evaluation
+            )
+            
+            if result.success:
+                return result.result
+            else:
+                # Fallback to standard evaluation
+                self.performance_stats['fallbacks'] += 1
+                return await objective_function(parameters)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT parameter evaluation failed, using fallback: {e}")
+            self.performance_stats['fallbacks'] += 1
+            return await objective_function(parameters)
+    
+    def _optimize_parameters_for_vectorbt(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize parameters for VectorBT processing."""
+        try:
+            optimized_params = parameters.copy()
+            
+            # Add VectorBT-specific optimizations
+            if 'data' in optimized_params:
+                # Ensure data is in optimal format for VectorBT
+                data = optimized_params['data']
+                if isinstance(data, pd.DataFrame):
+                    # Optimize DataFrame for VectorBT processing
+                    optimized_params['data'] = data.copy()
+                    optimized_params['vectorbt_optimized'] = True
+                elif isinstance(data, pd.Series):
+                    # Convert Series to DataFrame for VectorBT
+                    optimized_params['data'] = pd.DataFrame({'value': data})
+                    optimized_params['vectorbt_optimized'] = True
+            
+            # Add VectorBT rolling optimizer reference
+            if self.rolling_optimizer:
+                optimized_params['rolling_optimizer'] = self.rolling_optimizer
+            
+            # Add VectorBT configuration
+            optimized_params['vectorbt_config'] = {
+                'enable_gpu': self.config.enable_gpu_acceleration,
+                'enable_parallel': self.config.enable_parallel_processing,
+                'memory_efficient': self.config.enable_memory_optimization
+            }
+            
+            return optimized_params
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Parameter optimization failed: {e}")
+            return parameters
     
     def _is_better_score(self, score: float, best_score: float) -> bool:
         """Check if score is better than current best."""

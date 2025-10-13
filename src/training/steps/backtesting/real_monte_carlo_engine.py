@@ -543,9 +543,6 @@ class RealMonteCarloEngine:
             if self.rolling_optimizer and self.vectorization_manager:
                 tprint("🎯 Using VectorBT-optimized bootstrap simulation", "info")
                 
-                # Convert returns to DataFrame for VectorBT processing
-                returns_df = pd.DataFrame({'returns': returns})
-                
                 # Use VectorBT for efficient sampling and calculations
                 # Generate random indices for bootstrap sampling
                 random_indices = np.random.randint(0, len(returns), size=(n_simulations, horizon))
@@ -554,15 +551,30 @@ class RealMonteCarloEngine:
                 sampled_returns = returns.values[random_indices]
                 
                 # Use VectorBT rolling operations for portfolio value calculations
-                # Calculate cumulative returns using VectorBT rolling sum
-                cumulative_returns = self.rolling_optimizer.rolling_sum(
-                    pd.DataFrame(sampled_returns), window=horizon
-                ).iloc[:, -1]  # Get the final cumulative return
+                # Calculate cumulative returns using VectorBT rolling sum for each simulation
+                portfolio_values = []
                 
-                # Calculate portfolio values
-                portfolio_values = portfolio_value * (1 + cumulative_returns.values)
+                # Process simulations in batches for memory efficiency
+                batch_size = min(1000, n_simulations)
+                for i in range(0, n_simulations, batch_size):
+                    batch_end = min(i + batch_size, n_simulations)
+                    batch_returns = sampled_returns[i:batch_end]
+                    
+                    # Use VectorBT rolling sum for cumulative returns
+                    batch_df = pd.DataFrame(batch_returns)
+                    cumulative_returns = self.rolling_optimizer.rolling_sum(
+                        batch_df, window=horizon
+                    ).iloc[:, -1]  # Get the final cumulative return
+                    
+                    # Calculate portfolio values for this batch
+                    batch_portfolio_values = portfolio_value * (1 + cumulative_returns.values)
+                    portfolio_values.extend(batch_portfolio_values.tolist())
                 
-                return portfolio_values.tolist()
+                # Update performance stats
+                self.performance_stats['vectorbt_operations'] += n_simulations
+                self.performance_stats['total_simulations'] += n_simulations
+                
+                return portfolio_values
                 
             # Fallback to matrix operations
             elif self.matrix_ops:
@@ -576,6 +588,10 @@ class RealMonteCarloEngine:
                 
                 # Calculate portfolio values using vectorized operations
                 portfolio_values = portfolio_value * np.prod(1 + sampled_returns, axis=1)
+                
+                # Update performance stats
+                self.performance_stats['matrix_operations'] += n_simulations
+                self.performance_stats['total_simulations'] += n_simulations
                 
                 return portfolio_values.tolist()
             else:
@@ -717,27 +733,34 @@ class RealMonteCarloEngine:
                 
                 # Use VectorBT for rolling statistics
                 try:
-                    # Calculate rolling statistics using VectorBT
-                    rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=min(20, len(returns)))
-                    rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=min(20, len(returns)))
-                    rolling_min = self.rolling_optimizer.rolling_min(returns_series, window=min(20, len(returns)))
-                    rolling_max = self.rolling_optimizer.rolling_max(returns_series, window=min(20, len(returns)))
+                    # Calculate rolling statistics using VectorBT with optimized window sizes
+                    window_size = min(20, len(returns))
+                    large_window_size = min(50, len(returns))
                     
-                    # Use VectorBT for quantile calculations (VaR)
+                    # Use VectorBT for efficient rolling calculations
+                    rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=window_size)
+                    rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=window_size)
+                    rolling_min = self.rolling_optimizer.rolling_min(returns_series, window=window_size)
+                    rolling_max = self.rolling_optimizer.rolling_max(returns_series, window=window_size)
+                    
+                    # Use VectorBT for quantile calculations (VaR) with full window
                     var_confidence = validate_probability(self.config.var_confidence)
                     var_value = self.rolling_optimizer.rolling_quantile(
                         returns_series, window=len(returns), q=var_confidence
                     ).iloc[-1]  # Get the final quantile value
                     
                     # Calculate rolling skewness and kurtosis for tail risk analysis
-                    rolling_skew = self.rolling_optimizer.rolling_skew(returns_series, window=min(50, len(returns)))
-                    rolling_kurt = self.rolling_optimizer.rolling_kurt(returns_series, window=min(50, len(returns)))
+                    rolling_skew = self.rolling_optimizer.rolling_skew(returns_series, window=large_window_size)
+                    rolling_kurt = self.rolling_optimizer.rolling_kurt(returns_series, window=large_window_size)
                     
-                    # Use the last values from rolling calculations
-                    mean_return = float(rolling_mean.iloc[-1]) if not rolling_mean.empty else float(np.mean(returns))
-                    std_return = float(rolling_std.iloc[-1]) if not rolling_std.empty else float(np.std(returns))
-                    min_return = float(rolling_min.iloc[-1]) if not rolling_min.empty else float(np.min(returns))
-                    max_return = float(rolling_max.iloc[-1]) if not rolling_max.empty else float(np.max(returns))
+                    # Use the last values from rolling calculations with validation
+                    mean_return = float(rolling_mean.iloc[-1]) if not rolling_mean.empty and not pd.isna(rolling_mean.iloc[-1]) else float(np.mean(returns))
+                    std_return = float(rolling_std.iloc[-1]) if not rolling_std.empty and not pd.isna(rolling_std.iloc[-1]) else float(np.std(returns))
+                    min_return = float(rolling_min.iloc[-1]) if not rolling_min.empty and not pd.isna(rolling_min.iloc[-1]) else float(np.min(returns))
+                    max_return = float(rolling_max.iloc[-1]) if not rolling_max.empty and not pd.isna(rolling_max.iloc[-1]) else float(np.max(returns))
+                    
+                    # Update performance stats
+                    self.performance_stats['vectorbt_operations'] += 6  # 6 rolling operations
                     
                     tprint("✅ VectorBT metrics calculation completed", "success")
                     

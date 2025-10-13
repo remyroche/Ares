@@ -386,7 +386,7 @@ class FinalParametersOptimizer:
                         returns: np.ndarray,
                         confidences: Optional[np.ndarray] = None) -> EvaluationMetrics:
         """
-        Simulate trading with given parameters using validated metrics
+        Simulate trading with given parameters using VectorBT-optimized metrics calculation
         
         Args:
             params: Trading parameters
@@ -437,13 +437,22 @@ class FinalParametersOptimizer:
                 tprint("⚠️  No valid trade returns", "warning")
                 return EvaluationMetrics()
             
-            # Calculate metrics using common_operations utilities
-            sharpe = calculate_sharpe_ratio(trade_returns)
-            sortino = calculate_sortino_ratio(trade_returns)
-            max_dd = calculate_max_drawdown(np.cumsum(trade_returns))
-            win_rate = calculate_win_rate(trade_returns)
-            profit_factor = calculate_profit_factor(trade_returns)
-            total_return = float(np.sum(trade_returns))
+            # Use VectorBT optimization for metrics calculation if available
+            if self.vectorbt_enabled and self.rolling_optimizer:
+                tprint("🎯 Using VectorBT-optimized metrics calculation", "debug")
+                sharpe, sortino, max_dd, win_rate, profit_factor, total_return = self._calculate_metrics_vectorbt(trade_returns)
+                
+                # Update VectorBT stats
+                self.vectorbt_stats['rolling_operations'] += 5  # 5 rolling operations
+                self.vectorbt_stats['total_vectorbt_time'] += time.time() - start_time if 'start_time' in locals() else 0
+            else:
+                # Calculate metrics using common_operations utilities
+                sharpe = calculate_sharpe_ratio(trade_returns)
+                sortino = calculate_sortino_ratio(trade_returns)
+                max_dd = calculate_max_drawdown(np.cumsum(trade_returns))
+                win_rate = calculate_win_rate(trade_returns)
+                profit_factor = calculate_profit_factor(trade_returns)
+                total_return = float(np.sum(trade_returns))
             
             # Validate all metrics
             sharpe = validate_positive(sharpe, default=0.0) if not check_for_nans(sharpe) else 0.0
@@ -470,6 +479,120 @@ class FinalParametersOptimizer:
             self.logger.error(f"Error in trading simulation: {e}")
             tprint(f"❌ Trading simulation failed: {e}", "error")
             return EvaluationMetrics()
+    
+    def _calculate_metrics_vectorbt(self, trade_returns: np.ndarray) -> Tuple[float, float, float, float, float, float]:
+        """Calculate trading metrics using VectorBT optimization."""
+        try:
+            # Convert to pandas Series for VectorBT processing
+            returns_series = pd.Series(trade_returns)
+            
+            # Use VectorBT rolling operations for enhanced calculations
+            if len(returns_series) > 1:
+                # Calculate rolling statistics for more robust metrics
+                rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=min(20, len(returns_series)))
+                rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=min(20, len(returns_series)))
+                
+                # Use rolling statistics for Sharpe ratio
+                if not rolling_std.empty and rolling_std.iloc[-1] > 0:
+                    sharpe = float(rolling_mean.iloc[-1] / rolling_std.iloc[-1]) if not rolling_mean.empty else 0.0
+                else:
+                    sharpe = 0.0
+                
+                # Calculate Sortino ratio (downside deviation)
+                negative_returns = returns_series[returns_series < 0]
+                if len(negative_returns) > 1:
+                    downside_std = self.rolling_optimizer.rolling_std(
+                        pd.Series(negative_returns), window=min(10, len(negative_returns))
+                    )
+                    if not downside_std.empty and downside_std.iloc[-1] > 0:
+                        sortino = float(rolling_mean.iloc[-1] / downside_std.iloc[-1]) if not rolling_mean.empty else 0.0
+                    else:
+                        sortino = 0.0
+                else:
+                    sortino = 0.0
+                
+                # Calculate rolling max drawdown using cumulative returns
+                cumulative_returns = returns_series.cumsum()
+                rolling_max = self.rolling_optimizer.rolling_max(cumulative_returns, window=len(cumulative_returns))
+                drawdown = cumulative_returns - rolling_max
+                max_dd = float(abs(drawdown.min())) if not drawdown.empty else 0.0
+                
+                # Calculate win rate using rolling operations
+                winning_trades = (returns_series > 0).astype(int)
+                rolling_wins = self.rolling_optimizer.rolling_sum(winning_trades, window=len(winning_trades))
+                win_rate = float(rolling_wins.iloc[-1] / len(returns_series)) if not rolling_wins.empty else 0.0
+                
+                # Calculate profit factor
+                positive_returns = returns_series[returns_series > 0]
+                negative_returns = returns_series[returns_series < 0]
+                gross_profit = float(positive_returns.sum()) if len(positive_returns) > 0 else 0.0
+                gross_loss = float(abs(negative_returns.sum())) if len(negative_returns) > 0 else 0.0
+                profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+                
+            else:
+                # Fallback for single return
+                sharpe = 0.0
+                sortino = 0.0
+                max_dd = 0.0
+                win_rate = 1.0 if trade_returns[0] > 0 else 0.0
+                profit_factor = 0.0
+            
+            # Total return
+            total_return = float(returns_series.sum())
+            
+            return sharpe, sortino, max_dd, win_rate, profit_factor, total_return
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT metrics calculation failed, using fallback: {e}")
+            # Fallback to standard calculations
+            sharpe = calculate_sharpe_ratio(trade_returns)
+            sortino = calculate_sortino_ratio(trade_returns)
+            max_dd = calculate_max_drawdown(np.cumsum(trade_returns))
+            win_rate = calculate_win_rate(trade_returns)
+            profit_factor = calculate_profit_factor(trade_returns)
+            total_return = float(np.sum(trade_returns))
+            
+            return sharpe, sortino, max_dd, win_rate, profit_factor, total_return
+    
+    def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
+        """Get VectorBT performance statistics."""
+        try:
+            stats = self.vectorbt_stats.copy()
+            
+            # Add VectorBT rolling optimizer stats if available
+            if self.rolling_optimizer:
+                rolling_stats = self.rolling_optimizer.get_performance_stats()
+                stats.update({
+                    'vectorbt_rolling_operations': rolling_stats.get('vectorbt_operations', 0),
+                    'vectorbt_gpu_operations': rolling_stats.get('gpu_operations', 0),
+                    'vectorbt_memory_optimizations': rolling_stats.get('memory_optimizations', 0),
+                    'vectorbt_errors': rolling_stats.get('errors', 0),
+                    'vectorbt_avg_time_per_operation': rolling_stats.get('avg_time_per_operation', 0.0)
+                })
+            
+            # Add unified vectorization manager stats if available
+            if self.vectorization_manager:
+                vectorization_stats = self.vectorization_manager.get_performance_stats()
+                stats.update({
+                    'unified_vectorization_operations': vectorization_stats.get('total_operations', 0),
+                    'unified_vectorization_time': vectorization_stats.get('total_time', 0.0),
+                    'unified_vectorization_memory_savings': vectorization_stats.get('memory_savings', 0.0),
+                    'unified_vectorization_cache_hit_rate': vectorization_stats.get('cache_hit_rate', 0.0)
+                })
+            
+            # Calculate efficiency metrics
+            if stats['rolling_operations'] > 0:
+                stats['vectorbt_usage_rate'] = stats['rolling_operations'] / max(1, stats['rolling_operations'] + stats.get('batch_operations', 0))
+                stats['performance_gain'] = stats.get('performance_gains', [0])[-1] if stats.get('performance_gains') else 0.0
+            else:
+                stats['vectorbt_usage_rate'] = 0.0
+                stats['performance_gain'] = 0.0
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get VectorBT performance stats: {e}")
+            return self.vectorbt_stats.copy()
     
     def evaluate_with_cv(self, params: Dict[str, Any], data: Dict[str, Any],
                          evaluation_func: callable, category: str) -> Tuple[float, Dict[str, Any]]:

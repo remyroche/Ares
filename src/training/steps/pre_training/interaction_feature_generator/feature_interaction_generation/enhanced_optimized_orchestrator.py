@@ -1019,11 +1019,11 @@ class EnhancedOptimizedInteractionOrchestrator:
             return pd.DataFrame(index=features.index)
     
     async def _interaction_pruning_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Enhanced interaction pruning stage using final_feature_selection pipeline."""
+        """Enhanced interaction pruning stage using OptimizedFeatureSelectionEngine - fast fail."""
         if not self.interaction_pruning:
             return {'status': 'skipped', 'reason': 'disabled'}
         
-        tprint_debug("✂️ Enhanced interaction pruning stage using final_feature_selection pipeline...")
+        tprint_debug("✂️ Interaction pruning stage using OptimizedFeatureSelectionEngine...")
         
         # Get interaction features
         if 'interaction_features' in context.pipeline_state:
@@ -1034,310 +1034,79 @@ class EnhancedOptimizedInteractionOrchestrator:
         if features.empty or len(features.columns) == 0:
             return {'status': 'skipped', 'reason': 'no_interaction_features'}
         
-        # Get target
+        # Get target column - fast fail if not found
         target_column = context.pipeline_state.get('target_column', 'target')
-        
-        # FIXED: Better target handling
-        if target_column in features.columns:
-            target = features[target_column]
-        elif len(features.columns) > 0:
-            target = features.iloc[:, 0]
-            target_column = features.columns[0]
-            tprint_info(f"🔄 Using fallback target column: {target_column}")
-        else:
-            return {'status': 'skipped', 'reason': 'no_valid_target'}
+        if target_column not in features.columns:
+            raise ValueError(f"CRITICAL: Target column '{target_column}' not found in interaction features")
         
         # Get feature names
         feature_names = [col for col in features.columns if col != target_column]
         
         if len(feature_names) == 0:
-            return {'status': 'skipped', 'reason': 'no_features_after_target_removal'}
+            raise ValueError("CRITICAL: No interaction features found after removing target column")
         
-        # Apply final_feature_selection pipeline
-        try:
-            pruned_features = await self._apply_final_feature_selection_pipeline(
-                features, target_column, context.pipeline_state
-            )
-            
-            # Update context with pruned features
-            context.pipeline_state['interaction_features'] = pruned_features
-            context.pipeline_state['interaction_pruning_result'] = {
-                'selected_interactions': list(pruned_features.columns),
-                'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
-                'pruning_method': 'final_feature_selection_pipeline'
-            }
-            
-            return {
-                'status': 'completed',
-                'selected_interactions': len(pruned_features.columns),
-                'rejected_interactions': len(feature_names) - len(pruned_features.columns),
-                'selection_rate': len(pruned_features.columns) / len(feature_names) if feature_names else 0.0,
-                'method': 'final_feature_selection_pipeline'
-            }
-            
-        except Exception as e:
-            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
-            # Fallback to basic pruning
-            return await self._basic_interaction_pruning(features, target, feature_names, context)
+        # Fast fail: Call OptimizedFeatureSelectionEngine directly
+        from src.training.steps.market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
+        
+        # Initialize the optimized feature selection engine
+        selection_engine = OptimizedFeatureSelectionEngine(
+            use_hardware_accel=True,
+            cache_size=1000,
+            use_vectorbt=True
+        )
+        
+        # Target: Reduce to 50 features (or all if fewer)
+        target_feature_count = min(50, len(feature_names))
+        selection_stages = [target_feature_count]
+        
+        tprint_info(f"🎯 Reducing {len(feature_names)} interaction features to {target_feature_count}")
+        
+        # Perform feature selection - fast fail on any error
+        selection_result = selection_engine.select_features(
+            features_df=features,
+            target_column=target_column,
+            selection_stages=selection_stages
+        )
+        
+        if 'error' in selection_result:
+            raise RuntimeError(f"CRITICAL: Feature selection failed: {selection_result['error']}")
+        
+        # Extract selected features - fast fail if no results
+        if 'final_features' not in selection_result:
+            raise RuntimeError("CRITICAL: No final features returned from selection engine")
+        
+        if isinstance(selection_result['final_features'], list):
+            selected_features = selection_result['final_features']
+            if target_column not in selected_features:
+                selected_features.append(target_column)
+            pruned_features = features[selected_features]
+        else:
+            pruned_features = selection_result['final_features']
+        
+        if pruned_features.empty or len(pruned_features.columns) == 0:
+            raise RuntimeError("CRITICAL: No features selected after pruning")
+        
+        # Update context with pruned features
+        context.pipeline_state['interaction_features'] = pruned_features
+        context.pipeline_state['interaction_pruning_result'] = {
+            'selected_interactions': list(pruned_features.columns),
+            'rejected_interactions': [col for col in feature_names if col not in pruned_features.columns],
+            'pruning_method': 'optimized_feature_selection_engine',
+            'target_achieved': len(pruned_features.columns) <= target_feature_count
+        }
+        
+        tprint_success(f"✅ Interaction pruning completed: {len(pruned_features.columns)} features selected")
+        
+        return {
+            'status': 'completed',
+            'selected_interactions': len(pruned_features.columns),
+            'rejected_interactions': len(feature_names) - len(pruned_features.columns),
+            'selection_rate': len(pruned_features.columns) / len(feature_names),
+            'method': 'optimized_feature_selection_engine',
+            'target_achieved': len(pruned_features.columns) <= target_feature_count
+        }
     
-    async def _apply_final_feature_selection_pipeline(self, features: pd.DataFrame, 
-                                                    target_column: str, 
-                                                    pipeline_state: Dict[str, Any]) -> pd.DataFrame:
-        """Apply the final_feature_selection pipeline for interaction pruning."""
-        try:
-            from src.training.steps.market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
-            
-            tprint_debug("🔧 Applying final_feature_selection pipeline for interaction pruning...")
-            
-            # Initialize the optimized feature selection engine
-            selection_engine = OptimizedFeatureSelectionEngine(
-                use_hardware_accel=True,
-                cache_size=1000,
-                use_vectorbt=True
-            )
-            
-            # Define selection stages for interaction features
-            # More aggressive pruning for interactions since they can be numerous
-            selection_stages = [
-                min(50, len(features.columns) - 1),  # Stage 1: Keep top 50 or all if less
-                min(30, len(features.columns) - 1),  # Stage 2: Keep top 30 or all if less
-                min(15, len(features.columns) - 1)   # Stage 3: Keep top 15 or all if less
-            ]
-            
-            # Remove any stages that are not applicable
-            selection_stages = [stage for stage in selection_stages if stage > 0]
-            
-            if not selection_stages:
-                tprint_warning("⚠️ No valid selection stages for interaction pruning")
-                return features
-            
-            # Perform multi-stage feature selection
-            selection_result = selection_engine.select_features(
-                features_df=features,
-                target_column=target_column,
-                selection_stages=selection_stages
-            )
-            
-            if 'error' in selection_result:
-                tprint_error(f"❌ Feature selection failed: {selection_result['error']}")
-                return features
-            
-            # Extract final selected features
-            if 'final_features' in selection_result:
-                if isinstance(selection_result['final_features'], list):
-                    # If it's a list of feature names, select those columns
-                    selected_features = selection_result['final_features']
-                    if target_column not in selected_features:
-                        selected_features.append(target_column)
-                    pruned_features = features[selected_features]
-                else:
-                    # If it's already a DataFrame
-                    pruned_features = selection_result['final_features']
-            else:
-                # Fallback: use the last stage's results
-                selection_results = selection_result.get('selection_results', {})
-                if selection_results:
-                    last_stage = max(selection_results.keys(), key=lambda x: int(x.split('_')[1]))
-                    selected_features = selection_results[last_stage]['selected_features']
-                    pruned_features = features[selected_features]
-                else:
-                    tprint_warning("⚠️ No selection results found, returning original features")
-                    return features
-            
-            # Log selection statistics
-            total_stages = selection_result.get('total_stages_completed', 0)
-            tprint_success(f"✅ Final feature selection completed {total_stages} stages")
-            tprint_info(f"📊 Selected {len(pruned_features.columns)} features from {len(features.columns)}")
-            
-            # Store detailed results in pipeline state for debugging
-            pipeline_state['feature_selection_details'] = {
-                'selection_result': selection_result,
-                'original_feature_count': len(features.columns),
-                'final_feature_count': len(pruned_features.columns),
-                'reduction_ratio': len(pruned_features.columns) / len(features.columns)
-            }
-            
-            return pruned_features
-            
-        except ImportError as e:
-            tprint_warning(f"⚠️ OptimizedFeatureSelectionEngine not available: {e}")
-            # Fallback to basic pruning
-            return await self._apply_enhanced_interaction_pruning(
-                features, features[target_column], 
-                [col for col in features.columns if col != target_column], 
-                pipeline_state
-            )
-        except Exception as e:
-            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
-            # Fallback to basic pruning
-            return await self._apply_enhanced_interaction_pruning(
-                features, features[target_column], 
-                [col for col in features.columns if col != target_column], 
-                pipeline_state
-            )
     
-    async def _apply_enhanced_interaction_pruning(self, features: pd.DataFrame, target: pd.Series, 
-                                                feature_names: List[str], pipeline_state: Dict[str, Any]) -> pd.DataFrame:
-        """Apply enhanced interaction pruning using multiple strategies."""
-        try:
-            import numpy as np
-            from sklearn.feature_selection import mutual_info_regression, f_regression
-            from sklearn.ensemble import RandomForestRegressor
-            from sklearn.linear_model import LassoCV
-            from sklearn.preprocessing import StandardScaler
-            from scipy.stats import spearmanr
-            import pandas as pd
-            
-            tprint_debug("🔧 Applying enhanced interaction pruning...")
-            
-            # Prepare data
-            X = features[feature_names].values
-            y = target.values
-            
-            # Remove NaN values
-            valid_mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
-            X = X[valid_mask]
-            y = y[valid_mask]
-            
-            if len(X) < 50:
-                tprint_warning("⚠️ Insufficient data for enhanced pruning")
-                return features[feature_names]
-            
-            # Strategy 1: Variance-based filtering
-            variance_threshold = 0.01
-            feature_variance = np.var(X, axis=0)
-            high_variance_mask = feature_variance > variance_threshold
-            tprint_debug(f"📊 Variance filtering: {np.sum(high_variance_mask)}/{len(feature_names)} features passed")
-            
-            # Strategy 2: Correlation-based filtering
-            correlation_threshold = 0.95
-            corr_matrix = np.corrcoef(X.T)
-            high_corr_pairs = []
-            for i in range(len(feature_names)):
-                for j in range(i+1, len(feature_names)):
-                    if abs(corr_matrix[i, j]) > correlation_threshold:
-                        high_corr_pairs.append((i, j))
-            
-            # Remove one feature from each highly correlated pair
-            features_to_remove = set()
-            for i, j in high_corr_pairs:
-                if i not in features_to_remove and j not in features_to_remove:
-                    # Keep the feature with higher variance
-                    if feature_variance[i] > feature_variance[j]:
-                        features_to_remove.add(j)
-                    else:
-                        features_to_remove.add(i)
-            
-            tprint_debug(f"📊 Correlation filtering: removed {len(features_to_remove)} highly correlated features")
-            
-            # Strategy 3: Mutual Information filtering
-            mi_scores = mutual_info_regression(X, y, random_state=42)
-            mi_threshold = np.percentile(mi_scores, 25)  # Keep top 75%
-            high_mi_mask = mi_scores > mi_threshold
-            tprint_debug(f"📊 MI filtering: {np.sum(high_mi_mask)}/{len(feature_names)} features passed")
-            
-            # Strategy 4: F-statistic filtering
-            f_scores, _ = f_regression(X, y)
-            f_threshold = np.percentile(f_scores, 25)  # Keep top 75%
-            high_f_mask = f_scores > f_threshold
-            tprint_debug(f"📊 F-statistic filtering: {np.sum(high_f_mask)}/{len(feature_names)} features passed")
-            
-            # Strategy 5: Lasso regularization
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X)
-            lasso = LassoCV(cv=5, random_state=42, max_iter=1000)
-            lasso.fit(X_scaled, y)
-            lasso_mask = np.abs(lasso.coef_) > 1e-6
-            tprint_debug(f"📊 Lasso filtering: {np.sum(lasso_mask)}/{len(feature_names)} features passed")
-            
-            # Strategy 6: Random Forest importance
-            rf = RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=-1)
-            rf.fit(X, y)
-            rf_importance = rf.feature_importances_
-            rf_threshold = np.percentile(rf_importance, 25)  # Keep top 75%
-            high_rf_mask = rf_importance > rf_threshold
-            tprint_debug(f"📊 RF importance filtering: {np.sum(high_rf_mask)}/{len(feature_names)} features passed")
-            
-            # Combine all filtering strategies
-            combined_mask = (
-                high_variance_mask & 
-                high_mi_mask & 
-                high_f_mask & 
-                lasso_mask & 
-                high_rf_mask
-            )
-            
-            # Remove highly correlated features
-            for idx in features_to_remove:
-                if idx < len(combined_mask):
-                    combined_mask[idx] = False
-            
-            # Apply final filtering
-            selected_features = [feature_names[i] for i in range(len(feature_names)) if combined_mask[i]]
-            
-            tprint_success(f"✅ Enhanced pruning selected {len(selected_features)}/{len(feature_names)} features")
-            
-            # Return pruned features
-            if selected_features:
-                return features[selected_features]
-            else:
-                # Fallback: return top 10 features by combined score
-                combined_scores = (
-                    mi_scores / np.max(mi_scores) + 
-                    f_scores / np.max(f_scores) + 
-                    rf_importance / np.max(rf_importance)
-                )
-                top_indices = np.argsort(combined_scores)[-10:]
-                fallback_features = [feature_names[i] for i in top_indices]
-                return features[fallback_features]
-                
-        except Exception as e:
-            tprint_error(f"❌ Enhanced pruning failed: {e}")
-            return features[feature_names]
-    
-    async def _basic_interaction_pruning(self, features: pd.DataFrame, target: pd.Series, 
-                                       feature_names: List[str], context: ExecutionContext) -> Dict[str, Any]:
-        """Basic interaction pruning fallback."""
-        try:
-            # Simple correlation-based pruning
-            corr_threshold = 0.9
-            corr_matrix = features[feature_names].corr().abs()
-            
-            # Find highly correlated pairs
-            high_corr_pairs = []
-            for i in range(len(feature_names)):
-                for j in range(i+1, len(feature_names)):
-                    if corr_matrix.iloc[i, j] > corr_threshold:
-                        high_corr_pairs.append((feature_names[i], feature_names[j]))
-            
-            # Remove one feature from each pair
-            features_to_remove = set()
-            for feat1, feat2 in high_corr_pairs:
-                if feat1 not in features_to_remove and feat2 not in features_to_remove:
-                    features_to_remove.add(feat2)  # Remove the second feature
-            
-            selected_features = [f for f in feature_names if f not in features_to_remove]
-            
-            # Update context
-            context.pipeline_state['interaction_features'] = features[selected_features]
-            
-            return {
-                'status': 'completed',
-                'selected_interactions': len(selected_features),
-                'rejected_interactions': len(features_to_remove),
-                'selection_rate': len(selected_features) / len(feature_names) if feature_names else 0.0,
-                'method': 'basic_correlation'
-            }
-            
-        except Exception as e:
-            tprint_error(f"❌ Basic pruning failed: {e}")
-            return {
-                'status': 'failed',
-                'selected_interactions': 0,
-                'rejected_interactions': len(feature_names),
-                'selection_rate': 0.0,
-                'method': 'failed'
-            }
     
     async def _cross_timeframe_stage(self, context: ExecutionContext) -> Dict[str, Any]:
         """Cross-timeframe features stage with actual feature generation."""

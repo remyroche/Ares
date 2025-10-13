@@ -19,19 +19,17 @@ import logging
 import time
 from pathlib import Path
 
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+# Import unified utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+)
+from src.utils.error_handler import UnifiedErrorHandler, ValidationError, DataQualityError, ProcessingError
+from src.utils.data_processing_utils import DataProcessingUtils
+from src.utils.performance_utils import PerformanceMonitor, performance_timer
+from src.utils.enhanced_data_operations import (
+    memory_optimize_dataframe, vectorized_operation, chunked_processing
+)
+from src.utils.monitoring_utils import UnifiedPerformanceMonitor
 
 # Import components
 from .config import UnifiedPipelineConfig, create_default_config
@@ -109,13 +107,19 @@ class UnifiedDataDrivenPipeline:
         """
         self.config = config or create_default_config()
         
+        # Initialize unified utilities
+        self.error_handler = UnifiedErrorHandler(logger)
+        self.data_processor = DataProcessingUtils()
+        self.performance_monitor = PerformanceMonitor()
+        self.unified_monitor = UnifiedPerformanceMonitor()
+        
         # Initialize components
         self._initialize_components()
         
         # Initialize performance tracking
         self._initialize_performance_tracking()
         
-        tprint_info("Unified Data-Driven Pipeline initialized")
+        tprint_info("Unified Data-Driven Pipeline initialized with enhanced utilities")
         tprint_info(f"Configuration: {self.config}")
     
     def _initialize_components(self):
@@ -208,7 +212,7 @@ class UnifiedDataDrivenPipeline:
                 targets: Optional[pd.Series] = None,
                 feature_columns: Optional[List[str]] = None) -> FeaturePipelineResult:
         """
-        Main processing pipeline.
+        Main processing pipeline with enhanced monitoring and error handling.
         
         Args:
             data: Input data with features
@@ -218,121 +222,165 @@ class UnifiedDataDrivenPipeline:
         Returns:
             FeaturePipelineResult with selected features and performance metrics
         """
-        tprint_info(f"Starting unified data-driven pipeline processing")
+        tprint_info(f"Starting unified data-driven pipeline processing with enhanced utilities")
         tprint_info(f"Data shape: {data.shape}, Targets: {targets is not None}")
         
-        start_time = time.time()
+        # Use performance timer decorator
+        @performance_timer
+        def _process_pipeline():
+            start_time = time.time()
+            
+            # Validate inputs with error handling
+            self.error_handler.safe_execute(
+                self._validate_inputs, data, targets, feature_columns,
+                context="Input validation"
+            )
+            
+            # Prepare data with enhanced operations
+            processed_data, processed_targets = self.error_handler.safe_execute(
+                self._prepare_data, data, targets, feature_columns,
+                context="Data preparation"
+            )
         
-        # Validate inputs
-        self._validate_inputs(data, targets, feature_columns)
+            # Analyze data characteristics with monitoring
+            tprint_info("Analyzing data characteristics")
+            data_characteristics = self.error_handler.safe_execute(
+                self.stats_framework.analyze_data_characteristics, processed_data,
+                context="Data characteristics analysis"
+            )
+            
+            # Detect patterns with monitoring
+            tprint_info("Detecting patterns in data")
+            pattern_analysis = self.error_handler.safe_execute(
+                self.stats_framework.detect_patterns, processed_data,
+                context="Pattern detection"
+            )
+            
+            # Generate time series splits with monitoring
+            tprint_info("Generating time series splits")
+            cv_splits = self.error_handler.safe_execute(
+                self.cv_splitter.split, processed_data, targets=processed_targets,
+                context="Time series CV splits"
+            )
+            self.performance_stats['n_cv_splits'] = len(cv_splits)
+            
+            # Validate no leakage with error handling
+            if self.config.feature_selection.cv_config.check_leakage:
+                tprint_info("Validating no leakage in splits")
+                is_valid = self.error_handler.safe_execute(
+                    self.cv_splitter.validate_no_leakage, processed_data,
+                    context="Leakage validation"
+                )
+                if not is_valid:
+                    tprint_error("Leakage detected in time series splits")
+                    raise DataQualityError("Leakage detected in time series splits")
         
-        # Prepare data
-        processed_data, processed_targets = self._prepare_data(data, targets, feature_columns)
+            # Period optimization (if enabled) with monitoring
+            period_result = None
+            if self.config.enable_period_optimization:
+                tprint_info("Optimizing periods")
+                period_start = time.time()
+                period_result = self.error_handler.safe_execute(
+                    self._optimize_periods, processed_data, data_characteristics,
+                    context="Period optimization"
+                )
+                self.performance_stats['period_optimization_time'] = time.time() - period_start
+            
+            # Interaction generation (if enabled) with monitoring
+            interaction_result = None
+            if self.config.enable_interaction_generation:
+                tprint_info("Generating interactions")
+                interaction_start = time.time()
+                interaction_result = self.error_handler.safe_execute(
+                    self._generate_interactions, processed_data, processed_targets, pattern_analysis,
+                    context="Interaction generation"
+                )
+                self.performance_stats['interaction_generation_time'] = time.time() - interaction_start
+            
+            # Feature selection with monitoring
+            tprint_info("Selecting features using multi-objective optimization")
+            selection_start = time.time()
+            selection_result = self.error_handler.safe_execute(
+                self._select_features, processed_data, processed_targets, cv_splits,
+                context="Feature selection"
+            )
+            self.performance_stats['feature_selection_time'] = time.time() - selection_start
+            
+            # Calculate final metrics with monitoring
+            final_metrics = self.error_handler.safe_execute(
+                self._calculate_final_metrics, selection_result, processed_data, processed_targets,
+                context="Final metrics calculation"
+            )
+            
+            # Create result
+            total_time = time.time() - start_time
+            self.performance_stats['total_processing_time'] = total_time
+            
+            result = FeaturePipelineResult(
+                selected_features=selection_result.selected_features,
+                feature_importance=final_metrics['feature_importance'],
+                objective_values=selection_result.objective_values,
+                processing_time=total_time,
+                n_cv_splits=len(cv_splits),
+                n_candidates_evaluated=selection_result.optimization_metadata.get('n_candidates', 0),
+                out_of_sample_sharpe=final_metrics['out_of_sample_sharpe'],
+                max_drawdown=final_metrics['max_drawdown'],
+                stability_score=final_metrics['stability_score'],
+                diversity_score=final_metrics['diversity_score'],
+                config=self.config,
+                period_optimization_result=period_result,
+                interaction_generation_result=interaction_result,
+                feature_selection_result=selection_result.optimization_metadata
+            )
+            
+            tprint_success(f"Pipeline processing completed in {total_time:.2f}s")
+            tprint_success(f"Selected {len(selection_result.selected_features)} features")
+            tprint_success(f"Out-of-sample Sharpe: {final_metrics['out_of_sample_sharpe']:.3f}")
+            
+            return result
         
-        # Analyze data characteristics
-        tprint_info("Analyzing data characteristics")
-        data_characteristics = self.stats_framework.analyze_data_characteristics(processed_data)
-        
-        # Detect patterns
-        tprint_info("Detecting patterns in data")
-        pattern_analysis = self.stats_framework.detect_patterns(processed_data)
-        
-        # Generate time series splits
-        tprint_info("Generating time series splits")
-        cv_splits = self.cv_splitter.split(processed_data, targets=processed_targets)
-        self.performance_stats['n_cv_splits'] = len(cv_splits)
-        
-        # Validate no leakage
-        if self.config.feature_selection.cv_config.check_leakage:
-            tprint_info("Validating no leakage in splits")
-            is_valid = self.cv_splitter.validate_no_leakage(processed_data)
-            if not is_valid:
-                tprint_error("Leakage detected in time series splits")
-                raise ValueError("Leakage detected in time series splits")
-        
-        # Period optimization (if enabled)
-        period_result = None
-        if self.config.enable_period_optimization:
-            tprint_info("Optimizing periods")
-            period_start = time.time()
-            period_result = self._optimize_periods(processed_data, data_characteristics)
-            self.performance_stats['period_optimization_time'] = time.time() - period_start
-        
-        # Interaction generation (if enabled)
-        interaction_result = None
-        if self.config.enable_interaction_generation:
-            tprint_info("Generating interactions")
-            interaction_start = time.time()
-            interaction_result = self._generate_interactions(processed_data, processed_targets, pattern_analysis)
-            self.performance_stats['interaction_generation_time'] = time.time() - interaction_start
-        
-        # Feature selection
-        tprint_info("Selecting features using multi-objective optimization")
-        selection_start = time.time()
-        selection_result = self._select_features(processed_data, processed_targets, cv_splits)
-        self.performance_stats['feature_selection_time'] = time.time() - selection_start
-        
-        # Calculate final metrics
-        final_metrics = self._calculate_final_metrics(selection_result, processed_data, processed_targets)
-        
-        # Create result
-        total_time = time.time() - start_time
-        self.performance_stats['total_processing_time'] = total_time
-        
-        result = FeaturePipelineResult(
-            selected_features=selection_result.selected_features,
-            feature_importance=final_metrics['feature_importance'],
-            objective_values=selection_result.objective_values,
-            processing_time=total_time,
-            n_cv_splits=len(cv_splits),
-            n_candidates_evaluated=selection_result.optimization_metadata.get('n_candidates', 0),
-            out_of_sample_sharpe=final_metrics['out_of_sample_sharpe'],
-            max_drawdown=final_metrics['max_drawdown'],
-            stability_score=final_metrics['stability_score'],
-            diversity_score=final_metrics['diversity_score'],
-            config=self.config,
-            period_optimization_result=period_result,
-            interaction_generation_result=interaction_result,
-            feature_selection_result=selection_result.optimization_metadata
-        )
-        
-        tprint_success(f"Pipeline processing completed in {total_time:.2f}s")
-        tprint_success(f"Selected {len(selection_result.selected_features)} features")
-        tprint_success(f"Out-of-sample Sharpe: {final_metrics['out_of_sample_sharpe']:.3f}")
-        
-        return result
+        # Execute the pipeline with performance monitoring
+        return _process_pipeline()
     
     def _validate_inputs(self, data: pd.DataFrame, 
                         targets: Optional[pd.Series], 
                         feature_columns: Optional[List[str]]):
-        """Validate input data."""
-        tprint_debug("Validating inputs")
+        """Validate input data using unified error handler."""
+        tprint_debug("Validating inputs with unified error handler")
         
-        if data is None or data.empty:
-            raise ValueError("Data cannot be None or empty")
+        # Use unified error handler for validation
+        self.error_handler.validate_not_none(data, "data")
+        self.error_handler.validate_not_empty(data, "data")
         
         if not isinstance(data, pd.DataFrame):
-            raise TypeError("Data must be a pandas DataFrame")
+            raise ValidationError("Data must be a pandas DataFrame")
         
         if targets is not None:
+            self.error_handler.validate_not_none(targets, "targets")
             if not isinstance(targets, pd.Series):
-                raise TypeError("Targets must be a pandas Series")
+                raise ValidationError("Targets must be a pandas Series")
             
             if len(targets) != len(data):
-                raise ValueError("Targets length must match data length")
+                raise ValidationError("Targets length must match data length")
         
         if feature_columns is not None:
+            self.error_handler.validate_not_empty(feature_columns, "feature_columns")
             missing_cols = set(feature_columns) - set(data.columns)
             if missing_cols:
-                raise ValueError(f"Missing feature columns: {missing_cols}")
+                raise ValidationError(f"Missing feature columns: {missing_cols}")
         
-        tprint_success("Input validation passed")
+        # Use data processing utils for additional validation
+        data_integrity = self.data_processor.validate_data_integrity(data)
+        if data_integrity.get('issues'):
+            tprint_warning(f"Data integrity issues detected: {data_integrity['issues']}")
+        
+        tprint_success("Input validation passed with unified utilities")
     
     def _prepare_data(self, data: pd.DataFrame, 
                      targets: Optional[pd.Series], 
                      feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Prepare data for processing."""
-        tprint_debug("Preparing data")
+        """Prepare data for processing using enhanced data operations."""
+        tprint_debug("Preparing data with enhanced data operations")
         
         # Select feature columns
         if feature_columns is not None:
@@ -340,10 +388,21 @@ class UnifiedDataDrivenPipeline:
         else:
             processed_data = data.copy()
         
-        # Handle missing values
+        # Use data processing utils for cleaning
+        processed_data = self.data_processor.clean_data(processed_data)
+        
+        # Handle missing values using enhanced operations
         if processed_data.isna().any().any():
-            tprint_warning("Missing values detected, filling with forward fill")
-            processed_data = processed_data.fillna(method='ffill').fillna(method='bfill')
+            tprint_warning("Missing values detected, using enhanced filling strategy")
+            processed_data = vectorized_operation(
+                processed_data, 
+                lambda df: df.fillna(method='ffill').fillna(method='bfill')
+            )
+        
+        # Memory optimization
+        if self.config.vectorization.memory_efficient:
+            processed_data = memory_optimize_dataframe(processed_data)
+            tprint_info("Data memory optimized")
         
         # Align targets with data
         processed_targets = None
@@ -355,7 +414,7 @@ class UnifiedDataDrivenPipeline:
             processed_data = processed_data.loc[common_idx]
             processed_targets = processed_targets.loc[common_idx]
         
-        tprint_success(f"Data prepared: {processed_data.shape}")
+        tprint_success(f"Data prepared with enhanced operations: {processed_data.shape}")
         return processed_data, processed_targets
     
     def _optimize_periods(self, data: pd.DataFrame, 
@@ -435,13 +494,35 @@ class UnifiedDataDrivenPipeline:
         return metrics
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance statistics."""
-        return self.performance_stats.copy()
+        """Get comprehensive performance statistics from unified monitoring."""
+        # Get basic stats
+        basic_stats = self.performance_stats.copy()
+        
+        # Get unified monitor stats
+        unified_stats = self.unified_monitor.get_performance_summary()
+        
+        # Get performance monitor stats
+        perf_stats = self.performance_monitor.get_summary()
+        
+        # Combine all statistics
+        combined_stats = {
+            'basic_stats': basic_stats,
+            'unified_monitor': unified_stats,
+            'performance_monitor': perf_stats,
+            'error_counts': self.error_handler.error_counts,
+            'total_errors': len(self.error_handler.error_history)
+        }
+        
+        return combined_stats
     
     def reset_performance_stats(self):
-        """Reset performance statistics."""
+        """Reset all performance statistics."""
         self._initialize_performance_tracking()
-        tprint_success("Performance statistics reset")
+        self.unified_monitor.clear_history()
+        self.performance_monitor.clear_history()
+        self.error_handler.error_counts.clear()
+        self.error_handler.error_history.clear()
+        tprint_success("All performance statistics reset")
     
     def save_result(self, result: FeaturePipelineResult, 
                    output_path: Union[str, Path]) -> None:

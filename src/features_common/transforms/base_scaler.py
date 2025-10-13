@@ -285,69 +285,22 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
             
         Returns:
             Transformed data with all optimizations applied
-            
-        Raises:
-            ValueError: If data validation fails critically
-            RuntimeError: If optimization fails and fallback is not available
         """
-        if TPRINT_AVAILABLE:
-            tprint(f"🔧 [BaseScaler] Starting fit_transform on {len(data)} samples", color="cyan")
+        # Validate and sanitize input data
+        sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
+        if not is_valid and warnings:
+            self._log_warning(f"Data validation warnings: {warnings}")
         
-        try:
-            # Validate and sanitize input data
-            if TPRINT_AVAILABLE:
-                tprint("🔍 [BaseScaler] Validating and sanitizing input data", color="blue")
-            
-            sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
-            
-            if not is_valid:
-                error_msg = f"Critical data validation failed: {warnings}"
-                if TPRINT_AVAILABLE:
-                    tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-                raise ValueError(error_msg)
-            
-            if warnings:
-                if TPRINT_AVAILABLE:
-                    tprint(f"⚠️  [BaseScaler] Data validation warnings: {warnings}", color="yellow")
-                self._log_warning(f"Data validation warnings: {warnings}")
-            
-            # Use cached operation if available
-            if hasattr(self, 'cached_operation'):
-                if TPRINT_AVAILABLE:
-                    tprint("💾 [BaseScaler] Using cached operation", color="green")
-                return self.cached_operation(self._fit_transform_impl, sanitized_data)
-            else:
-                if TPRINT_AVAILABLE:
-                    tprint("🔄 [BaseScaler] Using direct implementation", color="blue")
-                return self._fit_transform_impl(sanitized_data)
-                
-        except Exception as e:
-            error_msg = f"fit_transform failed: {e}"
-            if TPRINT_AVAILABLE:
-                tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-            self._log_error(error_msg)
-            raise RuntimeError(error_msg) from e
+        # Use cached operation if available
+        if hasattr(self, 'cached_operation'):
+            return self.cached_operation(self._fit_transform_impl, sanitized_data)
+        else:
+            return self._fit_transform_impl(sanitized_data)
     
     def _fit_transform_impl(self, data: pd.Series) -> pd.Series:
         """Implementation of fit_transform with all optimizations."""
-        if TPRINT_AVAILABLE:
-            tprint("🚀 [BaseScaler] Applying auto-optimization to fit_transform", color="green")
-        
-        try:
-            # Use auto-optimization for the core operation
-            result = self.auto_optimize_operation(self._core_fit_transform, data)
-            
-            if TPRINT_AVAILABLE:
-                tprint(f"✅ [BaseScaler] fit_transform completed successfully, result shape: {result.shape}", color="green")
-            
-            return result
-            
-        except Exception as e:
-            error_msg = f"fit_transform implementation failed: {e}"
-            if TPRINT_AVAILABLE:
-                tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-            self._log_error(error_msg)
-            raise RuntimeError(error_msg) from e
+        # Use auto-optimization for the core operation
+        return self.auto_optimize_operation(self._core_fit_transform, data)
     
     @abstractmethod
     def _core_fit_transform(self, data: pd.Series) -> pd.Series:
@@ -380,72 +333,26 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
             Transformed data with all optimizations applied
             
         Raises:
-            ValueError: If scaler has not been fitted or data validation fails critically
-            RuntimeError: If optimization fails and fallback is not available
+            ValueError: If scaler has not been fitted
         """
-        if TPRINT_AVAILABLE:
-            tprint(f"🔧 [BaseScaler] Starting transform on {len(data)} samples", color="cyan")
+        # Validate that scaler has been fitted
+        self._validate_fitted()
         
-        try:
-            # Validate that scaler has been fitted
-            if TPRINT_AVAILABLE:
-                tprint("🔍 [BaseScaler] Validating scaler is fitted", color="blue")
-            self._validate_fitted()
-            
-            # Validate and sanitize input data
-            if TPRINT_AVAILABLE:
-                tprint("🔍 [BaseScaler] Validating and sanitizing input data", color="blue")
-            
-            sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
-            
-            if not is_valid:
-                error_msg = f"Critical data validation failed: {warnings}"
-                if TPRINT_AVAILABLE:
-                    tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-                raise ValueError(error_msg)
-            
-            if warnings:
-                if TPRINT_AVAILABLE:
-                    tprint(f"⚠️  [BaseScaler] Data validation warnings: {warnings}", color="yellow")
-                self._log_warning(f"Data validation warnings: {warnings}")
-            
-            # Use cached operation if available
-            if hasattr(self, 'cached_operation'):
-                if TPRINT_AVAILABLE:
-                    tprint("💾 [BaseScaler] Using cached operation", color="green")
-                return self.cached_operation(self._transform_impl, sanitized_data)
-            else:
-                if TPRINT_AVAILABLE:
-                    tprint("🔄 [BaseScaler] Using direct implementation", color="blue")
-                return self._transform_impl(sanitized_data)
-                
-        except Exception as e:
-            error_msg = f"transform failed: {e}"
-            if TPRINT_AVAILABLE:
-                tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-            self._log_error(error_msg)
-            raise RuntimeError(error_msg) from e
+        # Validate and sanitize input data
+        sanitized_data, is_valid, warnings = self.validate_and_sanitize(data, "input data")
+        if not is_valid and warnings:
+            self._log_warning(f"Data validation warnings: {warnings}")
+        
+        # Use cached operation if available
+        if hasattr(self, 'cached_operation'):
+            return self.cached_operation(self._transform_impl, sanitized_data)
+        else:
+            return self._transform_impl(sanitized_data)
     
     def _transform_impl(self, data: pd.Series) -> pd.Series:
         """Implementation of transform with all optimizations."""
-        if TPRINT_AVAILABLE:
-            tprint("🚀 [BaseScaler] Applying auto-optimization to transform", color="green")
-        
-        try:
-            # Use auto-optimization for the core operation
-            result = self.auto_optimize_operation(self._core_transform, data)
-            
-            if TPRINT_AVAILABLE:
-                tprint(f"✅ [BaseScaler] transform completed successfully, result shape: {result.shape}", color="green")
-            
-            return result
-            
-        except Exception as e:
-            error_msg = f"transform implementation failed: {e}"
-            if TPRINT_AVAILABLE:
-                tprint(f"❌ [BaseScaler] {error_msg}", color="red")
-            self._log_error(error_msg)
-            raise RuntimeError(error_msg) from e
+        # Use auto-optimization for the core operation
+        return self.auto_optimize_operation(self._core_transform, data)
     
     @abstractmethod
     def _core_transform(self, data: pd.Series) -> pd.Series:

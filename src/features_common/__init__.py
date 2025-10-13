@@ -15,8 +15,9 @@ from .utils import (
     UnifiedVectorizationManager, get_unified_vectorization_manager
 )
 
-# Core imports
-from .transforms.base_scaler import BaseScaler, create_optimized_scaler, create_optimized_batch_scaler
+# Core imports with backward compatibility
+from .backward_compatibility import BaseScaler, create_enhanced_scaler, enable_enhanced_logging
+from .transforms.base_scaler import create_optimized_scaler, create_optimized_batch_scaler
 from .transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
 from .optimization.cv_base import BaseCVSplitter, PurgedCVSplitter
 from .registry.base_registry import BaseFeatureRegistry
@@ -120,6 +121,10 @@ __all__ = [
     'report_silent_failures',
     'get_logger',
     'log_operation',
+    
+    # Backward compatibility
+    'create_enhanced_scaler',
+    'enable_enhanced_logging',
 ]
 
 # Add VectorBT optimization components to __all__ if available

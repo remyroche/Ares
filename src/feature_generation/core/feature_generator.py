@@ -857,11 +857,27 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         """
         Optimize DataFrame for vectorized processing using the vectorization optimizer.
         
+        This method provides automatic optimization of DataFrames for efficient vectorized
+        processing. It includes memory optimization, data type optimization, and VectorBT
+        compatibility checks.
+        
+        Features:
+        - Automatic memory optimization for large datasets
+        - Data type optimization (int64 -> int32/int16/int8, float64 -> float32)
+        - VectorBT compatibility preparation
+        - Memory usage monitoring and optimization
+        - Graceful fallback for unsupported data types
+        
         Args:
-            data: Input DataFrame
+            data: Input DataFrame to optimize
             
         Returns:
-            Optimized DataFrame
+            Optimized DataFrame with improved memory usage and processing efficiency
+            
+        Example:
+            >>> generator = VectorizedFeatureGenerator(config)
+            >>> optimized_data = generator.optimize_dataframe_processing(data)
+            >>> # Use optimized_data for feature generation
         """
         if self.enable_vectorization_optimization and self.vectorization_optimizer:
             return self.vectorization_optimizer.optimize_dataframe_processing(data)
@@ -876,14 +892,46 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         """
         Perform vectorized rolling operations with VectorBT optimization.
         
+        This method provides high-performance rolling operations using VectorBT's optimized
+        C++ backend when available, with automatic fallback to pandas for smaller datasets
+        or when VectorBT is not available.
+        
+        Features:
+        - VectorBT optimization for large datasets (>1000 rows)
+        - Automatic fallback to pandas for smaller datasets
+        - Support for multiple operations and windows in a single call
+        - Memory-efficient processing with chunked operations
+        - GPU acceleration support when available
+        - Comprehensive error handling and logging
+        
+        Supported Operations:
+        - 'mean': Rolling mean
+        - 'std': Rolling standard deviation
+        - 'var': Rolling variance
+        - 'min': Rolling minimum
+        - 'max': Rolling maximum
+        - 'sum': Rolling sum
+        - 'corr': Rolling correlation (requires 'other' parameter)
+        - 'cov': Rolling covariance (requires 'other' parameter)
+        
         Args:
-            data: Input DataFrame
-            operations: List of operations ('mean', 'std', 'var', 'min', 'max', 'sum')
-            windows: List of window sizes
+            data: Input DataFrame containing the data to process
+            operations: List of operation types to perform
+            windows: List of window sizes for rolling calculations
             columns: Columns to process (None = all numeric columns)
             
         Returns:
-            DataFrame with rolling features
+            DataFrame with rolling features added as new columns
+            
+        Example:
+            >>> generator = VectorizedFeatureGenerator(config)
+            >>> result = generator.vectorized_rolling_operations(
+            ...     data, 
+            ...     operations=['mean', 'std'], 
+            ...     windows=[20, 50],
+            ...     columns=['close', 'volume']
+            ... )
+            >>> # Result contains columns like 'close_mean_20', 'close_std_20', etc.
         """
         # Use VectorBT if available and data is large enough
         if self._should_use_vectorbt(data):

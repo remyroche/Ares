@@ -587,6 +587,22 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 cleaned_data = None
                 validation_summary = None
 
+            # Fast fail validation for target columns (if data is available)
+            if cleaned_data is not None:
+                tprint("🔍 Performing fast fail validation for target columns...")
+                target_columns = self._extract_target_columns(pipeline_state)
+                if target_columns:
+                    missing_targets = [col for col in target_columns if col not in cleaned_data.columns]
+                    if missing_targets:
+                        error_msg = f"❌ CRITICAL: Missing target columns: {missing_targets}"
+                        tprint_error(error_msg)
+                        tprint_error("🚨 FAST FAIL: Cannot proceed without target columns - stopping optimization")
+                        raise DataValidationError(error_msg)
+                    else:
+                        tprint_success("✅ All target columns present in data")
+                else:
+                    tprint_warning("⚠️ No target columns found in pipeline state")
+
             # Record validation metrics (if validation was performed)
             if validation_summary is not None:
                 tprint("📈 Recording validation metrics after successful validation")
@@ -2989,6 +3005,34 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         """Safely perform matrix multiplication with error handling."""
         tprint(f"🔢 Performing safe matrix multiplication ({A.shape} x {B.shape})")
         return safe_matrix_multiply(A, B)
+
+    def _extract_target_columns(self, pipeline_state: PipelineState) -> List[str]:
+        """Extract target columns from pipeline state."""
+        target_columns = []
+        
+        # Try to extract from multi_horizon_labeling_result
+        multi_horizon_result = pipeline_state.get('multi_horizon_labeling_result')
+        if multi_horizon_result and isinstance(multi_horizon_result, dict):
+            # Look for target columns in the result
+            if 'target_columns' in multi_horizon_result:
+                target_columns = multi_horizon_result['target_columns']
+            elif 'standardized_output' in multi_horizon_result:
+                std_output = multi_horizon_result['standardized_output']
+                if isinstance(std_output, dict) and 'target_columns' in std_output:
+                    target_columns = std_output['target_columns']
+        
+        # Fallback: look for common target column names
+        if not target_columns:
+            common_targets = [
+                'analyst_target', 'tactician_target', 'target', 'label',
+                'small_band_targets', 'medium_band_targets', 'high_band_targets'
+            ]
+            # This would need to be checked against actual data columns
+            # For now, return empty list to avoid false positives
+            target_columns = []
+        
+        tprint_debug(f"🎯 Extracted target columns: {target_columns}")
+        return target_columns
 
     def optimize_dataframe_for_matrix_ops(self, df):
         """Optimize DataFrame for matrix operations."""

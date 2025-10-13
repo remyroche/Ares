@@ -90,14 +90,21 @@ multi_horizon_integration:
 
 # Feature bank integration
 feature_bank_integration:
-  # Categories to optimize (excludes interaction, cross-timeframe, wavelets, auto encoders, regime-specific)
+  # Categories to optimize (based on src/feature_generation/categories/)
   included_categories:
-    - "price_returns"
-    - "volatility"
-    - "mean_reversion"
-    - "liquidity_micro"
-    - "anchors_tod"
-    - "context"
+    - "returns"           # price_returns, log_returns, cumulative_returns, etc.
+    - "momentum"          # RSI, MACD, stochastic, Williams %R, etc.
+    - "volatility"        # Bollinger Bands, ATR, GARCH, etc.
+    - "volume"            # volume ratios, OBV, CMF, VWAP deviations, etc.
+    - "trend"             # moving averages, trend indicators, etc.
+    - "oscillator"        # momentum oscillators, etc.
+    - "support_resistance" # pivot points, levels, etc.
+    - "candlestick_pattern" # doji, hammer, etc.
+    - "acceleration"      # momentum, acceleration, jerk, trend strength, etc.
+    - "entropy"           # Shannon, permutation, sample entropy, etc.
+    - "advanced_statistical" # Hurst exponent, jump indicators, CVaR, etc.
+    - "microstructure"    # order flow, liquidity features, etc.
+    - "time"              # time-based features, anchors_tod, etc.
   
   # Feature validation
   validate_feature_metadata: true

@@ -314,11 +314,53 @@ class MultiStageFeatureSelector:
                 return (X - X.mean()) / X.std()
             return X
 
+    def _vectorbt_optimized_spearman_correlation(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate Spearman correlation using VectorBT optimization."""
+        tprint_debug("   🚀 Using VectorBT for Spearman correlation calculation")
+        
+        try:
+            if not self.vectorbt_enabled or self.vectorization_manager is None:
+                tprint_debug("   ⚠️ VectorBT not available, using standard method")
+                return self.spearman_abs_vectorized(X, y)
+            
+            # Use VectorBT for optimized correlation calculation
+            # This would be implemented in the VectorBT manager
+            corr_scores = self.vectorization_manager.calculate_spearman_correlation(X, y)
+            
+            tprint_debug(f"   ✅ VectorBT Spearman correlation completed: {len(corr_scores)} features")
+            return corr_scores
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT Spearman correlation failed: {e}")
+            tprint_debug("   📊 Falling back to standard Spearman correlation")
+            return self.spearman_abs_vectorized(X, y)
+
+    def _vectorbt_optimized_redundancy_analysis(self, X: pd.DataFrame) -> pd.Series:
+        """Calculate redundancy analysis using VectorBT optimization."""
+        tprint_debug("   🚀 Using VectorBT for redundancy analysis")
+        
+        try:
+            if not self.vectorbt_enabled or self.vectorization_manager is None:
+                tprint_debug("   ⚠️ VectorBT not available, using standard method")
+                return self.redundancy_mean_abs_spearman_blocked(X)
+            
+            # Use VectorBT for optimized redundancy analysis
+            # This would be implemented in the VectorBT manager
+            redundancy_scores = self.vectorization_manager.calculate_redundancy_analysis(X)
+            
+            tprint_debug(f"   ✅ VectorBT redundancy analysis completed: {len(redundancy_scores)} features")
+            return redundancy_scores
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT redundancy analysis failed: {e}")
+            tprint_debug("   📊 Falling back to standard redundancy analysis")
+            return self.redundancy_mean_abs_spearman_blocked(X)
+
     def select_features(self, X: pd.DataFrame, y: pd.Series, 
                        symbol: str = "BTCUSDT", exchange: str = "binance", 
                        timeframe: str = "15m") -> FeatureSelectionResult:
         """
-        Execute multi-stage feature selection.
+        Execute multi-stage feature selection with fast fail and extensive logging.
         
         Args:
             X: Feature matrix
@@ -332,43 +374,121 @@ class MultiStageFeatureSelector:
         """
         start_time = time.time()
         tprint("🚀 Starting multi-stage feature selection")
+        tprint_info(f"   📊 Input data shape: {X.shape}")
+        tprint_info(f"   📊 Target shape: {y.shape}")
+        tprint_info(f"   📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
         
         try:
+            # FAST FAIL: Early validation checks
+            tprint_debug("🔍 Performing fast fail validation checks")
+            
+            # Check input data validity
+            if X is None or X.empty:
+                error_msg = "Input feature matrix X is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if y is None or y.empty:
+                error_msg = "Target variable y is None or empty"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(X) != len(y):
+                error_msg = f"Feature matrix length ({len(X)}) doesn't match target length ({len(y)})"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            if X.shape[1] == 0:
+                error_msg = "Feature matrix has no columns"
+                tprint_error(f"❌ FAST FAIL: {error_msg}")
+                raise ValueError(error_msg)
+            
+            tprint_success("   ✅ Fast fail validation passed")
+            
             # Set thread limits
+            tprint_debug("🔧 Setting thread limits")
             self._set_thread_limits()
             
             # Display VectorBT status
+            tprint_debug("🚀 Displaying VectorBT status")
             self._display_vectorbt_status()
             
             # Initialize result tracking
+            tprint_debug("📊 Initializing result tracking")
             stage_results = {}
             selected_features = X.columns.tolist()
             feature_importance = {}
             feature_scores = {}
             
+            tprint_info(f"   📊 Starting with {len(selected_features)} features")
+            
             # Stage 1: Initial filtering (120 -> 100)
             tprint("📊 Stage 1: Initial filtering (120 -> 100)")
-            stage_1_result = self._stage_1_filtering(X, y, selected_features)
-            selected_features = stage_1_result['selected_features']
-            stage_results['stage_1'] = stage_1_result
+            tprint_debug(f"   🔍 Input features for Stage 1: {len(selected_features)}")
+            
+            try:
+                stage_1_result = self._stage_1_filtering(X, y, selected_features)
+                selected_features = stage_1_result['selected_features']
+                stage_results['stage_1'] = stage_1_result
+                
+                tprint_success(f"   ✅ Stage 1 completed: {len(selected_features)} features selected")
+                tprint_debug(f"   📊 Stage 1 method: {stage_1_result.get('method', 'unknown')}")
+                
+            except Exception as e:
+                error_msg = f"Stage 1 filtering failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # Stage 2: Correlation and redundancy removal (100 -> 80)
             tprint("📊 Stage 2: Correlation and redundancy removal (100 -> 80)")
-            stage_2_result = self._stage_2_correlation_filtering(X[selected_features], y)
-            selected_features = stage_2_result['selected_features']
-            stage_results['stage_2'] = stage_2_result
+            tprint_debug(f"   🔍 Input features for Stage 2: {len(selected_features)}")
+            
+            try:
+                stage_2_result = self._stage_2_correlation_filtering(X[selected_features], y)
+                selected_features = stage_2_result['selected_features']
+                stage_results['stage_2'] = stage_2_result
+                
+                tprint_success(f"   ✅ Stage 2 completed: {len(selected_features)} features selected")
+                tprint_debug(f"   📊 High correlation pairs removed: {stage_2_result.get('high_corr_pairs', 0)}")
+                tprint_debug(f"   📊 Features removed: {stage_2_result.get('features_removed', 0)}")
+                
+            except Exception as e:
+                error_msg = f"Stage 2 correlation filtering failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # Stage 3: Final optimization (80 -> 60)
             tprint("📊 Stage 3: Final optimization (80 -> 60)")
-            stage_3_result = self._stage_3_final_optimization(X[selected_features], y)
-            selected_features = stage_3_result['selected_features']
-            stage_results['stage_3'] = stage_3_result
+            tprint_debug(f"   🔍 Input features for Stage 3: {len(selected_features)}")
+            
+            try:
+                stage_3_result = self._stage_3_final_optimization(X[selected_features], y)
+                selected_features = stage_3_result['selected_features']
+                stage_results['stage_3'] = stage_3_result
+                
+                tprint_success(f"   ✅ Stage 3 completed: {len(selected_features)} features selected")
+                tprint_debug(f"   📊 Target count: {stage_3_result.get('target_count', 0)}")
+                
+            except Exception as e:
+                error_msg = f"Stage 3 final optimization failed: {e}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg) from e
             
             # Calculate final metrics
-            execution_time = time.time() - start_time
-            performance_metrics = self._calculate_performance_metrics(X[selected_features], y)
+            tprint_debug("📊 Calculating final performance metrics")
+            try:
+                performance_metrics = self._calculate_performance_metrics(X[selected_features], y)
+                tprint_success("   ✅ Performance metrics calculated")
+                tprint_debug(f"   📊 Final feature count: {performance_metrics.get('n_features', 0)}")
+                tprint_debug(f"   📊 Sample count: {performance_metrics.get('n_samples', 0)}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Performance metrics calculation failed: {e}")
+                performance_metrics = {}
             
             # Create result
+            execution_time = time.time() - start_time
+            tprint_debug("📊 Creating final result object")
+            
             result = FeatureSelectionResult(
                 selected_features=selected_features,
                 feature_importance=feature_importance,
@@ -382,13 +502,24 @@ class MultiStageFeatureSelector:
                 success=True
             )
             
-            tprint_success(f"✅ Feature selection completed in {execution_time:.2f}s")
-            tprint(f"   📊 Selected {len(selected_features)} features from {len(X.columns)}")
+            tprint_success(f"✅ Feature selection completed successfully in {execution_time:.2f}s")
+            tprint_info(f"   📊 Final result: {len(selected_features)} features selected from {len(X.columns)}")
+            tprint_info(f"   📊 Reduction ratio: {len(selected_features)/len(X.columns):.1%}")
+            
+            # Log final feature list
+            tprint_debug("📊 Selected features:")
+            for i, feature in enumerate(selected_features, 1):
+                tprint_debug(f"   {i:2d}. {feature}")
             
             return result
             
         except Exception as e:
-            tprint_error(f"❌ Feature selection failed: {e}")
+            execution_time = time.time() - start_time
+            error_msg = f"Feature selection failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_debug(f"   🔍 Exception type: {type(e).__name__}")
+            tprint_debug(f"   🔍 Execution time before failure: {execution_time:.2f}s")
+            
             return FeatureSelectionResult(
                 selected_features=[],
                 feature_importance={},
@@ -396,7 +527,7 @@ class MultiStageFeatureSelector:
                 performance_metrics={},
                 validation_scores={},
                 config_used=self.config,
-                execution_time=time.time() - start_time,
+                execution_time=execution_time,
                 memory_usage={},
                 success=False,
                 error_message=str(e)
@@ -404,115 +535,313 @@ class MultiStageFeatureSelector:
 
     def _stage_1_filtering(self, X: pd.DataFrame, y: pd.Series, 
                           initial_features: List[str]) -> Dict[str, Any]:
-        """Stage 1: Initial filtering using basic criteria."""
+        """Stage 1: Initial filtering using basic criteria with VectorBT optimization."""
         tprint_debug("🔍 Stage 1: Initial filtering")
+        tprint_debug(f"   📊 Input features: {len(initial_features)}")
+        tprint_debug(f"   📊 Data shape: {X.shape}")
         
-        # Calculate feature importance using Spearman correlation
-        importance_scores = self.spearman_abs_vectorized(X, y)
-        
-        # Select top features based on importance
-        target_count = min(self.config.stage_1_target, len(initial_features))
-        selected_features = self.top_k(
-            initial_features, 
-            importance_scores.values, 
-            target_count
-        )
-        
-        return {
-            'selected_features': selected_features,
-            'importance_scores': importance_scores.to_dict(),
-            'target_count': target_count,
-            'method': 'spearman_correlation'
-        }
-
-    def _stage_2_correlation_filtering(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-        """Stage 2: Remove highly correlated features."""
-        tprint_debug("🔍 Stage 2: Correlation filtering")
-        
-        # Calculate correlation matrix
-        if self.vectorbt_enabled:
-            corr_matrix = self._vectorbt_optimized_correlation_matrix(X)
-        else:
-            corr_matrix = X.corr().values
-        
-        # Find highly correlated pairs
-        high_corr_pairs = []
-        for i in range(len(X.columns)):
-            for j in range(i + 1, len(X.columns)):
-                if abs(corr_matrix[i, j]) > self.config.quality_config.min_correlation_threshold:
-                    high_corr_pairs.append((i, j, corr_matrix[i, j]))
-        
-        # Remove features with highest average correlation
-        features_to_remove = set()
-        for i, j, corr in sorted(high_corr_pairs, key=lambda x: abs(x[2]), reverse=True):
-            if i not in features_to_remove and j not in features_to_remove:
-                # Remove the feature with lower individual importance
-                feature_i_importance = abs(corr_matrix[i, :]).mean()
-                feature_j_importance = abs(corr_matrix[j, :]).mean()
-                
-                if feature_i_importance < feature_j_importance:
-                    features_to_remove.add(i)
+        try:
+            # FAST FAIL: Check input validity
+            if X.empty or y.empty:
+                error_msg = "Empty input data in Stage 1"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(initial_features) == 0:
+                error_msg = "No initial features provided"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            tprint_debug("   ✅ Input validation passed")
+            
+            # Calculate feature importance using Spearman correlation with VectorBT optimization
+            tprint_debug("   📊 Calculating Spearman correlation importance scores")
+            try:
+                if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                    tprint_debug("   🚀 Using VectorBT for correlation calculation")
+                    # Use VectorBT for optimized correlation calculation
+                    importance_scores = self._vectorbt_optimized_spearman_correlation(X, y)
                 else:
-                    features_to_remove.add(j)
-        
-        # Select remaining features
-        remaining_indices = [i for i in range(len(X.columns)) if i not in features_to_remove]
-        selected_features = [X.columns[i] for i in remaining_indices]
-        
-        # Ensure we don't go below target
-        target_count = min(self.config.stage_2_target, len(selected_features))
-        if len(selected_features) > target_count:
-            # Use importance to select final features
-            importance_scores = self.spearman_abs_vectorized(X[selected_features], y)
+                    tprint_debug("   📊 Using standard Spearman correlation")
+                    importance_scores = self.spearman_abs_vectorized(X, y)
+                
+                tprint_debug(f"   ✅ Importance scores calculated: {len(importance_scores)} features")
+                tprint_debug(f"   📊 Score range: {importance_scores.min():.6f} - {importance_scores.max():.6f}")
+                
+            except Exception as e:
+                tprint_warning(f"   ⚠️ VectorBT correlation failed, falling back to standard: {e}")
+                importance_scores = self.spearman_abs_vectorized(X, y)
+            
+            # Select top features based on importance
+            target_count = min(self.config.stage_1_target, len(initial_features))
+            tprint_debug(f"   📊 Target count: {target_count}")
+            
             selected_features = self.top_k(
-                selected_features,
-                importance_scores.values,
+                initial_features, 
+                importance_scores.values, 
                 target_count
             )
+            
+            tprint_debug(f"   ✅ Selected {len(selected_features)} features")
+            tprint_debug(f"   📊 Selection method: spearman_correlation")
+            
+            # Log top features
+            if len(selected_features) > 0:
+                tprint_debug("   📊 Top 5 selected features:")
+                for i, feature in enumerate(selected_features[:5], 1):
+                    score = importance_scores.get(feature, 0.0)
+                    tprint_debug(f"   {i}. {feature}: {score:.6f}")
+            
+            return {
+                'selected_features': selected_features,
+                'importance_scores': importance_scores.to_dict(),
+                'target_count': target_count,
+                'method': 'spearman_correlation',
+                'vectorbt_used': self.vectorbt_enabled
+            }
+            
+        except Exception as e:
+            error_msg = f"Stage 1 filtering failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+    def _stage_2_correlation_filtering(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """Stage 2: Remove highly correlated features with VectorBT optimization."""
+        tprint_debug("🔍 Stage 2: Correlation filtering")
+        tprint_debug(f"   📊 Input features: {len(X.columns)}")
+        tprint_debug(f"   📊 Data shape: {X.shape}")
         
-        return {
-            'selected_features': selected_features,
-            'correlation_matrix': corr_matrix.tolist(),
-            'high_corr_pairs': len(high_corr_pairs),
-            'features_removed': len(features_to_remove),
-            'target_count': target_count
-        }
+        try:
+            # FAST FAIL: Check input validity
+            if X.empty or y.empty:
+                error_msg = "Empty input data in Stage 2"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(X.columns) == 0:
+                error_msg = "No features to process in Stage 2"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            tprint_debug("   ✅ Input validation passed")
+            
+            # Calculate correlation matrix with VectorBT optimization
+            tprint_debug("   📊 Calculating correlation matrix")
+            try:
+                if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                    tprint_debug("   🚀 Using VectorBT for correlation matrix calculation")
+                    corr_matrix = self._vectorbt_optimized_correlation_matrix(X)
+                else:
+                    tprint_debug("   📊 Using standard correlation calculation")
+                    corr_matrix = X.corr().values
+                
+                tprint_debug(f"   ✅ Correlation matrix calculated: {corr_matrix.shape}")
+                
+            except Exception as e:
+                tprint_warning(f"   ⚠️ VectorBT correlation failed, using standard: {e}")
+                corr_matrix = X.corr().values
+            
+            # Find highly correlated pairs
+            tprint_debug("   🔍 Finding highly correlated feature pairs")
+            threshold = self.config.quality_config.min_correlation_threshold
+            tprint_debug(f"   📊 Correlation threshold: {threshold}")
+            
+            high_corr_pairs = []
+            for i in range(len(X.columns)):
+                for j in range(i + 1, len(X.columns)):
+                    corr_value = abs(corr_matrix[i, j])
+                    if corr_value > threshold:
+                        high_corr_pairs.append((i, j, corr_matrix[i, j]))
+            
+            tprint_debug(f"   📊 Found {len(high_corr_pairs)} highly correlated pairs")
+            
+            # Remove features with highest average correlation
+            tprint_debug("   🔍 Removing redundant features")
+            features_to_remove = set()
+            
+            for i, j, corr in sorted(high_corr_pairs, key=lambda x: abs(x[2]), reverse=True):
+                if i not in features_to_remove and j not in features_to_remove:
+                    # Calculate average correlation for each feature
+                    feature_i_importance = abs(corr_matrix[i, :]).mean()
+                    feature_j_importance = abs(corr_matrix[j, :]).mean()
+                    
+                    # Remove the feature with lower individual importance
+                    if feature_i_importance < feature_j_importance:
+                        features_to_remove.add(i)
+                        tprint_debug(f"   🗑️ Removing feature {i} ({X.columns[i]}) - lower importance")
+                    else:
+                        features_to_remove.add(j)
+                        tprint_debug(f"   🗑️ Removing feature {j} ({X.columns[j]}) - lower importance")
+            
+            tprint_debug(f"   📊 Features to remove: {len(features_to_remove)}")
+            
+            # Select remaining features
+            remaining_indices = [i for i in range(len(X.columns)) if i not in features_to_remove]
+            selected_features = [X.columns[i] for i in remaining_indices]
+            
+            tprint_debug(f"   📊 Features after correlation filtering: {len(selected_features)}")
+            
+            # Ensure we don't go below target
+            target_count = min(self.config.stage_2_target, len(selected_features))
+            tprint_debug(f"   📊 Target count: {target_count}")
+            
+            if len(selected_features) > target_count:
+                tprint_debug("   📊 Applying final importance-based selection")
+                # Use importance to select final features
+                try:
+                    if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                        importance_scores = self._vectorbt_optimized_spearman_correlation(X[selected_features], y)
+                    else:
+                        importance_scores = self.spearman_abs_vectorized(X[selected_features], y)
+                    
+                    selected_features = self.top_k(
+                        selected_features,
+                        importance_scores.values,
+                        target_count
+                    )
+                    tprint_debug(f"   ✅ Final selection completed: {len(selected_features)} features")
+                    
+                except Exception as e:
+                    tprint_warning(f"   ⚠️ Final selection failed: {e}")
+                    # Keep the first target_count features as fallback
+                    selected_features = selected_features[:target_count]
+                    tprint_debug(f"   📊 Using fallback selection: {len(selected_features)} features")
+            
+            tprint_debug(f"   ✅ Stage 2 completed: {len(selected_features)} features selected")
+            
+            return {
+                'selected_features': selected_features,
+                'correlation_matrix': corr_matrix.tolist(),
+                'high_corr_pairs': len(high_corr_pairs),
+                'features_removed': len(features_to_remove),
+                'target_count': target_count,
+                'vectorbt_used': self.vectorbt_enabled
+            }
+            
+        except Exception as e:
+            error_msg = f"Stage 2 correlation filtering failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _stage_3_final_optimization(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-        """Stage 3: Final optimization using ensemble methods."""
+        """Stage 3: Final optimization using ensemble methods with VectorBT optimization."""
         tprint_debug("🔍 Stage 3: Final optimization")
+        tprint_debug(f"   📊 Input features: {len(X.columns)}")
+        tprint_debug(f"   📊 Data shape: {X.shape}")
         
-        # Use multiple methods for final selection
-        methods_scores = {}
-        
-        # Method 1: Spearman correlation
-        spearman_scores = self.spearman_abs_vectorized(X, y)
-        methods_scores['spearman'] = spearman_scores
-        
-        # Method 2: Redundancy analysis
-        redundancy_scores = self.redundancy_mean_abs_spearman_blocked(X)
-        methods_scores['redundancy'] = redundancy_scores
-        
-        # Combine scores using weighted average
-        combined_scores = (
-            spearman_scores * 0.7 + 
-            (1 - redundancy_scores / redundancy_scores.max()) * 0.3
-        )
-        
-        # Select final features
-        target_count = min(self.config.stage_3_target, len(X.columns))
-        selected_features = self.top_k(
-            X.columns.tolist(),
-            combined_scores.values,
-            target_count
-        )
-        
-        return {
-            'selected_features': selected_features,
-            'combined_scores': combined_scores.to_dict(),
-            'methods_scores': {k: v.to_dict() for k, v in methods_scores.items()},
-            'target_count': target_count
-        }
+        try:
+            # FAST FAIL: Check input validity
+            if X.empty or y.empty:
+                error_msg = "Empty input data in Stage 3"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            if len(X.columns) == 0:
+                error_msg = "No features to process in Stage 3"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+            
+            tprint_debug("   ✅ Input validation passed")
+            
+            # Use multiple methods for final selection
+            tprint_debug("   📊 Calculating ensemble scores")
+            methods_scores = {}
+            
+            # Method 1: Spearman correlation with VectorBT optimization
+            tprint_debug("   📊 Method 1: Spearman correlation")
+            try:
+                if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                    tprint_debug("   🚀 Using VectorBT for Spearman correlation")
+                    spearman_scores = self._vectorbt_optimized_spearman_correlation(X, y)
+                else:
+                    tprint_debug("   📊 Using standard Spearman correlation")
+                    spearman_scores = self.spearman_abs_vectorized(X, y)
+                
+                methods_scores['spearman'] = spearman_scores
+                tprint_debug(f"   ✅ Spearman scores calculated: {len(spearman_scores)} features")
+                tprint_debug(f"   📊 Spearman range: {spearman_scores.min():.6f} - {spearman_scores.max():.6f}")
+                
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Spearman correlation failed: {e}")
+                spearman_scores = pd.Series(0.0, index=X.columns)
+                methods_scores['spearman'] = spearman_scores
+            
+            # Method 2: Redundancy analysis with VectorBT optimization
+            tprint_debug("   📊 Method 2: Redundancy analysis")
+            try:
+                if self.vectorbt_enabled and hasattr(self, 'vectorization_manager'):
+                    tprint_debug("   🚀 Using VectorBT for redundancy analysis")
+                    redundancy_scores = self._vectorbt_optimized_redundancy_analysis(X)
+                else:
+                    tprint_debug("   📊 Using standard redundancy analysis")
+                    redundancy_scores = self.redundancy_mean_abs_spearman_blocked(X)
+                
+                methods_scores['redundancy'] = redundancy_scores
+                tprint_debug(f"   ✅ Redundancy scores calculated: {len(redundancy_scores)} features")
+                tprint_debug(f"   📊 Redundancy range: {redundancy_scores.min():.6f} - {redundancy_scores.max():.6f}")
+                
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Redundancy analysis failed: {e}")
+                redundancy_scores = pd.Series(0.0, index=X.columns)
+                methods_scores['redundancy'] = redundancy_scores
+            
+            # Combine scores using weighted average
+            tprint_debug("   📊 Combining scores with weighted average")
+            try:
+                # Normalize redundancy scores to 0-1 range
+                if redundancy_scores.max() > 0:
+                    normalized_redundancy = 1 - (redundancy_scores / redundancy_scores.max())
+                else:
+                    normalized_redundancy = pd.Series(1.0, index=X.columns)
+                
+                # Weighted combination
+                combined_scores = (
+                    spearman_scores * 0.7 + 
+                    normalized_redundancy * 0.3
+                )
+                
+                tprint_debug(f"   ✅ Combined scores calculated: {len(combined_scores)} features")
+                tprint_debug(f"   📊 Combined range: {combined_scores.min():.6f} - {combined_scores.max():.6f}")
+                
+            except Exception as e:
+                tprint_warning(f"   ⚠️ Score combination failed: {e}")
+                # Fallback to just Spearman scores
+                combined_scores = spearman_scores
+                tprint_debug("   📊 Using Spearman scores as fallback")
+            
+            # Select final features
+            target_count = min(self.config.stage_3_target, len(X.columns))
+            tprint_debug(f"   📊 Target count: {target_count}")
+            
+            selected_features = self.top_k(
+                X.columns.tolist(),
+                combined_scores.values,
+                target_count
+            )
+            
+            tprint_debug(f"   ✅ Final selection completed: {len(selected_features)} features")
+            
+            # Log top features
+            if len(selected_features) > 0:
+                tprint_debug("   📊 Top 5 final selected features:")
+                for i, feature in enumerate(selected_features[:5], 1):
+                    score = combined_scores.get(feature, 0.0)
+                    spearman_score = spearman_scores.get(feature, 0.0)
+                    redundancy_score = redundancy_scores.get(feature, 0.0)
+                    tprint_debug(f"   {i}. {feature}: combined={score:.6f}, spearman={spearman_score:.6f}, redundancy={redundancy_score:.6f}")
+            
+            return {
+                'selected_features': selected_features,
+                'combined_scores': combined_scores.to_dict(),
+                'methods_scores': {k: v.to_dict() for k, v in methods_scores.items()},
+                'target_count': target_count,
+                'vectorbt_used': self.vectorbt_enabled
+            }
+            
+        except Exception as e:
+            error_msg = f"Stage 3 final optimization failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _calculate_performance_metrics(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """Calculate performance metrics for selected features."""

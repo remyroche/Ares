@@ -56,7 +56,7 @@ class DataValidator:
     
     def validate_data(self, data: pd.DataFrame, target: Optional[pd.Series] = None) -> DataValidationResult:
         """
-        Validate data for feature selection.
+        Validate data for feature selection with fast fail on critical errors.
         
         Args:
             data: Feature matrix to validate
@@ -66,17 +66,23 @@ class DataValidator:
             DataValidationResult with validation results
         """
         tprint_info(f"🔍 Validating data: {data.shape}")
+        tprint_debug(f"   📊 Data type: {type(data)}")
+        tprint_debug(f"   📊 Target type: {type(target) if target is not None else 'None'}")
         
         errors = []
         warnings = []
         quality_metrics = {}
         
         try:
-            # Basic data structure validation
+            # FAST FAIL: Basic data structure validation - fail immediately on critical errors
+            tprint_debug("🔍 Performing fast fail data structure validation")
             structure_errors = self._validate_data_structure(data)
             errors.extend(structure_errors)
             
             if structure_errors:
+                tprint_error(f"❌ FAST FAIL: Critical data structure errors detected: {len(structure_errors)}")
+                for i, error in enumerate(structure_errors, 1):
+                    tprint_error(f"   {i}. {error}")
                 return DataValidationResult(
                     is_valid=False,
                     errors=errors,
@@ -84,38 +90,95 @@ class DataValidator:
                     quality_metrics=quality_metrics
                 )
             
-            # Calculate quality metrics
-            quality_metrics = self._calculate_quality_metrics(data, target)
+            tprint_success("   ✅ Data structure validation passed")
             
-            # Validate data quality
+            # FAST FAIL: Target validation if provided - fail immediately on critical errors
+            if target is not None:
+                tprint_debug("🔍 Performing fast fail target validation")
+                target_errors, target_warnings = self._validate_target(target, data)
+                errors.extend(target_errors)
+                warnings.extend(target_warnings)
+                
+                if target_errors:
+                    tprint_error(f"❌ FAST FAIL: Critical target validation errors detected: {len(target_errors)}")
+                    for i, error in enumerate(target_errors, 1):
+                        tprint_error(f"   {i}. {error}")
+                    return DataValidationResult(
+                        is_valid=False,
+                        errors=errors,
+                        warnings=warnings,
+                        quality_metrics=quality_metrics
+                    )
+                
+                tprint_success("   ✅ Target validation passed")
+                if target_warnings:
+                    tprint_warning(f"   ⚠️ Target warnings: {len(target_warnings)}")
+                    for i, warning in enumerate(target_warnings, 1):
+                        tprint_warning(f"   {i}. {warning}")
+            
+            # Calculate quality metrics with extensive logging
+            tprint_debug("📊 Calculating data quality metrics")
+            quality_metrics = self._calculate_quality_metrics(data, target)
+            tprint_debug(f"   📊 Quality score: {quality_metrics.get('data_quality_score', 0.0):.3f}")
+            
+            # Validate data quality with detailed logging
+            tprint_debug("🔍 Validating data quality thresholds")
             quality_errors, quality_warnings = self._validate_data_quality(data, quality_metrics)
             errors.extend(quality_errors)
             warnings.extend(quality_warnings)
             
-            # Validate target if provided
-            if target is not None:
-                target_errors, target_warnings = self._validate_target(target, data)
-                errors.extend(target_errors)
-                warnings.extend(target_warnings)
+            if quality_errors:
+                tprint_error(f"❌ Data quality validation failed: {len(quality_errors)} errors")
+                for i, error in enumerate(quality_errors, 1):
+                    tprint_error(f"   {i}. {error}")
+            else:
+                tprint_success("   ✅ Data quality validation passed")
             
-            # Validate temporal consistency if applicable
+            if quality_warnings:
+                tprint_warning(f"   ⚠️ Data quality warnings: {len(quality_warnings)}")
+                for i, warning in enumerate(quality_warnings, 1):
+                    tprint_warning(f"   {i}. {warning}")
+            
+            # Validate temporal consistency with detailed logging
+            tprint_debug("🔍 Validating temporal consistency")
             temporal_errors, temporal_warnings = self._validate_temporal_consistency(data)
             errors.extend(temporal_errors)
             warnings.extend(temporal_warnings)
             
+            if temporal_errors:
+                tprint_error(f"❌ Temporal consistency validation failed: {len(temporal_errors)} errors")
+                for i, error in enumerate(temporal_errors, 1):
+                    tprint_error(f"   {i}. {error}")
+            else:
+                tprint_success("   ✅ Temporal consistency validation passed")
+            
+            if temporal_warnings:
+                tprint_warning(f"   ⚠️ Temporal consistency warnings: {len(temporal_warnings)}")
+                for i, warning in enumerate(temporal_warnings, 1):
+                    tprint_warning(f"   {i}. {warning}")
+            
             # Clean data if validation passes
             cleaned_data = None
             if not errors:
+                tprint_debug("🧹 Cleaning validated data")
                 cleaned_data = self._clean_data(data)
+                tprint_success("   ✅ Data cleaning completed")
+            else:
+                tprint_warning("   ⚠️ Skipping data cleaning due to validation errors")
             
             is_valid = len(errors) == 0
             
             if is_valid:
-                tprint_success(f"   ✅ Data validation passed")
+                tprint_success(f"✅ Data validation PASSED - {len(warnings)} warnings generated")
                 if warnings:
-                    tprint_warning(f"   ⚠️ {len(warnings)} warnings generated")
+                    tprint_warning(f"   ⚠️ Warning summary:")
+                    for i, warning in enumerate(warnings, 1):
+                        tprint_warning(f"   {i}. {warning}")
             else:
-                tprint_warning(f"   ⚠️ Data validation failed: {len(errors)} errors")
+                tprint_error(f"❌ Data validation FAILED - {len(errors)} errors, {len(warnings)} warnings")
+                tprint_error(f"   ❌ Error summary:")
+                for i, error in enumerate(errors, 1):
+                    tprint_error(f"   {i}. {error}")
             
             return DataValidationResult(
                 is_valid=is_valid,
@@ -127,7 +190,9 @@ class DataValidator:
             
         except Exception as e:
             error_msg = f"Data validation failed with exception: {e}"
-            tprint_warning(f"   ⚠️ {error_msg}")
+            tprint_error(f"❌ {error_msg}")
+            tprint_debug(f"   🔍 Exception type: {type(e).__name__}")
+            tprint_debug(f"   🔍 Exception details: {str(e)}")
             return DataValidationResult(
                 is_valid=False,
                 errors=[error_msg],
@@ -136,32 +201,67 @@ class DataValidator:
             )
     
     def _validate_data_structure(self, data: pd.DataFrame) -> List[str]:
-        """Validate basic data structure."""
+        """Validate basic data structure with detailed logging."""
         errors = []
         
+        tprint_debug("   🔍 Checking data emptiness")
         # Check if data is empty
         if data.empty:
-            errors.append("Data is empty")
+            error_msg = "Data is empty"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
             return errors
+        tprint_debug("   ✅ Data is not empty")
         
+        tprint_debug("   🔍 Checking data dimensions")
         # Check if data has features
         if data.shape[1] == 0:
-            errors.append("Data has no features")
+            error_msg = "Data has no features"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        else:
+            tprint_debug(f"   ✅ Data has {data.shape[1]} features")
         
         # Check if data has samples
         if data.shape[0] == 0:
-            errors.append("Data has no samples")
+            error_msg = "Data has no samples"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        else:
+            tprint_debug(f"   ✅ Data has {data.shape[0]} samples")
         
+        tprint_debug("   🔍 Checking data types")
         # Check for numeric data
         numeric_cols = data.select_dtypes(include=[np.number]).columns
-        if len(numeric_cols) == 0:
-            errors.append("Data contains no numeric features")
-        elif len(numeric_cols) < data.shape[1] * 0.8:  # Less than 80% numeric
-            errors.append("Data contains too many non-numeric features")
+        non_numeric_cols = data.select_dtypes(exclude=[np.number]).columns
         
+        tprint_debug(f"   📊 Numeric columns: {len(numeric_cols)}")
+        tprint_debug(f"   📊 Non-numeric columns: {len(non_numeric_cols)}")
+        
+        if len(numeric_cols) == 0:
+            error_msg = "Data contains no numeric features"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        elif len(numeric_cols) < data.shape[1] * 0.8:  # Less than 80% numeric
+            error_msg = f"Data contains too many non-numeric features ({len(non_numeric_cols)}/{data.shape[1]} = {len(non_numeric_cols)/data.shape[1]:.1%})"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        else:
+            tprint_debug(f"   ✅ Data has sufficient numeric features ({len(numeric_cols)}/{data.shape[1]} = {len(numeric_cols)/data.shape[1]:.1%})")
+        
+        tprint_debug("   🔍 Checking for infinite values")
         # Check for infinite values
-        if np.isinf(data.select_dtypes(include=[np.number])).any().any():
-            errors.append("Data contains infinite values")
+        if not numeric_cols.empty:
+            inf_mask = np.isinf(data[numeric_cols])
+            inf_count = inf_mask.sum().sum()
+            if inf_count > 0:
+                error_msg = f"Data contains {inf_count} infinite values"
+                tprint_error(f"   ❌ {error_msg}")
+                errors.append(error_msg)
+            else:
+                tprint_debug("   ✅ No infinite values found")
+        else:
+            tprint_debug("   ⚠️ Skipping infinite value check (no numeric columns)")
         
         return errors
     
@@ -287,33 +387,76 @@ class DataValidator:
         return errors, warnings
     
     def _validate_target(self, target: pd.Series, data: pd.DataFrame) -> Tuple[List[str], List[str]]:
-        """Validate target variable."""
+        """Validate target variable with detailed logging."""
         errors = []
         warnings = []
         
+        tprint_debug("   🔍 Validating target variable")
+        tprint_debug(f"   📊 Target shape: {target.shape}")
+        tprint_debug(f"   📊 Target dtype: {target.dtype}")
+        tprint_debug(f"   📊 Target name: {target.name}")
+        
         # Check length match
+        tprint_debug("   🔍 Checking target-data length match")
         if len(target) != len(data):
-            errors.append(f"Target length ({len(target)}) doesn't match data length ({len(data)})")
+            error_msg = f"Target length ({len(target)}) doesn't match data length ({len(data)})"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
             return errors, warnings
+        tprint_debug(f"   ✅ Target and data lengths match: {len(target)}")
         
         # Check for missing values
+        tprint_debug("   🔍 Checking for missing values in target")
         if target.isnull().any():
             missing_count = target.isnull().sum()
-            errors.append(f"Target contains {missing_count} missing values")
+            missing_ratio = missing_count / len(target)
+            error_msg = f"Target contains {missing_count} missing values ({missing_ratio:.1%})"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        else:
+            tprint_debug("   ✅ No missing values in target")
         
         # Check for infinite values
+        tprint_debug("   🔍 Checking for infinite values in target")
         if np.isinf(target).any():
-            errors.append("Target contains infinite values")
+            inf_count = np.isinf(target).sum()
+            error_msg = f"Target contains {inf_count} infinite values"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        else:
+            tprint_debug("   ✅ No infinite values in target")
         
         # Check data type
+        tprint_debug("   🔍 Checking target data type")
         if not pd.api.types.is_numeric_dtype(target):
-            warnings.append("Target is not numeric, may need encoding")
+            warning_msg = "Target is not numeric, may need encoding"
+            tprint_warning(f"   ⚠️ {warning_msg}")
+            warnings.append(warning_msg)
+        else:
+            tprint_debug("   ✅ Target is numeric")
         
         # Check variance
-        if target.var() == 0:
-            errors.append("Target has zero variance")
-        elif target.var() < 1e-10:
-            warnings.append("Target has very low variance")
+        tprint_debug("   🔍 Checking target variance")
+        target_var = target.var()
+        tprint_debug(f"   📊 Target variance: {target_var:.6f}")
+        
+        if target_var == 0:
+            error_msg = "Target has zero variance"
+            tprint_error(f"   ❌ {error_msg}")
+            errors.append(error_msg)
+        elif target_var < 1e-10:
+            warning_msg = f"Target has very low variance ({target_var:.2e})"
+            tprint_warning(f"   ⚠️ {warning_msg}")
+            warnings.append(warning_msg)
+        else:
+            tprint_debug(f"   ✅ Target has sufficient variance: {target_var:.6f}")
+        
+        # Additional target statistics
+        tprint_debug("   📊 Target statistics:")
+        tprint_debug(f"   📊 Min: {target.min():.6f}")
+        tprint_debug(f"   📊 Max: {target.max():.6f}")
+        tprint_debug(f"   📊 Mean: {target.mean():.6f}")
+        tprint_debug(f"   📊 Std: {target.std():.6f}")
         
         return errors, warnings
     

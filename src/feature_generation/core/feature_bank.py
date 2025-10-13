@@ -504,12 +504,8 @@ class FeatureBank:
             except ImportError:
                 pass
 
-            # Try to create regime feature integration generators
-            try:
-                from ..categories.regime_feature_integration import RegimeFeatureIntegration
-                generators.append(RegimeFeatureIntegration())
-            except ImportError:
-                pass
+            # Regime feature integration is now part of regime_features.py
+            # No separate import needed
 
             # Try to create regime structural trend generators
             try:
@@ -548,27 +544,8 @@ class FeatureBank:
     def _create_normalization_generators(self) -> List[FeatureGenerator]:
         """Create normalization-specific feature generators."""
         generators = []
-        try:
-            # Try enhanced normalization generators first
-            try:
-                from ..categories.enhanced_normalization import create_enhanced_normalization_generators
-                enhanced_generators = create_enhanced_normalization_generators()
-                generators.extend(enhanced_generators)
-                self.logger.info(f"✅ Added {len(enhanced_generators)} enhanced normalization generators")
-            except ImportError:
-                self.logger.debug("ℹ️ Enhanced normalization generators not available (optional)")
-
-            # Fallback to standard normalization generators
-            try:
-                from ..categories.normalization import create_default_normalization_generators
-                standard_generators = create_default_normalization_generators()
-                generators.extend(standard_generators)
-            except ImportError:
-                pass
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to create normalization generators: {e}")
-
+        # Normalization features are now handled by individual feature generators
+        # No separate normalization generators needed
         return generators
 
     def _create_representation_learning_generators(self) -> List[FeatureGenerator]:

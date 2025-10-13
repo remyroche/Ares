@@ -20,7 +20,7 @@ def test_file_structure():
         "__init__.py",
         "core/__init__.py",
         "core/config.py",
-        "core/pipeline.py", 
+        "core/multi_stage_pipeline.py", 
         "core/selector.py",
         "core/optimizer.py",
         "hardware/__init__.py",
@@ -83,7 +83,7 @@ def test_file_content():
     # Test that core files contain expected classes
     test_cases = [
         ("core/config.py", ["BaseFeatureSelectionConfig", "FeatureSelectionConfig"]),
-        ("core/pipeline.py", ["MultiStageFeatureSelector"]),
+        ("core/multi_stage_pipeline.py", ["MultiStageFeatureSelectionPipeline"]),
         ("core/selector.py", ["FeatureSelector"]),
         ("core/optimizer.py", ["FeatureSelectionOptimizer"]),
         ("hardware/memory_manager.py", ["MemoryManager"]),

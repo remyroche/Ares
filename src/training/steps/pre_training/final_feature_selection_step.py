@@ -34,7 +34,7 @@ from src.training.steps.pre_training.artifacts.manifest import (
 if TYPE_CHECKING:
     from .feature_selection import (
         FeatureSelectionConfig,
-        MultiStageFeatureSelector,
+        MultiStageFeatureSelectionPipeline,
     )
 
 # Import system utilities
@@ -1507,10 +1507,10 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .feature_selection import MultiStageFeatureSelector
+            from .feature_selection import MultiStageFeatureSelectionPipeline
 
-            tprint_debug("   📦 Creating MultiStageFeatureSelector...")
-            selector = MultiStageFeatureSelector(self.feature_config)
+            tprint_debug("   📦 Creating MultiStageFeatureSelectionPipeline...")
+            selector = MultiStageFeatureSelectionPipeline(self.feature_config)
 
             # Run selection
             if y is not None:
@@ -1573,9 +1573,9 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .feature_selection import MultiStageFeatureSelector
-            tprint_debug("   📦 Creating MultiStageFeatureSelector with VectorBT enhancements...")
-            selector = MultiStageFeatureSelector(enhanced_config)
+            from .feature_selection import MultiStageFeatureSelectionPipeline
+            tprint_debug("   📦 Creating MultiStageFeatureSelectionPipeline with VectorBT enhancements...")
+            selector = MultiStageFeatureSelectionPipeline(enhanced_config)
             
             if y is not None:
                 tprint_info("   🎯 Using VectorBT-enhanced supervised selector")
@@ -1619,9 +1619,9 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .feature_selection import MultiStageFeatureSelector
-            tprint_debug("   📦 Creating MultiStageFeatureSelector...")
-            selector = MultiStageFeatureSelector(self.feature_config)
+            from .feature_selection import MultiStageFeatureSelectionPipeline
+            tprint_debug("   📦 Creating MultiStageFeatureSelectionPipeline...")
+            selector = MultiStageFeatureSelectionPipeline(self.feature_config)
 
             if y is not None:
                 tprint_debug("   🎯 Running supervised selection...")

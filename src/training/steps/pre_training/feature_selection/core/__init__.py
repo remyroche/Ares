@@ -15,7 +15,6 @@ from .config import (
     FeatureSelectionResult
 )
 
-from .pipeline import MultiStageFeatureSelector
 from .selector import FeatureSelector
 from .optimizer import FeatureSelectionOptimizer
 
@@ -30,7 +29,6 @@ __all__ = [
     'FeatureSelectionResult',
     
     # Core classes
-    'MultiStageFeatureSelector',
     'FeatureSelector',
     'FeatureSelectionOptimizer'
 ]

@@ -30,10 +30,10 @@ def test_imports():
         )
         print("    ✅ Core config classes imported")
         
-        from src.training.steps.pre_training.feature_selection.core.pipeline import (
-            MultiStageFeatureSelector
+        from src.training.steps.pre_training.feature_selection.core.multi_stage_pipeline import (
+            MultiStageFeatureSelectionPipeline
         )
-        print("    ✅ Core pipeline imported")
+        print("    ✅ Multi-stage pipeline imported")
         
         from src.training.steps.pre_training.feature_selection.core.selector import (
             FeatureSelector
@@ -89,7 +89,8 @@ def test_imports():
         # Test main package imports
         print("  📦 Testing main package imports...")
         from src.training.steps.pre_training.feature_selection import (
-            MultiStageFeatureSelector,
+            MultiStageFeatureSelectionPipeline,
+            run_multi_stage_feature_selection,
             FeatureSelector,
             FeatureSelectionOptimizer,
             FeatureSelectionConfig,
@@ -127,7 +128,7 @@ def test_module_structure():
             "__init__.py",
             "core/__init__.py",
             "core/config.py",
-            "core/pipeline.py", 
+            "core/multi_stage_pipeline.py", 
             "core/selector.py",
             "core/optimizer.py",
             "hardware/__init__.py",

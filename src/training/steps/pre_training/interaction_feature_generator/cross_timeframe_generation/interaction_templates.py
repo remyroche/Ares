@@ -315,6 +315,66 @@ class CoreInteractionTemplates:
                 max_instances=3,
                 priority=3,
                 metadata={"description": "Z-score interaction"}
+            ),
+            
+            # Log interactions
+            InteractionTemplate(
+                name="log_interaction",
+                template_type="core",
+                formula="np.log(feature + epsilon)",
+                required_features=["feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=2,
+                metadata={"description": "Log transformation interaction"}
+            ),
+            
+            # Log ratio interactions
+            InteractionTemplate(
+                name="log_ratio_interaction",
+                template_type="core",
+                formula="np.log(feature1 + epsilon) - np.log(feature2 + epsilon)",
+                required_features=["feature1", "feature2"],
+                optional_features=[],
+                max_instances=4,
+                priority=2,
+                metadata={"description": "Log ratio interaction (log(f1) - log(f2))"}
+            ),
+            
+            # Log product interactions
+            InteractionTemplate(
+                name="log_product_interaction",
+                template_type="core",
+                formula="np.log(feature1 + epsilon) + np.log(feature2 + epsilon)",
+                required_features=["feature1", "feature2"],
+                optional_features=[],
+                max_instances=4,
+                priority=2,
+                metadata={"description": "Log product interaction (log(f1) + log(f2))"}
+            ),
+            
+            # Log volatility interactions
+            InteractionTemplate(
+                name="log_vol_interaction",
+                template_type="core",
+                formula="np.log(volatility_feature + epsilon) * price_feature",
+                required_features=["volatility_feature", "price_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=1,
+                metadata={"description": "Log volatility × price interaction"}
+            ),
+            
+            # Log momentum interactions
+            InteractionTemplate(
+                name="log_momentum_interaction",
+                template_type="core",
+                formula="np.log(momentum_feature + epsilon) * volume_feature",
+                required_features=["momentum_feature", "volume_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=2,
+                metadata={"description": "Log momentum × volume interaction"}
             )
         ]
         
@@ -397,6 +457,54 @@ class HTFAwareTemplates:
                 max_instances=3,
                 priority=2,
                 metadata={"description": "HTF anchor × base deviation interaction"}
+            ),
+            
+            # HTF log trend × base feature
+            InteractionTemplate(
+                name="htf_log_trend_interaction",
+                template_type="htf_aware",
+                formula="np.log(htf_trend_feature + epsilon) * base_feature",
+                required_features=["htf_trend_feature", "base_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=1,
+                metadata={"description": "HTF log trend × base feature interaction"}
+            ),
+            
+            # HTF log volatility × base signal
+            InteractionTemplate(
+                name="htf_log_vol_signal_interaction",
+                template_type="htf_aware",
+                formula="np.log(htf_volatility_feature + epsilon) * base_signal_feature",
+                required_features=["htf_volatility_feature", "base_signal_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=1,
+                metadata={"description": "HTF log volatility × base signal interaction"}
+            ),
+            
+            # HTF log momentum × base momentum
+            InteractionTemplate(
+                name="htf_log_momentum_interaction",
+                template_type="htf_aware",
+                formula="np.log(htf_momentum_feature + epsilon) * np.log(base_momentum_feature + epsilon)",
+                required_features=["htf_momentum_feature", "base_momentum_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=2,
+                metadata={"description": "HTF log momentum × base log momentum interaction"}
+            ),
+            
+            # HTF log regime × base feature
+            InteractionTemplate(
+                name="htf_log_regime_interaction",
+                template_type="htf_aware",
+                formula="np.log(htf_regime_feature + epsilon) * base_feature",
+                required_features=["htf_regime_feature", "base_feature"],
+                optional_features=[],
+                max_instances=3,
+                priority=2,
+                metadata={"description": "HTF log regime × base feature interaction"}
             )
         ]
         
@@ -717,6 +825,79 @@ class InteractionGenerator:
                     else:
                         return (feat - feat.mean()) / feat.std()
             
+            # Log interactions
+            elif template.name == "log_interaction":
+                # Log transformation interaction
+                if len(combination['data']) >= 1:
+                    feat = combination['data'][0]
+                    epsilon = 1e-8
+                    return np.log(feat + epsilon)
+            
+            elif template.name == "log_ratio_interaction":
+                # Log ratio interaction (log(f1) - log(f2))
+                if len(combination['data']) >= 2:
+                    feat1 = combination['data'][0]
+                    feat2 = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(feat1 + epsilon) - np.log(feat2 + epsilon)
+            
+            elif template.name == "log_product_interaction":
+                # Log product interaction (log(f1) + log(f2))
+                if len(combination['data']) >= 2:
+                    feat1 = combination['data'][0]
+                    feat2 = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(feat1 + epsilon) + np.log(feat2 + epsilon)
+            
+            elif template.name == "log_vol_interaction":
+                # Log volatility × price interaction
+                if len(combination['data']) >= 2:
+                    vol_feature = combination['data'][0]
+                    price_feature = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(vol_feature + epsilon) * price_feature
+            
+            elif template.name == "log_momentum_interaction":
+                # Log momentum × volume interaction
+                if len(combination['data']) >= 2:
+                    momentum_feature = combination['data'][0]
+                    volume_feature = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(momentum_feature + epsilon) * volume_feature
+            
+            # HTF log interactions
+            elif template.name == "htf_log_trend_interaction":
+                # HTF log trend × base feature interaction
+                if len(combination['data']) >= 2:
+                    htf_trend = combination['data'][0]
+                    base_feature = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(htf_trend + epsilon) * base_feature
+            
+            elif template.name == "htf_log_vol_signal_interaction":
+                # HTF log volatility × base signal interaction
+                if len(combination['data']) >= 2:
+                    htf_vol = combination['data'][0]
+                    base_signal = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(htf_vol + epsilon) * base_signal
+            
+            elif template.name == "htf_log_momentum_interaction":
+                # HTF log momentum × base log momentum interaction
+                if len(combination['data']) >= 2:
+                    htf_momentum = combination['data'][0]
+                    base_momentum = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(htf_momentum + epsilon) * np.log(base_momentum + epsilon)
+            
+            elif template.name == "htf_log_regime_interaction":
+                # HTF log regime × base feature interaction
+                if len(combination['data']) >= 2:
+                    htf_regime = combination['data'][0]
+                    base_feature = combination['data'][1]
+                    epsilon = 1e-8
+                    return np.log(htf_regime + epsilon) * base_feature
+            
             # Default fallback
             if len(combination['data']) >= 2:
                 return combination['data'][0] * combination['data'][1]
@@ -1013,6 +1194,19 @@ enerate_htf_aware_interactions(
                 groups['tod_indicator'].append(name)
             elif any(x in name_lower for x in ['regime', 'vol_regime']):
                 groups['regime_indicator'].append(name)
+            # Log features can be categorized into existing groups based on their base feature type
+            elif any(x in name_lower for x in ['log_price', 'log_close', 'log_open', 'log_high', 'log_low']):
+                groups['price_feature'].append(name)
+            elif any(x in name_lower for x in ['log_vol', 'log_sigma', 'log_rv', 'log_gk']):
+                groups['volatility_feature'].append(name)
+            elif any(x in name_lower for x in ['log_mom', 'log_momentum', 'log_signal', 'log_alpha']):
+                groups['momentum_feature'].append(name)
+            elif any(x in name_lower for x in ['log_rsi', 'log_stoch', 'log_mean_rev', 'log_osc']):
+                groups['mean_reversion_feature'].append(name)
+            elif any(x in name_lower for x in ['log_liquidity', 'log_depth', 'log_book']):
+                groups['liquidity_feature'].append(name)
+            elif 'log_volume' in name_lower:
+                groups['volume_feature'].append(name)
 
         # Provide aliases expected by interaction templates
         def _copy_list(values: List[str]) -> List[str]:
@@ -1107,6 +1301,7 @@ enerate_htf_aware_interactions(
                 family in ['trend_level_vol']
                 or any(key in base_feature for key in ['ema', 'trend'])
                 or any(key in name_lower for key in ['trend', 'ema'])
+                or any(key in name_lower for key in ['log_trend', 'log_ema'])
             ):
                 if name not in groups['htf_trend_feature']:
                     groups['htf_trend_feature'].append(name)
@@ -1116,6 +1311,7 @@ enerate_htf_aware_interactions(
                     key in name_lower for key in ['vol', 'sigma', 'rv', 'var']
                 ))
                 or any(key in base_feature for key in ['vol', 'sigma', 'rv', 'var'])
+                or any(key in name_lower for key in ['log_vol', 'log_sigma', 'log_rv', 'log_var'])
             ):
                 if name not in groups['htf_volatility_feature']:
                     groups['htf_volatility_feature'].append(name)
@@ -1124,6 +1320,7 @@ enerate_htf_aware_interactions(
                 family == 'oscillators'
                 or any(key in base_feature for key in ['rsi', 'stoch', 'momentum', 'mom', 'osc'])
                 or any(key in name_lower for key in ['rsi', 'stoch', 'momentum', 'osc'])
+                or any(key in name_lower for key in ['log_rsi', 'log_stoch', 'log_momentum', 'log_osc'])
             ):
                 if name not in groups['htf_momentum_feature']:
                     groups['htf_momentum_feature'].append(name)
@@ -1132,6 +1329,7 @@ enerate_htf_aware_interactions(
                 family == 'anchors'
                 or any(key in base_feature for key in ['vwap', 'anchor'])
                 or any(key in name_lower for key in ['vwap', 'anchor'])
+                or any(key in name_lower for key in ['log_vwap', 'log_anchor'])
             ):
                 if name not in groups['htf_anchor_feature']:
                     groups['htf_anchor_feature'].append(name)

@@ -457,16 +457,17 @@ class EnhancedDataDrivenInteractionGenerator:
         # This is a simplified fallback - in practice, you'd want a more robust implementation
         interactions = []
         
-        # Generate basic product interactions
+        # Generate basic interactions including log interactions
         feature_names = list(features.columns)
+        
+        # Basic arithmetic interactions
         for i, feat1 in enumerate(feature_names):
             for feat2 in feature_names[i+1:]:
+                # Product interaction
                 try:
                     product = features[feat1] * features[feat2]
                     if not product.isna().all():
-                        # Calculate utility score
                         utility_score = abs(product.corr(targets)) if targets is not None else product.var()
-                        
                         if utility_score > self.config.utility_threshold:
                             interaction = InteractionResult(
                                 feature_name=f"product_{feat1}_{feat2}",
@@ -477,6 +478,58 @@ class EnhancedDataDrivenInteractionGenerator:
                                 metadata={}
                             )
                             interactions.append(interaction)
+                except:
+                    continue
+                
+                # Log product interaction
+                try:
+                    # Ensure positive values for log transformation
+                    feat1_safe = features[feat1].copy()
+                    feat2_safe = features[feat2].copy()
+                    feat1_safe = np.where(feat1_safe <= 0, np.abs(feat1_safe) + 1e-8, feat1_safe)
+                    feat2_safe = np.where(feat2_safe <= 0, np.abs(feat2_safe) + 1e-8, feat2_safe)
+                    
+                    log_product = np.log(feat1_safe) * np.log(feat2_safe)
+                    log_product = pd.Series(log_product, index=features.index)
+                    
+                    if not log_product.isna().all():
+                        utility_score = abs(log_product.corr(targets)) if targets is not None else log_product.var()
+                        if utility_score > self.config.utility_threshold:
+                            interaction = InteractionResult(
+                                feature_name=f"log_product_{feat1}_{feat2}",
+                                feature_series=log_product,
+                                parent_features=[feat1, feat2],
+                                interaction_type="log_product",
+                                utility_score=utility_score,
+                                metadata={}
+                            )
+                            interactions.append(interaction)
+                except:
+                    continue
+                
+                # Log return interaction (if features look like prices)
+                try:
+                    if 'close' in feat1.lower() or 'price' in feat1.lower():
+                        log_ret1 = np.log(features[feat1] / features[feat1].shift(1))
+                        log_ret2 = np.log(features[feat2] / features[feat2].shift(1))
+                        log_ret1 = log_ret1.fillna(0)
+                        log_ret2 = log_ret2.fillna(0)
+                        
+                        log_return_product = log_ret1 * log_ret2
+                        log_return_product = pd.Series(log_return_product, index=features.index)
+                        
+                        if not log_return_product.isna().all():
+                            utility_score = abs(log_return_product.corr(targets)) if targets is not None else log_return_product.var()
+                            if utility_score > self.config.utility_threshold:
+                                interaction = InteractionResult(
+                                    feature_name=f"log_return_product_{feat1}_{feat2}",
+                                    feature_series=log_return_product,
+                                    parent_features=[feat1, feat2],
+                                    interaction_type="log_return_product",
+                                    utility_score=utility_score,
+                                    metadata={}
+                                )
+                                interactions.append(interaction)
                 except:
                     continue
         

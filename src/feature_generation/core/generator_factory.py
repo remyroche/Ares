@@ -14,6 +14,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union, Type, Callable
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from src.utils.tprint import tprint
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
 from .vectorized_feature_generator import VectorizedFeatureGenerator
@@ -317,7 +318,13 @@ class GeneratorFactory:
             Auto-optimized generator instance or None if creation fails
         """
         try:
+            tprint(f"🔧 Creating auto-optimized generator: {name}")
+            tprint(f"📊 Category: {category.value}")
+            tprint(f"📊 Optimization level: {optimization_level}")
+            tprint(f"📊 Required columns: {required_columns}")
+            
             # Create feature config
+            tprint("📝 Creating feature configuration...")
             feature_config = FeatureConfig(
                 name=name,
                 category=category,
@@ -325,19 +332,28 @@ class GeneratorFactory:
                 required_columns=required_columns,
                 parameters=kwargs
             )
+            tprint("✅ Feature configuration created")
             
             # Create auto-optimization config
+            tprint("⚙️ Setting up auto-optimization configuration...")
             if auto_optimization_config is None:
+                tprint(f"📝 Creating new auto-optimization config with {optimization_level} level...")
                 auto_optimization_config = AutoOptimizationConfig()
                 auto_optimization_config.optimization_level = OptimizationLevel(optimization_level)
+                tprint("✅ Auto-optimization config created")
+            else:
+                tprint("✅ Using provided auto-optimization config")
             
             # Create auto-optimized generator
+            tprint("🚀 Creating AutoOptimizedFeatureGenerator...")
             generator = AutoOptimizedFeatureGenerator(feature_config, auto_optimization_config)
             
             logger.debug(f"Created auto-optimized generator: {name} with {optimization_level} strategy")
+            tprint(f"✅ Auto-optimized generator '{name}' created successfully")
             return generator
             
         except Exception as e:
+            tprint(f"❌ Failed to create auto-optimized generator '{name}': {e}")
             logger.error(f"Failed to create auto-optimized generator {name}: {e}")
             return None
     

@@ -299,22 +299,35 @@ class FeatureBank:
             Auto-optimized generator
         """
         try:
+            tprint(f"🔄 Converting generator '{generator.config.name}' to auto-optimized...")
+            
             # Create auto-optimized generator with same config
+            tprint("📝 Creating auto-optimized generator with same config...")
             auto_optimized_gen = AutoOptimizedFeatureGenerator(
                 config=generator.config,
                 auto_optimization_config=self.config.auto_optimization_config
             )
+            tprint("✅ Auto-optimized generator created")
             
             # Copy any additional state from original generator
             if hasattr(generator, 'get_state'):
+                tprint("📦 Copying state from original generator...")
                 state = generator.get_state()
                 if state and hasattr(auto_optimized_gen, 'load_state'):
                     auto_optimized_gen.load_state(state)
+                    tprint("✅ State copied successfully")
+                else:
+                    tprint("⚠️ No state to copy or load_state not available")
+            else:
+                tprint("⚠️ Original generator has no get_state method")
             
+            tprint(f"✅ Generator '{generator.config.name}' converted to auto-optimized successfully")
             return auto_optimized_gen
             
         except Exception as e:
+            tprint(f"❌ Failed to convert '{generator.config.name}' to auto-optimized: {e}")
             self.logger.warning(f"Failed to convert {generator.config.name} to auto-optimized: {e}")
+            tprint("🔄 Returning original generator as fallback")
             # Return original generator if conversion fails
             return generator
 
@@ -1500,17 +1513,37 @@ class FeatureBank:
         Returns:
             Auto-optimized generator or None if creation fails
         """
-        if optimization_level is None:
-            optimization_level = self.config.default_optimization_level
-        
-        return self.generator_factory.create_auto_optimized_generator(
-            name=name,
-            category=category,
-            required_columns=required_columns,
-            optimization_level=optimization_level,
-            auto_optimization_config=self.config.auto_optimization_config,
-            **kwargs
-        )
+        try:
+            tprint(f"🔧 Creating auto-optimized generator via FeatureBank: {name}")
+            tprint(f"📊 Category: {category.value}")
+            
+            if optimization_level is None:
+                optimization_level = self.config.default_optimization_level
+                tprint(f"📊 Using default optimization level: {optimization_level}")
+            else:
+                tprint(f"📊 Using specified optimization level: {optimization_level}")
+            
+            tprint("🚀 Delegating to GeneratorFactory...")
+            generator = self.generator_factory.create_auto_optimized_generator(
+                name=name,
+                category=category,
+                required_columns=required_columns,
+                optimization_level=optimization_level,
+                auto_optimization_config=self.config.auto_optimization_config,
+                **kwargs
+            )
+            
+            if generator:
+                tprint(f"✅ Auto-optimized generator '{name}' created successfully via FeatureBank")
+            else:
+                tprint(f"❌ Failed to create auto-optimized generator '{name}' via FeatureBank")
+            
+            return generator
+            
+        except Exception as e:
+            tprint(f"❌ Error creating auto-optimized generator '{name}' via FeatureBank: {e}")
+            self.logger.error(f"Error creating auto-optimized generator '{name}': {e}")
+            return None
     
     def create_auto_optimized_generators_by_category(self, category: FeatureCategory,
                                                    optimization_level: Optional[str] = None,

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
 from enum import Enum
+from src.utils.tprint import tprint
 
 class OptimizationLevel(Enum):
     CONSERVATIVE = "conservative"
@@ -41,52 +42,92 @@ class AutoOptimizationConfig:
     aggressive_settings: Dict[str, Any] = None
     
     def __post_init__(self):
-        if self.conservative_settings is None:
-            self.conservative_settings = {
-                'enable_memory_optimization': True,
-                'enable_vectorbt_optimization': False,
-                'enable_rolling_optimization': False,
-                'memory_threshold_mb': 500.0
-            }
+        tprint("🔧 Initializing AutoOptimizationConfig...")
         
-        if self.balanced_settings is None:
-            self.balanced_settings = {
-                'enable_memory_optimization': True,
-                'enable_vectorbt_optimization': True,
-                'enable_rolling_optimization': True,
-                'memory_threshold_mb': 100.0,
-                'vectorbt_threshold': 1000
-            }
-        
-        if self.aggressive_settings is None:
-            self.aggressive_settings = {
-                'enable_memory_optimization': True,
-                'enable_vectorbt_optimization': True,
-                'enable_rolling_optimization': True,
-                'enable_data_compression': True,
-                'enable_chunked_processing': True,
-                'memory_threshold_mb': 50.0,
-                'vectorbt_threshold': 500
-            }
+        try:
+            if self.conservative_settings is None:
+                tprint("📝 Setting up conservative optimization settings...")
+                self.conservative_settings = {
+                    'enable_memory_optimization': True,
+                    'enable_vectorbt_optimization': False,
+                    'enable_rolling_optimization': False,
+                    'memory_threshold_mb': 500.0
+                }
+                tprint("✅ Conservative settings configured")
+            
+            if self.balanced_settings is None:
+                tprint("📝 Setting up balanced optimization settings...")
+                self.balanced_settings = {
+                    'enable_memory_optimization': True,
+                    'enable_vectorbt_optimization': True,
+                    'enable_rolling_optimization': True,
+                    'memory_threshold_mb': 100.0,
+                    'vectorbt_threshold': 1000
+                }
+                tprint("✅ Balanced settings configured")
+            
+            if self.aggressive_settings is None:
+                tprint("📝 Setting up aggressive optimization settings...")
+                self.aggressive_settings = {
+                    'enable_memory_optimization': True,
+                    'enable_vectorbt_optimization': True,
+                    'enable_rolling_optimization': True,
+                    'enable_data_compression': True,
+                    'enable_chunked_processing': True,
+                    'memory_threshold_mb': 50.0,
+                    'vectorbt_threshold': 500
+                }
+                tprint("✅ Aggressive settings configured")
+            
+            tprint(f"🎯 AutoOptimizationConfig initialized with {self.optimization_level.value} strategy")
+            
+        except Exception as e:
+            tprint(f"❌ Error initializing AutoOptimizationConfig: {e}")
+            raise
     
     def get_settings_for_level(self) -> Dict[str, Any]:
         """Get settings for current optimization level."""
-        if self.optimization_level == OptimizationLevel.CONSERVATIVE:
-            return self.conservative_settings
-        elif self.optimization_level == OptimizationLevel.BALANCED:
-            return self.balanced_settings
-        elif self.optimization_level == OptimizationLevel.AGGRESSIVE:
-            return self.aggressive_settings
-        else:
+        try:
+            tprint(f"🔍 Getting settings for {self.optimization_level.value} optimization level...")
+            
+            if self.optimization_level == OptimizationLevel.CONSERVATIVE:
+                tprint("📊 Returning conservative settings")
+                return self.conservative_settings
+            elif self.optimization_level == OptimizationLevel.BALANCED:
+                tprint("📊 Returning balanced settings")
+                return self.balanced_settings
+            elif self.optimization_level == OptimizationLevel.AGGRESSIVE:
+                tprint("📊 Returning aggressive settings")
+                return self.aggressive_settings
+            else:
+                tprint("⚠️ Unknown optimization level, defaulting to balanced")
+                return self.balanced_settings
+                
+        except Exception as e:
+            tprint(f"❌ Error getting settings for level: {e}")
+            tprint("🔄 Falling back to balanced settings")
             return self.balanced_settings
     
     def apply_level_settings(self):
         """Apply settings based on current optimization level."""
-        level_settings = self.get_settings_for_level()
-        
-        for key, value in level_settings.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+        try:
+            tprint(f"🔧 Applying {self.optimization_level.value} level settings...")
+            level_settings = self.get_settings_for_level()
+            
+            applied_count = 0
+            for key, value in level_settings.items():
+                if hasattr(self, key):
+                    setattr(self, key, value)
+                    applied_count += 1
+                    tprint(f"   ✅ Applied {key} = {value}")
+                else:
+                    tprint(f"   ⚠️ Setting {key} not found in config, skipping")
+            
+            tprint(f"✅ Applied {applied_count} settings for {self.optimization_level.value} level")
+            
+        except Exception as e:
+            tprint(f"❌ Error applying level settings: {e}")
+            raise
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""

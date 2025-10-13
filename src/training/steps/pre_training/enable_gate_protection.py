@@ -24,7 +24,7 @@ def enable_gate_protection():
         
         print("✅ Gate feature protection enabled successfully!")
         print("📋 Patches applied to:")
-        print("   - final_feature_selection_pipeline.py")
+        print("   - feature_selection/ (modular system)")
         print("   - final_feature_selection_step.py") 
         print("   - analyst_pre_ml_orchestration.py")
         print("   - tactician_pre_ml_orchestration.py")

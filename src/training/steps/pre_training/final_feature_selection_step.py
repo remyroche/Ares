@@ -32,7 +32,7 @@ from src.training.steps.pre_training.artifacts.manifest import (
 
 # Import the final feature selection pipeline
 if TYPE_CHECKING:
-    from .final_feature_selection_pipeline import (
+    from .feature_selection import (
         FeatureSelectionConfig,
         MultiStageFeatureSelector,
     )
@@ -204,7 +204,7 @@ class FinalFeatureSelectionStep:
 
         self._pipeline_import_error: Optional[BaseException] = None
         try:
-            from .final_feature_selection_pipeline import FeatureSelectionConfig as _FeatureSelectionConfig
+            from .feature_selection import FeatureSelectionConfig as _FeatureSelectionConfig
             self._pipeline_available = True
             tprint_debug("✅ Feature selection pipeline available")
         except Exception as exc:
@@ -1507,7 +1507,7 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .final_feature_selection_pipeline import MultiStageFeatureSelector
+            from .feature_selection import MultiStageFeatureSelector
 
             tprint_debug("   📦 Creating MultiStageFeatureSelector...")
             selector = MultiStageFeatureSelector(self.feature_config)
@@ -1573,7 +1573,7 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .final_feature_selection_pipeline import MultiStageFeatureSelector
+            from .feature_selection import MultiStageFeatureSelector
             tprint_debug("   📦 Creating MultiStageFeatureSelector with VectorBT enhancements...")
             selector = MultiStageFeatureSelector(enhanced_config)
             
@@ -1619,7 +1619,7 @@ class FinalFeatureSelectionStep:
                 tprint_error(f"❌ {error_msg}")
                 raise RuntimeError(error_msg) from self._pipeline_import_error
 
-            from .final_feature_selection_pipeline import MultiStageFeatureSelector
+            from .feature_selection import MultiStageFeatureSelector
             tprint_debug("   📦 Creating MultiStageFeatureSelector...")
             selector = MultiStageFeatureSelector(self.feature_config)
 

@@ -6,11 +6,18 @@ try:
     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.data_driven_periods import (
         DataDrivenPeriodSelector, PeriodAnalysisResult
     )
+    from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.enhanced_data_driven_period_selector import (
+        EnhancedDataDrivenPeriodSelector, EnhancedPeriodSelectionConfig
+    )
     DATA_DRIVEN_PERIODS_AVAILABLE = True
+    ENHANCED_PERIOD_SELECTION_AVAILABLE = True
 except ImportError:
     DATA_DRIVEN_PERIODS_AVAILABLE = False
+    ENHANCED_PERIOD_SELECTION_AVAILABLE = False
     DataDrivenPeriodSelector = None
     PeriodAnalysisResult = None
+    EnhancedDataDrivenPeriodSelector = None
+    EnhancedPeriodSelectionConfig = None
 
 # Data-driven interaction generation
 try:
@@ -135,18 +142,35 @@ class CrossTimeframeFeatureGenerator:
         self.config = config or CrossTimeframeConfig()
         self.logger = logger or logging.getLogger(__name__)
         
-        # Initialize data-driven period selector
+        # Initialize enhanced data-driven period selector with economic evaluation
         self.period_selector = None
-        if DATA_DRIVEN_PERIODS_AVAILABLE:
+        self.enhanced_period_selector = None
+        
+        if ENHANCED_PERIOD_SELECTION_AVAILABLE:
+            # Use enhanced period selector with economic evaluation
+            enhanced_config = EnhancedPeriodSelectionConfig(
+                min_period=1,
+                max_period=50,  # Optimized for 15m timeframe
+                max_periods=8,
+                min_data_points=100,
+                enable_economic_evaluation=True,
+                min_economic_score=0.4,
+                economic_weight=0.6,
+                statistical_weight=0.4
+            )
+            self.enhanced_period_selector = EnhancedDataDrivenPeriodSelector(enhanced_config)
+            self.logger.info("✅ Enhanced data-driven period selector with economic evaluation initialized")
+        elif DATA_DRIVEN_PERIODS_AVAILABLE:
+            # Fallback to basic data-driven period selector
             self.period_selector = DataDrivenPeriodSelector(
-                min_period=2,
-                max_period=200,
+                min_period=1,
+                max_period=50,  # Optimized for 15m timeframe
                 max_periods=8,
                 min_data_points=100
             )
-            self.logger.info("✅ Data-driven period selector initialized")
+            self.logger.info("✅ Basic data-driven period selector initialized")
         else:
-            self.logger.warning("⚠️ Data-driven period selector not available, using default periods")
+            self.logger.warning("⚠️ No data-driven period selector available, using default periods")
         
         # Initialize data-driven interaction generator
         self.interaction_generator = None
@@ -863,24 +887,42 @@ class CrossTimeframeFeatureGenerator:
         Returns:
             List of optimal timeframes
         """
-        if not self.period_selector:
-            # Fallback to default timeframes
-            return [15, 30, 60, 120]
-        
-        try:
-            # Get data-driven periods
-            result = self.period_selector.select_optimal_periods(data, target_timeframe)
-            
-            if result.optimal_periods:
-                self.logger.info(f"✅ Data-driven timeframes selected: {result.optimal_periods}")
-                return result.optimal_periods
-            else:
-                self.logger.warning("⚠️ No optimal periods found, using fallback")
-                return [15, 30, 60, 120]
+        # Try enhanced period selector first (with economic evaluation)
+        if self.enhanced_period_selector:
+            try:
+                result = self.enhanced_period_selector.select_optimal_periods(data, target_timeframe)
                 
-        except Exception as e:
-            self.logger.warning(f"⚠️ Data-driven period selection failed: {e}, using fallback")
-            return [15, 30, 60, 120]
+                if result.optimal_periods:
+                    self.logger.info(f"✅ Enhanced data-driven timeframes selected: {result.optimal_periods}")
+                    self.logger.info(f"💰 Economic evaluation: {result.successful_evaluations} successful evaluations")
+                    if result.economic_evaluation_result:
+                        self.logger.info(f"📊 Best economic score: {result.best_score:.3f}")
+                    return result.optimal_periods
+                else:
+                    self.logger.warning("⚠️ No optimal periods found with enhanced selector, trying basic selector")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Enhanced period selection failed: {e}, trying basic selector")
+        
+        # Fallback to basic period selector
+        if self.period_selector:
+            try:
+                result = self.period_selector.select_optimal_periods(data, target_timeframe)
+                
+                if result.optimal_periods:
+                    self.logger.info(f"✅ Basic data-driven timeframes selected: {result.optimal_periods}")
+                    return result.optimal_periods
+                else:
+                    self.logger.warning("⚠️ No optimal periods found, using fallback")
+                    return [15, 30, 60, 120]
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Basic period selection failed: {e}, using fallback")
+                return [15, 30, 60, 120]
+        
+        # Final fallback to default timeframes
+        self.logger.warning("⚠️ No period selector available, using default timeframes")
+        return [15, 30, 60, 120]
 
     def generate_data_driven_interactions(self, 
                                         price_data: pd.DataFrame, 

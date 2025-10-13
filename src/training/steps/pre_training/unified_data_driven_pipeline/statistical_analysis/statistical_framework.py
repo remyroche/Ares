@@ -31,6 +31,57 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
+# Enhanced imports from ml_commons utilities
+try:
+    from src.utils.ml_common.data_processing.data_quality import DataQualityUtilities
+    from src.utils.ml_common.validation.data_leakage_prevention import (
+        DataLeakagePrevention, DataLeakageConfig
+    )
+    from src.utils.ml_common.validation.unified_cv import (
+        UnifiedCrossValidator, UnifiedCVResult
+    )
+    from src.utils.ml_common.validation.stability import (
+        StabilityAnalyzer, StabilityConfig
+    )
+    from src.utils.ml_common.feature_selection import (
+        FeatureSelector, FeatureSelectionConfig
+    )
+    from src.utils.ml_common.validation.universal_temporal_validation import (
+        UniversalTemporalValidator, TemporalValidationConfig
+    )
+    ML_COMMONS_AVAILABLE = True
+    tprint_info("✅ ML Commons statistical analysis utilities loaded successfully")
+except ImportError as e:
+    ML_COMMONS_AVAILABLE = False
+    tprint_warning(f"⚠️ ML Commons utilities not available: {e}")
+    # Create fallback classes
+    class DataQualityUtilities:
+        def __init__(self, *args, **kwargs): pass
+        def automated_outlier_detection(self, *args, **kwargs): return {'outlier_indices': []}
+        def missing_value_analysis(self, *args, **kwargs): return {'missing_summary': {'total_missing': 0}}
+        def data_drift_detection(self, *args, **kwargs): return {'drift_detected': False}
+        def feature_correlation_analysis(self, *args, **kwargs): return {'highly_correlated_pairs': []}
+        def calculate_data_quality_score(self, *args, **kwargs): return {'overall_score': 1.0}
+    
+    class DataLeakagePrevention:
+        def __init__(self, *args, **kwargs): pass
+        def check_data_leakage(self, *args, **kwargs): return {'status': 'clean', 'leakage_rate': 0.0}
+    
+    class UnifiedCrossValidator:
+        def run(self, *args, **kwargs): return None
+    
+    class StabilityAnalyzer:
+        def __init__(self, *args, **kwargs): pass
+        def analyze_stability(self, *args, **kwargs): return {'stability_score': 1.0}
+    
+    class FeatureSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return []
+    
+    class UniversalTemporalValidator:
+        def __init__(self, *args, **kwargs): pass
+        def validate_temporal_split(self, *args, **kwargs): return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -304,19 +355,101 @@ class MutualInformationTest(StatisticalTest):
 class StatisticalAnalysisFramework:
     """
     Comprehensive statistical analysis framework for data-driven decisions.
+    
+    Enhanced with ml_commons utilities for:
+    - Advanced data quality assessment
+    - Leakage detection and prevention
+    - Temporal validation
+    - Stability analysis
+    - Cross-validation integration
+    - Feature selection integration
     """
     
-    def __init__(self):
-        """Initialize the statistical analysis framework."""
+    def __init__(self, enable_ml_commons: bool = True, enable_validation: bool = True):
+        """
+        Initialize the statistical analysis framework.
+        
+        Args:
+            enable_ml_commons: Enable ml_commons integration
+            enable_validation: Enable validation checks
+        """
         self.normality_test = NormalityTest()
         self.correlation_test = CorrelationTest()
         self.mi_test = MutualInformationTest()
         
+        self.enable_ml_commons = enable_ml_commons and ML_COMMONS_AVAILABLE
+        self.enable_validation = enable_validation
+        
+        # Initialize ml_commons utilities
+        if self.enable_ml_commons:
+            self._initialize_ml_commons_utilities()
+        
         tprint_info("Statistical Analysis Framework initialized")
+        if self.enable_ml_commons:
+            tprint_info("✅ Enhanced with ml_commons utilities")
+    
+    def _initialize_ml_commons_utilities(self):
+        """Initialize ml_commons utilities for enhanced statistical analysis."""
+        try:
+            # Initialize data quality utilities
+            self.data_quality_utils = DataQualityUtilities({
+                'missing_threshold': 0.1,
+                'outlier_contamination': 0.05,
+                'drift_threshold': 0.1,
+                'correlation_method': 'spearman'
+            })
+            
+            # Initialize leakage prevention
+            self.leakage_prevention = DataLeakagePrevention(
+                DataLeakageConfig(
+                    enable_temporal_validation=True,
+                    critical_leakage_threshold=0.1,
+                    enable_detailed_logging=True
+                )
+            )
+            
+            # Initialize stability analyzer
+            self.stability_analyzer = StabilityAnalyzer(
+                StabilityConfig(
+                    enable_stability_checks=True,
+                    stability_threshold=0.8
+                )
+            )
+            
+            # Initialize feature selector
+            self.feature_selector = FeatureSelector(
+                FeatureSelectionConfig(
+                    enable_correlation_checks=True,
+                    correlation_threshold=0.95
+                )
+            )
+            
+            # Initialize temporal validator
+            self.temporal_validator = UniversalTemporalValidator(
+                TemporalValidationConfig(
+                    enable_temporal_checks=True,
+                    strict_temporal_order=True
+                )
+            )
+            
+            # Initialize unified CV
+            self.unified_cv = UnifiedCrossValidator()
+            
+            tprint_debug("ML Commons utilities initialized successfully")
+            
+        except Exception as e:
+            tprint_warning(f"Failed to initialize some ML Commons utilities: {e}")
+            self.enable_ml_commons = False
     
     def analyze_data_characteristics(self, data: pd.DataFrame) -> DataCharacteristics:
         """
         Comprehensive analysis of data characteristics.
+        
+        Enhanced with ml_commons utilities for:
+        - Advanced data quality assessment
+        - Leakage detection
+        - Stability analysis
+        - Cross-validation integration
         
         Args:
             data: Input DataFrame
@@ -325,6 +458,12 @@ class StatisticalAnalysisFramework:
             DataCharacteristics object with comprehensive analysis
         """
         tprint_info(f"Analyzing data characteristics for {data.shape[0]} samples, {data.shape[1]} features")
+        
+        # Enhanced data validation with ml_commons
+        if self.enable_ml_commons and self.enable_validation:
+            validation_results = self._validate_data_with_ml_commons(data)
+            if not validation_results['is_valid']:
+                tprint_warning(f"Data validation issues detected: {validation_results['warnings']}")
         
         # Basic statistics
         n_samples, n_features = data.shape
@@ -348,14 +487,25 @@ class StatisticalAnalysisFramework:
                 except Exception:
                     normality_pvalues[col] = 1.0
         
-        # Missing data analysis
-        missing_ratios = {col: data[col].isna().sum() / len(data) for col in data.columns}
-        missing_patterns = self._analyze_missing_patterns(data)
+        # Enhanced missing data analysis with ml_commons
+        if self.enable_ml_commons and hasattr(self, 'data_quality_utils'):
+            missing_analysis = self.data_quality_utils.missing_value_analysis(data)
+            missing_ratios = missing_analysis.get('missing_patterns', {})
+            missing_patterns = missing_analysis
+        else:
+            missing_ratios = {col: data[col].isna().sum() / len(data) for col in data.columns}
+            missing_patterns = self._analyze_missing_patterns(data)
         
-        # Correlation analysis
-        corr_matrix = data.corr()
-        avg_correlation = corr_matrix.abs().mean().mean()
-        max_correlation = corr_matrix.abs().max().max()
+        # Enhanced correlation analysis with ml_commons
+        if self.enable_ml_commons and hasattr(self, 'data_quality_utils'):
+            corr_analysis = self.data_quality_utils.feature_correlation_analysis(data)
+            corr_matrix = corr_analysis.get('correlation_matrix', data.corr())
+            avg_correlation = corr_matrix.abs().mean().mean() if hasattr(corr_matrix, 'abs') else 0.0
+            max_correlation = corr_matrix.abs().max().max() if hasattr(corr_matrix, 'abs') else 0.0
+        else:
+            corr_matrix = data.corr()
+            avg_correlation = corr_matrix.abs().mean().mean()
+            max_correlation = corr_matrix.abs().max().max()
         
         # Volatility and regime analysis
         volatility_regimes = self._detect_volatility_regimes(data)
@@ -365,10 +515,23 @@ class StatisticalAnalysisFramework:
         seasonality_detected, seasonal_periods = self._detect_seasonality(data)
         trend_strength = self._calculate_trend_strength(data)
         
-        # Data quality metrics
-        data_quality_score = self._calculate_data_quality_score(data, missing_ratios, corr_matrix)
-        outliers_ratio = self._calculate_outliers_ratio(data)
-        stability_score = self._calculate_stability_score(data)
+        # Enhanced data quality metrics with ml_commons
+        if self.enable_ml_commons and hasattr(self, 'data_quality_utils'):
+            quality_assessment = self.data_quality_utils.calculate_data_quality_score(data)
+            data_quality_score = quality_assessment.get('overall_score', 0.5)
+            
+            outlier_analysis = self.data_quality_utils.automated_outlier_detection(data)
+            outliers_ratio = outlier_analysis.get('summary', {}).get('outlier_percentage', 0) / 100
+        else:
+            data_quality_score = self._calculate_data_quality_score(data, missing_ratios, corr_matrix)
+            outliers_ratio = self._calculate_outliers_ratio(data)
+        
+        # Enhanced stability analysis with ml_commons
+        if self.enable_ml_commons and hasattr(self, 'stability_analyzer'):
+            stability_analysis = self.stability_analyzer.analyze_stability(data)
+            stability_score = stability_analysis.get('stability_score', 0.5)
+        else:
+            stability_score = self._calculate_stability_score(data)
         
         characteristics = DataCharacteristics(
             n_samples=n_samples,
@@ -392,7 +555,7 @@ class StatisticalAnalysisFramework:
             stability_score=stability_score
         )
         
-        tprint_success(f"Data characteristics analysis completed: quality_score={data_quality_score:.3f}")
+        tprint_success(f"Enhanced data characteristics analysis completed: quality_score={data_quality_score:.3f}")
         return characteristics
     
     def detect_patterns(self, data: pd.DataFrame) -> PatternAnalysis:
@@ -970,3 +1133,190 @@ class StatisticalAnalysisFramework:
             }
         
         return consecutive_missing
+    
+    def _validate_data_with_ml_commons(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Validate data using ml_commons utilities.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Validation results dictionary
+        """
+        validation_results = {
+            'is_valid': True,
+            'issues': [],
+            'warnings': []
+        }
+        
+        if not self.enable_ml_commons:
+            return validation_results
+        
+        try:
+            # Data quality validation
+            if hasattr(self, 'data_quality_utils'):
+                tprint_debug("Performing data quality validation...")
+                
+                # Missing value analysis
+                missing_analysis = self.data_quality_utils.missing_value_analysis(data)
+                if missing_analysis.get('severity_assessment', {}).get('severity_level') in ['high', 'critical']:
+                    validation_results['warnings'].append("High missing data ratio detected")
+                
+                # Outlier detection
+                outlier_analysis = self.data_quality_utils.automated_outlier_detection(data)
+                outlier_ratio = outlier_analysis.get('summary', {}).get('outlier_percentage', 0) / 100
+                if outlier_ratio > 0.1:  # 10% threshold
+                    validation_results['warnings'].append(f"High outlier ratio: {outlier_ratio:.2%}")
+                
+                # Data drift detection (if reference data available)
+                # This would require reference data, so we'll skip for now
+                
+            # Leakage detection
+            if hasattr(self, 'leakage_prevention'):
+                tprint_debug("Performing leakage detection...")
+                
+                leakage_check = self.leakage_prevention.check_data_leakage(data, dataset_name="statistical_analysis")
+                if leakage_check.get('status') in ['warning', 'critical']:
+                    validation_results['warnings'].append(f"Potential data leakage: {leakage_check.get('status')}")
+                    if leakage_check.get('leakage_rate', 0) > 0.1:
+                        validation_results['issues'].append("High leakage rate detected")
+                        validation_results['is_valid'] = False
+        
+        except Exception as e:
+            tprint_warning(f"Data validation failed with error: {e}")
+            validation_results['warnings'].append(f"Validation error: {str(e)}")
+        
+        return validation_results
+    
+    def get_enhanced_analysis_report(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Get comprehensive analysis report using ml_commons utilities.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Enhanced analysis report
+        """
+        report = {
+            'basic_analysis': {
+                'n_samples': data.shape[0],
+                'n_features': data.shape[1],
+                'data_types': {col: str(data[col].dtype) for col in data.columns}
+            },
+            'ml_commons_enabled': self.enable_ml_commons,
+            'validation_enabled': self.enable_validation,
+            'enhanced_metrics': {},
+            'recommendations': []
+        }
+        
+        if self.enable_ml_commons:
+            try:
+                # Enhanced data quality assessment
+                if hasattr(self, 'data_quality_utils'):
+                    quality_assessment = self.data_quality_utils.calculate_data_quality_score(data)
+                    report['enhanced_metrics']['data_quality'] = quality_assessment
+                    
+                    # Add recommendations based on quality assessment
+                    if quality_assessment.get('overall_score', 0) < 0.7:
+                        report['recommendations'].append("Data quality needs improvement")
+                    
+                    if quality_assessment.get('quality_grade', 'F') in ['D', 'F']:
+                        report['recommendations'].append("Consider data cleaning and preprocessing")
+                
+                # Stability analysis
+                if hasattr(self, 'stability_analyzer'):
+                    stability_analysis = self.stability_analyzer.analyze_stability(data)
+                    report['enhanced_metrics']['stability'] = stability_analysis
+                    
+                    if stability_analysis.get('stability_score', 1.0) < 0.7:
+                        report['recommendations'].append("Data stability issues detected")
+                
+                # Leakage detection
+                if hasattr(self, 'leakage_prevention'):
+                    leakage_check = self.leakage_prevention.check_data_leakage(data, dataset_name="analysis_report")
+                    report['enhanced_metrics']['leakage_detection'] = leakage_check
+                    
+                    if leakage_check.get('status') in ['warning', 'critical']:
+                        report['recommendations'].append("Data leakage detected - review data collection process")
+                
+            except Exception as e:
+                tprint_warning(f"Enhanced analysis failed: {e}")
+                report['enhanced_metrics']['error'] = str(e)
+        
+        return report
+    
+    def perform_enhanced_statistical_tests(self, data: pd.DataFrame, 
+                                         targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Perform enhanced statistical tests using ml_commons utilities.
+        
+        Args:
+            data: Input DataFrame
+            targets: Optional target series
+            
+        Returns:
+            Enhanced statistical test results
+        """
+        test_results = {
+            'basic_tests': {},
+            'enhanced_tests': {},
+            'ml_commons_enabled': self.enable_ml_commons
+        }
+        
+        # Basic statistical tests
+        try:
+            # Normality tests
+            normality_results = self.normality_test.test(data)
+            test_results['basic_tests']['normality'] = normality_results
+            
+            # Correlation tests
+            correlation_results = self.correlation_test.test(data)
+            test_results['basic_tests']['correlation'] = correlation_results
+            
+            # Mutual information tests
+            mi_results = self.mi_test.test(data, targets)
+            test_results['basic_tests']['mutual_information'] = mi_results
+            
+        except Exception as e:
+            tprint_warning(f"Basic statistical tests failed: {e}")
+            test_results['basic_tests']['error'] = str(e)
+        
+        # Enhanced tests with ml_commons
+        if self.enable_ml_commons:
+            try:
+                # Advanced data quality tests
+                if hasattr(self, 'data_quality_utils'):
+                    # Outlier detection
+                    outlier_analysis = self.data_quality_utils.automated_outlier_detection(data)
+                    test_results['enhanced_tests']['outlier_detection'] = outlier_analysis
+                    
+                    # Feature correlation analysis
+                    corr_analysis = self.data_quality_utils.feature_correlation_analysis(data)
+                    test_results['enhanced_tests']['correlation_analysis'] = corr_analysis
+                    
+                    # Data drift detection (if applicable)
+                    # This would require reference data
+                
+                # Stability tests
+                if hasattr(self, 'stability_analyzer'):
+                    stability_analysis = self.stability_analyzer.analyze_stability(data)
+                    test_results['enhanced_tests']['stability_analysis'] = stability_analysis
+                
+                # Feature selection tests
+                if hasattr(self, 'feature_selector') and targets is not None:
+                    try:
+                        selected_features = self.feature_selector.select_features(data, targets)
+                        test_results['enhanced_tests']['feature_selection'] = {
+                            'selected_features': selected_features,
+                            'n_selected': len(selected_features) if selected_features else 0
+                        }
+                    except Exception as e:
+                        tprint_debug(f"Feature selection test failed: {e}")
+                
+            except Exception as e:
+                tprint_warning(f"Enhanced statistical tests failed: {e}")
+                test_results['enhanced_tests']['error'] = str(e)
+        
+        return test_results

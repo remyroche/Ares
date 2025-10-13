@@ -477,6 +477,74 @@ class DataDrivenInteractionGenerator:
             parameters={'window': 20, 'statistic': 'kurtosis'}
         )
         
+        # Log interactions
+        interaction_types['log_product'] = InteractionType(
+            name='log_product',
+            function=self._log_interaction,
+            description='Product of log-transformed features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'multiply', 'log_transform': True}
+        )
+        
+        interaction_types['log_ratio'] = InteractionType(
+            name='log_ratio',
+            function=self._log_interaction,
+            description='Ratio of log-transformed features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'divide', 'log_transform': True}
+        )
+        
+        interaction_types['log_sum'] = InteractionType(
+            name='log_sum',
+            function=self._log_interaction,
+            description='Sum of log-transformed features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'add', 'log_transform': True}
+        )
+        
+        interaction_types['log_difference'] = InteractionType(
+            name='log_difference',
+            function=self._log_interaction,
+            description='Difference of log-transformed features',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'subtract', 'log_transform': True}
+        )
+        
+        # Log-return interactions (common in finance)
+        interaction_types['log_return_product'] = InteractionType(
+            name='log_return_product',
+            function=self._log_return_interaction,
+            description='Product of log returns',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'multiply'}
+        )
+        
+        interaction_types['log_return_ratio'] = InteractionType(
+            name='log_return_ratio',
+            function=self._log_return_interaction,
+            description='Ratio of log returns',
+            complexity=2,
+            vectorbt_optimized=True,
+            batch_processable=True,
+            memory_efficient=True,
+            parameters={'operation': 'divide'}
+        )
+        
         tprint(f"✅ Initialized {len(interaction_types)} interaction types")
         return interaction_types
     
@@ -643,6 +711,11 @@ class DataDrivenInteractionGenerator:
         # Always include basic arithmetic interactions
         selected_types.extend(['product', 'ratio', 'difference', 'sum'])
         
+        # Add log interactions for financial data (common in finance)
+        selected_types.extend(['log_product', 'log_ratio', 'log_sum', 'log_difference'])
+        selected_types.extend(['log_return_product', 'log_return_ratio'])
+        tprint("✅ Added log interactions")
+        
         # Add correlation-based interactions if data has reasonable correlation
         if data_characteristics.get('avg_correlation', 0) > 0.1:
             selected_types.extend(['correlation', 'covariance', 'rank_correlation'])
@@ -677,12 +750,120 @@ class DataDrivenInteractionGenerator:
             raise ValueError("Need at least 2 features for interactions")
         
         try:
-            combinations_list = list(combinations(feature_names, 2))
-            tprint(f"✅ Generated {len(combinations_list)} feature combinations")
-            return combinations_list
+            # Generate all possible combinations
+            all_combinations = list(combinations(feature_names, 2))
+            
+            # Categorize features for between/within category interactions
+            feature_categories = self._categorize_features(feature_names)
+            
+            # Generate category-based combinations
+            category_combinations = self._generate_category_combinations(feature_names, feature_categories)
+            
+            # Combine all combinations
+            all_combinations.extend(category_combinations)
+            
+            # Remove duplicates while preserving order
+            unique_combinations = []
+            seen = set()
+            for combo in all_combinations:
+                # Sort to ensure consistent ordering
+                sorted_combo = tuple(sorted(combo))
+                if sorted_combo not in seen:
+                    unique_combinations.append(combo)
+                    seen.add(sorted_combo)
+            
+            tprint(f"✅ Generated {len(unique_combinations)} feature combinations")
+            tprint(f"📊 Category distribution: {self._get_category_distribution(feature_categories)}")
+            return unique_combinations
         except Exception as e:
             tprint(f"❌ ERROR: Feature combination generation failed: {e}")
             raise RuntimeError(f"Feature combination generation failed: {e}")
+    
+    def _categorize_features(self, feature_names: List[str]) -> Dict[str, str]:
+        """Categorize features based on their names."""
+        tprint("🏷️ Categorizing features")
+        
+        feature_categories = {}
+        
+        # Define category patterns
+        category_patterns = {
+            'momentum': ['rsi', 'momentum', 'roc', 'cci', 'williams', 'stoch'],
+            'volatility': ['volatility', 'atr', 'bb', 'bollinger', 'std', 'var'],
+            'trend': ['sma', 'ema', 'ma_', 'trend', 'macd', 'adx'],
+            'volume': ['volume', 'obv', 'ad', 'mfi', 'vwap'],
+            'returns': ['return', 'log_return', 'pct_change'],
+            'oscillator': ['oscillator', 'rsi', 'stoch', 'williams', 'cci'],
+            'support_resistance': ['support', 'resistance', 'pivot', 'fibonacci'],
+            'candlestick': ['doji', 'hammer', 'engulfing', 'pattern'],
+            'microstructure': ['microstructure', 'bid_ask', 'spread', 'tick'],
+            'entropy': ['entropy', 'shannon', 'information'],
+            'time': ['time', 'hour', 'day', 'week', 'month'],
+            'cross_timeframe': ['cross', 'timeframe', 'multi_timeframe'],
+            'regime': ['regime', 'state', 'regime_change'],
+            'acceleration': ['acceleration', 'jerk', 'second_derivative'],
+            'advanced_statistical': ['skewness', 'kurtosis', 'quantile', 'percentile'],
+            'spectral_wavelet': ['spectral', 'wavelet', 'fourier', 'fft']
+        }
+        
+        for feature_name in feature_names:
+            feature_lower = feature_name.lower()
+            category = 'custom'  # Default category
+            
+            # Find matching category
+            for cat, patterns in category_patterns.items():
+                if any(pattern in feature_lower for pattern in patterns):
+                    category = cat
+                    break
+            
+            feature_categories[feature_name] = category
+        
+        tprint(f"✅ Categorized {len(feature_categories)} features")
+        return feature_categories
+    
+    def _generate_category_combinations(self, feature_names: List[str], feature_categories: Dict[str, str]) -> List[Tuple[str, str]]:
+        """Generate both within-category and between-category combinations."""
+        tprint("🔄 Generating category-based combinations")
+        
+        combinations = []
+        
+        # Group features by category
+        category_groups = {}
+        for feature, category in feature_categories.items():
+            if category not in category_groups:
+                category_groups[category] = []
+            category_groups[category].append(feature)
+        
+        # Generate within-category combinations (features from same category)
+        within_category_combinations = []
+        for category, features in category_groups.items():
+            if len(features) >= 2:
+                category_combos = list(combinations(features, 2))
+                within_category_combinations.extend(category_combos)
+                tprint(f"✅ Generated {len(category_combos)} within-category combinations for {category}")
+        
+        # Generate between-category combinations (features from different categories)
+        between_category_combinations = []
+        categories = list(category_groups.keys())
+        for i, cat1 in enumerate(categories):
+            for cat2 in categories[i+1:]:
+                for feat1 in category_groups[cat1]:
+                    for feat2 in category_groups[cat2]:
+                        between_category_combinations.append((feat1, feat2))
+        
+        tprint(f"✅ Generated {len(within_category_combinations)} within-category combinations")
+        tprint(f"✅ Generated {len(between_category_combinations)} between-category combinations")
+        
+        combinations.extend(within_category_combinations)
+        combinations.extend(between_category_combinations)
+        
+        return combinations
+    
+    def _get_category_distribution(self, feature_categories: Dict[str, str]) -> Dict[str, int]:
+        """Get distribution of features across categories."""
+        distribution = {}
+        for category in feature_categories.values():
+            distribution[category] = distribution.get(category, 0) + 1
+        return distribution
     
     def _process_interactions(self, 
                             features: pd.DataFrame,
@@ -1113,6 +1294,82 @@ class DataDrivenInteractionGenerator:
         except Exception as e:
             tprint(f"❌ ERROR: Statistical interaction failed: {e}")
             raise RuntimeError(f"Statistical interaction failed: {e}")
+    
+    def _log_interaction(self, feat1: pd.Series, feat2: pd.Series, operation: str = 'multiply', log_transform: bool = True) -> pd.Series:
+        """Log-transformed interaction method."""
+        tprint(f"🔧 Log interaction: {operation} (log_transform={log_transform})")
+        
+        try:
+            # Apply log transformation with safety checks
+            if log_transform:
+                # Ensure positive values for log transformation
+                feat1_safe = feat1.copy()
+                feat2_safe = feat2.copy()
+                
+                # Handle negative values by adding a small constant or using absolute values
+                feat1_safe = np.where(feat1_safe <= 0, np.abs(feat1_safe) + 1e-8, feat1_safe)
+                feat2_safe = np.where(feat2_safe <= 0, np.abs(feat2_safe) + 1e-8, feat2_safe)
+                
+                # Apply log transformation
+                log_feat1 = np.log(feat1_safe)
+                log_feat2 = np.log(feat2_safe)
+            else:
+                log_feat1 = feat1
+                log_feat2 = feat2
+            
+            # Apply operation
+            if operation == 'multiply':
+                result = log_feat1 * log_feat2
+            elif operation == 'divide':
+                result = log_feat1 / log_feat2
+            elif operation == 'add':
+                result = log_feat1 + log_feat2
+            elif operation == 'subtract':
+                result = log_feat1 - log_feat2
+            else:
+                tprint(f"❌ ERROR: Unknown log operation: {operation}")
+                raise ValueError(f"Unknown log operation: {operation}")
+            
+            # Convert back to pandas Series
+            result = pd.Series(result, index=feat1.index)
+            
+            tprint(f"✅ Log interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log interaction failed: {e}")
+            raise RuntimeError(f"Log interaction failed: {e}")
+    
+    def _log_return_interaction(self, feat1: pd.Series, feat2: pd.Series, operation: str = 'multiply') -> pd.Series:
+        """Log return interaction method (common in finance)."""
+        tprint(f"🔧 Log return interaction: {operation}")
+        
+        try:
+            # Calculate log returns
+            log_ret1 = np.log(feat1 / feat1.shift(1))
+            log_ret2 = np.log(feat2 / feat2.shift(1))
+            
+            # Handle NaN values
+            log_ret1 = log_ret1.fillna(0)
+            log_ret2 = log_ret2.fillna(0)
+            
+            # Apply operation
+            if operation == 'multiply':
+                result = log_ret1 * log_ret2
+            elif operation == 'divide':
+                # Avoid division by zero
+                result = np.where(np.abs(log_ret2) > 1e-8, log_ret1 / log_ret2, 0)
+            else:
+                tprint(f"❌ ERROR: Unknown log return operation: {operation}")
+                raise ValueError(f"Unknown log return operation: {operation}")
+            
+            # Convert back to pandas Series
+            result = pd.Series(result, index=feat1.index)
+            
+            tprint(f"✅ Log return interaction completed: {len(result)} values")
+            return result
+        except Exception as e:
+            tprint(f"❌ ERROR: Log return interaction failed: {e}")
+            raise RuntimeError(f"Log return interaction failed: {e}")
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""

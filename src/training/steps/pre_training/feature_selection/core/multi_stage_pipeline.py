@@ -41,10 +41,19 @@ try:
     from sklearn.feature_selection import RFE
     from sklearn.model_selection import cross_val_score
     from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics.pairwise import rbf_kernel, linear_kernel, polynomial_kernel
     from scipy.stats import spearmanr
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
+
+# Import scipy for distance correlation and HSIC
+try:
+    from scipy.spatial.distance import pdist, squareform
+    from scipy.linalg import eigh
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
 
 # Import hardware optimization tools
 try:
@@ -84,10 +93,11 @@ class MultiStageFeatureSelectionPipeline:
     Multi-Stage Feature Selection Pipeline
     
     A reusable class that implements a two-stage feature selection approach:
-    1. Stage 1: mRMR + Spearman combination (70% mRMR + 30% Spearman)
+    1. Stage 1: Enhanced Multi-Method Scoring (50% mRMR + 30% Distance Correlation + 20% HSIC)
     2. Stage 2: Progressive refinement with RFE using ensemble scoring
     
     This pipeline uses VectorBT optimizations, hardware acceleration, and fast-fail error handling.
+    The enhanced Stage 1 captures both linear and nonlinear relationships between features and target.
     """
 
     def __init__(self, config: Optional[FeatureSelectionConfig] = None, execution_mode_config: Optional[Dict[str, Any]] = None):
@@ -228,9 +238,9 @@ class MultiStageFeatureSelectionPipeline:
         
         tprint_success("   ✅ Fast fail validation passed")
         
-        # Use new RFE-based pipeline
-        tprint("🚀 Using RFE-based multi-stage pipeline")
-        tprint_info("   📊 Stage 1: mRMR + Spearman combination (70% mRMR + 30% Spearman)")
+        # Use enhanced multi-method pipeline
+        tprint("🚀 Using Enhanced Multi-Method Pipeline")
+        tprint_info("   📊 Stage 1: Enhanced Multi-Method Scoring (50% mRMR + 30% Distance Correlation + 20% HSIC)")
         tprint_info("   📊 Stage 2: RFE with percentage-based step size (10% of features above target)")
         
         # Set thread limits
@@ -250,12 +260,12 @@ class MultiStageFeatureSelectionPipeline:
         
         tprint_info(f"   📊 Starting with {len(selected_features)} features")
         
-        # Stage 1: mRMR + Spearman combination
-        tprint("📊 Stage 1: mRMR + Spearman combination")
+        # Stage 1: Enhanced Multi-Method Scoring
+        tprint("📊 Stage 1: Enhanced Multi-Method Scoring (mRMR + Distance Correlation + HSIC)")
         tprint_debug(f"   🔍 Input features for Stage 1: {len(selected_features)}")
         
         try:
-            stage_1_result = self._stage_1_mrmr_spearman_combination(X, y)
+            stage_1_result = self._stage_1_enhanced_multi_method_scoring(X, y)
             selected_features = stage_1_result['selected_features']
             stage_results['stage_1'] = stage_1_result
             
@@ -263,7 +273,7 @@ class MultiStageFeatureSelectionPipeline:
             tprint_debug(f"   📊 Stage 1 method: {stage_1_result.get('method', 'unknown')}")
             
         except Exception as e:
-            error_msg = f"Stage 1 mRMR+Spearman combination failed: {e}"
+            error_msg = f"Stage 1 Enhanced Multi-Method Scoring failed: {e}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
         
@@ -387,13 +397,13 @@ class MultiStageFeatureSelectionPipeline:
         
         return correlations.abs()
 
-    def _stage_1_mrmr_spearman_combination(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+    def _stage_1_enhanced_multi_method_scoring(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
         """
-        Stage 1: mRMR + Spearman combination (70% mRMR + 30% Spearman).
+        Stage 1: Enhanced Multi-Method Scoring (50% mRMR + 30% Distance Correlation + 20% HSIC).
         
-        Selects top 50% of features above target using weighted combination.
+        Selects top 50% of features above target using weighted combination of three methods.
         """
-        tprint_debug("🔍 Stage 1: mRMR + Spearman combination")
+        tprint_debug("🔍 Stage 1: Enhanced Multi-Method Scoring")
         tprint_debug(f"   📊 Input features: {len(X.columns)}")
         tprint_debug(f"   📊 Data shape: {X.shape}")
         
@@ -407,22 +417,28 @@ class MultiStageFeatureSelectionPipeline:
         tprint_debug(f"   📊 Target ratio: {target_ratio:.1%}")
         tprint_debug(f"   📊 Features to select: {features_to_select}")
         
-        # Calculate mRMR scores (70% weight)
-        tprint_debug("   📊 Calculating mRMR scores (70% weight)")
+        # Calculate mRMR scores (50% weight)
+        tprint_debug("   📊 Calculating mRMR scores (50% weight)")
         mrmr_scores = self._calculate_mrmr_scores(X, y)
         
-        # Calculate Spearman scores (30% weight)
-        tprint_debug("   📊 Calculating Spearman scores (30% weight)")
-        spearman_scores = self._calculate_spearman_scores(X, y)
+        # Calculate Distance Correlation scores (30% weight)
+        tprint_debug("   📊 Calculating Distance Correlation scores (30% weight)")
+        distance_corr_scores = self._calculate_distance_correlation_scores(X, y)
+        
+        # Calculate HSIC scores (20% weight)
+        tprint_debug("   📊 Calculating HSIC scores (20% weight)")
+        hsic_scores = self._calculate_hsic_scores(X, y)
         
         # Combine scores with weights
         tprint_debug("   📊 Combining scores with weights")
         mrmr_weight = self.config.stage1_mrmr_weight
-        spearman_weight = self.config.stage1_spearman_weight
+        distance_corr_weight = self.config.stage1_distance_correlation_weight
+        hsic_weight = self.config.stage1_hsic_weight
         
         combined_scores = (
             mrmr_scores * mrmr_weight + 
-            spearman_scores * spearman_weight
+            distance_corr_scores * distance_corr_weight +
+            hsic_scores * hsic_weight
         )
         
         # Select top features
@@ -435,10 +451,11 @@ class MultiStageFeatureSelectionPipeline:
         return {
             'selected_features': selected_features,
             'mrmr_scores': mrmr_scores.to_dict(),
-            'spearman_scores': spearman_scores.to_dict(),
+            'distance_correlation_scores': distance_corr_scores.to_dict(),
+            'hsic_scores': hsic_scores.to_dict(),
             'combined_scores': combined_scores.to_dict(),
             'target_count': features_to_select,
-            'method': 'mrmr_spearman_combination'
+            'method': 'enhanced_multi_method_scoring'
         }
 
     def _stage_2_progressive_refinement(self, X: pd.DataFrame, y: pd.Series, 
@@ -554,6 +571,177 @@ class MultiStageFeatureSelectionPipeline:
     def _calculate_spearman_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
         """Calculate Spearman correlation scores."""
         return self.spearman_abs_vectorized(X, y)
+
+    def _calculate_distance_correlation_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate distance correlation scores for all features."""
+        tprint_debug("   📊 Calculating distance correlation scores")
+        
+        if not SCIPY_AVAILABLE:
+            tprint_warning("   ⚠️ SciPy not available, falling back to Spearman correlation")
+            return self.spearman_abs_vectorized(X, y)
+        
+        try:
+            # Subsample if enabled and dataset is large
+            if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
+                tprint_debug(f"   📊 Subsampling data for distance correlation: {len(X)} -> {self.config.distance_correlation_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.distance_correlation_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Calculate distance correlation for each feature
+            distance_corr_scores = {}
+            for feature in X.columns:
+                try:
+                    dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                    distance_corr_scores[feature] = dc_score
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ Distance correlation failed for {feature}: {e}")
+                    distance_corr_scores[feature] = 0.0
+            
+            return pd.Series(distance_corr_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Distance correlation calculation failed: {e}, falling back to Spearman")
+            return self.spearman_abs_vectorized(X, y)
+
+    def _distance_correlation(self, x: pd.Series, y: pd.Series) -> float:
+        """Calculate distance correlation between two series."""
+        try:
+            # Remove NaN values
+            valid_mask = ~(x.isna() | y.isna())
+            if not valid_mask.any():
+                return 0.0
+            
+            x_clean = x[valid_mask].values
+            y_clean = y[valid_mask].values
+            
+            if len(x_clean) < 3:
+                return 0.0
+            
+            # Calculate distance matrices
+            x_dist = pdist(x_clean.reshape(-1, 1), metric='euclidean')
+            y_dist = pdist(y_clean.reshape(-1, 1), metric='euclidean')
+            
+            # Convert to squareform
+            x_dist_matrix = squareform(x_dist)
+            y_dist_matrix = squareform(y_dist)
+            
+            # Center the distance matrices
+            n = len(x_clean)
+            x_centered = x_dist_matrix - np.mean(x_dist_matrix, axis=1)[:, np.newaxis] - np.mean(x_dist_matrix, axis=0) + np.mean(x_dist_matrix)
+            y_centered = y_dist_matrix - np.mean(y_dist_matrix, axis=1)[:, np.newaxis] - np.mean(y_dist_matrix, axis=0) + np.mean(y_dist_matrix)
+            
+            # Calculate distance covariance and variances
+            dcov_xy = np.sqrt(np.mean(x_centered * y_centered))
+            dcov_xx = np.sqrt(np.mean(x_centered * x_centered))
+            dcov_yy = np.sqrt(np.mean(y_centered * y_centered))
+            
+            # Avoid division by zero
+            if dcov_xx == 0 or dcov_yy == 0:
+                return 0.0
+            
+            # Distance correlation
+            dcorr = dcov_xy / np.sqrt(dcov_xx * dcov_yy)
+            
+            return abs(dcorr)  # Return absolute value for feature selection
+            
+        except Exception as e:
+            tprint_debug(f"   ⚠️ Distance correlation calculation error: {e}")
+            return 0.0
+
+    def _calculate_hsic_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate HSIC scores for all features."""
+        tprint_debug("   📊 Calculating HSIC scores")
+        
+        if not SCIPY_AVAILABLE or not SKLEARN_AVAILABLE:
+            tprint_warning("   ⚠️ Required libraries not available, falling back to Spearman correlation")
+            return self.spearman_abs_vectorized(X, y)
+        
+        try:
+            # Subsample if enabled and dataset is large
+            if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
+                tprint_debug(f"   📊 Subsampling data for HSIC: {len(X)} -> {self.config.hsic_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.hsic_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Calculate HSIC for each feature
+            hsic_scores = {}
+            for feature in X.columns:
+                try:
+                    hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                    hsic_scores[feature] = hsic_score
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ HSIC calculation failed for {feature}: {e}")
+                    hsic_scores[feature] = 0.0
+            
+            return pd.Series(hsic_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ HSIC calculation failed: {e}, falling back to Spearman")
+            return self.spearman_abs_vectorized(X, y)
+
+    def _hsic_score(self, x: pd.Series, y: pd.Series) -> float:
+        """Calculate HSIC score between two series."""
+        try:
+            # Remove NaN values
+            valid_mask = ~(x.isna() | y.isna())
+            if not valid_mask.any():
+                return 0.0
+            
+            x_clean = x[valid_mask].values
+            y_clean = y[valid_mask].values
+            
+            if len(x_clean) < 3:
+                return 0.0
+            
+            # Reshape for kernel calculation
+            x_reshaped = x_clean.reshape(-1, 1)
+            y_reshaped = y_clean.reshape(-1, 1)
+            
+            # Calculate kernels based on configuration
+            kernel_type = self.config.hsic_kernel
+            gamma = self.config.hsic_gamma
+            
+            if kernel_type == 'rbf':
+                if gamma is None:
+                    # Auto gamma: 1 / (n_features * X.var())
+                    gamma = 1.0 / (x_reshaped.shape[1] * np.var(x_reshaped))
+                Kx = rbf_kernel(x_reshaped, gamma=gamma)
+                Ky = rbf_kernel(y_reshaped, gamma=gamma)
+            elif kernel_type == 'linear':
+                Kx = linear_kernel(x_reshaped)
+                Ky = linear_kernel(y_reshaped)
+            elif kernel_type == 'poly':
+                Kx = polynomial_kernel(x_reshaped, degree=2)
+                Ky = polynomial_kernel(y_reshaped, degree=2)
+            else:
+                # Default to RBF
+                gamma = 1.0 / (x_reshaped.shape[1] * np.var(x_reshaped))
+                Kx = rbf_kernel(x_reshaped, gamma=gamma)
+                Ky = rbf_kernel(y_reshaped, gamma=gamma)
+            
+            # Center the kernels
+            n = len(x_clean)
+            H = np.eye(n) - np.ones((n, n)) / n  # Centering matrix
+            
+            Kx_centered = H @ Kx @ H
+            Ky_centered = H @ Ky @ H
+            
+            # Calculate HSIC
+            hsic = np.trace(Kx_centered @ Ky_centered) / (n - 1) ** 2
+            
+            return abs(hsic)  # Return absolute value for feature selection
+            
+        except Exception as e:
+            tprint_debug(f"   ⚠️ HSIC calculation error: {e}")
+            return 0.0
 
     def _calculate_ensemble_feature_scores(self, X: pd.DataFrame, y: pd.Series, 
                                          use_bootstrap_cv: bool = False) -> pd.Series:

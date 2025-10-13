@@ -380,6 +380,7 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+    import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration

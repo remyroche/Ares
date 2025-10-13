@@ -42,8 +42,8 @@ class FeatureBankConfig:
     state_cache_namespace: str = "feature_bank"
     state_cache_ttl_seconds: Optional[int] = None
     
-    # Auto-optimization settings (disabled by default for backward compatibility)
-    enable_auto_optimization: bool = False
+    # Auto-optimization settings (enabled by default for better performance)
+    enable_auto_optimization: bool = True
     default_optimization_level: str = "balanced"  # "conservative", "balanced", "aggressive"
     auto_optimization_config: Optional[AutoOptimizationConfig] = None
 
@@ -75,14 +75,14 @@ class FeatureBank:
         # Initialize generator factory
         self.generator_factory = GeneratorFactory()
         
-        # Initialize auto-optimization configuration (only if enabled)
+        # Initialize auto-optimization configuration (enabled by default)
         if self.config.enable_auto_optimization:
             if self.config.auto_optimization_config is None:
                 self.config.auto_optimization_config = AutoOptimizationConfig()
                 self.config.auto_optimization_config.optimization_level = OptimizationLevel(self.config.default_optimization_level)
-            tprint("✅ Auto-optimization enabled for FeatureBank")
+            tprint("✅ Auto-optimization enabled for FeatureBank (default)")
         else:
-            tprint("ℹ️ Auto-optimization disabled for FeatureBank (backward compatibility mode)")
+            tprint("ℹ️ Auto-optimization disabled for FeatureBank (explicitly disabled)")
         
         # Initialize matrix operations if enabled
         self.matrix_ops = None
@@ -280,7 +280,7 @@ class FeatureBank:
                     generators = auto_optimized_generators
                     tprint(f"✅ Created {len(generators)} auto-optimized generators for {category.value}")
                 else:
-                    tprint(f"✅ Created {len(generators)} standard generators for {category.value} (backward compatibility mode)")
+                    tprint(f"✅ Created {len(generators)} standard generators for {category.value} (auto-optimization disabled)")
                 
                 return generators
             else:

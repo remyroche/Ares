@@ -48,7 +48,7 @@ Use `feature_generation/` for:
 ### ⚡ Auto-Optimization (v2.1)
 - **Automatic optimization** - Data is automatically optimized before feature generation
 - **Configurable strategies** - Conservative, Balanced, Aggressive optimization levels
-- **Opt-in by default** - Disabled by default to maintain backward compatibility
+- **Enabled by default** - Automatic performance improvements out of the box
 - **Performance monitoring** - Built-in statistics and performance tracking
 - **Extensive logging** - Complete visibility into all operations with tprint
 
@@ -62,27 +62,27 @@ Use `feature_generation/` for:
 
 ### ✅ **Full Backward Compatibility Guaranteed**
 
-**All existing code continues to work unchanged.** The auto-optimization features are **opt-in only** and disabled by default to ensure complete backward compatibility.
+**All existing code continues to work unchanged.** Auto-optimization is **enabled by default** to provide better performance automatically, while maintaining complete backward compatibility.
 
 ```python
-# This works exactly as before - no changes needed
+# This works exactly as before - now with automatic optimization!
 from src.feature_generation import FeatureBank, FeatureCategory
 
-bank = FeatureBank()  # Auto-optimization disabled by default
+bank = FeatureBank()  # Auto-optimization enabled by default for better performance
 features = bank.generate_features_by_category(
     data=data,
     category=FeatureCategory.MOMENTUM
 )
 ```
 
-### 🚀 **Enable Auto-Optimization (Optional)**
+### 🚀 **Disable Auto-Optimization (Optional)**
 
 ```python
-# Only enable when you want auto-optimization
+# Only disable if you specifically need to
 from src.feature_generation import FeatureBank, FeatureBankConfig
 
-config = FeatureBankConfig(enable_auto_optimization=True)
-bank = FeatureBank(config)  # Auto-optimization enabled
+config = FeatureBankConfig(enable_auto_optimization=False)
+bank = FeatureBank(config)  # Auto-optimization disabled
 
 # Rest of the code works the same
 features = bank.generate_features_by_category(
@@ -93,12 +93,12 @@ features = bank.generate_features_by_category(
 
 ### 📊 **Compatibility Matrix**
 
-| Feature | Default Behavior | Auto-Optimization Enabled |
-|---------|------------------|---------------------------|
-| **FeatureBank** | Standard generators | Auto-optimized generators |
+| Feature | Default Behavior | Auto-Optimization Disabled |
+|---------|------------------|----------------------------|
+| **FeatureBank** | Auto-optimized generators | Standard generators |
 | **All APIs** | Work unchanged | Work unchanged |
-| **Performance** | No impact | Optimized performance |
-| **Logging** | Standard logging | Extensive tprint logging |
+| **Performance** | Optimized performance | Standard performance |
+| **Logging** | Extensive tprint logging | Standard logging |
 
 ## Quick Start
 

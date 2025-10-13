@@ -13,11 +13,8 @@ from src.utils.tprint import tprint_debug
 @dataclass
 class BaseFeatureSelectionConfig:
     """Base configuration for multi-stage feature selection."""
-    # Stage targets
+    # Initial features
     initial_features: int = 120
-    stage_1_target: int = 100
-    stage_2_target: int = 80
-    stage_3_target: int = 60
 
     # Model configuration
     model_type: str = 'regime_detection'
@@ -256,6 +253,9 @@ class NewPipelineConfig:
 @dataclass
 class FeatureSelectionConfig(BaseFeatureSelectionConfig):
     """Complete configuration combining all sub-configs."""
+    
+    # Custom parameters for additional configuration
+    custom_params: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
         """Initialize sub-configurations."""

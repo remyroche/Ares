@@ -51,8 +51,9 @@ from src.utils.math_validation import (
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
 
 # VectorBT optimizations
-from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+from src.training.steps.backtesting.vectorbt_unified_manager import get_vectorbt_unified_manager, VectorBTConfig
 
 # Core decorators and validation
 from src.core.decorators import (
@@ -186,7 +187,7 @@ class StatisticalAnalyzer:
         self.logger = logger.getChild('StatisticalAnalyzer')
         
         # Initialize VectorBT optimizations
-        self.vectorbt_optimizer = VectorBTRollingOptimizer(
+        self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
             enable_parallel=True,
             memory_efficient=True,
             chunk_size=1000,
@@ -195,6 +196,16 @@ class StatisticalAnalyzer:
         )
         
         self.vectorbt_framework = VectorBTUnifiedFramework()
+        
+        # Initialize VectorBT unified manager
+        vectorbt_config = VectorBTConfig(
+            enable_parallel=True,
+            enable_memory_optimization=True,
+            enable_gpu_acceleration=False,
+            chunk_size=1000,
+            enable_logging=True
+        )
+        self.vectorbt_manager = get_vectorbt_unified_manager(vectorbt_config)
         
         # Suppress warnings for cleaner output
         warnings.filterwarnings('ignore', category=RuntimeWarning)

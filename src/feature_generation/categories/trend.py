@@ -2970,3 +2970,322 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
             return self._calculate_rolling_sum_vectorized(data, window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
+
+
+class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """
+    Generator for a general trend feature that combines ADX (strength) and MACD (direction).
+    
+    This feature provides a comprehensive trend measure that captures both:
+    - Trend strength (via ADX)
+    - Trend direction (via MACD)
+    
+    The general trend is calculated as:
+    general_trend = ADX_normalized * MACD_normalized
+    
+    Where:
+    - ADX_normalized: ADX value normalized to [0, 1] range
+    - MACD_normalized: MACD value normalized to [-1, 1] range
+    """
+    
+    def __init__(self, 
+                 adx_period: int = 14,
+                 macd_fast: int = 12,
+                 macd_slow: int = 26,
+                 macd_signal: int = 9,
+                 sma_period: int = 20,
+                 use_sma_instead_of_macd: bool = False,
+                 config: Optional[FeatureConfig] = None):
+        """
+        Initialize General Trend Feature Generator.
+        
+        Args:
+            adx_period: Period for ADX calculation (default 14)
+            macd_fast: Fast period for MACD (default 12)
+            macd_slow: Slow period for MACD (default 26)
+            macd_signal: Signal period for MACD (default 9)
+            sma_period: Period for SMA if using SMA instead of MACD (default 20)
+            use_sma_instead_of_macd: Whether to use SMA instead of MACD for direction (default False)
+        """
+        if config is None:
+            config = self._create_default_config(
+                adx_period, macd_fast, macd_slow, macd_signal, sma_period, use_sma_instead_of_macd
+            )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        self.adx_period = adx_period
+        self.macd_fast = macd_fast
+        self.macd_slow = macd_slow
+        self.macd_signal = macd_signal
+        self.sma_period = sma_period
+        self.use_sma_instead_of_macd = use_sma_instead_of_macd
+        
+        # Initialize VectorBT optimizer
+        if ROLLING_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
+            
+        # Initialize Unified Vectorization Manager
+        if UNIFIED_MANAGER_AVAILABLE:
+            self.unified_manager = get_unified_vectorization_manager()
+        else:
+            self.unified_manager = None
+    
+    @classmethod
+    def _create_default_config(cls, adx_period: int, macd_fast: int, macd_slow: int, 
+                              macd_signal: int, sma_period: int, use_sma_instead_of_macd: bool) -> FeatureConfig:
+        """Create default configuration for the general trend feature."""
+        direction_method = "SMA" if use_sma_instead_of_macd else "MACD"
+        name = f"general_trend_adx{adx_period}_{direction_method.lower()}"
+        
+        if use_sma_instead_of_macd:
+            description = f"General trend combining ADX({adx_period}) strength with SMA({sma_period}) direction"
+            required_columns = ["close", "high", "low"]
+        else:
+            description = f"General trend combining ADX({adx_period}) strength with MACD({macd_fast},{macd_slow},{macd_signal}) direction"
+            required_columns = ["close", "high", "low"]
+        
+        return FeatureConfig(
+            name=name,
+            category=FeatureCategory.TREND,
+            description=description,
+            required_columns=required_columns,
+            optional_columns=["open", "volume"],
+            default_lookback=max(adx_period * 2, macd_slow * 2 if not use_sma_instead_of_macd else sma_period * 2),
+            min_lookback=max(adx_period, macd_slow if not use_sma_instead_of_macd else sma_period),
+            max_lookback=max(adx_period * 3, macd_slow * 3 if not use_sma_instead_of_macd else sma_period * 3),
+            parameters={
+                'adx_period': adx_period,
+                'macd_fast': macd_fast,
+                'macd_slow': macd_slow,
+                'macd_signal': macd_signal,
+                'sma_period': sma_period,
+                'use_sma_instead_of_macd': use_sma_instead_of_macd
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate the general trend feature combining ADX and MACD/SMA."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=self.config.name)
+        
+        # Optimize DataFrame for processing
+        if self.unified_manager:
+            data = self.unified_manager.optimize_dataframe(data)
+        
+        try:
+            # Calculate ADX for trend strength
+            adx_values = self._calculate_adx(data)
+            
+            # Calculate direction indicator (MACD or SMA)
+            if self.use_sma_instead_of_macd:
+                direction_values = self._calculate_sma_direction(data)
+            else:
+                direction_values = self._calculate_macd_direction(data)
+            
+            # Combine ADX (strength) and direction indicator
+            general_trend = self._combine_trend_components(adx_values, direction_values)
+            
+            return general_trend.rename(self.config.name)
+            
+        except Exception as e:
+            self.logger.warning(f"General trend calculation failed: {e}, using fallback")
+            return self._generate_fallback_trend(data)
+    
+    def _calculate_adx(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate ADX for trend strength."""
+        high = data['high']
+        low = data['low']
+        close = data['close']
+        
+        if len(high) < self.adx_period or len(low) < self.adx_period or len(close) < self.adx_period:
+            return pd.Series(np.nan, index=data.index)
+        
+        # Calculate True Range
+        tr = np.maximum.reduce([
+            high - low,
+            np.abs(high - close.shift(1)),
+            np.abs(low - close.shift(1))
+        ])
+        
+        # Calculate Directional Movement
+        dm_plus = np.maximum(high - high.shift(1), 0)
+        dm_minus = np.maximum(low.shift(1) - low, 0)
+        
+        # Use VectorBT optimization if available
+        if self.vectorbt_optimizer and self._should_use_vectorbt(close):
+            try:
+                dm_plus_mean = self.vectorbt_optimizer.rolling_mean(dm_plus, window=self.adx_period)
+                dm_minus_mean = self.vectorbt_optimizer.rolling_mean(dm_minus, window=self.adx_period)
+                tr_mean = self.vectorbt_optimizer.rolling_mean(tr, window=self.adx_period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                dm_plus_mean = dm_plus.rolling(window=self.adx_period).mean()
+                dm_minus_mean = dm_minus.rolling(window=self.adx_period).mean()
+                tr_mean = tr.rolling(window=self.adx_period).mean()
+        else:
+            dm_plus_mean = dm_plus.rolling(window=self.adx_period).mean()
+            dm_minus_mean = dm_minus.rolling(window=self.adx_period).mean()
+            tr_mean = tr.rolling(window=self.adx_period).mean()
+        
+        # Calculate Directional Indicators
+        di_plus = 100 * (dm_plus_mean / tr_mean)
+        di_minus = 100 * (dm_minus_mean / tr_mean)
+        
+        # Calculate ADX
+        dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
+        
+        if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
+            try:
+                adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=self.adx_period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT ADX rolling mean failed: {e}, using pandas fallback")
+                adx = pd.Series(dx).rolling(window=self.adx_period).mean()
+        else:
+            adx = pd.Series(dx).rolling(window=self.adx_period).mean()
+        
+        return adx
+    
+    def _calculate_macd_direction(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate MACD for trend direction."""
+        close = data['close']
+        
+        if len(close) < self.macd_slow:
+            return pd.Series(np.nan, index=data.index)
+        
+        # Calculate EMAs
+        ema_fast = close.ewm(span=self.macd_fast).mean()
+        ema_slow = close.ewm(span=self.macd_slow).mean()
+        
+        # Calculate MACD line
+        macd = ema_fast - ema_slow
+        
+        # Calculate signal line
+        signal = macd.ewm(span=self.macd_signal).mean()
+        
+        # Calculate MACD histogram (MACD - Signal)
+        macd_histogram = macd - signal
+        
+        return macd_histogram
+    
+    def _calculate_sma_direction(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate SMA-based direction indicator."""
+        close = data['close']
+        
+        if len(close) < self.sma_period:
+            return pd.Series(np.nan, index=data.index)
+        
+        # Calculate SMA
+        if self.vectorbt_optimizer and self._should_use_vectorbt(close):
+            try:
+                sma = self.vectorbt_optimizer.rolling_mean(close, window=self.sma_period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                sma = close.rolling(window=self.sma_period).mean()
+        else:
+            sma = close.rolling(window=self.sma_period).mean()
+        
+        # Calculate price position relative to SMA (normalized)
+        price_position = (close - sma) / sma
+        
+        return price_position
+    
+    def _combine_trend_components(self, adx_values: pd.Series, direction_values: pd.Series) -> pd.Series:
+        """Combine ADX (strength) and direction indicator into general trend."""
+        # Normalize ADX to [0, 1] range (ADX is typically 0-100)
+        adx_normalized = adx_values / 100.0
+        
+        # Normalize direction to [-1, 1] range
+        if self.use_sma_instead_of_macd:
+            # For SMA, use tanh to bound the values
+            direction_normalized = np.tanh(direction_values)
+        else:
+            # For MACD, normalize using rolling statistics
+            if len(direction_values.dropna()) > 0:
+                rolling_std = direction_values.rolling(window=min(20, len(direction_values))).std()
+                direction_normalized = direction_values / (rolling_std * 2)  # Scale by 2 standard deviations
+                direction_normalized = np.clip(direction_normalized, -1, 1)
+            else:
+                direction_normalized = pd.Series(0, index=direction_values.index)
+        
+        # Combine: general_trend = ADX_strength * direction
+        general_trend = adx_normalized * direction_normalized
+        
+        return general_trend
+    
+    def _generate_fallback_trend(self, data: pd.DataFrame) -> pd.Series:
+        """Generate fallback trend feature using simple SMA."""
+        close = data['close']
+        period = min(self.sma_period, len(close))
+        
+        if len(close) >= period:
+            sma = close.rolling(window=period).mean()
+            return ((close - sma) / sma).rename(self.config.name)
+        else:
+            return pd.Series(np.nan, index=data.index, name=self.config.name)
+    
+    def _should_use_vectorbt(self, data: pd.Series) -> bool:
+        """Determine if VectorBT should be used based on data size and availability."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) > 100 and 
+                self.vectorbt_optimizer is not None and
+                not data.isna().all())
+
+
+def create_general_trend_generators(adx_periods: List[int] = None, 
+                                  macd_configs: List[Dict[str, int]] = None,
+                                  sma_periods: List[int] = None,
+                                  use_sma_variants: bool = True) -> List[FeatureGenerator]:
+    """
+    Create general trend feature generators with various configurations.
+    
+    Args:
+        adx_periods: List of ADX periods to use (default: [14, 21])
+        macd_configs: List of MACD configurations (default: [{"fast": 12, "slow": 26, "signal": 9}])
+        sma_periods: List of SMA periods for SMA-based direction (default: [20, 50])
+        use_sma_variants: Whether to create SMA-based variants (default: True)
+    
+    Returns:
+        List of GeneralTrendFeatureGenerator instances
+    """
+    if adx_periods is None:
+        adx_periods = [14, 21]
+    
+    if macd_configs is None:
+        macd_configs = [
+            {"fast": 12, "slow": 26, "signal": 9},
+            {"fast": 8, "slow": 21, "signal": 5}
+        ]
+    
+    if sma_periods is None:
+        sma_periods = [20, 50]
+    
+    generators = []
+    
+    # Create MACD-based general trend generators
+    for adx_period in adx_periods:
+        for macd_config in macd_configs:
+            generator = GeneralTrendFeatureGenerator(
+                adx_period=adx_period,
+                macd_fast=macd_config["fast"],
+                macd_slow=macd_config["slow"],
+                macd_signal=macd_config["signal"],
+                use_sma_instead_of_macd=False
+            )
+            generators.append(generator)
+    
+    # Create SMA-based general trend generators if requested
+    if use_sma_variants:
+        for adx_period in adx_periods:
+            for sma_period in sma_periods:
+                generator = GeneralTrendFeatureGenerator(
+                    adx_period=adx_period,
+                    sma_period=sma_period,
+                    use_sma_instead_of_macd=True
+                )
+                generators.append(generator)
+    
+    return generators

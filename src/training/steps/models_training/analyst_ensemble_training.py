@@ -55,6 +55,31 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     TPRINT_AVAILABLE = False
 
+# Import VectorBT Rolling Optimizer for enhanced performance
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
+        optimized_rolling_mean, optimized_rolling_std, optimized_rolling_var,
+        optimized_rolling_min, optimized_rolling_max, optimized_rolling_sum,
+        optimized_rolling_apply, optimized_rolling_corr, optimized_rolling_cov,
+        optimized_rolling_quantile, optimized_rolling_skew, optimized_rolling_kurt
+    )
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT Rolling Optimizer not available: {e}")
+    VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
+
+# Import Unified Vectorization Manager
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager,
+        OperationType, OptimizationStrategy, OperationConfig, optimize_financial_operation
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+
 # Import NAS integration for Analyst
 try:
     from ..model_training.analyst_ensemble_training import AnalystEnsembleTrainingStep
@@ -156,11 +181,125 @@ class AnalystEnsembleTrainingStep:
                 self.memory_optimizer = None
                 self.cpu_optimizer = None
 
+            # Initialize VectorBT Rolling Optimizer for enhanced performance
+            if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=2000,  # Larger chunks for ensemble operations
+                    fast_fail=False,  # Use fallbacks for robustness
+                    enable_logging=True
+                )
+                tprint_success("✅ VectorBT Rolling Optimizer initialized for Analyst ensemble training")
+            else:
+                self.vectorbt_optimizer = None
+                tprint_warning("⚠️ VectorBT Rolling Optimizer not available for Analyst ensemble training")
+
+            # Initialize Unified Vectorization Manager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                tprint_success("✅ Unified Vectorization Manager initialized for Analyst ensemble training")
+            else:
+                self.vectorization_manager = None
+                tprint_warning("⚠️ Unified Vectorization Manager not available for Analyst ensemble training")
+
             tprint_success("✅ AnalystEnsembleTrainingStep initialized successfully")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize AnalystEnsembleTrainingStep: {e}")
             raise
+
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+                                   window: int, **kwargs) -> pd.Series:
+        """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
+        if self.vectorbt_optimizer is not None:
+            try:
+                if operation == 'mean':
+                    return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
+                elif operation == 'std':
+                    return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
+                elif operation == 'var':
+                    return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
+                elif operation == 'min':
+                    return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
+                elif operation == 'max':
+                    return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
+                elif operation == 'sum':
+                    return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
+                elif operation == 'quantile':
+                    q = kwargs.get('q', 0.5)
+                    return self.vectorbt_optimizer.rolling_quantile(data, window=window, q=q, **kwargs)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    return self.vectorbt_optimizer.rolling_apply(data, func, window=window, **kwargs)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT Rolling Optimizer failed for {operation}: {e}, using fallback")
+                return self._fallback_rolling_operation(data, operation, window, **kwargs)
+        else:
+            return self._fallback_rolling_operation(data, operation, window, **kwargs)
+    
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        elif operation == 'quantile':
+            q = kwargs.get('q', 0.5)
+            return data.rolling(window=window).quantile(q)
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            return data.rolling(window=window).apply(func, **kwargs)
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
+    
+    def _optimize_feature_vectorization(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Optimize feature vectorization using Unified Vectorization Manager."""
+        if self.vectorization_manager is not None:
+            try:
+                tprint_debug("🔧 Applying unified vectorization optimization to Analyst features")
+                
+                # Use UnifiedVectorizationManager for feature engineering optimization
+                config = OperationConfig(
+                    operation_type=OperationType.FEATURE_ENGINEERING,
+                    data_size=len(features),
+                    data_dimensions=features.shape,
+                    memory_budget_mb=self.config.memory_limit_gb * 1024,
+                    time_budget_seconds=300.0
+                )
+                
+                # Optimize feature engineering using VectorBT
+                result = self.vectorization_manager.optimize_operation(
+                    OperationType.FEATURE_ENGINEERING,
+                    features,
+                    config
+                )
+                
+                if result.result is not None:
+                    tprint_success(f"✅ Analyst feature vectorization optimized using {result.strategy_used.value}")
+                    tprint_performance(f"Analyst feature optimization", result.computation_time)
+                    return result.result
+                else:
+                    tprint_warning("⚠️ Vectorization optimization returned no result, using original features")
+                    return features
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified vectorization failed: {e}, using original features")
+                return features
+        else:
+            return features
 
     async def train_analyst_ensemble(
         self,
@@ -317,7 +456,7 @@ class AnalystEnsembleTrainingStep:
         X_base: np.ndarray,
         base_models: Dict[str, Any]
     ) -> Optional[np.ndarray]:
-        """Extract predictions from base models to enrich feature set."""
+        """Extract predictions from base models with VectorBT optimizations."""
         try:
             prediction_features = []
 
@@ -327,8 +466,37 @@ class AnalystEnsembleTrainingStep:
                         preds = model.predict(X_base)
                         if len(preds.shape) == 1:
                             preds = preds.reshape(-1, 1)
-                        prediction_features.append(preds)
-                        tprint_debug(f"📊 Collected base predictions from {model_name}")
+                        
+                        # Apply VectorBT rolling optimizations to predictions
+                        if self.vectorbt_optimizer is not None and preds.shape[1] == 1:
+                            pred_series = pd.Series(preds.flatten())
+                            # Add rolling statistics for prediction stability
+                            pred_rolling_mean = self._optimized_rolling_operation(
+                                pred_series, 'mean', window=15
+                            )
+                            pred_rolling_std = self._optimized_rolling_operation(
+                                pred_series, 'std', window=15
+                            )
+                            # Add rolling quantiles for prediction distribution
+                            pred_rolling_q25 = self._optimized_rolling_operation(
+                                pred_series, 'quantile', window=15, q=0.25
+                            )
+                            pred_rolling_q75 = self._optimized_rolling_operation(
+                                pred_series, 'quantile', window=15, q=0.75
+                            )
+                            # Combine original predictions with rolling features
+                            enhanced_preds = np.column_stack([
+                                preds,
+                                pred_rolling_mean.values.reshape(-1, 1),
+                                pred_rolling_std.values.reshape(-1, 1),
+                                pred_rolling_q25.values.reshape(-1, 1),
+                                pred_rolling_q75.values.reshape(-1, 1)
+                            ])
+                            prediction_features.append(enhanced_preds)
+                        else:
+                            prediction_features.append(preds)
+                        
+                        tprint_debug(f"📊 Collected base predictions from {model_name} with VectorBT enhancements")
                     else:
                         tprint_debug(f"📊 Model {model_name} does not support prediction")
                 except Exception as model_error:
@@ -340,7 +508,7 @@ class AnalystEnsembleTrainingStep:
             if prediction_features:
                 combined_predictions = np.hstack(prediction_features)
                 tprint_debug(
-                    f"📊 Combined {len(prediction_features)} base model prediction feature sets"
+                    f"📊 Combined {len(prediction_features)} base model prediction feature sets with VectorBT optimizations"
                 )
                 return combined_predictions
 
@@ -351,7 +519,7 @@ class AnalystEnsembleTrainingStep:
             return None
 
     def _extract_hmm_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Extract HMM regime features."""
+        """Extract HMM regime features with VectorBT optimizations."""
         try:
             hmm_columns = []
 
@@ -361,8 +529,30 @@ class AnalystEnsembleTrainingStep:
                     hmm_columns.append(col)
 
             if hmm_columns:
-                hmm_features = training_data[hmm_columns].values
-                tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features")
+                hmm_data = training_data[hmm_columns].copy()
+                
+                # Apply VectorBT rolling optimizations to HMM features
+                if self.vectorbt_optimizer is not None:
+                    tprint_debug("🔧 Applying VectorBT optimizations to Analyst HMM features")
+                    for col in hmm_columns:
+                        if hmm_data[col].dtype in ['float64', 'int64']:
+                            # Apply rolling statistics for regime stability
+                            hmm_data[f'{col}_rolling_mean'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'mean', window=20
+                            )
+                            hmm_data[f'{col}_rolling_std'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'std', window=20
+                            )
+                            # Add rolling skewness and kurtosis for regime distribution analysis
+                            hmm_data[f'{col}_rolling_skew'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'skew', window=20
+                            )
+                            hmm_data[f'{col}_rolling_kurt'] = self._optimized_rolling_operation(
+                                hmm_data[col], 'kurt', window=20
+                            )
+                
+                hmm_features = hmm_data.values
+                tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features with VectorBT optimizations")
                 return hmm_features
             else:
                 tprint_debug("📊 No HMM features found")
@@ -373,7 +563,7 @@ class AnalystEnsembleTrainingStep:
             return None
 
     def _extract_nas_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Extract NAS features."""
+        """Extract NAS features with VectorBT optimizations."""
         try:
             nas_columns = []
 
@@ -383,8 +573,30 @@ class AnalystEnsembleTrainingStep:
                     nas_columns.append(col)
 
             if nas_columns:
-                nas_features = training_data[nas_columns].values
-                tprint_debug(f"📊 Extracted {len(nas_columns)} NAS features")
+                nas_data = training_data[nas_columns].copy()
+                
+                # Apply VectorBT rolling optimizations to NAS features
+                if self.vectorbt_optimizer is not None:
+                    tprint_debug("🔧 Applying VectorBT optimizations to NAS features")
+                    for col in nas_columns:
+                        if nas_data[col].dtype in ['float64', 'int64']:
+                            # Apply rolling statistics for architecture stability
+                            nas_data[f'{col}_rolling_mean'] = self._optimized_rolling_operation(
+                                nas_data[col], 'mean', window=25
+                            )
+                            nas_data[f'{col}_rolling_std'] = self._optimized_rolling_operation(
+                                nas_data[col], 'std', window=25
+                            )
+                            # Add rolling quantiles for architecture distribution
+                            nas_data[f'{col}_rolling_q10'] = self._optimized_rolling_operation(
+                                nas_data[col], 'quantile', window=25, q=0.1
+                            )
+                            nas_data[f'{col}_rolling_q90'] = self._optimized_rolling_operation(
+                                nas_data[col], 'quantile', window=25, q=0.9
+                            )
+                
+                nas_features = nas_data.values
+                tprint_debug(f"📊 Extracted {len(nas_columns)} NAS features with VectorBT optimizations")
                 return nas_features
             else:
                 tprint_debug("📊 No NAS features found")
@@ -480,7 +692,7 @@ class AnalystEnsembleTrainingStep:
             return {'models': {}, 'metrics': {}, 'metadata': {}}
 
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for the ensemble training step."""
+        """Get comprehensive performance metrics for the Analyst ensemble training step."""
         metrics = {
             'config': {
                 'enable_full_integration': self.config.enable_full_integration,
@@ -493,8 +705,28 @@ class AnalystEnsembleTrainingStep:
                 'gpu_manager': self.gpu_manager is not None,
                 'memory_optimizer': self.memory_optimizer is not None,
                 'cpu_optimizer': self.cpu_optimizer is not None
+            },
+            'vectorbt_optimization': {
+                'vectorbt_rolling_optimizer_available': self.vectorbt_optimizer is not None,
+                'unified_vectorization_manager_available': self.vectorization_manager is not None
             }
         }
+
+        # Add VectorBT Rolling Optimizer performance stats
+        if self.vectorbt_optimizer is not None:
+            try:
+                vectorbt_stats = self.vectorbt_optimizer.get_performance_stats()
+                metrics['vectorbt_rolling_stats'] = vectorbt_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get VectorBT rolling stats: {e}")
+
+        # Add Unified Vectorization Manager performance stats
+        if self.vectorization_manager is not None:
+            try:
+                vectorization_stats = self.vectorization_manager.get_optimization_stats()
+                metrics['vectorization_stats'] = vectorization_stats
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to get vectorization stats: {e}")
 
         return metrics
 

@@ -94,7 +94,12 @@ class FeatureGenerationConfig:
         if self.interaction_orders is None:
             self.interaction_orders = [2, 3]  # 2-way and 3-way interactions
         if self.creation_methods is None:
-            self.creation_methods = ['add', 'subtract', 'multiply', 'divide', 'log', 'sqrt', 'power', 'ratio']
+            self.creation_methods = [
+                'add', 'subtract', 'multiply', 'divide', 'log', 'sqrt', 'power', 'ratio',
+                'log_add', 'log_subtract', 'log_divide', 'exp_add', 'exp_multiply',
+                'abs_add', 'abs_multiply', 'square_add', 'square_multiply',
+                'cube_add', 'cube_multiply', 'sin_add', 'cos_multiply', 'tan_divide'
+            ]
 
 
 @dataclass
@@ -366,7 +371,7 @@ class EnhancedFeatureGenerator:
         close: pd.Series, 
         period: int
     ) -> List[GeneratedFeature]:
-        """Create momentum-based cross-timeframe features."""
+        """Create momentum-based cross-timeframe features with comprehensive creation methods."""
         features = []
         
         try:
@@ -374,7 +379,7 @@ class EnhancedFeatureGenerator:
             short_momentum = close.pct_change(period)
             long_momentum = close.pct_change(period * 2)
             
-            # Momentum divergence
+            # Momentum divergence (subtraction)
             momentum_div = short_momentum - long_momentum
             features.append(GeneratedFeature(
                 name=f"momentum_divergence_{period}",
@@ -383,10 +388,11 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=momentum_div,
                 utility_score=0.0,
-                creation_method="subtract"
+                creation_method="subtract",
+                lookback_period=period
             ))
             
-            # Momentum ratio
+            # Momentum ratio (division)
             momentum_ratio = short_momentum / (long_momentum + 1e-8)
             features.append(GeneratedFeature(
                 name=f"momentum_ratio_{period}",
@@ -395,10 +401,11 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=momentum_ratio,
                 utility_score=0.0,
-                creation_method="divide"
+                creation_method="divide",
+                lookback_period=period
             ))
             
-            # Momentum acceleration
+            # Momentum acceleration (difference)
             momentum_accel = short_momentum.diff()
             features.append(GeneratedFeature(
                 name=f"momentum_acceleration_{period}",
@@ -407,7 +414,60 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=momentum_accel,
                 utility_score=0.0,
-                creation_method="diff"
+                creation_method="diff",
+                lookback_period=period
+            ))
+            
+            # Momentum addition (sum of short and long)
+            momentum_sum = short_momentum + long_momentum
+            features.append(GeneratedFeature(
+                name=f"momentum_sum_{period}",
+                feature_type="cross_timeframe",
+                formula=f"pct_change({period}) + pct_change({period * 2})",
+                parent_features=["close"],
+                feature_series=momentum_sum,
+                utility_score=0.0,
+                creation_method="add",
+                lookback_period=period
+            ))
+            
+            # Momentum multiplication
+            momentum_mult = short_momentum * long_momentum
+            features.append(GeneratedFeature(
+                name=f"momentum_mult_{period}",
+                feature_type="cross_timeframe",
+                formula=f"pct_change({period}) * pct_change({period * 2})",
+                parent_features=["close"],
+                feature_series=momentum_mult,
+                utility_score=0.0,
+                creation_method="multiply",
+                lookback_period=period
+            ))
+            
+            # Log momentum (logarithmic transformation)
+            log_momentum = np.log(np.abs(short_momentum) + 1e-8) * np.sign(short_momentum)
+            features.append(GeneratedFeature(
+                name=f"log_momentum_{period}",
+                feature_type="cross_timeframe",
+                formula=f"log(abs(pct_change({period})) + 1e-8) * sign(pct_change({period}))",
+                parent_features=["close"],
+                feature_series=log_momentum,
+                utility_score=0.0,
+                creation_method="log",
+                lookback_period=period
+            ))
+            
+            # Momentum power (exponential transformation)
+            momentum_power = np.power(np.abs(short_momentum) + 1e-8, 0.5) * np.sign(short_momentum)
+            features.append(GeneratedFeature(
+                name=f"momentum_power_{period}",
+                feature_type="cross_timeframe",
+                formula=f"pow(abs(pct_change({period})) + 1e-8, 0.5) * sign(pct_change({period}))",
+                parent_features=["close"],
+                feature_series=momentum_power,
+                utility_score=0.0,
+                creation_method="power",
+                lookback_period=period
             ))
             
             return features
@@ -421,7 +481,7 @@ class EnhancedFeatureGenerator:
         close: pd.Series, 
         period: int
     ) -> List[GeneratedFeature]:
-        """Create volatility-based cross-timeframe features."""
+        """Create volatility-based cross-timeframe features with comprehensive creation methods."""
         features = []
         
         try:
@@ -429,7 +489,7 @@ class EnhancedFeatureGenerator:
             short_vol = close.rolling(period).std()
             long_vol = close.rolling(period * 2).std()
             
-            # Volatility ratio
+            # Volatility ratio (division)
             vol_ratio = short_vol / (long_vol + 1e-8)
             features.append(GeneratedFeature(
                 name=f"volatility_ratio_{period}",
@@ -438,10 +498,11 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=vol_ratio,
                 utility_score=0.0,
-                creation_method="divide"
+                creation_method="divide",
+                lookback_period=period
             ))
             
-            # Volatility spread
+            # Volatility spread (subtraction)
             vol_spread = short_vol - long_vol
             features.append(GeneratedFeature(
                 name=f"volatility_spread_{period}",
@@ -450,10 +511,11 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=vol_spread,
                 utility_score=0.0,
-                creation_method="subtract"
+                creation_method="subtract",
+                lookback_period=period
             ))
             
-            # Volatility regime
+            # Volatility regime (comparison)
             vol_regime = (short_vol > long_vol).astype(int)
             features.append(GeneratedFeature(
                 name=f"volatility_regime_{period}",
@@ -462,7 +524,73 @@ class EnhancedFeatureGenerator:
                 parent_features=["close"],
                 feature_series=vol_regime,
                 utility_score=0.0,
-                creation_method="compare"
+                creation_method="compare",
+                lookback_period=period
+            ))
+            
+            # Volatility sum (addition)
+            vol_sum = short_vol + long_vol
+            features.append(GeneratedFeature(
+                name=f"volatility_sum_{period}",
+                feature_type="cross_timeframe",
+                formula=f"std({period}) + std({period * 2})",
+                parent_features=["close"],
+                feature_series=vol_sum,
+                utility_score=0.0,
+                creation_method="add",
+                lookback_period=period
+            ))
+            
+            # Volatility multiplication
+            vol_mult = short_vol * long_vol
+            features.append(GeneratedFeature(
+                name=f"volatility_mult_{period}",
+                feature_type="cross_timeframe",
+                formula=f"std({period}) * std({period * 2})",
+                parent_features=["close"],
+                feature_series=vol_mult,
+                utility_score=0.0,
+                creation_method="multiply",
+                lookback_period=period
+            ))
+            
+            # Log volatility (logarithmic transformation)
+            log_vol = np.log(short_vol + 1e-8)
+            features.append(GeneratedFeature(
+                name=f"log_volatility_{period}",
+                feature_type="cross_timeframe",
+                formula=f"log(std({period}) + 1e-8)",
+                parent_features=["close"],
+                feature_series=log_vol,
+                utility_score=0.0,
+                creation_method="log",
+                lookback_period=period
+            ))
+            
+            # Volatility power (exponential transformation)
+            vol_power = np.power(short_vol + 1e-8, 0.5)
+            features.append(GeneratedFeature(
+                name=f"volatility_power_{period}",
+                feature_type="cross_timeframe",
+                formula=f"pow(std({period}) + 1e-8, 0.5)",
+                parent_features=["close"],
+                feature_series=vol_power,
+                utility_score=0.0,
+                creation_method="power",
+                lookback_period=period
+            ))
+            
+            # Volatility difference (rate of change)
+            vol_diff = short_vol.diff()
+            features.append(GeneratedFeature(
+                name=f"volatility_diff_{period}",
+                feature_type="cross_timeframe",
+                formula=f"diff(std({period}))",
+                parent_features=["close"],
+                feature_series=vol_diff,
+                utility_score=0.0,
+                creation_method="diff",
+                lookback_period=period
             ))
             
             return features
@@ -751,6 +879,48 @@ class EnhancedFeatureGenerator:
                     elif method == 'ratio':
                         interaction_series = series1 / (series2 + 1e-8) * series2 / (series1 + 1e-8)
                         formula = f"({feat1} / {feat2}) * ({feat2} / {feat1})"
+                    elif method == 'log_add':
+                        interaction_series = np.log(np.abs(series1) + 1e-8) + np.log(np.abs(series2) + 1e-8)
+                        formula = f"log(|{feat1}|) + log(|{feat2}|)"
+                    elif method == 'log_subtract':
+                        interaction_series = np.log(np.abs(series1) + 1e-8) - np.log(np.abs(series2) + 1e-8)
+                        formula = f"log(|{feat1}|) - log(|{feat2}|)"
+                    elif method == 'log_divide':
+                        interaction_series = np.log(np.abs(series1) + 1e-8) / (np.log(np.abs(series2) + 1e-8) + 1e-8)
+                        formula = f"log(|{feat1}|) / log(|{feat2}|)"
+                    elif method == 'exp_add':
+                        interaction_series = np.exp(series1) + np.exp(series2)
+                        formula = f"exp({feat1}) + exp({feat2})"
+                    elif method == 'exp_multiply':
+                        interaction_series = np.exp(series1) * np.exp(series2)
+                        formula = f"exp({feat1}) * exp({feat2})"
+                    elif method == 'abs_add':
+                        interaction_series = np.abs(series1) + np.abs(series2)
+                        formula = f"abs({feat1}) + abs({feat2})"
+                    elif method == 'abs_multiply':
+                        interaction_series = np.abs(series1) * np.abs(series2)
+                        formula = f"abs({feat1}) * abs({feat2})"
+                    elif method == 'square_add':
+                        interaction_series = np.square(series1) + np.square(series2)
+                        formula = f"{feat1}^2 + {feat2}^2"
+                    elif method == 'square_multiply':
+                        interaction_series = np.square(series1) * np.square(series2)
+                        formula = f"{feat1}^2 * {feat2}^2"
+                    elif method == 'cube_add':
+                        interaction_series = np.power(series1, 3) + np.power(series2, 3)
+                        formula = f"{feat1}^3 + {feat2}^3"
+                    elif method == 'cube_multiply':
+                        interaction_series = np.power(series1, 3) * np.power(series2, 3)
+                        formula = f"{feat1}^3 * {feat2}^3"
+                    elif method == 'sin_add':
+                        interaction_series = np.sin(series1) + np.sin(series2)
+                        formula = f"sin({feat1}) + sin({feat2})"
+                    elif method == 'cos_multiply':
+                        interaction_series = np.cos(series1) * np.cos(series2)
+                        formula = f"cos({feat1}) * cos({feat2})"
+                    elif method == 'tan_divide':
+                        interaction_series = np.tan(series1) / (np.tan(series2) + 1e-8)
+                        formula = f"tan({feat1}) / tan({feat2})"
                     else:
                         continue
                     
@@ -861,38 +1031,53 @@ class EnhancedFeatureGenerator:
         data: pd.DataFrame, 
         targets: Optional[pd.Series] = None
     ) -> List[GeneratedFeature]:
-        """Generate features without lookback optimization."""
-        tprint_debug("Generating no features")
+        """Generate features with optimized lookback periods (no features with lookback optimization)."""
+        tprint_debug("Generating no features with optimized lookback periods")
         
         features = []
         
         try:
-            # Price-based no features
+            # Generate features for different lookback periods
+            lookback_periods = [5, 10, 20, 30, 50, 100]  # Common lookback periods
+            
+            # Price-based no features with lookback optimization
             if 'close' in data.columns:
                 close = data['close']
                 
-                # Price-based features
-                price_features = self._create_price_no_features(close)
-                features.extend(price_features)
+                for period in lookback_periods:
+                    if period < len(data) // 4:  # Ensure sufficient data
+                        price_features = self._create_price_no_features_with_lookback(close, period)
+                        features.extend(price_features)
             
-            # Volume-based no features
+            # Volume-based no features with lookback optimization
             if 'volume' in data.columns:
                 volume = data['volume']
-                volume_features = self._create_volume_no_features(volume)
-                features.extend(volume_features)
+                
+                for period in lookback_periods:
+                    if period < len(data) // 4:  # Ensure sufficient data
+                        volume_features = self._create_volume_no_features_with_lookback(volume, period)
+                        features.extend(volume_features)
             
-            # OHLC-based no features
+            # OHLC-based no features with lookback optimization
             if all(col in data.columns for col in ['high', 'low', 'close']):
-                ohlc_features = self._create_ohlc_no_features(data[['high', 'low', 'close']])
-                features.extend(ohlc_features)
+                for period in lookback_periods:
+                    if period < len(data) // 4:  # Ensure sufficient data
+                        ohlc_features = self._create_ohlc_no_features_with_lookback(
+                            data[['high', 'low', 'close']], period
+                        )
+                        features.extend(ohlc_features)
             
-            # Calculate utility scores
+            # Calculate utility scores and optimize lookback periods
             for feature in features:
                 feature.utility_score = self._calculate_utility_score(feature.feature_series, targets)
                 feature.metadata.update({
                     'feature_category': 'no_feature',
-                    'optimization_type': 'none'
+                    'optimization_type': 'lookback_optimized',
+                    'base_timeframe_minutes': self.config.base_timeframe_minutes
                 })
+            
+            # Group features by type and select best lookback period for each
+            features = self._optimize_no_feature_lookbacks(features, targets)
             
             # Limit to max features
             if len(features) > self.config.max_no_features:
@@ -964,6 +1149,97 @@ class EnhancedFeatureGenerator:
             tprint_debug(f"Error creating price no features: {e}")
             return []
     
+    def _create_price_no_features_with_lookback(self, close: pd.Series, period: int) -> List[GeneratedFeature]:
+        """Create price-based no features with lookback optimization."""
+        features = []
+        
+        try:
+            # Price change with lookback
+            price_change = close.pct_change(period)
+            features.append(GeneratedFeature(
+                name=f"price_change_{period}",
+                feature_type="no_feature",
+                formula=f"close.pct_change({period})",
+                parent_features=["close"],
+                feature_series=price_change,
+                utility_score=0.0,
+                creation_method="pct_change",
+                lookback_period=period
+            ))
+            
+            # Price log return with lookback
+            log_return = np.log(close / close.shift(period))
+            features.append(GeneratedFeature(
+                name=f"log_return_{period}",
+                feature_type="no_feature",
+                formula=f"log(close / close.shift({period}))",
+                parent_features=["close"],
+                feature_series=log_return,
+                utility_score=0.0,
+                creation_method="log",
+                lookback_period=period
+            ))
+            
+            # Price rank with lookback
+            price_rank = close.rolling(period).rank(pct=True)
+            features.append(GeneratedFeature(
+                name=f"price_rank_{period}",
+                feature_type="no_feature",
+                formula=f"close.rolling({period}).rank(pct=True)",
+                parent_features=["close"],
+                feature_series=price_rank,
+                utility_score=0.0,
+                creation_method="rank",
+                lookback_period=period
+            ))
+            
+            # Price z-score with lookback
+            rolling_mean = close.rolling(period).mean()
+            rolling_std = close.rolling(period).std()
+            price_zscore = (close - rolling_mean) / (rolling_std + 1e-8)
+            features.append(GeneratedFeature(
+                name=f"price_zscore_{period}",
+                feature_type="no_feature",
+                formula=f"(close - close.rolling({period}).mean()) / close.rolling({period}).std()",
+                parent_features=["close"],
+                feature_series=price_zscore,
+                utility_score=0.0,
+                creation_method="zscore",
+                lookback_period=period
+            ))
+            
+            # Price momentum with lookback
+            momentum = close / close.shift(period) - 1
+            features.append(GeneratedFeature(
+                name=f"momentum_{period}",
+                feature_type="no_feature",
+                formula=f"close / close.shift({period}) - 1",
+                parent_features=["close"],
+                feature_series=momentum,
+                utility_score=0.0,
+                creation_method="momentum",
+                lookback_period=period
+            ))
+            
+            # Price volatility with lookback
+            volatility = close.rolling(period).std()
+            features.append(GeneratedFeature(
+                name=f"volatility_{period}",
+                feature_type="no_feature",
+                formula=f"close.rolling({period}).std()",
+                parent_features=["close"],
+                feature_series=volatility,
+                utility_score=0.0,
+                creation_method="volatility",
+                lookback_period=period
+            ))
+            
+            return features
+            
+        except Exception as e:
+            tprint_debug(f"Error creating price no features with lookback {period}: {e}")
+            return []
+    
     def _create_volume_no_features(self, volume: pd.Series) -> List[GeneratedFeature]:
         """Create volume-based no features."""
         features = []
@@ -1009,6 +1285,71 @@ class EnhancedFeatureGenerator:
             
         except Exception as e:
             tprint_debug(f"Error creating volume no features: {e}")
+            return []
+    
+    def _create_volume_no_features_with_lookback(self, volume: pd.Series, period: int) -> List[GeneratedFeature]:
+        """Create volume-based no features with lookback optimization."""
+        features = []
+        
+        try:
+            # Volume change with lookback
+            volume_change = volume.pct_change(period)
+            features.append(GeneratedFeature(
+                name=f"volume_change_{period}",
+                feature_type="no_feature",
+                formula=f"volume.pct_change({period})",
+                parent_features=["volume"],
+                feature_series=volume_change,
+                utility_score=0.0,
+                creation_method="pct_change",
+                lookback_period=period
+            ))
+            
+            # Volume rank with lookback
+            volume_rank = volume.rolling(period).rank(pct=True)
+            features.append(GeneratedFeature(
+                name=f"volume_rank_{period}",
+                feature_type="no_feature",
+                formula=f"volume.rolling({period}).rank(pct=True)",
+                parent_features=["volume"],
+                feature_series=volume_rank,
+                utility_score=0.0,
+                creation_method="rank",
+                lookback_period=period
+            ))
+            
+            # Volume z-score with lookback
+            rolling_mean = volume.rolling(period).mean()
+            rolling_std = volume.rolling(period).std()
+            volume_zscore = (volume - rolling_mean) / (rolling_std + 1e-8)
+            features.append(GeneratedFeature(
+                name=f"volume_zscore_{period}",
+                feature_type="no_feature",
+                formula=f"(volume - volume.rolling({period}).mean()) / volume.rolling({period}).std()",
+                parent_features=["volume"],
+                feature_series=volume_zscore,
+                utility_score=0.0,
+                creation_method="zscore",
+                lookback_period=period
+            ))
+            
+            # Volume momentum with lookback
+            volume_momentum = volume / volume.shift(period) - 1
+            features.append(GeneratedFeature(
+                name=f"volume_momentum_{period}",
+                feature_type="no_feature",
+                formula=f"volume / volume.shift({period}) - 1",
+                parent_features=["volume"],
+                feature_series=volume_momentum,
+                utility_score=0.0,
+                creation_method="momentum",
+                lookback_period=period
+            ))
+            
+            return features
+            
+        except Exception as e:
+            tprint_debug(f"Error creating volume no features with lookback {period}: {e}")
             return []
     
     def _create_ohlc_no_features(self, ohlc: pd.DataFrame) -> List[GeneratedFeature]:
@@ -1060,6 +1401,114 @@ class EnhancedFeatureGenerator:
         except Exception as e:
             tprint_debug(f"Error creating OHLC no features: {e}")
             return []
+    
+    def _create_ohlc_no_features_with_lookback(self, ohlc: pd.DataFrame, period: int) -> List[GeneratedFeature]:
+        """Create OHLC-based no features with lookback optimization."""
+        features = []
+        
+        try:
+            high, low, close = ohlc['high'], ohlc['low'], ohlc['close']
+            
+            # True range with lookback
+            tr = np.maximum(high - low, np.maximum(abs(high - close.shift(1)), abs(low - close.shift(1))))
+            tr_rolling = tr.rolling(period).mean()
+            features.append(GeneratedFeature(
+                name=f"true_range_{period}",
+                feature_type="no_feature",
+                formula=f"true_range.rolling({period}).mean()",
+                parent_features=["high", "low", "close"],
+                feature_series=tr_rolling,
+                utility_score=0.0,
+                creation_method="rolling_mean",
+                lookback_period=period
+            ))
+            
+            # Price position in range with lookback
+            high_max = high.rolling(period).max()
+            low_min = low.rolling(period).min()
+            price_position = (close - low_min) / (high_max - low_min + 1e-8)
+            features.append(GeneratedFeature(
+                name=f"price_position_{period}",
+                feature_type="no_feature",
+                formula=f"(close - low.rolling({period}).min()) / (high.rolling({period}).max() - low.rolling({period}).min())",
+                parent_features=["high", "low", "close"],
+                feature_series=price_position,
+                utility_score=0.0,
+                creation_method="ratio",
+                lookback_period=period
+            ))
+            
+            # Range volatility with lookback
+            range_vol = (high - low).rolling(period).std()
+            features.append(GeneratedFeature(
+                name=f"range_volatility_{period}",
+                feature_type="no_feature",
+                formula=f"(high - low).rolling({period}).std()",
+                parent_features=["high", "low"],
+                feature_series=range_vol,
+                utility_score=0.0,
+                creation_method="volatility",
+                lookback_period=period
+            ))
+            
+            # High-low ratio with lookback
+            hl_ratio = high.rolling(period).max() / (low.rolling(period).min() + 1e-8)
+            features.append(GeneratedFeature(
+                name=f"hl_ratio_{period}",
+                feature_type="no_feature",
+                formula=f"high.rolling({period}).max() / low.rolling({period}).min()",
+                parent_features=["high", "low"],
+                feature_series=hl_ratio,
+                utility_score=0.0,
+                creation_method="ratio",
+                lookback_period=period
+            ))
+            
+            return features
+            
+        except Exception as e:
+            tprint_debug(f"Error creating OHLC no features with lookback {period}: {e}")
+            return []
+    
+    def _optimize_no_feature_lookbacks(self, features: List[GeneratedFeature], targets: Optional[pd.Series] = None) -> List[GeneratedFeature]:
+        """Optimize lookback periods for no features by selecting the most informative period for each feature type."""
+        if not features:
+            return features
+        
+        try:
+            # Group features by base name (without period suffix)
+            feature_groups = {}
+            for feature in features:
+                # Extract base name by removing period suffix
+                base_name = feature.name.rsplit('_', 1)[0] if '_' in feature.name and feature.name.split('_')[-1].isdigit() else feature.name
+                if base_name not in feature_groups:
+                    feature_groups[base_name] = []
+                feature_groups[base_name].append(feature)
+            
+            optimized_features = []
+            
+            # For each group, select the feature with the highest utility score
+            for base_name, group_features in feature_groups.items():
+                if len(group_features) == 1:
+                    optimized_features.append(group_features[0])
+                else:
+                    # Sort by utility score and take the best one
+                    best_feature = max(group_features, key=lambda x: x.utility_score)
+                    optimized_features.append(best_feature)
+                    
+                    # Also add the second best if it's significantly different
+                    if len(group_features) > 1:
+                        group_features.sort(key=lambda x: x.utility_score, reverse=True)
+                        second_best = group_features[1]
+                        if second_best.utility_score > best_feature.utility_score * 0.8:  # 80% threshold
+                            optimized_features.append(second_best)
+            
+            tprint_debug(f"Optimized {len(features)} features to {len(optimized_features)} features")
+            return optimized_features
+            
+        except Exception as e:
+            tprint_debug(f"Error optimizing no feature lookbacks: {e}")
+            return features
     
     def _calculate_utility_score(
         self, 

@@ -59,6 +59,16 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import common logic components
+from .enhanced_components.common_feature_logic import (
+    CommonFeatureGenerator, FeatureGenerationConfig, 
+    create_common_feature_generator
+)
+from .enhanced_components.common_lookback_optimizer import (
+    CommonLookbackOptimizer, LookbackOptimizationConfig,
+    create_common_lookback_optimizer
+)
+
 # Import feature_generation utilities
 try:
     from src.feature_generation.utils import (
@@ -713,6 +723,32 @@ class UnifiedDataDrivenPipeline:
             max_workers=4
         )
         self.enhanced_feature_generator = EnhancedFeatureGenerator(feature_gen_config)
+        
+        # Common feature generation logic
+        common_feature_config = FeatureGenerationConfig(
+            min_lookback=5,
+            max_lookback=100,
+            lookback_step=5,
+            num_informative_periods=3,
+            utility_threshold=0.1,
+            correlation_threshold=0.95,
+            stability_threshold=0.7
+        )
+        self.common_feature_generator = create_common_feature_generator(common_feature_config)
+        
+        # Common lookback optimization logic
+        lookback_opt_config = LookbackOptimizationConfig(
+            min_lookback=5,
+            max_lookback=100,
+            lookback_step=5,
+            num_candidate_periods=10,
+            num_informative_periods=3,
+            redundancy_threshold=0.8,
+            informativeness_threshold=0.1,
+            cross_timeframe_min_periods=2,
+            cross_timeframe_max_periods=5
+        )
+        self.common_lookback_optimizer = create_common_lookback_optimizer(lookback_opt_config)
         
         # LightGBM + Featuretools + ALE feature generator
         lightgbm_config = LightGBMFeatureToolsConfig(

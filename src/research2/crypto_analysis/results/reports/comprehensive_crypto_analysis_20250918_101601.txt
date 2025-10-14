@@ -1,0 +1,246 @@
+
+================================================================================
+CRYPTOCURRENCY PRICE MOVEMENT ANALYSIS REPORT
+================================================================================
+
+METHODOLOGY: COMPOSITE TRADING OPPORTUNITY SCORE
+==================================================
+The Composite Score combines three weighted factors to rank trading opportunities:
+
+1. PROFIT SCORE (40% weight):
+   - Measures average profit per successful trade
+   - Formula: avg_profit / 0.02 (normalized to max expected ~2%)
+   - Higher profits = better score
+
+2. FREQUENCY SCORE (40% weight):
+   - Measures how often trading opportunities occur
+   - Formula: success_rate / 0.30 (normalized to max expected ~30%)
+   - More frequent opportunities = better score
+
+3. CONSISTENCY SCORE (20% weight):
+   - Measures reliability of opportunities
+   - Formula: min(1.0, total_trades / 20,000)
+   - More total trades = more consistent pattern
+
+FINAL FORMULA: (Profit_Score × 0.4) + (Frequency_Score × 0.4) + (Consistency_Score × 0.2)
+
+DAILY PROFIT POTENTIAL CALCULATION:
+  Formula: Average Profit per Trade (%) × Number of Daily Opportunities
+  Daily Opportunities = Total Opportunities ÷ Number of Days in Dataset
+  Example: 18,544 total opportunities ÷ 730 days = 25.4 opportunities/day
+  Daily ROI = 1.44% profit × 25.4 opportunities = 36.6% potential daily ROI
+  Note: This represents the maximum theoretical daily ROI if all opportunities are captured
+
+EXAMPLE - ALGOUSDT:
+  Profit Score: 1.44% / 2% = 0.720
+  Frequency Score: 26.5% / 30% = 0.883
+  Consistency Score: min(1.0, 18,544/20,000) = 0.927
+  Composite: (0.720×0.4) + (0.883×0.4) + (0.927×0.2) = 0.827
+  Daily Opportunities: 18,544 total ÷ 730 days = 25.4 opportunities/day
+  Daily ROI: 1.44% × 25.4 opportunities = 36.6% potential daily ROI
+
+INTERPRETATION:
+  Score 0.8+: Excellent trading opportunities
+  Score 0.6-0.8: Good trading opportunities
+  Score 0.4-0.6: Moderate trading opportunities
+  Score <0.4: Limited trading opportunities
+
+
+BASIC PRICE MOVEMENT METRICS:
+------------------------------------------------------------
+ Symbol  Total_Return  Volatility  Avg_Daily_Range  Avg_Intraday_Movement  Avg_Price_Change  Avg_Volume
+ETHUSDT        1.7477      0.0341           0.0539                 0.0539            0.0023   4851.4283
+SOLUSDT       11.1002      0.0497           0.0767                 0.0767            0.0034  49825.0264
+
+TRIPLE BARRIER PROFIT ANALYSIS:
+------------------------------------------------------------
+ Symbol Barrier_Level  Total_Trades  Avg_Profit  Long_Trades  Short_Trades  Profit_Frequency  Max_Profit  Total_Potential_Profit
+ETHUSDT          0.3%         33737      0.0058        16596         17141            0.4814      0.1646                194.2821
+ETHUSDT          0.4%         21352      0.0071        10401         10951            0.3047      0.1646                151.4457
+ETHUSDT          0.5%         14162      0.0084         6812          7350            0.2021      0.1646                119.3966
+ETHUSDT          0.6%          9731      0.0098         4628          5103            0.1389      0.1646                 95.2333
+ETHUSDT          0.7%          6867      0.0112         3242          3625            0.0980      0.1646                 76.7230
+ETHUSDT          0.8%          5044      0.0125         2342          2702            0.0720      0.1646                 63.1158
+ETHUSDT          0.9%          3809      0.0138         1747          2062            0.0544      0.1646                 52.6709
+ETHUSDT          1.0%          2873      0.0153         1301          1572            0.0410      0.1646                 43.8208
+ETHUSDT          1.1%          2231      0.0166          998          1233            0.0318      0.1646                 37.0978
+ETHUSDT          1.2%          1733      0.0181          763           970            0.0247      0.1646                 31.3796
+ETHUSDT          1.3%          1390      0.0195          614           776            0.0198      0.1646                 27.1020
+ETHUSDT          1.4%          1122      0.0209          485           637            0.0160      0.1646                 23.4906
+ETHUSDT          1.5%           902      0.0225          383           519            0.0129      0.1646                 20.3035
+SOLUSDT          0.3%         57738      0.0065        28575         29163            0.8239      0.1782                375.9797
+SOLUSDT          0.4%         41667      0.0077        20535         21132            0.5946      0.1782                320.2623
+SOLUSDT          0.5%         30061      0.0089        14779         15282            0.4290      0.1782                268.3329
+SOLUSDT          0.6%         22008      0.0102        10770         11238            0.3140      0.1782                224.2932
+SOLUSDT          0.7%         16324      0.0115         7965          8359            0.2329      0.1782                187.5120
+SOLUSDT          0.8%         12353      0.0128         6013          6340            0.1763      0.1782                157.8502
+SOLUSDT          0.9%          9533      0.0141         4640          4893            0.1360      0.1782                133.9472
+SOLUSDT          1.0%          7418      0.0154         3635          3783            0.1059      0.1782                113.9185
+SOLUSDT          1.1%          5820      0.0167         2875          2945            0.0830      0.1782                 97.1808
+SOLUSDT          1.2%          4653      0.0180         2312          2341            0.0664      0.1782                 83.8011
+SOLUSDT          1.3%          3765      0.0193         1843          1922            0.0537      0.1782                 72.7187
+SOLUSDT          1.4%          3018      0.0208         1471          1547            0.0431      0.1782                 62.6499
+SOLUSDT          1.5%          2484      0.0221         1198          1286            0.0354      0.1782                 54.9173
+
+TOP PERFORMERS BY BARRIER LEVEL:
+------------------------------------------------------------
+
+Top 5 for 0.3% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.3%      0.0065         57738        28575         29163
+ETHUSDT          0.3%      0.0058         33737        16596         17141
+
+Top 5 for 0.4% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.4%      0.0077         41667        20535         21132
+ETHUSDT          0.4%      0.0071         21352        10401         10951
+
+Top 5 for 0.5% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.5%      0.0089         30061        14779         15282
+ETHUSDT          0.5%      0.0084         14162         6812          7350
+
+Top 5 for 0.6% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.6%      0.0102         22008        10770         11238
+ETHUSDT          0.6%      0.0098          9731         4628          5103
+
+Top 5 for 0.7% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.7%      0.0115         16324         7965          8359
+ETHUSDT          0.7%      0.0112          6867         3242          3625
+
+Top 5 for 0.8% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.8%      0.0128         12353         6013          6340
+ETHUSDT          0.8%      0.0125          5044         2342          2702
+
+Top 5 for 0.9% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          0.9%      0.0141          9533         4640          4893
+ETHUSDT          0.9%      0.0138          3809         1747          2062
+
+Top 5 for 1.0% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          1.0%      0.0154          7418         3635          3783
+ETHUSDT          1.0%      0.0153          2873         1301          1572
+
+Top 5 for 1.1% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+SOLUSDT          1.1%      0.0167          5820         2875          2945
+ETHUSDT          1.1%      0.0166          2231          998          1233
+
+Top 5 for 1.2% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ETHUSDT          1.2%      0.0181          1733          763           970
+SOLUSDT          1.2%      0.0180          4653         2312          2341
+
+Top 5 for 1.3% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ETHUSDT          1.3%      0.0195          1390          614           776
+SOLUSDT          1.3%      0.0193          3765         1843          1922
+
+Top 5 for 1.4% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ETHUSDT          1.4%      0.0209          1122          485           637
+SOLUSDT          1.4%      0.0208          3018         1471          1547
+
+Top 5 for 1.5% barrier:
+ Symbol Barrier_Level  Avg_Profit  Total_Trades  Long_Trades  Short_Trades
+ETHUSDT          1.5%      0.0225           902          383           519
+SOLUSDT          1.5%      0.0221          2484         1198          1286
+
+BEST OVERALL PERFORMERS:
+------------------------------------------------------------
+Average profit across all barriers:
+  SOLUSDT: 0.0141
+  ETHUSDT: 0.0140
+
+Most active assets (total trades across all barriers):
+  SOLUSDT: 216842 trades
+  ETHUSDT: 104953 trades
+
+Assets with most long trades:
+  SOLUSDT: 106611 long trades
+  ETHUSDT: 50312 long trades
+
+Assets with most short trades:
+  SOLUSDT: 110231 short trades
+  ETHUSDT: 54641 short trades
+
+COMPOSITE TRADING OPPORTUNITY SCORES:
+==================================================
+Ranking assets by overall trading opportunity quality
+
+RANK | SYMBOL   | COMPOSITE | PROFIT | FREQUENCY | CONSISTENCY | DAILY ROI | INTERPRETATION
+-------------------------------------------------------------------------------------
+   1 | SOLUSDT  |     0.800 |  0.707 |     0.793 |       1.000 |   32.32% | Excellent
+   2 | ETHUSDT  |     0.633 |  0.698 |     0.384 |       1.000 |   15.44% | Good
+
+DETAILED BREAKDOWN:
+------------------------------
+1. SOLUSDT:
+   Composite Score: 0.800
+   Average Profit per Trade: 1.41%
+   Average Success Rate: 23.8%
+   Total Trading Opportunities: 216,842
+   Daily Opportunities: 22.8 trades/day
+   Daily Profit Potential: 32.32% ROI/day
+   Component Scores: P=0.707, F=0.793, C=1.000
+
+2. ETHUSDT:
+   Composite Score: 0.633
+   Average Profit per Trade: 1.40%
+   Average Success Rate: 11.5%
+   Total Trading Opportunities: 104,953
+   Daily Opportunities: 11.1 trades/day
+   Daily Profit Potential: 15.44% ROI/day
+   Component Scores: P=0.698, F=0.384, C=1.000
+
+
+VOLUME ANALYSIS SUMMARY (Value-Weighted USD):
+------------------------------------------------------------
+Total Volume USD Mean: $734,467,462,185.78
+Total Volume USD Median: $734,467,462,185.78
+Total Volume USD Std Dev: $342,283,896,071.57
+Avg Volume USD Mean: $10,480,414.70
+Avg Volume USD Median: $10,480,414.70
+Volume Consistency USD Mean: 0.42
+Volume Volatility USD Mean: 1.01
+Volume Price Correlation Mean: -0.01
+Volume Spike Frequency USD Mean: 0.11
+
+VOLUME RANKINGS (Value-Weighted USD):
+------------------------------------------------------------
+Top 10 Assets by Total Volume (USD Value):
+  ETHUSDT: $976,498,726,188.94
+  SOLUSDT: $492,436,198,182.61
+
+Top 10 Assets by Volume Consistency (USD):
+  SOLUSDT: 0.4366
+  ETHUSDT: 0.4006
+
+Top 10 Assets by Volume-Price Correlation:
+  ETHUSDT: 0.0498
+  SOLUSDT: -0.0784
+
+VOLUME CATEGORIES (Value-Weighted USD):
+------------------------------------------------------------
+High Volume Assets (USD): ETHUSDT
+Medium Volume Assets (USD): 
+Low Volume Assets (USD): SOLUSDT
+
+VOLUME PATTERNS SUMMARY:
+------------------------------------------------------------
+
+ETHUSDT:
+  Peak Hours: [14, 15, 13]
+  Peak Days: [0, 1, 2]
+  Volume Autocorrelation: 0.6811
+  Weekly Seasonality: 0.4316
+
+SOLUSDT:
+  Peak Hours: [14, 15, 16]
+  Peak Days: [0, 2, 1]
+  Volume Autocorrelation: 0.7199
+  Weekly Seasonality: 0.4851

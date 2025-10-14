@@ -160,6 +160,19 @@ except ImportError:
     MATRIX_OPS_AVAILABLE = False
     tprint_warning("Matrix operations not available")
 
+# Import unified data utilities
+try:
+    from src.utils.data.unified_data_utils import UnifiedDataUtils, unified_data_utils
+    from src.utils.data.processing.data_processing import DataProcessor
+    from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds
+    from src.utils.data.quality.data_cleaning import DataCleaner
+    from src.utils.data.validation.validators import CrossStepValidator
+    from src.utils.data.processing.transformers import DataStreamingManager
+    UNIFIED_DATA_UTILS_AVAILABLE = True
+except ImportError:
+    UNIFIED_DATA_UTILS_AVAILABLE = False
+    tprint_warning("Unified data utilities not available")
+
 logger = logging.getLogger(__name__)
 
 
@@ -297,6 +310,37 @@ class UnifiedDataDrivenPipeline:
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
         tprint_debug("Initializing core components")
+        
+        # Initialize unified data utilities
+        if UNIFIED_DATA_UTILS_AVAILABLE:
+            self.unified_data_utils = UnifiedDataUtils(
+                quality_thresholds=QualityThresholds(
+                    max_nan_ratio=0.05,  # Allow 5% NaN for calculated features
+                    max_infinite_count=0,
+                    min_unique_values=2,
+                    max_constant_ratio=0.95,
+                    max_gap_hours=48,
+                    price_tolerance=0.001,
+                    volume_tolerance=0.001,
+                    max_correlation_threshold=0.95,
+                    min_feature_count=40
+                ),
+                enable_streaming=True,
+                chunk_size=10000,
+                memory_threshold=0.8
+            )
+            self.data_processor = DataProcessor()
+            self.data_quality_framework = DataQualityFramework()
+            self.data_cleaner = DataCleaner()
+            self.cross_step_validator = CrossStepValidator()
+            tprint_success("✅ Unified data utilities initialized")
+        else:
+            self.unified_data_utils = None
+            self.data_processor = None
+            self.data_quality_framework = None
+            self.data_cleaner = None
+            self.cross_step_validator = None
+            tprint_warning("⚠️ Unified data utilities not available, using fallback methods")
         
         # Statistical analysis framework
         self.stats_framework = StatisticalAnalysisFramework()
@@ -562,17 +606,48 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
-            # Advanced input validation
-            is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
-                data, 
-                required_columns=['open', 'high', 'low', 'close', 'volume'],
-                target_columns=feature_columns
-            )
-            
-            if not is_valid:
-                error_msg = f"Data validation failed: {validation_summary.recommendations}"
-                tprint_error(f"❌ {error_msg}")
-                return self._create_empty_result(start_time, error_msg)
+            # Enhanced input validation using unified data utilities
+            if self.unified_data_utils:
+                tprint_info("🔍 Performing comprehensive data validation")
+                
+                # Comprehensive data quality validation
+                quality_result = self.unified_data_utils.validate_data_quality(
+                    data, 
+                    context="pipeline_input_validation",
+                    validation_rules=['klines_schema']
+                )
+                
+                if not quality_result.get('overall_passed', True):
+                    error_msg = f"Data quality validation failed: {quality_result.get('warnings', [])}"
+                    tprint_error(f"❌ {error_msg}")
+                    data_quality_info = self._get_data_quality_summary(data, "input_validation_failed")
+                    return self._create_empty_result(start_time, error_msg, data_quality_info)
+                
+                # Additional validation using advanced validator
+                is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
+                    data, 
+                    required_columns=['open', 'high', 'low', 'close', 'volume'],
+                    target_columns=feature_columns
+                )
+                
+                if not is_valid:
+                    error_msg = f"Advanced validation failed: {validation_summary.recommendations}"
+                    tprint_error(f"❌ {error_msg}")
+                    data_quality_info = self._get_data_quality_summary(data, "advanced_validation_failed")
+                    return self._create_empty_result(start_time, error_msg, data_quality_info)
+            else:
+                # Fallback to advanced validator only
+                is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
+                    data, 
+                    required_columns=['open', 'high', 'low', 'close', 'volume'],
+                    target_columns=feature_columns
+                )
+                
+                if not is_valid:
+                    error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                    tprint_error(f"❌ {error_msg}")
+                    data_quality_info = self._get_data_quality_summary(data, "fallback_validation_failed")
+                    return self._create_empty_result(start_time, error_msg, data_quality_info)
             
             # Load market data using advanced data loader
             market_data = await self.advanced_data_loader.load_market_data(
@@ -591,6 +666,32 @@ class UnifiedDataDrivenPipeline:
             processed_data = self.advanced_data_loader.prepare_data_for_optimization(
                 market_data, labeling_data
             )
+            
+            # Perform comprehensive quality analysis on prepared data
+            if self.unified_data_utils:
+                quality_analysis = self._perform_comprehensive_quality_analysis(
+                    processed_data, "prepared_data_analysis"
+                )
+                
+                if quality_analysis.get('analysis_available', False):
+                    overall_score = quality_analysis.get('overall_quality_score', 0.0)
+                    tprint_info(f"📊 Prepared data quality score: {overall_score:.2f}")
+                    
+                    # Log duplicate analysis results
+                    duplicate_info = quality_analysis.get('duplicate_analysis', {})
+                    if duplicate_info.get('duplicate_analysis_available', False):
+                        total_duplicates = duplicate_info.get('total_duplicates', 0)
+                        if total_duplicates > 0:
+                            tprint_warning(f"⚠️ Found {total_duplicates} duplicate records")
+                        else:
+                            tprint_success("✅ No duplicate records found")
+                    
+                    # Log enhanced metrics
+                    enhanced_metrics = quality_analysis.get('enhanced_metrics', {})
+                    if 'overall_quality_score' in enhanced_metrics:
+                        tprint_info(f"📈 Enhanced quality score: {enhanced_metrics['overall_quality_score']:.2f}")
+                else:
+                    tprint_warning("⚠️ Comprehensive quality analysis not available")
             
             # Generate features for optimization
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
@@ -611,40 +712,105 @@ class UnifiedDataDrivenPipeline:
                 processed_data = processed_data.loc[common_index]
                 processed_targets = targets.loc[common_index]
             
-            # Step 1: Enhanced period optimization with economic evaluation
-            tprint_info("Step 1: Enhanced period optimization with economic evaluation")
-            period_results = self._enhanced_period_optimization(processed_data, timeframe)
+            # Step 1: Comprehensive data optimization (with streaming support for large datasets)
+            tprint_info("Step 1: Comprehensive data optimization")
             
-            # Step 2: Advanced feature selection from 200+ feature bank
-            tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
-            feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
+            # Check if we should use streaming for optimization
+            if self._should_use_streaming(processed_data, threshold_mb=50.0):
+                tprint_info("🔄 Using streaming for large dataset optimization")
+                optimized_data = self._process_with_streaming(
+                    processed_data,
+                    lambda data: self._perform_comprehensive_data_optimization(data, "input")[0],
+                    "data_optimization"
+                )
+                # Get optimization report separately
+                _, optimization_report = self._perform_comprehensive_data_optimization(processed_data, "input")
+            else:
+                optimized_data, optimization_report = self._perform_comprehensive_data_optimization(
+                    processed_data, "input"
+                )
             
-            # Step 3: Generate selected features
-            tprint_info("Step 3: Generate selected features")
-            selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
+            # Log optimization results
+            if optimization_report.get('success', False):
+                total_reduction = optimization_report.get('total_memory_reduction_percent', 0)
+                dtype_changes = optimization_report.get('dtype_changes_count', 0)
+                tprint_success(f"✅ Data optimization completed: {total_reduction:.1f}% memory reduction, {dtype_changes} dtype changes")
+            else:
+                tprint_warning(f"⚠️ Data optimization had issues: {optimization_report.get('error', 'Unknown error')}")
             
-            # Step 4: Enhanced interaction generation with VectorBT optimization
-            tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
+            # Validate data consistency after optimization
+            consistency_result = self._validate_data_consistency(optimized_data, "post_optimization")
+            if not consistency_result.get('consistent', True):
+                tprint_warning(f"⚠️ Data consistency issues after optimization: {consistency_result.get('issues', [])}")
+            
+            # Validate step transition from input to optimization
+            transition_result = self._validate_step_transition(
+                from_step="input_validation",
+                to_step="data_optimization",
+                input_data=processed_data,
+                output_data=optimized_data,
+                step_metadata={'optimization_report': optimization_report}
+            )
+            
+            # Step 2: Enhanced period optimization with economic evaluation
+            tprint_info("Step 2: Enhanced period optimization with economic evaluation")
+            period_results = self._enhanced_period_optimization(optimized_data, timeframe)
+            
+            # Step 3: Advanced feature selection from 200+ feature bank
+            tprint_info("Step 3: Advanced feature selection from 200+ feature bank")
+            feature_selection_results = self._advanced_feature_selection(optimized_data, processed_targets)
+            
+            # Step 4: Generate selected features (with streaming support for large datasets)
+            tprint_info("Step 4: Generate selected features")
+            
+            # Check if we should use streaming for feature generation
+            if self._should_use_streaming(optimized_data, threshold_mb=75.0):
+                tprint_info("🔄 Using streaming for large dataset feature generation")
+                selected_features_df = self._process_with_streaming(
+                    optimized_data,
+                    lambda data: self._generate_selected_features(data, feature_selection_results),
+                    "feature_generation"
+                )
+            else:
+                selected_features_df = self._generate_selected_features(optimized_data, feature_selection_results)
+            
+            # Validate step transition from feature selection to feature generation
+            if not selected_features_df.empty:
+                transition_result = self._validate_step_transition(
+                    from_step="feature_selection",
+                    to_step="feature_generation",
+                    input_data=optimized_data,
+                    output_data=selected_features_df,
+                    step_metadata={'feature_selection_results': feature_selection_results}
+                )
+                
+                # Validate data consistency of generated features
+                features_consistency = self._validate_data_consistency(selected_features_df, "generated_features")
+                if not features_consistency.get('consistent', True):
+                    tprint_warning(f"⚠️ Generated features consistency issues: {features_consistency.get('issues', [])}")
+            
+            # Step 5: Enhanced interaction generation with VectorBT optimization
+            tprint_info("Step 5: Enhanced interaction generation with VectorBT optimization")
             interaction_results = self._enhanced_interaction_generation(selected_features_df, processed_targets)
             
-            # Step 5: HTF-aware interaction generation
-            tprint_info("Step 5: HTF-aware interaction generation")
-            htf_results = self._htf_interaction_generation(processed_data, selected_features_df, processed_targets)
+            # Step 6: HTF-aware interaction generation
+            tprint_info("Step 6: HTF-aware interaction generation")
+            htf_results = self._htf_interaction_generation(optimized_data, selected_features_df, processed_targets)
             
-            # Step 6: Advanced lookback optimization
-            tprint_info("Step 6: Advanced lookback optimization")
-            lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df, pipeline_state)
+            # Step 7: Advanced lookback optimization
+            tprint_info("Step 7: Advanced lookback optimization")
+            lookback_results = self._advanced_lookback_optimization(optimized_data, processed_targets, selected_features_df, pipeline_state)
             
-            # Step 7: LightGBM + Featuretools + ALE feature generation
-            tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
-            enhanced_feature_results = self._lightgbm_featuretools_generation(processed_data, processed_targets, selected_features_df)
+            # Step 8: LightGBM + Featuretools + ALE feature generation
+            tprint_info("Step 8: LightGBM + Featuretools + ALE feature generation")
+            enhanced_feature_results = self._lightgbm_featuretools_generation(optimized_data, processed_targets, selected_features_df)
             
-            # Step 8: Final feature selection
-            tprint_info("Step 8: Final feature selection")
-            final_selection_results = self._final_feature_selection(processed_data, processed_targets)
+            # Step 9: Final feature selection
+            tprint_info("Step 9: Final feature selection")
+            final_selection_results = self._final_feature_selection(optimized_data, processed_targets)
             
-            # Step 9: Combine all results
-            tprint_info("Step 9: Combine all results")
+            # Step 10: Combine all results
+            tprint_info("Step 10: Combine all results")
             combined_results = self._combine_results(
                 period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
@@ -729,21 +895,33 @@ class UnifiedDataDrivenPipeline:
             )
             
         except Exception as e:
-            # Use advanced error handler
+            # Use enhanced error handling with data quality awareness
             self.advanced_performance_monitor.end_operation("process", start_time, success=False)
             self.advanced_performance_monitor.stop_monitoring()
             
-            error_result = self.advanced_error_handler.handle_error(
-                e, "process", 
-                return_value=self._create_empty_result(start_time, str(e)),
-                context={'data_shape': data.shape, 'timeframe': timeframe}
+            # Use enhanced error result creation
+            error_result = self._create_enhanced_error_result(
+                start_time=start_time,
+                error=e,
+                context="pipeline_processing",
+                data=processed_data if 'processed_data' in locals() else data
             )
+            
+            # Also use advanced error handler for additional context
+            try:
+                self.advanced_error_handler.handle_error(
+                    e, "process", 
+                    return_value=error_result,
+                    context={'data_shape': data.shape, 'timeframe': timeframe}
+                )
+            except Exception as handler_error:
+                tprint_warning(f"⚠️ Advanced error handler failed: {handler_error}")
             
             tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
             return error_result
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
-        """Validate input data and parameters."""
+        """Validate input data and parameters using unified data utilities."""
         try:
             if data is None or data.empty:
                 tprint_error("Data is None or empty")
@@ -757,6 +935,32 @@ class UnifiedDataDrivenPipeline:
                 tprint_error("Targets length does not match data length")
                 return False
             
+            # Enhanced validation using unified data utilities
+            if self.unified_data_utils:
+                tprint_debug("🔍 Performing comprehensive data quality validation")
+                
+                # Validate data quality
+                quality_result = self.unified_data_utils.validate_data_quality(
+                    data, 
+                    context="pipeline_input_validation"
+                )
+                
+                if not quality_result.get('overall_passed', True):
+                    tprint_warning(f"⚠️ Data quality issues detected: {quality_result.get('warnings', [])}")
+                    # Continue processing but log warnings
+                
+                # Validate step transition if we have previous data
+                if hasattr(self, '_last_processed_data') and self._last_processed_data is not None:
+                    transition_result = self.unified_data_utils.validate_step_transition(
+                        from_step="previous_processing",
+                        to_step="current_validation",
+                        input_data=self._last_processed_data,
+                        output_data=data
+                    )
+                    
+                    if not transition_result.get('valid', True):
+                        tprint_warning(f"⚠️ Step transition validation issues: {transition_result.get('issues', [])}")
+            
             return True
             
         except Exception as e:
@@ -765,13 +969,47 @@ class UnifiedDataDrivenPipeline:
     
     def _prepare_data(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                      feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Prepare data for processing."""
+        """Prepare data for processing using unified data utilities."""
+        tprint_debug("🔧 Preparing data with unified data utilities")
+        
         # Select feature columns if specified
         if feature_columns:
             available_columns = [col for col in feature_columns if col in data.columns]
             processed_data = data[available_columns]
         else:
             processed_data = data.copy()
+        
+        # Enhanced data processing using unified utilities
+        if self.unified_data_utils:
+            try:
+                # Process and validate data comprehensively
+                processed_data, processing_report = self.unified_data_utils.process_and_validate(
+                    data=processed_data,
+                    validate_quality=True,
+                    clean_missing_values=True,
+                    detect_outliers=True,
+                    optimize_dtypes=True,
+                    regularize_timestamps=True,
+                    context="pipeline_data_preparation"
+                )
+                
+                tprint_success(f"✅ Data processing completed: {processing_report.get('steps_completed', [])}")
+                
+                # Log quality metrics
+                if 'quality_results' in processing_report:
+                    quality_score = processing_report['quality_results'].get('quality_score', 0)
+                    tprint_info(f"📊 Data quality score: {quality_score:.2f}")
+                
+                # Log memory optimization results
+                if 'optimization_results' in processing_report:
+                    memory_reduction = processing_report['optimization_results'].get('memory_reduction_percent', 0)
+                    if memory_reduction > 0:
+                        tprint_info(f"💾 Memory optimization: {memory_reduction:.1f}% reduction")
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Data processing failed, using fallback: {e}")
+                # Continue with basic processing
+                processed_data = data.copy()
         
         # Ensure targets are aligned
         processed_targets = targets
@@ -781,7 +1019,425 @@ class UnifiedDataDrivenPipeline:
             processed_data = processed_data.loc[common_index]
             processed_targets = targets.loc[common_index]
         
+        # Store processed data for step transition validation
+        self._last_processed_data = processed_data.copy()
+        
         return processed_data, processed_targets
+    
+    def _process_large_dataset(self, data: pd.DataFrame, processing_func: callable, 
+                              context: str = "large_dataset_processing") -> pd.DataFrame:
+        """Process large datasets using streaming capabilities."""
+        if not self.unified_data_utils or not self.unified_data_utils.streaming_manager:
+            tprint_debug("Streaming not available, processing in memory")
+            return processing_func(data)
+        
+        tprint_info(f"🔄 Processing large dataset with streaming: {data.shape}")
+        
+        try:
+            # Process using streaming manager
+            result = self.unified_data_utils.process_large_dataset(
+                data=data,
+                processing_func=processing_func,
+                combine_results=True,
+                progress_callback=lambda progress: tprint_debug(f"Progress: {progress:.1f}%")
+            )
+            
+            tprint_success(f"✅ Large dataset processing completed")
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Streaming processing failed, falling back to in-memory: {e}")
+            return processing_func(data)
+    
+    def _optimize_data_for_stage(self, data: pd.DataFrame, stage: str = "intermediate") -> pd.DataFrame:
+        """Optimize data for specific pipeline stage."""
+        if not self.unified_data_utils:
+            return data
+        
+        tprint_debug(f"🔧 Optimizing data for stage: {stage}")
+        
+        try:
+            optimized_data, optimization_report = self.unified_data_utils.optimize_data(
+                data=data,
+                stage=stage,
+                preserve_categorical=(stage != "intermediate")
+            )
+            
+            if 'memory_reduction_percent' in optimization_report:
+                memory_reduction = optimization_report['memory_reduction_percent']
+                if memory_reduction > 0:
+                    tprint_info(f"💾 Memory optimization for {stage}: {memory_reduction:.1f}% reduction")
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data optimization failed for {stage}: {e}")
+            return data
+    
+    def _perform_comprehensive_data_optimization(self, data: pd.DataFrame, stage: str = "intermediate") -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Perform comprehensive data optimization using all available utilities."""
+        if not self.unified_data_utils:
+            return data, {'optimization_available': False, 'reason': 'Unified data utilities not available'}
+        
+        tprint_info(f"🔧 Performing comprehensive data optimization for {stage} stage")
+        
+        optimization_report = {
+            'stage': stage,
+            'timestamp': time.time(),
+            'original_shape': data.shape,
+            'original_memory_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
+            'optimization_steps': [],
+            'memory_reductions': {},
+            'dtype_changes': {},
+            'success': True
+        }
+        
+        try:
+            optimized_data = data.copy()
+            
+            # Step 1: Basic data type optimization
+            if hasattr(self.unified_data_utils, 'data_processor') and self.unified_data_utils.data_processor:
+                tprint_debug("🔧 Step 1: Basic data type optimization")
+                
+                before_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                optimized_data = self.unified_data_utils.data_processor.optimize_dataframe_dtypes(
+                    optimized_data,
+                    preserve_categorical=(stage != "intermediate")
+                )
+                after_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                
+                memory_reduction = ((before_memory - after_memory) / before_memory) * 100 if before_memory > 0 else 0
+                optimization_report['optimization_steps'].append('basic_dtype_optimization')
+                optimization_report['memory_reductions']['basic_optimization'] = memory_reduction
+                
+                tprint_info(f"💾 Basic optimization: {memory_reduction:.1f}% memory reduction")
+            
+            # Step 2: Feature-specific optimization
+            if stage == "output" and hasattr(self.unified_data_utils, 'data_processor'):
+                tprint_debug("🔧 Step 2: Feature-specific optimization")
+                
+                before_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                optimized_data = self.unified_data_utils.data_processor.apply_feature_specific_optimization(optimized_data)
+                after_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                
+                memory_reduction = ((before_memory - after_memory) / before_memory) * 100 if before_memory > 0 else 0
+                optimization_report['optimization_steps'].append('feature_specific_optimization')
+                optimization_report['memory_reductions']['feature_specific'] = memory_reduction
+                
+                tprint_info(f"🎯 Feature-specific optimization: {memory_reduction:.1f}% memory reduction")
+            
+            # Step 3: Pipeline stage optimization
+            if hasattr(self.unified_data_utils, 'data_processor'):
+                tprint_debug("🔧 Step 3: Pipeline stage optimization")
+                
+                before_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                optimized_data = self.unified_data_utils.data_processor.optimize_feature_engineering_pipeline(
+                    optimized_data, stage
+                )
+                after_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+                
+                memory_reduction = ((before_memory - after_memory) / before_memory) * 100 if before_memory > 0 else 0
+                optimization_report['optimization_steps'].append('pipeline_stage_optimization')
+                optimization_report['memory_reductions']['pipeline_stage'] = memory_reduction
+                
+                tprint_info(f"⚙️ Pipeline stage optimization: {memory_reduction:.1f}% memory reduction")
+            
+            # Step 4: Unified data optimization
+            tprint_debug("🔧 Step 4: Unified data optimization")
+            
+            before_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+            optimized_data, unified_report = self.unified_data_utils.optimize_data(
+                optimized_data, stage, preserve_categorical=(stage != "intermediate")
+            )
+            after_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024
+            
+            memory_reduction = ((before_memory - after_memory) / before_memory) * 100 if before_memory > 0 else 0
+            optimization_report['optimization_steps'].append('unified_optimization')
+            optimization_report['memory_reductions']['unified'] = memory_reduction
+            
+            if 'memory_reduction_percent' in unified_report:
+                optimization_report['unified_memory_reduction'] = unified_report['memory_reduction_percent']
+            
+            tprint_info(f"🔄 Unified optimization: {memory_reduction:.1f}% memory reduction")
+            
+            # Calculate total memory reduction
+            total_memory_reduction = ((optimization_report['original_memory_mb'] - after_memory) / optimization_report['original_memory_mb']) * 100
+            optimization_report['total_memory_reduction_percent'] = total_memory_reduction
+            optimization_report['final_memory_mb'] = after_memory
+            optimization_report['final_shape'] = optimized_data.shape
+            
+            # Log data type changes
+            original_dtypes = {col: str(dtype) for col, dtype in data.dtypes.items()}
+            final_dtypes = {col: str(dtype) for col, dtype in optimized_data.dtypes.items()}
+            
+            dtype_changes = {}
+            for col in original_dtypes:
+                if col in final_dtypes and original_dtypes[col] != final_dtypes[col]:
+                    dtype_changes[col] = {
+                        'from': original_dtypes[col],
+                        'to': final_dtypes[col]
+                    }
+            
+            optimization_report['dtype_changes'] = dtype_changes
+            optimization_report['dtype_changes_count'] = len(dtype_changes)
+            
+            tprint_success(f"✅ Comprehensive data optimization completed")
+            tprint_info(f"📊 Total memory reduction: {total_memory_reduction:.1f}%")
+            tprint_info(f"🔧 Data type changes: {len(dtype_changes)} columns")
+            tprint_info(f"📏 Final shape: {optimized_data.shape}")
+            
+            return optimized_data, optimization_report
+            
+        except Exception as e:
+            tprint_error(f"❌ Comprehensive data optimization failed: {e}")
+            optimization_report['success'] = False
+            optimization_report['error'] = str(e)
+            return data, optimization_report
+    
+    def _validate_step_transition(self, from_step: str, to_step: str, input_data: pd.DataFrame, 
+                                 output_data: pd.DataFrame, step_metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Validate step transition using unified data utilities."""
+        if not self.unified_data_utils or not self.cross_step_validator:
+            return {'valid': True, 'reason': 'Cross-step validation not available'}
+        
+        tprint_debug(f"🔍 Validating step transition: {from_step} → {to_step}")
+        
+        try:
+            validation_result = self.unified_data_utils.validate_step_transition(
+                from_step=from_step,
+                to_step=to_step,
+                input_data=input_data,
+                output_data=output_data,
+                step_metadata=step_metadata
+            )
+            
+            if validation_result.get('valid', True):
+                tprint_success(f"✅ Step transition validation passed: {from_step} → {to_step}")
+            else:
+                tprint_warning(f"⚠️ Step transition validation issues: {validation_result.get('issues', [])}")
+            
+            return validation_result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Step transition validation failed: {e}")
+            return {
+                'valid': False,
+                'error': str(e),
+                'from_step': from_step,
+                'to_step': to_step
+            }
+    
+    def _validate_data_consistency(self, data: pd.DataFrame, context: str = "pipeline") -> Dict[str, Any]:
+        """Validate data consistency using comprehensive checks."""
+        if not self.unified_data_utils:
+            return {'consistent': True, 'reason': 'Unified data utilities not available'}
+        
+        tprint_debug(f"🔍 Validating data consistency for {context}")
+        
+        try:
+            # Check for data integrity issues
+            consistency_issues = []
+            
+            # Check for NaN values
+            nan_count = data.isnull().sum().sum()
+            if nan_count > 0:
+                consistency_issues.append(f"Found {nan_count} NaN values")
+            
+            # Check for infinite values
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            infinite_count = 0
+            for col in numeric_cols:
+                infinite_count += np.isinf(data[col]).sum()
+            
+            if infinite_count > 0:
+                consistency_issues.append(f"Found {infinite_count} infinite values")
+            
+            # Check for duplicate timestamps
+            if 'timestamp' in data.columns or isinstance(data.index, pd.DatetimeIndex):
+                if 'timestamp' in data.columns:
+                    duplicate_timestamps = data['timestamp'].duplicated().sum()
+                else:
+                    duplicate_timestamps = data.index.duplicated().sum()
+                
+                if duplicate_timestamps > 0:
+                    consistency_issues.append(f"Found {duplicate_timestamps} duplicate timestamps")
+            
+            # Check for negative prices
+            price_cols = ['open', 'high', 'low', 'close']
+            for col in price_cols:
+                if col in data.columns:
+                    negative_count = (data[col] < 0).sum()
+                    if negative_count > 0:
+                        consistency_issues.append(f"Found {negative_count} negative values in {col}")
+            
+            # Check for OHLC consistency
+            if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+                high_low_inconsistency = (data['high'] < data['low']).sum()
+                if high_low_inconsistency > 0:
+                    consistency_issues.append(f"Found {high_low_inconsistency} high < low inconsistencies")
+                
+                close_outside_range = ((data['close'] > data['high']) | (data['close'] < data['low'])).sum()
+                if close_outside_range > 0:
+                    consistency_issues.append(f"Found {close_outside_range} close outside OH range")
+            
+            # Check data types consistency
+            dtype_issues = []
+            for col in data.columns:
+                if col in ['open', 'high', 'low', 'close', 'volume']:
+                    if not pd.api.types.is_numeric_dtype(data[col]):
+                        dtype_issues.append(f"Column {col} should be numeric but is {data[col].dtype}")
+            
+            if dtype_issues:
+                consistency_issues.extend(dtype_issues)
+            
+            # Calculate consistency score
+            total_checks = 6  # NaN, infinite, duplicates, negative prices, OHLC, dtypes
+            failed_checks = len(consistency_issues)
+            consistency_score = max(0, (total_checks - failed_checks) / total_checks * 100)
+            
+            result = {
+                'consistent': len(consistency_issues) == 0,
+                'consistency_score': consistency_score,
+                'issues': consistency_issues,
+                'context': context,
+                'data_shape': data.shape,
+                'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024
+            }
+            
+            if result['consistent']:
+                tprint_success(f"✅ Data consistency validation passed: {consistency_score:.1f}%")
+            else:
+                tprint_warning(f"⚠️ Data consistency issues found: {len(consistency_issues)} issues")
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Data consistency validation failed: {e}")
+            return {
+                'consistent': False,
+                'error': str(e),
+                'context': context
+            }
+    
+    def _should_use_streaming(self, data: pd.DataFrame, threshold_mb: float = 100.0) -> bool:
+        """Determine if streaming should be used based on data size."""
+        if not self.unified_data_utils or not self.unified_data_utils.streaming_manager:
+            return False
+        
+        data_size_mb = data.memory_usage(deep=True).sum() / 1024 / 1024
+        return data_size_mb > threshold_mb
+    
+    def _process_with_streaming(self, data: pd.DataFrame, processing_func: callable, 
+                               context: str = "streaming_processing") -> pd.DataFrame:
+        """Process data using streaming if beneficial."""
+        if not self._should_use_streaming(data):
+            tprint_debug(f"📊 Data size below streaming threshold, processing in memory")
+            return processing_func(data)
+        
+        tprint_info(f"🔄 Processing large dataset with streaming: {data.shape}")
+        
+        try:
+            # Use the existing streaming method
+            result = self._process_large_dataset(data, processing_func, context)
+            
+            # Validate streaming results
+            if not result.empty:
+                streaming_consistency = self._validate_data_consistency(result, f"{context}_streaming_result")
+                if not streaming_consistency.get('consistent', True):
+                    tprint_warning(f"⚠️ Streaming result consistency issues: {streaming_consistency.get('issues', [])}")
+            
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Streaming processing failed, falling back to in-memory: {e}")
+            return processing_func(data)
+    
+    def _handle_processing_error(self, error: Exception, context: str, data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Handle processing errors with data quality-aware recovery strategies."""
+        tprint_error(f"❌ Processing error in {context}: {str(error)}")
+        
+        error_info = {
+            'error_type': type(error).__name__,
+            'error_message': str(error),
+            'context': context,
+            'timestamp': time.time(),
+            'recovery_attempted': False,
+            'recovery_successful': False,
+            'data_quality_info': None
+        }
+        
+        # Get data quality information if data is available
+        if data is not None and self.unified_data_utils:
+            try:
+                error_info['data_quality_info'] = self._get_data_quality_summary(data, f"{context}_error_context")
+            except Exception as e:
+                error_info['data_quality_error'] = str(e)
+        
+        # Attempt recovery based on error type and context
+        try:
+            if isinstance(error, MemoryError):
+                error_info['recovery_strategy'] = 'memory_optimization'
+                error_info['recovery_attempted'] = True
+                # Could implement memory optimization recovery here
+                
+            elif isinstance(error, (ValueError, TypeError)):
+                error_info['recovery_strategy'] = 'data_validation'
+                error_info['recovery_attempted'] = True
+                # Could implement data validation and cleaning recovery here
+                
+            elif isinstance(error, KeyError):
+                error_info['recovery_strategy'] = 'column_validation'
+                error_info['recovery_attempted'] = True
+                # Could implement column validation recovery here
+                
+            else:
+                error_info['recovery_strategy'] = 'generic_fallback'
+                error_info['recovery_attempted'] = True
+                
+        except Exception as recovery_error:
+            error_info['recovery_error'] = str(recovery_error)
+            tprint_warning(f"⚠️ Error recovery failed: {recovery_error}")
+        
+        return error_info
+    
+    def _create_enhanced_error_result(self, start_time: float, error: Exception, context: str, 
+                                    data: Optional[pd.DataFrame] = None) -> ConsolidatedPipelineResult:
+        """Create enhanced error result with comprehensive error information."""
+        
+        # Handle the error and get recovery information
+        error_info = self._handle_processing_error(error, context, data)
+        
+        # Get data quality information
+        data_quality_info = error_info.get('data_quality_info', {})
+        
+        # Create enhanced error message
+        enhanced_error_message = f"{context}: {error_info['error_message']}"
+        if error_info.get('recovery_attempted', False):
+            enhanced_error_message += f" (Recovery attempted: {error_info.get('recovery_strategy', 'unknown')})"
+        
+        # Create warnings list
+        warnings = []
+        if data_quality_info:
+            if 'quality_score' in data_quality_info:
+                warnings.append(f"Data quality score: {data_quality_info['quality_score']:.2f}")
+            if 'issues' in data_quality_info:
+                warnings.extend(data_quality_info['issues'])
+            if 'warnings' in data_quality_info:
+                warnings.extend(data_quality_info['warnings'])
+        
+        # Add error-specific warnings
+        if error_info.get('recovery_attempted', False):
+            warnings.append(f"Recovery strategy: {error_info.get('recovery_strategy', 'unknown')}")
+        if error_info.get('recovery_error'):
+            warnings.append(f"Recovery failed: {error_info['recovery_error']}")
+        
+        # Add unified data utilities status
+        if self.unified_data_utils:
+            warnings.append("Unified data utilities available")
+        else:
+            warnings.append("Unified data utilities not available")
+        
+        return self._create_empty_result(start_time, enhanced_error_message, data_quality_info)
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
         """Enhanced period optimization with economic evaluation."""
@@ -840,20 +1496,25 @@ class UnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using Feature Bank integration."""
-        tprint_debug("Generating selected features using Feature Bank integration")
+        """Generate features for the selected feature set using Feature Bank integration with unified data utilities."""
+        tprint_debug("Generating selected features using Feature Bank integration with unified data utilities")
         
         try:
+            # Optimize data for feature generation stage
+            optimized_data = self._optimize_data_for_stage(data, "intermediate")
+            
             if selection_result is None or not selection_result.success:
                 tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
                 # Use Feature Bank integration for comprehensive feature generation
                 feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                    data, force_refresh=False
+                    optimized_data, force_refresh=False
                 )
                 
                 if feature_generation_result.success:
+                    # Process generated features with unified data utilities
+                    processed_features = self._process_generated_features(feature_generation_result.feature_data)
                     tprint_success(f"✅ Generated {feature_generation_result.n_features_generated} features using Feature Bank")
-                    return feature_generation_result.feature_data
+                    return processed_features
                 else:
                     tprint_error(f"❌ Feature Bank generation failed: {feature_generation_result.error_message}")
                     return pd.DataFrame(index=data.index)
@@ -863,32 +1524,197 @@ class UnifiedDataDrivenPipeline:
             
             # Generate comprehensive features first
             feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                data, force_refresh=False
+                optimized_data, force_refresh=False
             )
             
             if not feature_generation_result.success:
                 tprint_error("❌ Feature Bank generation failed - this is required for feature generation")
                 return pd.DataFrame(index=data.index)
             
+            # Process generated features with unified data utilities
+            processed_features = self._process_generated_features(feature_generation_result.feature_data)
+            
             # Filter to selected features
             selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
-            available_features = feature_generation_result.feature_data.columns
+            available_features = processed_features.columns
             
             # Find matching features
             matching_features = [f for f in selected_feature_names if f in available_features]
             
             if matching_features:
-                features_df = feature_generation_result.feature_data[matching_features]
+                features_df = processed_features[matching_features]
                 tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
             else:
                 tprint_warning("⚠️ No matching features found, using all generated features")
-                features_df = feature_generation_result.feature_data
+                features_df = processed_features
+            
+            # Final optimization for output stage
+            features_df = self._optimize_data_for_stage(features_df, "output")
             
             return features_df
             
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
             return pd.DataFrame(index=data.index)
+    
+    def _process_generated_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Process generated features using unified data utilities."""
+        if not self.unified_data_utils:
+            return features_df
+        
+        tprint_debug("🔧 Processing generated features with unified data utilities")
+        
+        try:
+            # Clean and validate generated features
+            cleaned_features, cleaning_report = self.unified_data_utils.clean_data(
+                data=features_df,
+                detect_outliers=True,
+                outlier_method='zscore',
+                outlier_threshold=3.0
+            )
+            
+            # Optimize data types for features
+            optimized_features, optimization_report = self.unified_data_utils.optimize_data(
+                data=cleaned_features,
+                stage="intermediate",
+                preserve_categorical=False
+            )
+            
+            # Validate feature quality
+            quality_result = self.unified_data_utils.validate_data_quality(
+                data=optimized_features,
+                context="generated_features_validation"
+            )
+            
+            if not quality_result.get('overall_passed', True):
+                tprint_warning(f"⚠️ Feature quality issues detected: {quality_result.get('warnings', [])}")
+            
+            tprint_success(f"✅ Processed {len(optimized_features.columns)} features")
+            return optimized_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature processing failed, using original features: {e}")
+            return features_df
+    
+    def _get_data_quality_summary(self, data: pd.DataFrame, context: str = "pipeline") -> Dict[str, Any]:
+        """Get comprehensive data quality summary using unified data utilities."""
+        if not self.unified_data_utils:
+            return {
+                'quality_score': 50.0,
+                'issues': ['Unified data utilities not available'],
+                'warnings': [],
+                'unified_utils_available': False
+            }
+        
+        try:
+            # Get comprehensive quality validation
+            quality_result = self.unified_data_utils.validate_data_quality(
+                data=data,
+                context=context
+            )
+            
+            # Get processing summary
+            processing_summary = self.unified_data_utils.get_processing_summary()
+            
+            return {
+                'quality_score': quality_result.get('quality_score', 0.0),
+                'issues': quality_result.get('issues', []),
+                'warnings': quality_result.get('warnings', []),
+                'metrics': quality_result.get('metrics', {}),
+                'unified_utils_available': True,
+                'processing_capabilities': processing_summary.get('capabilities', []),
+                'streaming_enabled': processing_summary.get('streaming_enabled', False)
+            }
+            
+        except Exception as e:
+            return {
+                'quality_score': 0.0,
+                'issues': [f'Quality validation failed: {str(e)}'],
+                'warnings': [],
+                'unified_utils_available': True,
+                'error': str(e)
+            }
+    
+    def _perform_comprehensive_quality_analysis(self, data: pd.DataFrame, context: str = "pipeline") -> Dict[str, Any]:
+        """Perform comprehensive data quality analysis using all available utilities."""
+        if not self.unified_data_utils:
+            return {'analysis_available': False, 'reason': 'Unified data utilities not available'}
+        
+        tprint_info(f"🔍 Performing comprehensive quality analysis for {context}")
+        
+        try:
+            # Get basic quality summary
+            quality_summary = self._get_data_quality_summary(data, context)
+            
+            # Perform comprehensive duplicate analysis if available
+            duplicate_analysis = {}
+            if hasattr(self.unified_data_utils, 'quality_framework') and self.unified_data_utils.quality_framework:
+                try:
+                    # Run comprehensive duplicate analysis
+                    duplicate_result = self.unified_data_utils.quality_framework.validate_dataframe_quality(
+                        data, f"{context}_duplicate_analysis"
+                    )
+                    
+                    duplicate_analysis = {
+                        'duplicate_analysis_available': True,
+                        'total_duplicates': duplicate_result.metrics.get('total_duplicate_records', 0),
+                        'duplicate_groups': duplicate_result.metrics.get('duplicate_groups', 0),
+                        'true_duplicates': duplicate_result.metrics.get('true_duplicates', 0),
+                        'false_duplicates': duplicate_result.metrics.get('false_duplicates', 0),
+                        'mixed_duplicates': duplicate_result.metrics.get('mixed_duplicates', 0),
+                        'duplicate_percentage': duplicate_result.metrics.get('duplicate_percentage', 0.0)
+                    }
+                    
+                except Exception as e:
+                    duplicate_analysis = {
+                        'duplicate_analysis_available': False,
+                        'error': str(e)
+                    }
+            
+            # Get enhanced quality metrics
+            enhanced_metrics = {}
+            if hasattr(self.unified_data_utils, 'data_processor') and self.unified_data_utils.data_processor:
+                try:
+                    enhanced_metrics = self.unified_data_utils.data_processor.calculate_enhanced_quality_metrics(data)
+                except Exception as e:
+                    enhanced_metrics = {'error': str(e)}
+            
+            # Combine all analysis results
+            comprehensive_analysis = {
+                'analysis_available': True,
+                'context': context,
+                'timestamp': time.time(),
+                'basic_quality': quality_summary,
+                'duplicate_analysis': duplicate_analysis,
+                'enhanced_metrics': enhanced_metrics,
+                'data_shape': data.shape,
+                'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
+                'column_types': {col: str(dtype) for col, dtype in data.dtypes.items()},
+                'missing_data_summary': {
+                    'total_missing': data.isnull().sum().sum(),
+                    'missing_per_column': data.isnull().sum().to_dict(),
+                    'missing_percentage': (data.isnull().sum().sum() / (len(data) * len(data.columns))) * 100
+                }
+            }
+            
+            # Calculate overall quality score
+            overall_score = quality_summary.get('quality_score', 0.0)
+            if duplicate_analysis.get('duplicate_analysis_available', False):
+                duplicate_penalty = min(20, duplicate_analysis.get('duplicate_percentage', 0) * 2)
+                overall_score = max(0, overall_score - duplicate_penalty)
+            
+            comprehensive_analysis['overall_quality_score'] = overall_score
+            
+            tprint_success(f"✅ Comprehensive quality analysis completed - Score: {overall_score:.2f}")
+            return comprehensive_analysis
+            
+        except Exception as e:
+            tprint_error(f"❌ Comprehensive quality analysis failed: {e}")
+            return {
+                'analysis_available': False,
+                'error': str(e),
+                'context': context
+            }
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization."""
@@ -1772,8 +2598,28 @@ class UnifiedDataDrivenPipeline:
         total = hits + misses
         return hits / total if total > 0 else 0.0
     
-    def _create_empty_result(self, start_time: float, error_message: str) -> ConsolidatedPipelineResult:
-        """Create empty result for failed processing."""
+    def _create_empty_result(self, start_time: float, error_message: str, 
+                           data_quality_info: Optional[Dict[str, Any]] = None) -> ConsolidatedPipelineResult:
+        """Create empty result for failed processing with enhanced error information."""
+        
+        # Enhanced error information
+        enhanced_error_message = error_message
+        warnings = []
+        
+        if data_quality_info:
+            if 'quality_score' in data_quality_info:
+                warnings.append(f"Data quality score: {data_quality_info['quality_score']:.2f}")
+            if 'issues' in data_quality_info:
+                warnings.extend(data_quality_info['issues'])
+            if 'warnings' in data_quality_info:
+                warnings.extend(data_quality_info['warnings'])
+        
+        # Add unified data utilities status
+        if self.unified_data_utils:
+            warnings.append("Unified data utilities available")
+        else:
+            warnings.append("Unified data utilities not available")
+        
         return ConsolidatedPipelineResult(
             selected_features=[],
             feature_importance={},

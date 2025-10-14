@@ -136,6 +136,22 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     tprint_warning("VectorBT utilities not available, using fallback implementations")
 
+# Import feature engineering roadmap utilities
+try:
+    from src.feature_engineering_roadmap.interactions import (
+        InteractionEngine, create_default_interaction_config, InteractionConfig, InteractionType
+    )
+    from src.feature_engineering_roadmap.transforms import (
+        TransformRouter, create_default_transform_config, OnlineEWZ, TODRank, SignedLog, MADScaler, Winsorization
+    )
+    from src.feature_engineering_roadmap.dynamic_feature_selector import (
+        DynamicRoadmapPipeline, OptimizedPipelineConfig
+    )
+    FEATURE_ENGINEERING_ROADMAP_AVAILABLE = True
+except ImportError:
+    FEATURE_ENGINEERING_ROADMAP_AVAILABLE = False
+    tprint_warning("Feature engineering roadmap utilities not available")
+
 # Import caching and serialization
 try:
     from src.feature_generation.core.feature_cache import FeatureCacheService
@@ -450,6 +466,38 @@ class UnifiedDataDrivenPipeline:
         )
         self.lightgbm_featuretools_generator = LightGBMFeatureToolsGenerator(lightgbm_config)
         
+        # Feature engineering roadmap components
+        if FEATURE_ENGINEERING_ROADMAP_AVAILABLE:
+            # Interaction engine for theory-driven interactions
+            self.interaction_engine = InteractionEngine(
+                create_default_interaction_config(),
+                use_vectorbt=VECTORBT_AVAILABLE,
+                use_gpu=self.config.performance.enable_gpu,
+                enable_parallel=True
+            )
+            
+            # Transform router for statistical transforms
+            self.transform_router = None  # Will be initialized when we have feature names
+            
+            # Dynamic roadmap pipeline for optimized feature selection
+            roadmap_config = OptimizedPipelineConfig(
+                n_candidate_features=100,
+                n_selected_features=32,
+                use_bayesian_opt=True,
+                bayesian_trials=50,
+                use_vectorbt=VECTORBT_AVAILABLE,
+                use_gpu=self.config.performance.enable_gpu,
+                enable_parallel=True
+            )
+            self.dynamic_roadmap_pipeline = DynamicRoadmapPipeline(roadmap_config)
+            
+            tprint_info("✅ Feature engineering roadmap components initialized")
+        else:
+            self.interaction_engine = None
+            self.transform_router = None
+            self.dynamic_roadmap_pipeline = None
+            tprint_warning("⚠️  Feature engineering roadmap components not available")
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_validation_components(self):
@@ -619,13 +667,24 @@ class UnifiedDataDrivenPipeline:
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
             feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
             
+            # Step 2.5: Use dynamic roadmap pipeline for optimized feature selection
+            if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.dynamic_roadmap_pipeline is not None:
+                tprint_info("Step 2.5: Using dynamic roadmap pipeline for optimized feature selection")
+                roadmap_results = self._apply_dynamic_roadmap_pipeline(processed_data, processed_targets)
+                if roadmap_results:
+                    feature_selection_results.update(roadmap_results)
+            
             # Step 3: Generate selected features
             tprint_info("Step 3: Generate selected features")
             selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
             
+            # Step 3.5: Apply statistical transforms using feature engineering roadmap
+            tprint_info("Step 3.5: Apply statistical transforms")
+            transformed_features_df = self._apply_statistical_transforms(selected_features_df)
+            
             # Step 4: Enhanced interaction generation with VectorBT optimization
             tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
-            interaction_results = self._enhanced_interaction_generation(selected_features_df, processed_targets)
+            interaction_results = self._enhanced_interaction_generation(transformed_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
@@ -678,6 +737,9 @@ class UnifiedDataDrivenPipeline:
             
             # Update performance stats
             self._update_performance_stats(execution_time, combined_results)
+            
+            # Update VectorBT performance stats
+            self._update_vectorbt_performance_stats()
             
             tprint_success(f"✅ Consolidated pipeline processing completed in {execution_time:.3f}s")
             tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "
@@ -891,19 +953,187 @@ class UnifiedDataDrivenPipeline:
             return pd.DataFrame(index=data.index)
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Enhanced interaction generation with VectorBT optimization."""
+        """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
         tprint_debug("Starting enhanced interaction generation")
         
         try:
-            # Use VectorBT optimizer for interaction generation
-            interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            interactions = []
             
-            tprint_success(f"✅ Generated {len(interactions)} interactions")
+            # Use feature engineering roadmap interactions if available
+            if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
+                tprint_info("🎯 Using feature engineering roadmap interactions")
+                
+                # Prepare data for interaction generation
+                # Convert features to the expected format for interactions
+                transformed_data = self._prepare_data_for_interactions(features_df)
+                
+                # Generate interactions using the roadmap engine with regime awareness
+                interaction_df = self.interaction_engine.build_interactions(transformed_data)
+                
+                # Add regime-aware interactions if available
+                if hasattr(self.interaction_engine, 'regime_flags'):
+                    regime_interactions = self._generate_regime_aware_interactions(transformed_data)
+                    if not regime_interactions.empty:
+                        interaction_df = pd.concat([interaction_df, regime_interactions], axis=1)
+                
+                if not interaction_df.empty:
+                    # Convert to list format expected by the pipeline
+                    for col in interaction_df.columns:
+                        interactions.append({
+                            'name': col,
+                            'values': interaction_df[col].values,
+                            'type': 'roadmap_interaction',
+                            'source': 'feature_engineering_roadmap'
+                        })
+                    
+                    tprint_success(f"✅ Generated {len(interactions)} roadmap interactions")
+                else:
+                    tprint_warning("⚠️ No roadmap interactions generated")
+            
+            # Fallback to VectorBT optimizer if no roadmap interactions or as additional
+            if not interactions or self.config.feature_selection.enable_fallback_interactions:
+                tprint_info("🔄 Using VectorBT optimizer for additional interactions")
+                vectorbt_interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+                interactions.extend(vectorbt_interactions)
+            
+            tprint_success(f"✅ Generated {len(interactions)} total interactions")
             return interactions
             
         except Exception as e:
             tprint_error(f"Enhanced interaction generation failed: {e}")
             return []
+    
+    def _prepare_data_for_interactions(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare data for feature engineering roadmap interactions."""
+        try:
+            # Convert feature names to the expected format for interactions
+            # The interaction engine expects features with specific prefixes like 't/p/'
+            transformed_data = features_df.copy()
+            
+            # Add prefix to feature names to match interaction engine expectations
+            feature_mapping = {}
+            for col in features_df.columns:
+                # Map common feature types to expected prefixes
+                if any(keyword in col.lower() for keyword in ['rsi', 'bollinger', 'bollz', 'atr', 'volatility']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['momentum', 'mom', 'return', 'ret']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['volume', 'vol', 'spread', 'ofi']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['vwap', 'price', 'close', 'open', 'high', 'low']):
+                    feature_mapping[col] = f't/p/{col}'
+                else:
+                    feature_mapping[col] = f't/p/{col}'
+            
+            # Rename columns
+            transformed_data = transformed_data.rename(columns=feature_mapping)
+            
+            return transformed_data
+            
+        except Exception as e:
+            tprint_error(f"Data preparation for interactions failed: {e}")
+            return features_df
+    
+    def _apply_statistical_transforms(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply statistical transforms using feature engineering roadmap."""
+        tprint_debug("Starting statistical transforms")
+        
+        try:
+            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.transform_router is None:
+                tprint_warning("⚠️ Statistical transforms not available, returning original features")
+                return features_df
+            
+            # Initialize transform router if not already done
+            if self.transform_router is None:
+                transform_config = create_default_transform_config(features_df.columns.tolist())
+                self.transform_router = TransformRouter(
+                    transform_config,
+                    use_vectorbt=VECTORBT_AVAILABLE,
+                    use_gpu=self.config.performance.enable_gpu,
+                    enable_parallel=True
+                )
+            
+            # Apply transforms
+            transformed_df = self.transform_router.fit_transform(features_df)
+            
+            tprint_success(f"✅ Applied statistical transforms to {len(transformed_df.columns)} features")
+            return transformed_df
+            
+        except Exception as e:
+            tprint_error(f"Statistical transforms failed: {e}")
+            return features_df
+    
+    def _apply_dynamic_roadmap_pipeline(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Apply dynamic roadmap pipeline for optimized feature selection."""
+        tprint_debug("Starting dynamic roadmap pipeline")
+        
+        try:
+            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.dynamic_roadmap_pipeline is None:
+                tprint_warning("⚠️ Dynamic roadmap pipeline not available")
+                return {}
+            
+            # Run the dynamic roadmap pipeline
+            roadmap_results = self.dynamic_roadmap_pipeline.run(data, targets)
+            
+            if roadmap_results and 'final' in roadmap_results:
+                final_features = roadmap_results['final']
+                tprint_success(f"✅ Dynamic roadmap pipeline selected {len(final_features.columns)} features")
+                
+                return {
+                    'roadmap_features': final_features.columns.tolist(),
+                    'roadmap_original': roadmap_results.get('original', pd.DataFrame()),
+                    'roadmap_transformed': roadmap_results.get('transformed', pd.DataFrame()),
+                    'roadmap_interactions': roadmap_results.get('interactions', pd.DataFrame()),
+                    'roadmap_final': final_features
+                }
+            else:
+                tprint_warning("⚠️ Dynamic roadmap pipeline returned no results")
+                return {}
+            
+        except Exception as e:
+            tprint_error(f"Dynamic roadmap pipeline failed: {e}")
+            return {}
+    
+    def _generate_regime_aware_interactions(self, transformed_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate regime-aware interactions using the interaction engine's regime flags."""
+        try:
+            if not hasattr(self.interaction_engine, 'regime_flags'):
+                return pd.DataFrame()
+            
+            regime_flags = self.interaction_engine.regime_flags
+            
+            # Calculate regime flags
+            regime_flags.calculate_quantiles(transformed_data)
+            
+            # Get regime flags
+            high_vol_flag = regime_flags.get_high_vol_flag(transformed_data)
+            wide_spread_flag = regime_flags.get_wide_spread_flag(transformed_data)
+            
+            # Create regime-aware interactions
+            regime_interactions = {}
+            
+            # High volatility regime interactions
+            if not high_vol_flag.empty and high_vol_flag.sum() > 0:
+                # Find features that might benefit from high vol regime
+                for col in transformed_data.columns:
+                    if any(keyword in col.lower() for keyword in ['rsi', 'momentum', 'volatility']):
+                        regime_interactions[f'regime_high_vol_{col}'] = transformed_data[col] * high_vol_flag
+            
+            # Wide spread regime interactions
+            if not wide_spread_flag.empty and wide_spread_flag.sum() > 0:
+                # Find features that might benefit from wide spread regime
+                for col in transformed_data.columns:
+                    if any(keyword in col.lower() for keyword in ['bollinger', 'spread', 'microstructure']):
+                        regime_interactions[f'regime_wide_spread_{col}'] = transformed_data[col] * wide_spread_flag
+            
+            if regime_interactions:
+                return pd.DataFrame(regime_interactions, index=transformed_data.index)
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_error(f"Regime-aware interactions generation failed: {e}")
+            return pd.DataFrame()
     
     def _htf_interaction_generation(self, data: pd.DataFrame, features_df: pd.DataFrame, 
                                   targets: Optional[pd.Series]) -> List[Any]:
@@ -1895,6 +2125,37 @@ class UnifiedDataDrivenPipeline:
         self.advanced_performance_monitor.reset_stats()
         self.advanced_data_loader.reset_cache_metrics()
         self.advanced_error_handler.reset_error_stats()
+    
+    def _update_vectorbt_performance_stats(self):
+        """Update VectorBT performance statistics."""
+        try:
+            # Update VectorBT operations count
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'vectorbt_operations'):
+                    self.performance_stats['vectorbt_operations'] += getattr(self.interaction_engine, 'vectorbt_operations', 0)
+            
+            if hasattr(self, 'transform_router') and self.transform_router is not None:
+                if hasattr(self.transform_router, 'vectorbt_operations'):
+                    self.performance_stats['vectorbt_operations'] += getattr(self.transform_router, 'vectorbt_operations', 0)
+            
+            # Update GPU operations count
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'gpu_operations'):
+                    self.performance_stats['gpu_operations'] += getattr(self.interaction_engine, 'gpu_operations', 0)
+            
+            if hasattr(self, 'transform_router') and self.transform_router is not None:
+                if hasattr(self.transform_router, 'gpu_operations'):
+                    self.performance_stats['gpu_operations'] += getattr(self.transform_router, 'gpu_operations', 0)
+            
+            # Update cache statistics
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'cache_hits'):
+                    self.performance_stats['cache_hits'] += getattr(self.interaction_engine, 'cache_hits', 0)
+                if hasattr(self.interaction_engine, 'cache_misses'):
+                    self.performance_stats['cache_misses'] += getattr(self.interaction_engine, 'cache_misses', 0)
+            
+        except Exception as e:
+            tprint_warning(f"Failed to update VectorBT performance stats: {e}")
 
 
 # Convenience functions

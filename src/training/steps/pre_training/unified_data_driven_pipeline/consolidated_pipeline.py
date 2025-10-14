@@ -2041,9 +2041,16 @@ class UnifiedDataDrivenPipeline:
             # Step 2.5: Use dynamic roadmap pipeline for optimized feature selection
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.dynamic_roadmap_pipeline is not None:
                 tprint_info("Step 2.5: Using dynamic roadmap pipeline for optimized feature selection")
+                self.detailed_reporter.start_step("dynamic_roadmap", len(processed_data.columns))
                 roadmap_results = self._apply_dynamic_roadmap_pipeline(processed_data, processed_targets)
                 if roadmap_results:
                     feature_selection_results.update(roadmap_results)
+                    # End dynamic roadmap step reporting
+                    self.detailed_reporter.end_step("dynamic_roadmap", 
+                                                  len(roadmap_results.get('selected_features', [])),
+                                                  0.0,  # Roadmap execution time
+                                                  0.0,  # Roadmap memory usage
+                                                  True)
             
             # End feature selection step reporting
             selected_features = getattr(feature_selection_results, 'selected_features', [])
@@ -2068,10 +2075,19 @@ class UnifiedDataDrivenPipeline:
             
             # Step 3.5: Apply statistical transforms using feature engineering roadmap
             tprint_info("Step 3.5: Apply statistical transforms")
+            self.detailed_reporter.start_step("statistical_transforms", len(selected_features_df.columns))
             transformed_features_df = self._apply_statistical_transforms(selected_features_df)
+            
+            # End statistical transforms step reporting
+            self.detailed_reporter.end_step("statistical_transforms", 
+                                          len(transformed_features_df.columns),
+                                          0.0,  # Statistical transforms execution time
+                                          0.0,  # Statistical transforms memory usage
+                                          True)
             
             # Step 3.6: Apply vectorized feature calculations using VectorBT utilities
             tprint_info("Step 3.6: Apply vectorized feature calculations")
+            self.detailed_reporter.start_step("vectorized_calculations", len(transformed_features_df.columns))
             if VECTORBT_UTILITIES_AVAILABLE:
                 # Create feature configuration for vectorization
                 vectorization_config = {
@@ -2093,6 +2109,13 @@ class UnifiedDataDrivenPipeline:
                 tprint_success(f"✅ Vectorized feature calculations completed: {transformed_features_df.shape[1]} total features")
             else:
                 tprint_warning("⚠️ VectorBT utilities not available, skipping vectorized feature calculations")
+            
+            # End vectorized calculations step reporting
+            self.detailed_reporter.end_step("vectorized_calculations", 
+                                          len(transformed_features_df.columns),
+                                          0.0,  # Vectorized calculations execution time
+                                          0.0,  # Vectorized calculations memory usage
+                                          VECTORBT_UTILITIES_AVAILABLE)
             
             # Monitor data quality after feature generation
             if not selected_features_df.empty:
@@ -2189,6 +2212,7 @@ class UnifiedDataDrivenPipeline:
             
             # Step 7.1: Critical Improvements - Hereditary Interactions
             tprint_info("Step 7.1: Generating hereditary interactions")
+            self.detailed_reporter.start_step("hereditary_interactions", len(enhanced_feature_results.get('generated_features', [])))
             try:
                 # Use screened features for hereditary interactions
                 pre_selected_features = []
@@ -2243,8 +2267,17 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Hereditary interactions failed: {e}")
             
+            # End hereditary interactions step reporting
+            hereditary_features_count = len(enhanced_feature_results.get('hereditary_features', []))
+            self.detailed_reporter.end_step("hereditary_interactions", 
+                                          hereditary_features_count,
+                                          0.0,  # Hereditary interactions execution time
+                                          0.0,  # Hereditary interactions memory usage
+                                          hereditary_features_count > 0)
+            
             # Step 7.2: Critical Improvements - Robust Stability Assessment
             tprint_info("Step 7.2: Assessing robust stability metrics")
+            self.detailed_reporter.start_step("stability_assessment", len(selected_features_df.columns))
             try:
                 # Simple stability assessment using variance and correlation
                 stability_scores = {}
@@ -2270,8 +2303,17 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Robust stability assessment failed: {e}")
             
+            # End stability assessment step reporting
+            stability_score = enhanced_feature_results.get('stability_metrics', {}).get('average_stability', 0.0)
+            self.detailed_reporter.end_step("stability_assessment", 
+                                          len(enhanced_feature_results.get('stability_metrics', {}).get('combined_stability_scores', {})),
+                                          0.0,  # Stability assessment execution time
+                                          0.0,  # Stability assessment memory usage
+                                          stability_score > 0.0)
+            
             # Step 7.5: Apply additional vectorized operations to enhanced features
             tprint_info("Step 7.5: Apply additional vectorized operations to enhanced features")
+            self.detailed_reporter.start_step("additional_vectorized_operations", len(enhanced_feature_results.get('enhanced_features', pd.DataFrame()).columns))
             if VECTORBT_UTILITIES_AVAILABLE and enhanced_feature_results:
                 # Apply vectorized operations to the enhanced features if they exist
                 enhanced_features_data = enhanced_feature_results.get('enhanced_features', pd.DataFrame())
@@ -2290,8 +2332,17 @@ class UnifiedDataDrivenPipeline:
             else:
                 tprint_warning("⚠️ VectorBT utilities not available, skipping additional vectorized operations")
             
+            # End additional vectorized operations step reporting
+            vectorized_enhanced_count = len(enhanced_feature_results.get('vectorized_enhanced_features', pd.DataFrame()).columns)
+            self.detailed_reporter.end_step("additional_vectorized_operations", 
+                                          vectorized_enhanced_count,
+                                          0.0,  # Additional vectorized operations execution time
+                                          0.0,  # Additional vectorized operations memory usage
+                                          VECTORBT_UTILITIES_AVAILABLE and vectorized_enhanced_count > 0)
+            
             # Step 7.3: Critical Improvements - Statistical Validation
             tprint_info("Step 7.3: Performing statistical validation")
+            self.detailed_reporter.start_step("statistical_validation", len(selected_features_df.columns))
             try:
                 # Calculate Sharpe ratios for statistical validation
                 sharpe_ratios = {}
@@ -2337,8 +2388,17 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Statistical validation failed: {e}")
             
+            # End statistical validation step reporting
+            significant_features_count = len(enhanced_feature_results.get('statistical_validation', {}).get('significant_features', []))
+            self.detailed_reporter.end_step("statistical_validation", 
+                                          significant_features_count,
+                                          0.0,  # Statistical validation execution time
+                                          0.0,  # Statistical validation memory usage
+                                          significant_features_count > 0)
+            
             # Step 7.4: Critical Improvements - Robust MOEA Convergence
             tprint_info("Step 7.4: Applying robust MOEA convergence criteria")
+            self.detailed_reporter.start_step("moea_convergence", len(selected_features_df.columns))
             try:
                 # Simple convergence criteria implementation
                 convergence_metrics = {
@@ -2361,12 +2421,38 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Robust MOEA convergence setup failed: {e}")
             
+            # End MOEA convergence step reporting
+            convergence_available = enhanced_feature_results.get('moea_convergence', {}).get('framework_available', False)
+            self.detailed_reporter.end_step("moea_convergence", 
+                                          len(selected_features_df.columns),
+                                          0.0,  # MOEA convergence execution time
+                                          0.0,  # MOEA convergence memory usage
+                                          convergence_available)
+            
             # Step 8: Final feature selection
             tprint_info("Step 8: Final feature selection")
+            self.detailed_reporter.start_step("final_feature_selection", len(processed_data.columns))
             final_selection_results = self._final_feature_selection(processed_data, processed_targets)
+            
+            # End final feature selection step reporting
+            final_selected_count = len(getattr(final_selection_results, 'selected_features', []))
+            self.detailed_reporter.end_step("final_feature_selection", 
+                                          final_selected_count,
+                                          getattr(final_selection_results, 'execution_time', 0.0),
+                                          getattr(final_selection_results, 'memory_usage_mb', 0.0),
+                                          final_selected_count > 0)
+            
+            # Track final feature selection results
+            if hasattr(final_selection_results, 'selected_features'):
+                self.detailed_reporter.track_feature_selection(
+                    final_selection_results.selected_features,
+                    getattr(final_selection_results, 'feature_importance', {}),
+                    getattr(final_selection_results, 'quality_metrics', {})
+                )
             
             # Step 9: Combine all results
             tprint_info("Step 9: Combine all results")
+            self.detailed_reporter.start_step("combine_results", len(processed_data.columns))
             combined_results = self._combine_results(
                 period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
@@ -2416,6 +2502,13 @@ class UnifiedDataDrivenPipeline:
             
             # Update VectorBT performance stats
             self._update_vectorbt_performance_stats()
+            
+            # End combine results step reporting
+            self.detailed_reporter.end_step("combine_results", 
+                                          len(combined_results.get('selected_features', [])),
+                                          execution_time,
+                                          0.0,  # Memory usage will be calculated
+                                          True)
             
             tprint_success(f"✅ Consolidated pipeline processing completed in {execution_time:.3f}s")
             tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "

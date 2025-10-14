@@ -98,11 +98,29 @@ def test_reporting_integration():
             "track_feature_filtering",
             "generate_detailed_report",
             "save_report",
+            # Pre-processing steps
             "data_validation",
             "data_processing",
             "input_validation",
             "leakage_prevention",
-            "feature_screening"
+            "feature_screening",
+            # Core pipeline steps
+            "period_optimization",
+            "feature_selection",
+            "feature_generation",
+            "interaction_generation",
+            "lookback_optimization",
+            # Enhanced steps
+            "dynamic_roadmap",
+            "statistical_transforms",
+            "vectorized_calculations",
+            "hereditary_interactions",
+            "stability_assessment",
+            "statistical_validation",
+            "moea_convergence",
+            "additional_vectorized_operations",
+            "final_feature_selection",
+            "combine_results"
         ]
         
         all_found = True

@@ -47,6 +47,18 @@ from .enhanced_components.advanced_feature_selection import (
 from .enhanced_components.htf_template_system import (
     HTFInteractionGenerator, HTFTemplateConfig, create_htf_interaction_generator
 )
+from .enhanced_components.advanced_lookback_optimizer import (
+    AdvancedLookbackOptimizer, LookbackConstraints, OptimizationMethod, create_advanced_lookback_optimizer
+)
+from .enhanced_components.feature_bank_integration import (
+    FeatureBankIntegration, FeatureBankConfig, create_feature_bank_integration
+)
+from .enhanced_components.modular_architecture import (
+    create_modular_architecture, ValidationLevel, ErrorSeverity, ErrorCategory
+)
+from .enhanced_components.advanced_caching import (
+    AdvancedCacheManager, CacheConfig, create_advanced_cache_manager
+)
 
 # Import existing components
 from .config import UnifiedPipelineConfig, create_default_config
@@ -159,6 +171,9 @@ class EnhancedUnifiedDataDrivenPipeline:
         # Initialize existing components
         self._initialize_existing_components()
         
+        # Initialize modular architecture
+        self._initialize_modular_architecture()
+        
         # Initialize performance tracking
         self._initialize_performance_tracking()
         
@@ -225,6 +240,57 @@ class EnhancedUnifiedDataDrivenPipeline:
         )
         self.htf_generator = create_htf_interaction_generator(htf_config)
         
+        # Advanced lookback optimizer
+        lookback_config = LookbackConstraints(
+            min_lookback=5,
+            max_lookback=300,
+            step_size=5,
+            min_samples=20,
+            max_samples=1000,
+            use_bayesian_optimization=True,
+            n_bootstrap_samples=100,
+            cv_folds=5,
+            regularization_strength=0.1,
+            preferred_min=10,
+            preferred_max=50,
+            enable_vectorbt=True,
+            enable_parallel=True,
+            max_workers=4,
+            memory_efficient=True
+        )
+        self.advanced_lookback_optimizer = create_advanced_lookback_optimizer(lookback_config)
+        
+        # Feature bank integration
+        feature_bank_config = FeatureBankConfig(
+            enable_feature_bank=True,
+            enable_caching=True,
+            enable_multi_horizon=True,
+            enable_memory_optimization=True,
+            max_features=200,
+            min_variance=1e-8,
+            max_correlation_threshold=0.95,
+            cache_force_refresh=False,
+            memory_efficient=True,
+            enable_parallel_processing=True,
+            max_workers=4
+        )
+        self.feature_bank_integration = create_feature_bank_integration(feature_bank_config)
+        
+        # Advanced cache manager
+        cache_config = CacheConfig(
+            enable_memory_cache=True,
+            enable_disk_cache=True,
+            enable_persistent_cache=True,
+            memory_cache_size_mb=100,
+            disk_cache_size_mb=1000,
+            cache_ttl_seconds=3600,
+            enable_compression=True,
+            enable_encryption=False,
+            cache_directory="./cache",
+            max_cache_entries=10000
+        )
+        self.advanced_cache_manager = create_advanced_cache_manager(cache_config)
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_existing_components(self):
@@ -259,6 +325,16 @@ class EnhancedUnifiedDataDrivenPipeline:
         self._initialize_matrix_components()
         
         tprint_success("✅ Existing components initialized")
+    
+    def _initialize_modular_architecture(self):
+        """Initialize modular architecture components."""
+        tprint_debug("Initializing modular architecture components")
+        
+        # Create modular architecture components
+        (self.input_validator, self.error_handler, self.performance_monitor, 
+         self.memory_manager, self.hardware_accelerator) = create_modular_architecture("EnhancedUnifiedPipeline")
+        
+        tprint_success("✅ Modular architecture components initialized")
     
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT components."""
@@ -536,13 +612,62 @@ class EnhancedUnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set."""
-        tprint_debug("Generating selected features")
+        """Generate features for the selected feature set using Feature Bank integration."""
+        tprint_debug("Generating selected features using Feature Bank integration")
         
         try:
             if selection_result is None or not selection_result.success:
-                return pd.DataFrame(index=data.index)
+                tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
+                # Use Feature Bank integration for comprehensive feature generation
+                feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
+                    data, force_refresh=False
+                )
+                
+                if feature_generation_result.success:
+                    tprint_success(f"✅ Generated {feature_generation_result.n_features_generated} features using Feature Bank")
+                    return feature_generation_result.feature_data
+                else:
+                    tprint_error(f"❌ Feature Bank generation failed: {feature_generation_result.error_message}")
+                    return pd.DataFrame(index=data.index)
             
+            # Use Feature Bank integration for selected features
+            tprint_debug("🔧 Using Feature Bank integration for selected features")
+            
+            # Generate comprehensive features first
+            feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
+                data, force_refresh=False
+            )
+            
+            if not feature_generation_result.success:
+                tprint_warning("⚠️ Feature Bank generation failed, falling back to individual feature generation")
+                return self._generate_fallback_features(data, selection_result)
+            
+            # Filter to selected features
+            selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
+            available_features = feature_generation_result.feature_data.columns
+            
+            # Find matching features
+            matching_features = [f for f in selected_feature_names if f in available_features]
+            
+            if matching_features:
+                features_df = feature_generation_result.feature_data[matching_features]
+                tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
+            else:
+                tprint_warning("⚠️ No matching features found, using all generated features")
+                features_df = feature_generation_result.feature_data
+            
+            return features_df
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature generation failed: {e}")
+            self.error_handler.handle_error(e, ErrorCategory.COMPUTATION, ErrorSeverity.HIGH)
+            return pd.DataFrame(index=data.index)
+    
+    def _generate_fallback_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
+        """Generate fallback features when Feature Bank is not available."""
+        tprint_debug("Generating fallback features")
+        
+        try:
             # Create feature DataFrame
             features_df = pd.DataFrame(index=data.index)
             
@@ -556,11 +681,11 @@ class EnhancedUnifiedDataDrivenPipeline:
                 if feature_series is not None:
                     features_df[feature_name] = feature_series
             
-            tprint_success(f"✅ Generated {len(features_df.columns)} features")
+            tprint_success(f"✅ Generated {len(features_df.columns)} fallback features")
             return features_df
             
         except Exception as e:
-            tprint_error(f"Feature generation failed: {e}")
+            tprint_error(f"❌ Fallback feature generation failed: {e}")
             return pd.DataFrame(index=data.index)
     
     def _generate_single_feature(self, data: pd.DataFrame, feature_name: str, category: str) -> Optional[pd.Series]:
@@ -701,31 +826,69 @@ class EnhancedUnifiedDataDrivenPipeline:
     
     def _advanced_lookback_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                       features_df: pd.DataFrame) -> Dict[str, int]:
-        """Advanced lookback optimization."""
-        tprint_debug("Starting advanced lookback optimization")
+        """Advanced lookback optimization using the sophisticated algorithms from FeatureLookbackOptimizationComponent."""
+        tprint_debug("Starting advanced lookback optimization with sophisticated algorithms")
         
         try:
-            # Use VectorBT optimizer for lookback analysis
-            lookback_periods = [5, 10, 15, 20, 25, 30, 40, 50]
-            feature_names = list(features_df.columns)
+            # Prepare data for optimization
+            if targets is None:
+                # Create synthetic targets if none provided
+                if 'close' in data.columns:
+                    targets = data['close'].pct_change().dropna()
+                else:
+                    tprint_warning("⚠️ No targets provided and no close price available")
+                    return {}
             
-            lookback_analysis = self.vectorbt_optimizer.optimize_lookback_analysis(
-                data, feature_names, lookback_periods
+            # Align data and targets
+            aligned_data = data.copy()
+            aligned_targets = targets.reindex(data.index)
+            
+            # Get feature names
+            feature_names = list(features_df.columns)
+            if not feature_names:
+                tprint_warning("⚠️ No features available for lookback optimization")
+                return {}
+            
+            # Use advanced lookback optimizer
+            tprint_debug(f"🔧 Optimizing {len(feature_names)} features using advanced algorithms")
+            
+            # Configure optimization
+            lookback_range = (5, 100)  # Extended range for better optimization
+            method = OptimizationMethod.COARSE_TO_REFINE  # Use sophisticated method
+            
+            # Run parallel batch optimization
+            optimization_results = self.advanced_lookback_optimizer.optimize_features_parallel_batch(
+                data=aligned_data,
+                feature_names=feature_names,
+                target_column='target',  # We'll add this column
+                lookback_range=lookback_range,
+                method=method,
+                max_workers=4,
+                batch_size=10
             )
             
-            # Select optimal lookback for each feature
+            # Extract optimized lookbacks
             optimized_lookbacks = {}
-            for feature_name, analysis in lookback_analysis.items():
-                if analysis:
-                    # Find best lookback period
-                    best_lookback = max(analysis.keys(), key=lambda k: analysis[k].get('stability', 0))
-                    optimized_lookbacks[feature_name] = best_lookback
+            successful_optimizations = 0
             
-            tprint_success(f"✅ Optimized lookbacks for {len(optimized_lookbacks)} features")
+            for result in optimization_results:
+                if result.success:
+                    optimized_lookbacks[result.feature_name] = result.best_lookback
+                    successful_optimizations += 1
+                    tprint_debug(f"✅ {result.feature_name}: lookback={result.best_lookback}, score={result.best_score:.4f}")
+                else:
+                    tprint_warning(f"⚠️ Failed to optimize {result.feature_name}: {result.error_message}")
+            
+            # Update performance stats
+            self.performance_stats['lookback_optimizations'] = successful_optimizations
+            
+            tprint_success(f"✅ Advanced lookback optimization completed: {successful_optimizations}/{len(feature_names)} features optimized")
+            
             return optimized_lookbacks
             
         except Exception as e:
-            tprint_error(f"Advanced lookback optimization failed: {e}")
+            tprint_error(f"❌ Advanced lookback optimization failed: {e}")
+            self.error_handler.handle_error(e, ErrorCategory.COMPUTATION, ErrorSeverity.HIGH)
             return {}
     
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
@@ -831,6 +994,18 @@ class EnhancedUnifiedDataDrivenPipeline:
         stats['feature_selector'] = self.feature_selector.get_performance_stats()
         stats['htf_generator'] = self.htf_generator.get_performance_stats()
         
+        # Add new component stats
+        stats['advanced_lookback_optimizer'] = self.advanced_lookback_optimizer.get_performance_stats()
+        stats['feature_bank_integration'] = self.feature_bank_integration.get_performance_stats()
+        stats['advanced_cache_manager'] = self.advanced_cache_manager.get_stats()
+        
+        # Add modular architecture stats
+        stats['input_validator'] = self.input_validator.get_validation_stats()
+        stats['error_handler'] = self.error_handler.get_error_stats()
+        stats['performance_monitor'] = self.performance_monitor.get_performance_stats()
+        stats['memory_manager'] = self.memory_manager.get_memory_stats()
+        stats['hardware_accelerator'] = self.hardware_accelerator.get_acceleration_info()
+        
         return stats
     
     def reset_stats(self):
@@ -853,6 +1028,13 @@ class EnhancedUnifiedDataDrivenPipeline:
         self.economic_evaluator.reset_stats()
         self.feature_selector.reset_stats()
         self.htf_generator.reset_stats()
+        
+        # Reset new component stats
+        self.advanced_lookback_optimizer.reset_stats()
+        self.feature_bank_integration.reset_stats()
+        
+        # Reset modular architecture stats
+        self.performance_monitor.reset_stats()
 
 
 def create_enhanced_unified_pipeline(config: Optional[UnifiedPipelineConfig] = None) -> EnhancedUnifiedDataDrivenPipeline:

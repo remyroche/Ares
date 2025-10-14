@@ -28,7 +28,9 @@ from datetime import datetime
 
 try:
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_performance, tprint_timer, tprint_exception, tprint_progress,
+        tprint_structured, tprint_with_level, tprint_batch, tprint_logged
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -39,6 +41,14 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
+    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
+    def tprint_exception(*args, **kwargs): print("EXCEPTION:", *args, **kwargs)
+    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
+    def tprint_structured(*args, **kwargs): print("STRUCTURED:", *args, **kwargs)
+    def tprint_with_level(*args, **kwargs): print("LEVEL:", *args, **kwargs)
+    def tprint_batch(*args, **kwargs): print("BATCH:", *args, **kwargs)
+    def tprint_logged(*args, **kwargs): print("LOGGED:", *args, **kwargs)
 
 # Import core components
 from .core.config import UnifiedPipelineConfig, create_default_config
@@ -246,6 +256,31 @@ except ImportError as e:
     VectorizationConfig = None
     tprint_warning(f"⚠️ VectorBT utilities not available: {e}")
 
+# Import fast failing validation
+try:
+    from src.utils.fast_failing_validation import (
+        FastFailingValidator, ValidationConfig, ValidationResult, ValidationError,
+        SilentFailureError, ValidationLevel, get_fast_failing_validator,
+        validate_dataframe_fast_fail, validate_array_fast_fail, validate_config_fast_fail,
+        fast_fail_decorator
+    )
+    FAST_FAILING_VALIDATION_AVAILABLE = True
+    tprint_success("✅ Fast failing validation utilities imported successfully")
+except ImportError as e:
+    FAST_FAILING_VALIDATION_AVAILABLE = False
+    FastFailingValidator = None
+    ValidationConfig = None
+    ValidationResult = None
+    ValidationError = Exception
+    SilentFailureError = Exception
+    ValidationLevel = None
+    get_fast_failing_validator = None
+    validate_dataframe_fast_fail = None
+    validate_array_fast_fail = None
+    validate_config_fast_fail = None
+    fast_fail_decorator = None
+    tprint_warning(f"⚠️ Fast failing validation utilities not available: {e}")
+
 # Import feature engineering roadmap utilities
 try:
     from src.feature_engineering_roadmap.interactions import (
@@ -408,9 +443,16 @@ class UnifiedDataDrivenPipeline:
         Args:
             config: Pipeline configuration (uses default if None)
         """
-        self.config = config or create_default_config()
+        tprint_info("🚀 Initializing Consolidated Unified Data-Driven Pipeline")
+        start_time = time.time()
         
-        # Initialize utility systems first
+        self.config = config or create_default_config()
+        tprint_debug(f"📊 Using configuration: {type(self.config).__name__}")
+        
+        # Initialize fast failing validation first
+        self._initialize_fast_failing_validation()
+        
+        # Initialize utility systems
         self._initialize_utility_systems()
         
         # Initialize all components
@@ -421,61 +463,76 @@ class UnifiedDataDrivenPipeline:
         self._initialize_performance_tracking()
         self._initialize_advanced_infrastructure()
         
-        tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
+        # Initialize VectorBT and vectorization managers
+        self._initialize_vectorbt_optimizers()
+        
+        # Validate initialization
+        self._validate_initialization()
+        
+        initialization_time = time.time() - start_time
+        tprint_success(f"✅ Consolidated Unified Data-Driven Pipeline initialized in {initialization_time:.3f}s")
         tprint_info(f"📊 Configuration: {self.config}")
+        
+        # Log available utilities
         if FEATURE_GENERATION_AVAILABLE:
             tprint_success("✅ Feature generation utilities integrated")
         if FEATURES_COMMON_AVAILABLE:
             tprint_success("✅ Features common utilities integrated")
+        if VECTORBT_UTILITIES_AVAILABLE:
+            tprint_success("✅ VectorBT utilities integrated")
+        if FAST_FAILING_VALIDATION_AVAILABLE:
+            tprint_success("✅ Fast failing validation integrated")
     
-    def _initialize_utility_systems(self):
-        """Initialize utility systems from feature_generation and features_common."""
-        tprint_debug("Initializing utility systems")
+    def _initialize_fast_failing_validation(self):
+        """Initialize fast failing validation system."""
+        tprint_debug("🔍 Initializing fast failing validation system")
         
-        # Initialize feature generation utilities
-        if FEATURE_GENERATION_AVAILABLE:
+        if FAST_FAILING_VALIDATION_AVAILABLE:
             try:
-                # Initialize utility container
-                self.utility_container = get_utility_container()
-                self.utility_config = UtilityConfig()
+                # Create validation config
+                validation_config = ValidationConfig(
+                    level=ValidationLevel.MODERATE,
+                    enable_memory_checks=True,
+                    enable_performance_checks=True,
+                    enable_data_quality_checks=True,
+                    enable_configuration_checks=True,
+                    max_memory_usage_gb=8.0,
+                    max_validation_time_seconds=30.0,
+                    enable_silent_failure_detection=True,
+                    fail_fast=True,
+                    detailed_error_messages=True,
+                    log_validation_steps=True
+                )
                 
-                # Initialize enhanced feature engineering
-                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                # Initialize validator
+                self.fast_failing_validator = get_fast_failing_validator(validation_config)
                 
-                # Initialize feature optimization
-                self.feature_optimizer = FeatureGenerationOptimizer()
-                self.feature_optimization_config = FeatureOptimizationConfig()
+                # Validate configuration
+                if self.config:
+                    self.fast_failing_validator.validate_configuration(
+                        self.config, 
+                        "pipeline_config",
+                        required_fields=['feature_selection', 'vectorbt_config'],
+                        field_types={'feature_selection': dict, 'vectorbt_config': dict}
+                    )
                 
-                # Initialize cross-timeframe analysis
-                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                tprint_success("✅ Fast failing validation system initialized")
                 
-                # Initialize fractional differentiation
-                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
-                
-                # Initialize matrix operations
-                self.enhanced_matrix_ops = EnhancedMatrixOperations()
-                
-                tprint_success("✅ Feature generation utilities initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Feature generation utilities initialization failed: {e}")
-                self.utility_container = None
-                self.enhanced_feature_engineering = None
-                self.feature_optimizer = None
-                self.cross_timeframe_pipeline = None
-                self.fractional_diff_pipeline = None
-                self.enhanced_matrix_ops = None
+                tprint_error(f"❌ Fast failing validation initialization failed: {e}")
+                self.fast_failing_validator = None
         else:
-            self.utility_container = None
-            self.enhanced_feature_engineering = None
-            self.feature_optimizer = None
-            self.cross_timeframe_pipeline = None
-            self.fractional_diff_pipeline = None
-            self.enhanced_matrix_ops = None
+            tprint_warning("⚠️ Fast failing validation not available")
+            self.fast_failing_validator = None
+    
+    def _initialize_vectorbt_optimizers(self):
+        """Initialize VectorBT optimizers and vectorization managers."""
+        tprint_debug("🔧 Initializing VectorBT optimizers and vectorization managers")
         
-        # Initialize VectorBT utilities
         if VECTORBT_UTILITIES_AVAILABLE:
             try:
-                # Initialize VectorBT Rolling Optimizer
+                # Initialize VectorBT Rolling Optimizer with enhanced configuration
+                tprint_info("🚀 Initializing VectorBTRollingOptimizer")
                 self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
                     enable_parallel=True,
@@ -485,7 +542,18 @@ class UnifiedDataDrivenPipeline:
                     enable_logging=True
                 )
                 
-                # Initialize Unified Vectorization Manager
+                # Validate VectorBT Rolling Optimizer
+                if self.fast_failing_validator:
+                    self.fast_failing_validator.validate_configuration(
+                        self.vectorbt_rolling_optimizer,
+                        "vectorbt_rolling_optimizer",
+                        required_fields=['use_vectorbt', 'enable_gpu', 'memory_efficient']
+                    )
+                
+                tprint_success("✅ VectorBTRollingOptimizer initialized and validated")
+                
+                # Initialize Unified Vectorization Manager with enhanced configuration
+                tprint_info("🚀 Initializing UnifiedVectorizationManager")
                 vectorization_config = VectorizationConfig(
                     enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
                     enable_parallel=True,
@@ -501,14 +569,119 @@ class UnifiedDataDrivenPipeline:
                     enable_logging=True
                 )
                 
-                tprint_success("✅ VectorBT utilities initialized")
+                # Validate Unified Vectorization Manager
+                if self.fast_failing_validator:
+                    self.fast_failing_validator.validate_configuration(
+                        self.unified_vectorization_manager,
+                        "unified_vectorization_manager",
+                        required_fields=['config', 'fast_fail']
+                    )
+                
+                tprint_success("✅ UnifiedVectorizationManager initialized and validated")
+                
             except Exception as e:
-                tprint_warning(f"⚠️ VectorBT utilities initialization failed: {e}")
+                tprint_error(f"❌ VectorBT optimizers initialization failed: {e}")
                 self.vectorbt_rolling_optimizer = None
                 self.unified_vectorization_manager = None
         else:
+            tprint_warning("⚠️ VectorBT utilities not available")
             self.vectorbt_rolling_optimizer = None
             self.unified_vectorization_manager = None
+    
+    def _validate_initialization(self):
+        """Validate that all critical components are properly initialized."""
+        tprint_debug("🔍 Validating pipeline initialization")
+        
+        validation_errors = []
+        
+        # Check critical components
+        if not hasattr(self, 'config') or self.config is None:
+            validation_errors.append("Configuration not initialized")
+        
+        if not hasattr(self, 'fast_failing_validator') or self.fast_failing_validator is None:
+            if FAST_FAILING_VALIDATION_AVAILABLE:
+                validation_errors.append("Fast failing validator not initialized")
+        
+        if not hasattr(self, 'vectorbt_rolling_optimizer') or self.vectorbt_rolling_optimizer is None:
+            if VECTORBT_UTILITIES_AVAILABLE:
+                validation_errors.append("VectorBT Rolling Optimizer not initialized")
+        
+        if not hasattr(self, 'unified_vectorization_manager') or self.unified_vectorization_manager is None:
+            if VECTORBT_UTILITIES_AVAILABLE:
+                validation_errors.append("Unified Vectorization Manager not initialized")
+        
+        if validation_errors:
+            error_msg = f"Pipeline initialization validation failed: {'; '.join(validation_errors)}"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_failing_validator:
+                raise ValidationError(error_msg, "initialization_validation", {"errors": validation_errors})
+            else:
+                raise Exception(error_msg)
+        else:
+            tprint_success("✅ Pipeline initialization validation passed")
+    
+    def _initialize_utility_systems(self):
+        """Initialize utility systems from feature_generation and features_common."""
+        tprint_debug("🔧 Initializing utility systems")
+        
+        # Initialize feature generation utilities
+        if FEATURE_GENERATION_AVAILABLE:
+            try:
+                tprint_info("🚀 Initializing feature generation utilities")
+                
+                # Initialize utility container
+                tprint_debug("📦 Initializing utility container")
+                self.utility_container = get_utility_container()
+                self.utility_config = UtilityConfig()
+                
+                # Validate utility container
+                if self.fast_failing_validator:
+                    self.fast_failing_validator.validate_configuration(
+                        self.utility_container, "utility_container"
+                    )
+                
+                # Initialize enhanced feature engineering
+                tprint_debug("🔬 Initializing enhanced feature engineering")
+                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                
+                # Initialize feature optimization
+                tprint_debug("⚡ Initializing feature optimization")
+                self.feature_optimizer = FeatureGenerationOptimizer()
+                self.feature_optimization_config = FeatureOptimizationConfig()
+                
+                # Initialize cross-timeframe analysis
+                tprint_debug("📊 Initializing cross-timeframe analysis")
+                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                
+                # Initialize fractional differentiation
+                tprint_debug("🔢 Initializing fractional differentiation")
+                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                
+                # Initialize matrix operations
+                tprint_debug("🧮 Initializing enhanced matrix operations")
+                self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                
+                tprint_success("✅ Feature generation utilities initialized and validated")
+                
+            except Exception as e:
+                tprint_error(f"❌ Feature generation utilities initialization failed: {e}")
+                tprint_exception(e, "Feature generation utilities initialization")
+                self.utility_container = None
+                self.enhanced_feature_engineering = None
+                self.feature_optimizer = None
+                self.cross_timeframe_pipeline = None
+                self.fractional_diff_pipeline = None
+                self.enhanced_matrix_ops = None
+        else:
+            tprint_warning("⚠️ Feature generation utilities not available")
+            self.utility_container = None
+            self.enhanced_feature_engineering = None
+            self.feature_optimizer = None
+            self.cross_timeframe_pipeline = None
+            self.fractional_diff_pipeline = None
+            self.enhanced_matrix_ops = None
+        
+        # VectorBT utilities are now initialized in _initialize_vectorbt_optimizers()
 
         # Initialize features common utilities
         if FEATURES_COMMON_AVAILABLE:

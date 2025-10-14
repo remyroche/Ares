@@ -608,8 +608,8 @@ class UnifiedDataDrivenPipeline:
     
     def _optimize_periods(self, data: pd.DataFrame, 
                          characteristics: Any) -> Dict[str, Any]:
-        """Optimize periods for different feature types using data-driven approach."""
-        tprint_debug("Starting data-driven period optimization")
+        """Optimize periods for different feature types using advanced data-driven approach."""
+        tprint_debug("Starting advanced data-driven period optimization")
         
         # Configuration for period optimization
         timeframe_period_ranges = {
@@ -622,38 +622,113 @@ class UnifiedDataDrivenPipeline:
         optimized_periods = {}
         confidence_scores = {}
         optimization_methods = {}
+        pattern_analysis_results = {}
+        
+        # Generate advanced features for pattern analysis
+        tprint_debug("Generating advanced features for pattern analysis...")
+        advanced_features = self._generate_advanced_features(data)
         
         # Analyze each timeframe
         for timeframe, (min_period, max_period) in timeframe_period_ranges.items():
             tprint_debug(f"Optimizing periods for {timeframe} (range: {min_period}-{max_period})")
             
+            # Validate data and parameters
+            if not self._validate_data_for_period_analysis(data, min_period, max_period):
+                tprint_error(f"❌ Data validation failed for {timeframe}, skipping...")
+                optimized_periods[timeframe] = []
+                continue
+            
+            if not self._validate_period_range(min_period, max_period):
+                tprint_error(f"❌ Period range validation failed for {timeframe}, skipping...")
+                optimized_periods[timeframe] = []
+                continue
+            
             # Statistical analysis for period selection
-            period_scores = self._analyze_periods_statistically(data, min_period, max_period)
+            period_scores = self._safe_execute_analysis(
+                self._analyze_periods_statistically, data, min_period, max_period
+            )
             
             # Economic significance evaluation
-            economic_scores = self._evaluate_economic_significance(data, period_scores, timeframe)
+            economic_scores = self._safe_execute_analysis(
+                self._evaluate_economic_significance, data, period_scores, timeframe
+            )
             
-            # Combine statistical and economic analysis
-            combined_scores = self._combine_period_scores(period_scores, economic_scores)
+            # VectorBT-optimized analysis (if available)
+            if self.rolling_optimizer:
+                vectorbt_scores = self._safe_execute_analysis(
+                    self._analyze_periods_vectorbt_optimized, data, advanced_features, min_period, max_period
+                )
+            else:
+                vectorbt_scores = {}
+            
+            # Advanced pattern-based analysis
+            pattern_scores = self._safe_execute_analysis(
+                self._analyze_periods_by_patterns, data, advanced_features, min_period, max_period
+            )
+            
+            # Volatility clustering analysis
+            volatility_scores = self._safe_execute_analysis(
+                self._analyze_volatility_clusters, data, advanced_features, min_period, max_period
+            )
+            
+            # Trend cycle analysis
+            trend_scores = self._safe_execute_analysis(
+                self._analyze_trend_cycles, data, advanced_features, min_period, max_period
+            )
+            
+            # Market regime analysis
+            regime_scores = self._safe_execute_analysis(
+                self._analyze_market_regimes, data, advanced_features, min_period, max_period
+            )
+            
+            # Volume pattern analysis
+            volume_scores = self._safe_execute_analysis(
+                self._analyze_volume_patterns, data, advanced_features, min_period, max_period
+            )
+            
+            # Seasonality analysis
+            seasonality_scores = self._safe_execute_analysis(
+                self._analyze_seasonality, data, min_period, max_period
+            )
+            
+            # Combine all analysis methods
+            combined_scores = self._combine_advanced_period_scores(
+                period_scores, economic_scores, vectorbt_scores, pattern_scores, 
+                volatility_scores, trend_scores, regime_scores, 
+                volume_scores, seasonality_scores
+            )
             
             # Select optimal periods
             optimal_periods = self._select_optimal_periods(combined_scores, max_periods=8)
             
             optimized_periods[timeframe] = optimal_periods
             confidence_scores[timeframe] = combined_scores
-            optimization_methods[timeframe] = 'statistical_economic_combined'
+            optimization_methods[timeframe] = 'advanced_multi_method_analysis'
+            
+            # Store pattern analysis results
+            pattern_analysis_results[timeframe] = {
+                'vectorbt_scores': vectorbt_scores,
+                'pattern_scores': pattern_scores,
+                'volatility_scores': volatility_scores,
+                'trend_scores': trend_scores,
+                'regime_scores': regime_scores,
+                'volume_scores': volume_scores,
+                'seasonality_scores': seasonality_scores
+            }
             
             tprint_success(f"Selected {len(optimal_periods)} optimal periods for {timeframe}")
         
         result = {
             'optimized_periods': optimized_periods,
-            'optimization_method': 'data_driven_statistical_economic',
+            'optimization_method': 'advanced_data_driven_multi_method',
             'confidence_scores': confidence_scores,
             'timeframe_ranges': timeframe_period_ranges,
-            'optimization_methods': optimization_methods
+            'optimization_methods': optimization_methods,
+            'pattern_analysis_results': pattern_analysis_results,
+            'advanced_features_generated': len(advanced_features.columns) if not advanced_features.empty else 0
         }
         
-        tprint_success("Data-driven period optimization completed")
+        tprint_success("Advanced data-driven period optimization completed")
         return result
     
     def _analyze_periods_statistically(self, data: pd.DataFrame, min_period: int, max_period: int) -> Dict[int, float]:
@@ -806,6 +881,857 @@ class UnifiedDataDrivenPipeline:
         optimal_periods = [period for period, score in sorted_periods[:max_periods] if score > 0.1]
         
         return optimal_periods
+    
+    def _generate_advanced_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate advanced features for pattern analysis."""
+        tprint_debug("Generating advanced features for pattern analysis...")
+        
+        features = pd.DataFrame(index=data.index)
+        
+        if 'close' not in data.columns:
+            tprint_warning("No 'close' column found for advanced feature generation")
+            return features
+        
+        close_prices = data['close'].dropna()
+        
+        try:
+            # Volatility features
+            returns = close_prices.pct_change().dropna()
+            features['volatility_5'] = returns.rolling(window=5).std()
+            features['volatility_10'] = returns.rolling(window=10).std()
+            features['volatility_20'] = returns.rolling(window=20).std()
+            
+            # SMA features
+            features['sma_5'] = close_prices.rolling(window=5).mean()
+            features['sma_10'] = close_prices.rolling(window=10).mean()
+            features['sma_20'] = close_prices.rolling(window=20).mean()
+            features['sma_50'] = close_prices.rolling(window=50).mean()
+            
+            # EMA features
+            features['ema_5'] = close_prices.ewm(span=5).mean()
+            features['ema_10'] = close_prices.ewm(span=10).mean()
+            features['ema_20'] = close_prices.ewm(span=20).mean()
+            
+            # Volume features (if available)
+            if 'volume' in data.columns:
+                volume = data['volume'].dropna()
+                features['volume_sma_5'] = volume.rolling(window=5).mean()
+                features['volume_sma_20'] = volume.rolling(window=20).mean()
+                features['volume_ratio'] = volume / features['volume_sma_20']
+            
+            # RSI features
+            features['rsi_14'] = self._calculate_rsi_advanced(close_prices, 14)
+            features['rsi_21'] = self._calculate_rsi_advanced(close_prices, 21)
+            
+            # Momentum features
+            features['momentum_5'] = self._calculate_momentum_advanced(close_prices, 5)
+            features['momentum_10'] = self._calculate_momentum_advanced(close_prices, 10)
+            features['momentum_20'] = self._calculate_momentum_advanced(close_prices, 20)
+            
+            tprint_success(f"Generated {len(features.columns)} advanced features")
+            
+        except Exception as e:
+            tprint_error(f"Error generating advanced features: {e}")
+        
+        return features
+    
+    def _analyze_periods_by_patterns(self, data: pd.DataFrame, features: pd.DataFrame, 
+                                   min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze periods based on pattern detection."""
+        tprint_debug("Analyzing periods by patterns...")
+        
+        pattern_scores = {}
+        
+        if features.empty:
+            tprint_warning("No features available for pattern analysis")
+            return pattern_scores
+        
+        for period in range(min_period, max_period + 1):
+            try:
+                score = 0.0
+                pattern_count = 0
+                
+                # Analyze RSI patterns
+                if 'rsi_14' in features.columns:
+                    rsi_patterns = self._detect_rsi_patterns(features['rsi_14'], period)
+                    score += rsi_patterns * 0.3
+                    pattern_count += 1
+                
+                # Analyze momentum patterns
+                if 'momentum_20' in features.columns:
+                    momentum_patterns = self._detect_momentum_patterns(features['momentum_20'], period)
+                    score += momentum_patterns * 0.3
+                    pattern_count += 1
+                
+                # Analyze SMA crossover patterns
+                if 'sma_5' in features.columns and 'sma_20' in features.columns:
+                    crossover_patterns = self._detect_crossover_patterns(
+                        features['sma_5'], features['sma_20'], period
+                    )
+                    score += crossover_patterns * 0.4
+                    pattern_count += 1
+                
+                if pattern_count > 0:
+                    pattern_scores[period] = score / pattern_count
+                else:
+                    pattern_scores[period] = 0.0
+                    
+            except Exception as e:
+                tprint_debug(f"Error analyzing patterns for period {period}: {e}")
+                pattern_scores[period] = 0.0
+        
+        return pattern_scores
+    
+    def _analyze_volatility_clusters(self, data: pd.DataFrame, features: pd.DataFrame, 
+                                   min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze volatility clustering patterns."""
+        tprint_debug("Analyzing volatility clusters...")
+        
+        volatility_scores = {}
+        
+        if features.empty or 'volatility_20' not in features.columns:
+            tprint_warning("No volatility features available for clustering analysis")
+            return volatility_scores
+        
+        volatility = features['volatility_20'].dropna()
+        
+        if len(volatility) < 20:
+            tprint_warning("Insufficient volatility data for clustering analysis")
+            return volatility_scores
+        
+        try:
+            # Calculate volatility threshold
+            vol_threshold = volatility.quantile(0.8)
+            if pd.isna(vol_threshold):
+                return volatility_scores
+            
+            # Identify volatility clusters
+            clusters = volatility > vol_threshold
+            cluster_lengths = self._find_pattern_periods(clusters)
+            
+            if not cluster_lengths:
+                return volatility_scores
+            
+            # Score periods based on how well they match cluster patterns
+            for period in range(min_period, max_period + 1):
+                # Calculate how well this period matches cluster lengths
+                period_scores = []
+                for cluster_length in cluster_lengths:
+                    if cluster_length > 0:
+                        match_score = 1.0 - abs(period - cluster_length) / max(period, cluster_length)
+                        period_scores.append(max(0, match_score))
+                
+                if period_scores:
+                    volatility_scores[period] = np.mean(period_scores)
+                else:
+                    volatility_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"Error analyzing volatility clusters: {e}")
+        
+        return volatility_scores
+    
+    def _analyze_trend_cycles(self, data: pd.DataFrame, features: pd.DataFrame, 
+                            min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze trend cycle patterns."""
+        tprint_debug("Analyzing trend cycles...")
+        
+        trend_scores = {}
+        
+        if features.empty or 'sma_20' not in features.columns:
+            tprint_warning("No SMA features available for trend cycle analysis")
+            return trend_scores
+        
+        sma_series = features['sma_20'].dropna()
+        
+        if len(sma_series) < 20:
+            tprint_warning("Insufficient SMA data for trend cycle analysis")
+            return trend_scores
+        
+        try:
+            from scipy.signal import find_peaks
+            
+            # Find peaks and troughs
+            peaks, _ = find_peaks(sma_series, distance=5)
+            troughs, _ = find_peaks(-sma_series, distance=5)
+            
+            # Calculate cycle lengths
+            all_extrema = sorted(list(peaks) + list(troughs))
+            cycle_lengths = []
+            
+            for i in range(1, len(all_extrema)):
+                cycle_length = all_extrema[i] - all_extrema[i-1]
+                if cycle_length > 0:
+                    cycle_lengths.append(cycle_length)
+            
+            if not cycle_lengths:
+                return trend_scores
+            
+            # Score periods based on cycle length matches
+            for period in range(min_period, max_period + 1):
+                period_scores = []
+                for cycle_length in cycle_lengths:
+                    if cycle_length > 0:
+                        match_score = 1.0 - abs(period - cycle_length) / max(period, cycle_length)
+                        period_scores.append(max(0, match_score))
+                
+                if period_scores:
+                    trend_scores[period] = np.mean(period_scores)
+                else:
+                    trend_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"Error analyzing trend cycles: {e}")
+        
+        return trend_scores
+    
+    def _analyze_market_regimes(self, data: pd.DataFrame, features: pd.DataFrame, 
+                              min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze market regime patterns."""
+        tprint_debug("Analyzing market regimes...")
+        
+        regime_scores = {}
+        
+        if features.empty or 'volatility_20' not in features.columns:
+            tprint_warning("No volatility features available for regime analysis")
+            return regime_scores
+        
+        volatility = features['volatility_20'].dropna()
+        
+        if len(volatility) < 20:
+            tprint_warning("Insufficient volatility data for regime analysis")
+            return regime_scores
+        
+        try:
+            # Calculate regime threshold
+            regime_threshold = volatility.quantile(0.7)
+            if pd.isna(regime_threshold):
+                return regime_scores
+            
+            # Identify regime changes
+            regime_changes = volatility > regime_threshold
+            regime_lengths = self._find_pattern_periods(regime_changes)
+            
+            if not regime_lengths:
+                return regime_scores
+            
+            # Score periods based on regime length matches
+            for period in range(min_period, max_period + 1):
+                period_scores = []
+                for regime_length in regime_lengths:
+                    if regime_length > 0:
+                        match_score = 1.0 - abs(period - regime_length) / max(period, regime_length)
+                        period_scores.append(max(0, match_score))
+                
+                if period_scores:
+                    regime_scores[period] = np.mean(period_scores)
+                else:
+                    regime_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"Error analyzing market regimes: {e}")
+        
+        return regime_scores
+    
+    def _analyze_volume_patterns(self, data: pd.DataFrame, features: pd.DataFrame, 
+                               min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze volume pattern periods."""
+        tprint_debug("Analyzing volume patterns...")
+        
+        volume_scores = {}
+        
+        if features.empty or 'volume_sma_5' not in features.columns or 'volume_sma_20' not in features.columns:
+            tprint_warning("No volume features available for pattern analysis")
+            return volume_scores
+        
+        volume_sma_5 = features['volume_sma_5'].dropna()
+        volume_sma_20 = features['volume_sma_20'].dropna()
+        
+        if len(volume_sma_5) < 10 or len(volume_sma_20) < 10:
+            tprint_warning("Insufficient volume data for pattern analysis")
+            return volume_scores
+        
+        try:
+            # Identify volume spikes
+            volume_spikes = volume_sma_5 > volume_sma_20 * 1.5
+            spike_lengths = self._find_pattern_periods(volume_spikes)
+            
+            if not spike_lengths:
+                return volume_scores
+            
+            # Score periods based on volume spike patterns
+            for period in range(min_period, max_period + 1):
+                period_scores = []
+                for spike_length in spike_lengths:
+                    if spike_length > 0:
+                        match_score = 1.0 - abs(period - spike_length) / max(period, spike_length)
+                        period_scores.append(max(0, match_score))
+                
+                if period_scores:
+                    volume_scores[period] = np.mean(period_scores)
+                else:
+                    volume_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"Error analyzing volume patterns: {e}")
+        
+        return volume_scores
+    
+    def _analyze_seasonality(self, data: pd.DataFrame, min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze seasonal patterns."""
+        tprint_debug("Analyzing seasonality...")
+        
+        seasonality_scores = {}
+        
+        if 'close' not in data.columns:
+            tprint_warning("No close prices available for seasonality analysis")
+            return seasonality_scores
+        
+        close_prices = data['close'].dropna()
+        
+        if len(close_prices) < 100:
+            tprint_warning("Insufficient data for seasonality analysis")
+            return seasonality_scores
+        
+        try:
+            # Detect timeframe
+            timeframe_minutes = self._get_timeframe_minutes(data)
+            
+            # Calculate daily and weekly periods
+            daily_period = 24 * 60 // timeframe_minutes
+            weekly_period = daily_period * 7
+            
+            # Look for seasonal patterns
+            seasonal_periods = [daily_period, weekly_period]
+            
+            for period in range(min_period, max_period + 1):
+                period_scores = []
+                
+                for seasonal_period in seasonal_periods:
+                    if seasonal_period > 0:
+                        # Check if period is close to seasonal period
+                        if abs(period - seasonal_period) <= seasonal_period * 0.1:  # Within 10%
+                            period_scores.append(1.0)
+                        else:
+                            # Calculate distance-based score
+                            distance_score = 1.0 - abs(period - seasonal_period) / max(period, seasonal_period)
+                            period_scores.append(max(0, distance_score))
+                
+                if period_scores:
+                    seasonality_scores[period] = np.mean(period_scores)
+                else:
+                    seasonality_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"Error analyzing seasonality: {e}")
+        
+        return seasonality_scores
+    
+    def _combine_advanced_period_scores(self, stat_scores: Dict[int, float], 
+                                      economic_scores: Dict[int, float],
+                                      vectorbt_scores: Dict[int, float],
+                                      pattern_scores: Dict[int, float],
+                                      volatility_scores: Dict[int, float],
+                                      trend_scores: Dict[int, float],
+                                      regime_scores: Dict[int, float],
+                                      volume_scores: Dict[int, float],
+                                      seasonality_scores: Dict[int, float]) -> Dict[int, float]:
+        """Combine all advanced period analysis scores."""
+        tprint_debug("Combining advanced period scores...")
+        
+        combined_scores = {}
+        
+        # Get all periods
+        all_periods = set()
+        for scores in [stat_scores, economic_scores, vectorbt_scores, pattern_scores, volatility_scores, 
+                      trend_scores, regime_scores, volume_scores, seasonality_scores]:
+            all_periods.update(scores.keys())
+        
+        # Weights for different analysis methods
+        weights = {
+            'statistical': 0.12,
+            'economic': 0.18,
+            'vectorbt': 0.20,
+            'pattern': 0.12,
+            'volatility': 0.12,
+            'trend': 0.12,
+            'regime': 0.08,
+            'volume': 0.03,
+            'seasonality': 0.03
+        }
+        
+        for period in all_periods:
+            weighted_score = 0.0
+            total_weight = 0.0
+            
+            # Statistical analysis
+            if period in stat_scores:
+                weighted_score += stat_scores[period] * weights['statistical']
+                total_weight += weights['statistical']
+            
+            # Economic analysis
+            if period in economic_scores:
+                weighted_score += economic_scores[period] * weights['economic']
+                total_weight += weights['economic']
+            
+            # VectorBT analysis
+            if period in vectorbt_scores:
+                weighted_score += vectorbt_scores[period] * weights['vectorbt']
+                total_weight += weights['vectorbt']
+            
+            # Pattern analysis
+            if period in pattern_scores:
+                weighted_score += pattern_scores[period] * weights['pattern']
+                total_weight += weights['pattern']
+            
+            # Volatility analysis
+            if period in volatility_scores:
+                weighted_score += volatility_scores[period] * weights['volatility']
+                total_weight += weights['volatility']
+            
+            # Trend analysis
+            if period in trend_scores:
+                weighted_score += trend_scores[period] * weights['trend']
+                total_weight += weights['trend']
+            
+            # Regime analysis
+            if period in regime_scores:
+                weighted_score += regime_scores[period] * weights['regime']
+                total_weight += weights['regime']
+            
+            # Volume analysis
+            if period in volume_scores:
+                weighted_score += volume_scores[period] * weights['volume']
+                total_weight += weights['volume']
+            
+            # Seasonality analysis
+            if period in seasonality_scores:
+                weighted_score += seasonality_scores[period] * weights['seasonality']
+                total_weight += weights['seasonality']
+            
+            # Normalize by total weight
+            if total_weight > 0:
+                combined_scores[period] = weighted_score / total_weight
+            else:
+                combined_scores[period] = 0.0
+        
+        return combined_scores
+    
+    def _find_pattern_periods(self, pattern: pd.Series) -> List[int]:
+        """Find periods in a boolean pattern."""
+        if pattern.empty or pattern.dtype != bool:
+            return []
+        
+        periods = []
+        current_length = 0
+        
+        for value in pattern:
+            if value:
+                current_length += 1
+            else:
+                if current_length > 0:
+                    periods.append(current_length)
+                    current_length = 0
+        
+        # Add final period if pattern ends with True
+        if current_length > 0:
+            periods.append(current_length)
+        
+        return periods
+    
+    def _detect_rsi_patterns(self, rsi: pd.Series, period: int) -> float:
+        """Detect RSI patterns for a given period."""
+        if rsi.empty or len(rsi) < period:
+            return 0.0
+        
+        try:
+            # Look for overbought/oversold patterns
+            overbought = (rsi > 70).rolling(window=period).sum()
+            oversold = (rsi < 30).rolling(window=period).sum()
+            
+            # Calculate pattern strength
+            pattern_strength = (overbought.mean() + oversold.mean()) / 2
+            return min(1.0, pattern_strength)
+            
+        except Exception:
+            return 0.0
+    
+    def _detect_momentum_patterns(self, momentum: pd.Series, period: int) -> float:
+        """Detect momentum patterns for a given period."""
+        if momentum.empty or len(momentum) < period:
+            return 0.0
+        
+        try:
+            # Look for momentum divergence patterns
+            momentum_ma = momentum.rolling(window=period).mean()
+            momentum_std = momentum.rolling(window=period).std()
+            
+            # Calculate pattern strength based on momentum consistency
+            pattern_strength = 1.0 - (momentum_std.mean() / abs(momentum_ma.mean())) if momentum_ma.mean() != 0 else 0.0
+            return max(0.0, min(1.0, pattern_strength))
+            
+        except Exception:
+            return 0.0
+    
+    def _detect_crossover_patterns(self, fast_ma: pd.Series, slow_ma: pd.Series, period: int) -> float:
+        """Detect crossover patterns for a given period."""
+        if fast_ma.empty or slow_ma.empty or len(fast_ma) < period or len(slow_ma) < period:
+            return 0.0
+        
+        try:
+            # Calculate crossovers
+            crossovers = (fast_ma > slow_ma).astype(int).diff()
+            crossover_count = abs(crossovers).rolling(window=period).sum()
+            
+            # Calculate pattern strength
+            pattern_strength = crossover_count.mean() / period
+            return min(1.0, pattern_strength)
+            
+        except Exception:
+            return 0.0
+    
+    def _get_timeframe_minutes(self, data: pd.DataFrame) -> int:
+        """Get timeframe in minutes from data index."""
+        if data.empty or not hasattr(data.index, 'freq'):
+            return 15  # Default to 15 minutes
+        
+        try:
+            if hasattr(data.index, 'freq') and data.index.freq:
+                freq = data.index.freq
+                if hasattr(freq, 'delta'):
+                    return int(freq.delta.total_seconds() / 60)
+                elif hasattr(freq, 'freqstr'):
+                    # Parse frequency string
+                    freq_str = str(freq.freqstr).lower()
+                    if 'min' in freq_str:
+                        return int(freq_str.replace('min', ''))
+                    elif 'h' in freq_str:
+                        return int(freq_str.replace('h', '')) * 60
+                    elif 'd' in freq_str:
+                        return int(freq_str.replace('d', '')) * 24 * 60
+            else:
+                # Try to infer from index differences
+                if len(data) > 1:
+                    time_diff = data.index[1] - data.index[0]
+                    return int(time_diff.total_seconds() / 60)
+        except Exception:
+            pass
+        
+        return 15  # Default fallback
+    
+    def get_advanced_period_analysis_stats(self) -> Dict[str, Any]:
+        """Get comprehensive statistics for advanced period analysis."""
+        stats = {
+            'vectorbt_available': self.rolling_optimizer is not None,
+            'advanced_features_available': hasattr(self, 'vectorization_manager') and self.vectorization_manager is not None,
+            'caching_enabled': hasattr(self, 'feature_cache') and self.feature_cache is not None,
+            'cache_stats': self._get_cache_stats(),
+            'performance_monitoring': hasattr(self, 'performance_monitor') and self.performance_monitor is not None
+        }
+        
+        if hasattr(self, 'performance_monitor'):
+            stats['performance_metrics'] = self.performance_monitor.get_metrics()
+        
+        return stats
+    
+    def enable_advanced_period_analysis(self, enable_vectorbt: bool = True, 
+                                      enable_caching: bool = True,
+                                      enable_monitoring: bool = True):
+        """Enable advanced period analysis features."""
+        tprint_info("Enabling advanced period analysis features...")
+        
+        if enable_vectorbt and not self.rolling_optimizer:
+            tprint_warning("VectorBT optimizer not available")
+        
+        if enable_caching and hasattr(self, 'feature_cache'):
+            self._enable_advanced_caching(True)
+        
+        if enable_monitoring and hasattr(self, 'performance_monitor'):
+            self.performance_monitor.enable_monitoring(True)
+        
+        tprint_success("Advanced period analysis features configured")
+    
+    def _validate_data_for_period_analysis(self, data: pd.DataFrame, min_period: int, max_period: int) -> bool:
+        """Validate data for period analysis."""
+        try:
+            # Check if data is empty
+            if data.empty:
+                tprint_error("❌ Data is empty")
+                return False
+            
+            # Check minimum data length
+            min_required_length = max_period * 2
+            if len(data) < min_required_length:
+                tprint_error(f"❌ Insufficient data: {len(data)} < {min_required_length} required")
+                return False
+            
+            # Check for required columns
+            if 'close' not in data.columns:
+                tprint_error("❌ Missing 'close' column")
+                return False
+            
+            # Check for valid price data
+            close_prices = data['close'].dropna()
+            if len(close_prices) < min_required_length:
+                tprint_error(f"❌ Insufficient valid price data: {len(close_prices)} < {min_required_length}")
+                return False
+            
+            # Check for reasonable price values
+            if close_prices.min() <= 0:
+                tprint_error("❌ Invalid price data: non-positive values found")
+                return False
+            
+            # Check for excessive price changes (potential data errors)
+            price_changes = close_prices.pct_change().dropna()
+            extreme_changes = abs(price_changes) > 0.5  # 50% change
+            if extreme_changes.sum() > len(price_changes) * 0.01:  # More than 1% extreme changes
+                tprint_warning("⚠️ Excessive price changes detected - data quality may be poor")
+            
+            tprint_success("✅ Data validation passed")
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ Data validation failed: {e}")
+            return False
+    
+    def _validate_period_range(self, min_period: int, max_period: int) -> bool:
+        """Validate period range parameters."""
+        try:
+            if not isinstance(min_period, int) or min_period < 1:
+                tprint_error(f"❌ Invalid min_period: {min_period}")
+                return False
+            
+            if not isinstance(max_period, int) or max_period < min_period:
+                tprint_error(f"❌ Invalid max_period: {max_period}")
+                return False
+            
+            if max_period > 1000:  # Reasonable upper limit
+                tprint_warning(f"⚠️ Large max_period: {max_period}")
+            
+            tprint_success("✅ Period range validation passed")
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ Period range validation failed: {e}")
+            return False
+    
+    def _validate_features_for_analysis(self, features: pd.DataFrame) -> bool:
+        """Validate features for analysis."""
+        try:
+            if features.empty:
+                tprint_warning("⚠️ No features available for analysis")
+                return False
+            
+            # Check for required feature types
+            required_features = ['volatility_20', 'sma_20']
+            missing_features = [f for f in required_features if f not in features.columns]
+            
+            if missing_features:
+                tprint_warning(f"⚠️ Missing recommended features: {missing_features}")
+            
+            # Check for valid feature data
+            for col in features.columns:
+                if features[col].isna().all():
+                    tprint_warning(f"⚠️ Feature {col} contains only NaN values")
+            
+            tprint_success("✅ Feature validation passed")
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature validation failed: {e}")
+            return False
+    
+    def _safe_execute_analysis(self, analysis_func, *args, **kwargs):
+        """Safely execute analysis function with error handling."""
+        try:
+            return analysis_func(*args, **kwargs)
+        except Exception as e:
+            tprint_error(f"❌ Analysis failed: {e}")
+            tprint_error(f"📊 Function: {analysis_func.__name__}")
+            tprint_error(f"📊 Error type: {type(e).__name__}")
+            return {}
+    
+    def _analyze_periods_vectorbt_optimized(self, data: pd.DataFrame, features: pd.DataFrame, 
+                                          min_period: int, max_period: int) -> Dict[int, float]:
+        """Analyze periods using VectorBT-optimized methods."""
+        tprint_debug("Analyzing periods with VectorBT optimization...")
+        
+        vectorbt_scores = {}
+        
+        if not self.rolling_optimizer or features.empty:
+            tprint_warning("VectorBT optimizer not available, using fallback methods")
+            return self._analyze_periods_statistically(data, min_period, max_period)
+        
+        try:
+            # Use VectorBT for efficient rolling calculations
+            for period in range(min_period, max_period + 1):
+                try:
+                    period_score = 0.0
+                    feature_count = 0
+                    
+                    # Analyze volatility features with VectorBT
+                    if 'volatility_20' in features.columns:
+                        vol_score = self._analyze_volatility_vectorbt(features['volatility_20'], period)
+                        period_score += vol_score * 0.3
+                        feature_count += 1
+                    
+                    # Analyze SMA features with VectorBT
+                    if 'sma_20' in features.columns:
+                        sma_score = self._analyze_sma_vectorbt(features['sma_20'], period)
+                        period_score += sma_score * 0.3
+                        feature_count += 1
+                    
+                    # Analyze RSI features with VectorBT
+                    if 'rsi_14' in features.columns:
+                        rsi_score = self._analyze_rsi_vectorbt(features['rsi_14'], period)
+                        period_score += rsi_score * 0.2
+                        feature_count += 1
+                    
+                    # Analyze momentum features with VectorBT
+                    if 'momentum_20' in features.columns:
+                        momentum_score = self._analyze_momentum_vectorbt(features['momentum_20'], period)
+                        period_score += momentum_score * 0.2
+                        feature_count += 1
+                    
+                    if feature_count > 0:
+                        vectorbt_scores[period] = period_score / feature_count
+                    else:
+                        vectorbt_scores[period] = 0.0
+                        
+                except Exception as e:
+                    tprint_debug(f"Error in VectorBT analysis for period {period}: {e}")
+                    vectorbt_scores[period] = 0.0
+                    
+        except Exception as e:
+            tprint_error(f"VectorBT period analysis failed: {e}")
+            return self._analyze_periods_statistically(data, min_period, max_period)
+        
+        return vectorbt_scores
+    
+    def _analyze_volatility_vectorbt(self, volatility: pd.Series, period: int) -> float:
+        """Analyze volatility patterns using VectorBT."""
+        if volatility.empty or len(volatility) < period:
+            return 0.0
+        
+        try:
+            # Use VectorBT rolling operations
+            vol_ma = self.rolling_optimizer.rolling_mean(volatility, window=period)
+            vol_std = self.rolling_optimizer.rolling_std(volatility, window=period)
+            
+            # Calculate volatility clustering score
+            vol_threshold = volatility.quantile(0.8)
+            clusters = volatility > vol_threshold
+            cluster_lengths = self._find_pattern_periods(clusters)
+            
+            if cluster_lengths:
+                # Score based on how well period matches cluster patterns
+                period_scores = []
+                for cluster_length in cluster_lengths:
+                    if cluster_length > 0:
+                        match_score = 1.0 - abs(period - cluster_length) / max(period, cluster_length)
+                        period_scores.append(max(0, match_score))
+                
+                return np.mean(period_scores) if period_scores else 0.0
+            
+            return 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _analyze_sma_vectorbt(self, sma: pd.Series, period: int) -> float:
+        """Analyze SMA patterns using VectorBT."""
+        if sma.empty or len(sma) < period:
+            return 0.0
+        
+        try:
+            from scipy.signal import find_peaks
+            
+            # Use VectorBT for efficient peak detection
+            peaks, _ = find_peaks(sma, distance=5)
+            troughs, _ = find_peaks(-sma, distance=5)
+            
+            # Calculate cycle lengths
+            all_extrema = sorted(list(peaks) + list(troughs))
+            cycle_lengths = []
+            
+            for i in range(1, len(all_extrema)):
+                cycle_length = all_extrema[i] - all_extrema[i-1]
+                if cycle_length > 0:
+                    cycle_lengths.append(cycle_length)
+            
+            if cycle_lengths:
+                # Score based on cycle length matches
+                period_scores = []
+                for cycle_length in cycle_lengths:
+                    if cycle_length > 0:
+                        match_score = 1.0 - abs(period - cycle_length) / max(period, cycle_length)
+                        period_scores.append(max(0, match_score))
+                
+                return np.mean(period_scores) if period_scores else 0.0
+            
+            return 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _analyze_rsi_vectorbt(self, rsi: pd.Series, period: int) -> float:
+        """Analyze RSI patterns using VectorBT."""
+        if rsi.empty or len(rsi) < period:
+            return 0.0
+        
+        try:
+            # Use VectorBT for efficient rolling calculations
+            overbought = (rsi > 70).rolling(window=period).sum()
+            oversold = (rsi < 30).rolling(window=period).sum()
+            
+            # Calculate pattern strength
+            pattern_strength = (overbought.mean() + oversold.mean()) / 2
+            return min(1.0, pattern_strength)
+            
+        except Exception:
+            return 0.0
+    
+    def _analyze_momentum_vectorbt(self, momentum: pd.Series, period: int) -> float:
+        """Analyze momentum patterns using VectorBT."""
+        if momentum.empty or len(momentum) < period:
+            return 0.0
+        
+        try:
+            # Use VectorBT for efficient rolling calculations
+            momentum_ma = self.rolling_optimizer.rolling_mean(momentum, window=period)
+            momentum_std = self.rolling_optimizer.rolling_std(momentum, window=period)
+            
+            # Calculate pattern strength based on momentum consistency
+            if momentum_ma.mean() != 0:
+                pattern_strength = 1.0 - (momentum_std.mean() / abs(momentum_ma.mean()))
+                return max(0.0, min(1.0, pattern_strength))
+            
+            return 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _enable_advanced_caching(self, enabled: bool = True, max_size: int = 100):
+        """Enable or disable advanced caching."""
+        if hasattr(self, 'feature_cache') and self.feature_cache:
+            self.feature_cache.enable_caching(enabled)
+            if enabled:
+                self.feature_cache.set_max_size(max_size)
+            tprint_success(f"Advanced caching {'enabled' if enabled else 'disabled'}")
+        else:
+            tprint_warning("Feature cache not available")
+    
+    def _get_cache_stats(self) -> Dict[str, Any]:
+        """Get comprehensive cache statistics."""
+        if hasattr(self, 'cache_metrics'):
+            return self.cache_metrics.copy()
+        return {'hits': 0, 'misses': 0, 'writes': 0, 'force_refreshes': 0}
+    
+    def _reset_cache_stats(self):
+        """Reset cache statistics."""
+        if hasattr(self, 'cache_metrics'):
+            self.cache_metrics = {'hits': 0, 'misses': 0, 'writes': 0, 'force_refreshes': 0}
+            tprint_success("Cache statistics reset")
     
     def _optimize_feature_lookback(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                   characteristics: Any) -> Dict[str, Any]:

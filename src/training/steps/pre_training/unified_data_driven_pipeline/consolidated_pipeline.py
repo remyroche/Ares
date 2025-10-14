@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import logging
 import time
 from pathlib import Path
+from datetime import datetime
 
 try:
     from src.utils.tprint import (
@@ -585,8 +586,21 @@ class UnifiedDataDrivenPipeline:
             component_name="UnifiedDataDrivenPipeline"
         )
         
-        # Advanced data loading
-        self.advanced_data_loader = AdvancedDataLoader(logger=self.logger)
+        # Advanced data loading with enhanced utilities
+        data_loader_config = {
+            'klines_storage': {
+                'base_dir': 'historical_data',
+                'compression': 'zstd',
+                'compression_level': 3,
+                'enable_metadata': True,
+                'enable_validation': True,
+                'max_file_size_mb': 100
+            }
+        }
+        self.advanced_data_loader = AdvancedDataLoader(
+            logger=self.logger, 
+            config=data_loader_config
+        )
         
         # Advanced artifact management
         self.advanced_artifact_manager = AdvancedArtifactManager(
@@ -2346,6 +2360,99 @@ class UnifiedDataDrivenPipeline:
             warnings=[]
         )
     
+    async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str, 
+                               interval: str, batch_id: Optional[str] = None,
+                               metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Store klines data using the enhanced data loader.
+        
+        Args:
+            data: Klines DataFrame with OHLCV data
+            symbol: Trading symbol (e.g., "ETHUSDT")
+            exchange: Exchange name (e.g., "binance")
+            interval: Data interval (e.g., "1m")
+            batch_id: Optional batch identifier
+            metadata: Additional metadata to store
+            
+        Returns:
+            True if storage was successful, False otherwise
+        """
+        try:
+            tprint_info(f"📦 Storing klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.store_klines_data(
+                data, symbol, exchange, interval, batch_id, metadata
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to store klines data: {e}")
+            return False
+
+    async def load_klines_data(self, symbol: str, exchange: str, interval: str,
+                              start_time: Optional[datetime] = None,
+                              end_time: Optional[datetime] = None,
+                              batch_id: Optional[str] = None) -> pd.DataFrame:
+        """
+        Load klines data using the enhanced data loader.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            batch_id: Optional specific batch to load
+            
+        Returns:
+            DataFrame containing klines data
+        """
+        try:
+            tprint_info(f"📥 Loading klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.load_klines_data(
+                symbol, exchange, interval, start_time, end_time, batch_id
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to load klines data: {e}")
+            return pd.DataFrame()
+
+    def get_klines_storage_stats(self) -> Dict[str, Any]:
+        """Get klines storage statistics."""
+        try:
+            return self.advanced_data_loader.get_klines_storage_stats()
+        except Exception as e:
+            tprint_error(f"❌ Failed to get storage stats: {e}")
+            return {"error": str(e)}
+
+    def list_available_klines_data(self) -> List[Dict[str, Any]]:
+        """List all available klines data."""
+        try:
+            return self.advanced_data_loader.list_available_klines_data()
+        except Exception as e:
+            tprint_error(f"❌ Failed to list available data: {e}")
+            return []
+
+    async def update_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str,
+                                interval: str, append_mode: bool = True) -> bool:
+        """
+        Update existing klines data.
+        
+        Args:
+            data: New klines data
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            append_mode: If True, append to existing data; if False, replace
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            tprint_info(f"🔄 Updating klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.update_klines_data(
+                data, symbol, exchange, interval, append_mode
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to update klines data: {e}")
+            return False
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()

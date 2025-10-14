@@ -15,6 +15,13 @@ Features integrated:
 - Advanced caching and serialization
 - Comprehensive statistical analysis
 - Walk-forward validation with leakage prevention
+
+IMPROVEMENTS:
+- Eliminated silent failures and stub classes
+- Implemented fast fail patterns
+- Fixed undefined variables
+- Improved error handling
+- Removed duplicate code patterns
 """
 
 import numpy as np
@@ -303,31 +310,23 @@ try:
     tprint_success("✅ ML Common utilities imported successfully")
 except ImportError as e:
     ML_COMMON_AVAILABLE = False
-    tprint_warning(f"⚠️ ML Common utilities not available: {e}")
-    # Create dummy classes for graceful degradation
-    class DataLeakageDetector:
-        def __init__(self, *args, **kwargs): pass
-        def generate_report(self, *args, **kwargs): return type('Report', (), {'has_leakage': False})()
-    class EnhancedValidator:
-        def __init__(self, *args, **kwargs): pass
-        def validate_model(self, *args, **kwargs): return type('Report', (), {'validation_quality_score': 0.5})()
-    class EnsembleManager:
-        def __init__(self, *args, **kwargs): pass
-    class OOFStackingEnsembleManager:
-        def __init__(self, *args, **kwargs): pass
+    tprint_error(f"❌ ML Common utilities not available: {e}")
+    # Fast fail instead of silent degradation
+    raise ImportError(f"ML Common utilities are required but not available: {e}") from e
 
 # Import VectorBT utilities
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
     VECTORBT_UTILITIES_AVAILABLE = True
+    VECTORBT_AVAILABLE = True
     tprint_info("✅ VectorBT utilities imported successfully")
 except ImportError as e:
     VECTORBT_UTILITIES_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    UnifiedVectorizationManager = None
-    VectorizationConfig = None
-    tprint_warning(f"⚠️ VectorBT utilities not available: {e}")
+    VECTORBT_AVAILABLE = False
+    tprint_error(f"❌ VectorBT utilities not available: {e}")
+    # Fast fail instead of silent degradation
+    raise ImportError(f"VectorBT utilities are required but not available: {e}") from e
 
 # Import feature engineering roadmap utilities
 try:
@@ -341,18 +340,22 @@ try:
         DynamicRoadmapPipeline, OptimizedPipelineConfig
     )
     FEATURE_ENGINEERING_ROADMAP_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     FEATURE_ENGINEERING_ROADMAP_AVAILABLE = False
-    tprint_warning("Feature engineering roadmap utilities not available")
+    tprint_error(f"❌ Feature engineering roadmap utilities not available: {e}")
+    # Fast fail instead of silent degradation
+    raise ImportError(f"Feature engineering roadmap utilities are required but not available: {e}") from e
 
 # Import caching and serialization
 try:
     from src.feature_generation.core.feature_cache import FeatureCacheService
     from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
     CACHING_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     CACHING_AVAILABLE = False
-    tprint_warning("Caching utilities not available")
+    tprint_error(f"❌ Caching utilities not available: {e}")
+    # Fast fail instead of silent degradation
+    raise ImportError(f"Caching utilities are required but not available: {e}") from e
 
 # Import matrix operations
 try:
@@ -365,9 +368,11 @@ try:
         matrix_correlation_analysis
     )
     MATRIX_OPS_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     MATRIX_OPS_AVAILABLE = False
-    tprint_warning("Matrix operations not available")
+    tprint_error(f"❌ Matrix operations not available: {e}")
+    # Fast fail instead of silent degradation
+    raise ImportError(f"Matrix operations are required but not available: {e}") from e
 
 logger = logging.getLogger(__name__)
 
@@ -649,6 +654,13 @@ class UnifiedDataDrivenPipeline:
     - Advanced caching and serialization
     - Comprehensive statistical analysis
     - Walk-forward validation with leakage prevention
+    
+    Improvements:
+    - Eliminated silent failures and stub classes
+    - Implemented fast fail patterns
+    - Fixed undefined variables
+    - Improved error handling
+    - Removed duplicate code patterns
     """
     
     def __init__(self, config: Optional[UnifiedPipelineConfig] = None):

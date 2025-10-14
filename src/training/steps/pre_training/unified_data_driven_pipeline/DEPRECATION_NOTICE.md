@@ -1,93 +1,58 @@
 # Deprecation Notice
 
-## ⚠️ **IMPORTANT: Files Marked for Deprecation**
+## Consolidated Pipeline Deprecated
 
-The following files are **deprecated** and will be removed in future versions. Please migrate to the consolidated implementation.
+The `consolidated_pipeline.py` file has been deprecated and replaced with a cleaner, more maintainable implementation.
 
-## Deprecated Files
+### What Changed
 
-### Core Pipeline Files
-- `core/unified_pipeline.py` → **Use `consolidated_pipeline.py`**
-- `core/enhanced_unified_pipeline.py` → **Use `consolidated_pipeline.py`**
-- `enhanced_unified_pipeline.py` → **Use `consolidated_pipeline.py`**
-- `enhanced_components/enhanced_unified_pipeline.py` → **Use `consolidated_pipeline.py`**
+1. **Removed Silent Failures**: All stub classes and silent error handling have been removed
+2. **Fast Fail Pattern**: The pipeline now fails fast instead of degrading silently
+3. **Modular Architecture**: The massive 332k character file has been broken into focused modules
+4. **Clean Error Handling**: Proper exception handling with meaningful error messages
+5. **Eliminated Redundancy**: Duplicate code patterns have been consolidated
 
-### Deprecated Result Classes
-- `FeaturePipelineResult` → **Use `ConsolidatedPipelineResult`**
-- `EnhancedFeaturePipelineResult` → **Use `ConsolidatedPipelineResult`**
+### Migration Guide
 
-### Deprecated Functions
-- `process_features()` → **Use `process_with_unified_pipeline()`**
-- `create_enhanced_unified_pipeline()` → **Use `create_unified_pipeline()`**
-
-## Migration Timeline
-
-### Phase 1: Current (Immediate)
-- ✅ Consolidated implementation available
-- ✅ Deprecated files marked
-- ✅ Migration guide provided
-- ⚠️ Deprecated files still functional but not recommended
-
-### Phase 2: Next Release
-- 🔄 Deprecated files will show warnings
-- 🔄 Legacy imports will redirect to consolidated version
-- 🔄 Documentation will focus on consolidated version
-
-### Phase 3: Future Release
-- ❌ Deprecated files will be removed
-- ❌ Legacy imports will be removed
-- ❌ Only consolidated implementation will remain
-
-## Why Consolidation?
-
-### Problems with Previous Implementation
-1. **Multiple Duplicate Classes**: 4+ different pipeline implementations
-2. **Redundant Components**: Same functionality implemented multiple times
-3. **Confusing API**: Different method signatures and result classes
-4. **Maintenance Overhead**: Changes needed in multiple places
-5. **Memory Waste**: Duplicate components loaded unnecessarily
-
-### Benefits of Consolidation
-1. **Single Source of Truth**: One implementation with all features
-2. **Unified API**: Consistent method signatures and result classes
-3. **Better Performance**: Shared resources and optimized workflow
-4. **Easier Maintenance**: Changes in one place
-5. **Enhanced Features**: All advanced features integrated
-
-## Quick Migration
-
-### Before (Deprecated)
+#### Old Usage (Deprecated)
 ```python
-# Multiple different implementations
-from .core.unified_pipeline import UnifiedDataDrivenPipeline, FeaturePipelineResult
-from .core.enhanced_unified_pipeline import EnhancedUnifiedDataDrivenPipeline, EnhancedFeaturePipelineResult
-
-pipeline1 = UnifiedDataDrivenPipeline(config)
-pipeline2 = EnhancedUnifiedDataDrivenPipeline(config)
-
-result1 = pipeline1.process(data, targets)  # FeaturePipelineResult
-result2 = pipeline2.process(data, targets)  # EnhancedFeaturePipelineResult
+from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import (
+    UnifiedDataDrivenPipeline,
+    ConsolidatedPipelineResult
+)
 ```
 
-### After (Consolidated)
+#### New Usage (Recommended)
 ```python
-# Single, unified implementation
-from .consolidated_pipeline import UnifiedDataDrivenPipeline, ConsolidatedPipelineResult
-
-pipeline = UnifiedDataDrivenPipeline(config)
-result = pipeline.process(data, targets, feature_columns, timeframe)  # ConsolidatedPipelineResult
+from src.training.steps.pre_training.unified_data_driven_pipeline import (
+    UnifiedDataDrivenPipeline,
+    ConsolidatedPipelineResult
+)
 ```
 
-## Support
+### Key Improvements
 
-- 📖 **Migration Guide**: [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md)
-- 📚 **Documentation**: Updated README and examples
-- 🆘 **Help**: Contact development team for migration assistance
+1. **No More Silent Failures**: The pipeline will now raise exceptions instead of returning empty results
+2. **Better Error Messages**: Clear, actionable error messages when things go wrong
+3. **Faster Startup**: Reduced initialization time by removing redundant components
+4. **Cleaner Code**: Focused, maintainable modules instead of one massive file
+5. **Better Testing**: Easier to test individual components
 
-## Timeline
+### Breaking Changes
 
-- **Now**: Start migrating to consolidated version
-- **Next Release**: Deprecated files will show warnings
-- **Future Release**: Deprecated files will be removed
+- Stub classes that returned empty results have been removed
+- Silent error handling has been replaced with proper exception raising
+- Some internal APIs have changed (but public APIs remain the same)
 
-**Please migrate as soon as possible to avoid future breaking changes.**
+### Timeline
+
+- **v2.0.0**: New implementation available
+- **v2.1.0**: Deprecation warnings added
+- **v3.0.0**: Old implementation will be removed
+
+### Support
+
+If you encounter issues with the new implementation, please:
+1. Check the error messages - they should be more helpful now
+2. Ensure all required dependencies are installed
+3. Report any issues with the new implementation

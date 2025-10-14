@@ -79,6 +79,39 @@ except ImportError as e:
     class Individual:
         def __init__(self, *args, **kwargs): pass
 
+# Import enhanced feature selection methods
+try:
+    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+    from src.feature_selection.vectorbt.vectorbt_regularization import VectorBTRegularizationSelector
+    from src.feature_selection.advanced.enhanced_ensemble_selector import EnhancedEnsembleAdvancedSelector
+    from src.feature_selection.advanced.enhanced_advanced_selector import EnhancedAdvancedFeatureSelector
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = True
+    tprint_info("✅ Enhanced feature selection methods imported successfully")
+except ImportError as e:
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced feature selection methods not available: {e}")
+    # Define fallback classes
+    class ImprovedMRMR:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTMRMRSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRFESelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRegularizationSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedEnsembleAdvancedSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedAdvancedFeatureSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+
 logger = logging.getLogger(__name__)
 
 
@@ -1047,6 +1080,172 @@ class MultiObjectiveFeatureSelector:
             })
         
         return summary
+    
+    def _improved_mrmr_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                n_features: int) -> List[str]:
+        """Select features using improved mRMR (70% MI + 30% Spearman)."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Improved mRMR not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🔧 Using improved mRMR selection")
+            selector = ImprovedMRMR()
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist(),
+                target_ratio=n_features / len(features.columns)
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Improved mRMR failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"Improved mRMR error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_mrmr_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized mRMR."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT mRMR not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT mRMR selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTMRMRSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT mRMR failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT mRMR error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_rfe_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                               n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized RFE."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT RFE not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT RFE selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTRFESelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT RFE failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT RFE error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_lasso_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                 n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized LASSO regularization."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT LASSO not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT LASSO selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTRegularizationSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT LASSO failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT LASSO error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _enhanced_ensemble_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                    n_features: int) -> List[str]:
+        """Select features using enhanced ensemble methods."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Enhanced ensemble not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🔧 Using enhanced ensemble selection")
+            from src.feature_selection.advanced.enhanced_config import EnhancedEnsembleConfig
+            config = EnhancedEnsembleConfig()
+            config.target_features = n_features
+            selector = EnhancedEnsembleAdvancedSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Enhanced ensemble failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"Enhanced ensemble error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _enhanced_advanced_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                    n_features: int) -> List[str]:
+        """Select features using enhanced advanced methods."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Enhanced advanced not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🔧 Using enhanced advanced selection")
+            from src.feature_selection.advanced.enhanced_config import EnhancedAdvancedConfig
+            config = EnhancedAdvancedConfig()
+            config.target_features = n_features
+            selector = EnhancedAdvancedFeatureSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Enhanced advanced failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"Enhanced advanced error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
 
 
 # Convenience functions

@@ -339,6 +339,85 @@ class UnifiedDataDrivenPipeline:
         )
         self.intelligent_feature_selector = create_intelligent_feature_selector(feature_config)
         
+        # Initialize enhanced feature selection if enabled
+        if self.config.feature_selection.enable_enhanced_methods:
+            tprint_info("🔧 Initializing enhanced feature selection methods")
+            self.enhanced_feature_selectors = {}
+            
+            # Initialize enhanced methods
+            if 'improved_mrmr' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+                    self.enhanced_feature_selectors['improved_mrmr'] = ImprovedMRMR(
+                        self.config.feature_selection.improved_mrmr_config
+                    )
+                    tprint_success("✅ Improved mRMR initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Improved mRMR initialization failed: {e}")
+            
+            if 'vectorbt_mrmr' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+                    from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+                    config = VectorBTFeatureSelectionConfig()
+                    config.target_features = self.config.feature_selection.multi_objective.max_features
+                    config.chunk_size = self.config.feature_selection.vectorbt_chunk_size
+                    self.enhanced_feature_selectors['vectorbt_mrmr'] = VectorBTMRMRSelector(config)
+                    tprint_success("✅ VectorBT mRMR initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT mRMR initialization failed: {e}")
+            
+            if 'vectorbt_rfe' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+                    from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+                    config = VectorBTFeatureSelectionConfig()
+                    config.target_features = self.config.feature_selection.multi_objective.max_features
+                    config.chunk_size = self.config.feature_selection.vectorbt_chunk_size
+                    self.enhanced_feature_selectors['vectorbt_rfe'] = VectorBTRFESelector(config)
+                    tprint_success("✅ VectorBT RFE initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT RFE initialization failed: {e}")
+            
+            if 'vectorbt_lasso' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.vectorbt.vectorbt_regularization import VectorBTRegularizationSelector
+                    from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+                    config = VectorBTFeatureSelectionConfig()
+                    config.target_features = self.config.feature_selection.multi_objective.max_features
+                    config.chunk_size = self.config.feature_selection.vectorbt_chunk_size
+                    self.enhanced_feature_selectors['vectorbt_lasso'] = VectorBTRegularizationSelector(config)
+                    tprint_success("✅ VectorBT LASSO initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT LASSO initialization failed: {e}")
+            
+            if 'enhanced_ensemble' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.advanced.enhanced_ensemble_selector import EnhancedEnsembleAdvancedSelector
+                    from src.feature_selection.advanced.enhanced_config import EnhancedEnsembleConfig
+                    config = EnhancedEnsembleConfig()
+                    config.target_features = self.config.feature_selection.multi_objective.max_features
+                    self.enhanced_feature_selectors['enhanced_ensemble'] = EnhancedEnsembleAdvancedSelector(config)
+                    tprint_success("✅ Enhanced ensemble initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced ensemble initialization failed: {e}")
+            
+            if 'enhanced_advanced' in self.config.feature_selection.enhanced_methods:
+                try:
+                    from src.feature_selection.advanced.enhanced_advanced_selector import EnhancedAdvancedFeatureSelector
+                    from src.feature_selection.advanced.enhanced_config import EnhancedAdvancedConfig
+                    config = EnhancedAdvancedConfig()
+                    config.target_features = self.config.feature_selection.multi_objective.max_features
+                    self.enhanced_feature_selectors['enhanced_advanced'] = EnhancedAdvancedFeatureSelector(config)
+                    tprint_success("✅ Enhanced advanced initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced advanced initialization failed: {e}")
+            
+            tprint_success(f"🔧 Enhanced feature selection initialized with {len(self.enhanced_feature_selectors)} methods")
+        else:
+            self.enhanced_feature_selectors = {}
+            tprint_info("🔧 Enhanced feature selection disabled")
+        
         # VectorBT optimizer
         vectorbt_config = VectorBTConfig(
             enable_vectorbt=VECTORBT_AVAILABLE,
@@ -1513,11 +1592,57 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _final_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Final feature selection using multi-objective optimization."""
+        """Final feature selection using enhanced multi-objective optimization."""
         tprint_debug("Starting final feature selection")
         
         try:
-            # Use the multi-objective feature selector
+            # Try enhanced feature selection first if available
+            if (self.config.feature_selection.enable_enhanced_methods and 
+                hasattr(self, 'enhanced_feature_selectors') and 
+                self.enhanced_feature_selectors):
+                
+                tprint_info("🔧 Using enhanced feature selection methods")
+                
+                # Try each enhanced method and collect results
+                enhanced_results = {}
+                for method_name, selector in self.enhanced_feature_selectors.items():
+                    try:
+                        tprint_debug(f"🔧 Trying {method_name}")
+                        result = selector.select_features(
+                            data.values, targets.values if targets is not None else None,
+                            feature_names=data.columns.tolist()
+                        )
+                        
+                        if result.get('success', False):
+                            enhanced_results[method_name] = result['selected_features']
+                            tprint_success(f"✅ {method_name} selected {len(result['selected_features'])} features")
+                        else:
+                            tprint_warning(f"⚠️ {method_name} failed")
+                            
+                    except Exception as e:
+                        tprint_warning(f"⚠️ {method_name} error: {e}")
+                
+                # If we have enhanced results, use ensemble approach
+                if enhanced_results:
+                    # Combine results using voting
+                    feature_votes = {}
+                    for method_features in enhanced_results.values():
+                        for feature in method_features:
+                            feature_votes[feature] = feature_votes.get(feature, 0) + 1
+                    
+                    # Sort by votes and select top features
+                    sorted_features = sorted(feature_votes.items(), key=lambda x: x[1], reverse=True)
+                    selected_features = [f[0] for f in sorted_features[:self.config.feature_selection.multi_objective.max_features]]
+                    
+                    tprint_success(f"✅ Enhanced ensemble selected {len(selected_features)} features")
+                    return type('FeatureSelectionResult', (), {
+                        'selected_features': selected_features,
+                        'objective_values': {'enhanced_ensemble': 1.0},
+                        'quality_metrics': {'enhanced_methods_used': list(enhanced_results.keys())}
+                    })()
+            
+            # Fallback to standard multi-objective feature selector
+            tprint_info("📊 Using standard multi-objective feature selection")
             selection_result = self.feature_selector.select_features(data, targets)
             
             if selection_result:

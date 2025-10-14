@@ -1,6 +1,9 @@
 """
 Unified Data-Driven Feature Pipeline
 
+⚠️  DEPRECATED: This file is deprecated and will be removed in future versions.
+    Please use the consolidated implementation in consolidated_pipeline.py
+
 Main orchestrator that coordinates all aspects of feature engineering:
 - Period optimization
 - Feature generation

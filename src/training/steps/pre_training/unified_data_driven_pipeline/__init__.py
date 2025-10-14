@@ -11,13 +11,21 @@ Key Features:
 - Data-driven approach with configurable guardrails
 - VectorBT optimization for performance
 - Comprehensive statistical analysis
+- Advanced economic evaluation
+- HTF-aware interaction generation
+- GPU optimizations
+- Advanced caching and serialization
+
+This module has been consolidated to eliminate redundancy and provide a single,
+comprehensive implementation that integrates all advanced features.
 """
 
-from .core.unified_pipeline import (
+# Import the consolidated pipeline as the main implementation
+from .consolidated_pipeline import (
     UnifiedDataDrivenPipeline,
-    FeaturePipelineResult,
+    ConsolidatedPipelineResult,
     create_unified_pipeline,
-    process_features
+    process_with_unified_pipeline
 )
 
 from .core.config import (
@@ -55,11 +63,11 @@ __version__ = "1.0.0"
 __author__ = "Ares Trading System"
 
 __all__ = [
-    # Main pipeline
+    # Main consolidated pipeline (recommended)
     'UnifiedDataDrivenPipeline',
-    'FeaturePipelineResult',
+    'ConsolidatedPipelineResult',
     'create_unified_pipeline',
-    'process_features',
+    'process_with_unified_pipeline',
     
     # Configuration
     'UnifiedPipelineConfig',

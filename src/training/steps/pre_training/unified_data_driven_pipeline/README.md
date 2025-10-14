@@ -1,6 +1,10 @@
 # Unified Data-Driven Feature Pipeline
 
-A comprehensive, data-driven feature engineering pipeline that consolidates period optimization, interaction generation, and feature selection into a single, coherent system. This pipeline addresses key challenges in time series feature engineering while preventing leakage and overfitting.
+A comprehensive, data-driven feature engineering pipeline that consolidates period optimization, interaction generation, and feature selection into a single, coherent system.
+
+## 🚀 **CONSOLIDATED VERSION**
+
+This pipeline has been **consolidated** to eliminate redundancy and provide a single, comprehensive implementation that integrates all advanced features. See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for migration instructions. This pipeline addresses key challenges in time series feature engineering while preventing leakage and overfitting.
 
 ## Key Features
 

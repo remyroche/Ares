@@ -1,6 +1,9 @@
 """
 Enhanced Unified Data-Driven Feature Pipeline
 
+⚠️  DEPRECATED: This file is deprecated and will be removed in future versions.
+    Please use the consolidated implementation in consolidated_pipeline.py
+
 This is the enhanced version that integrates all the missing functionality from individual components:
 - Enhanced economic evaluation from DataDrivenPeriodSelector
 - Intelligent feature pre-selection from DataDrivenInteractionGenerator

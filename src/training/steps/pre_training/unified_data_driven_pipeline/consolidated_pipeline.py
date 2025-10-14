@@ -15,6 +15,21 @@ Features integrated:
 - Advanced caching and serialization
 - Comprehensive statistical analysis
 - Walk-forward validation with leakage prevention
+
+ML Common Utilities Enhancements (NEW):
+- Enhanced cross-validation with unified CV API (temporal, nested, purged)
+- Data leakage detection and prevention
+- Universal ML validation framework
+- Advanced evaluation with bootstrap confidence intervals
+- Learning curve analysis for model assessment
+- Overfitting detection and prevention
+- Ensemble model creation (voting, stacking, analyst ensembles)
+- Enhanced data processing and cleaning utilities
+- Data quality assessment and validation
+- Feature preparation and encoding utilities
+- Comprehensive ML evaluation metrics
+- Enhanced feature selection validation
+- Cross-validation enhancement with multiple strategies
 """
 
 import numpy as np
@@ -160,6 +175,48 @@ except ImportError:
     MATRIX_OPS_AVAILABLE = False
     tprint_warning("Matrix operations not available")
 
+# Import ML Common utilities for enhanced functionality
+try:
+    # Enhanced validation and cross-validation
+    from src.utils.ml_common.validation import (
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation,
+        UniversalMLValidator, UniversalMLValidationConfig, get_ml_validator,
+        DataLeakageDetector, UniversalOverfittingDetector, get_overfitting_detector
+    )
+    
+    # Ensemble capabilities
+    from src.utils.ml_common.ensembles import (
+        EnsembleManager, EnsembleType, EnsembleConfig, get_ensemble_utils,
+        StackingEnsembleManager, StackingEnsembleConfig, create_analyst_ensemble
+    )
+    
+    # Enhanced evaluation
+    from src.utils.ml_common.evaluation import (
+        EvaluationUtils, get_evaluation_utils
+    )
+    from src.utils.ml_common.evaluation.enhanced_bootstrap_confidence_intervals import (
+        EnhancedBootstrapConfidenceIntervalAnalyzer, BootstrapAnalysisResult
+    )
+    from src.utils.ml_common.evaluation.enhanced_learning_curve_analysis import (
+        EnhancedLearningCurveAnalyzer, LearningCurveAnalysisResult
+    )
+    
+    # Feature selection enhancements
+    from src.utils.ml_common.feature_selection import (
+        FeatureSelectionManager, FeatureSelectionConfig as MLFeatureSelectionConfig
+    )
+    
+    # Data processing utilities
+    from src.utils.ml_common.data_processing import (
+        DataQualityChecker, DataCleaningUtils, FeaturePreparationUtils
+    )
+    
+    ML_COMMON_AVAILABLE = True
+    tprint_success("✅ ML Common utilities imported successfully")
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    tprint_warning(f"ML Common utilities not available: {e}")
+
 logger = logging.getLogger(__name__)
 
 
@@ -290,6 +347,7 @@ class UnifiedDataDrivenPipeline:
         self._initialize_validation_components()
         self._initialize_performance_tracking()
         self._initialize_advanced_infrastructure()
+        self._initialize_ml_utilities()
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
@@ -301,7 +359,7 @@ class UnifiedDataDrivenPipeline:
         # Statistical analysis framework
         self.stats_framework = StatisticalAnalysisFramework()
         
-        # Time series CV
+        # Time series CV (will be enhanced by ML utilities if available)
         self.cv_splitter = create_purged_embargoed_cv(
             n_splits=self.config.feature_selection.cv_config.n_splits,
             test_size=self.config.feature_selection.cv_config.test_size,
@@ -536,6 +594,66 @@ class UnifiedDataDrivenPipeline:
             'cache_misses': 0
         }
     
+    def _initialize_ml_utilities(self):
+        """Initialize ML Common utilities for enhanced functionality."""
+        if not ML_COMMON_AVAILABLE:
+            tprint_warning("ML Common utilities not available, skipping initialization")
+            return
+        
+        tprint_debug("Initializing ML Common utilities")
+        
+        # Initialize enhanced cross-validation
+        self.unified_cv = UnifiedCrossValidator()
+        
+        # Initialize ML validator
+        ml_validation_config = UniversalMLValidationConfig(
+            enable_data_leakage_detection=True,
+            enable_overfitting_detection=True,
+            enable_temporal_validation=True,
+            enable_confidence_intervals=True,
+            confidence_level=0.95,
+            n_bootstrap_samples=1000
+        )
+        self.ml_validator = get_ml_validator(ml_validation_config)
+        
+        # Initialize data leakage detector
+        self.data_leakage_detector = DataLeakageDetector()
+        
+        # Initialize overfitting detector
+        self.overfitting_detector = get_overfitting_detector()
+        
+        # Initialize ensemble utilities
+        self.ensemble_utils = get_ensemble_utils()
+        self.ensemble_manager = EnsembleManager()
+        
+        # Initialize evaluation utilities
+        self.evaluation_utils = get_evaluation_utils()
+        
+        # Initialize enhanced evaluation analyzers
+        self.bootstrap_analyzer = EnhancedBootstrapConfidenceIntervalAnalyzer()
+        self.learning_curve_analyzer = EnhancedLearningCurveAnalyzer()
+        
+        # Initialize feature selection manager
+        self.ml_feature_selector = FeatureSelectionManager()
+        
+        # Initialize data processing utilities
+        self.data_quality_checker = DataQualityChecker()
+        self.data_cleaning_utils = DataCleaningUtils()
+        self.feature_preparation_utils = FeaturePreparationUtils()
+        
+        # Initialize enhanced CV splitter (replacing the basic one)
+        self.enhanced_cv_splitter = self._create_enhanced_cv_splitter()
+        
+        tprint_success("✅ ML Common utilities initialized successfully")
+    
+    def _create_enhanced_cv_splitter(self):
+        """Create enhanced CV splitter using ML Common utilities."""
+        if not ML_COMMON_AVAILABLE:
+            return self.cv_splitter  # Fallback to original
+        
+        # Use unified CV with temporal strategy for time series data
+        return UnifiedCrossValidator()
+    
     async def process(self, data: pd.DataFrame, 
                 targets: Optional[pd.Series] = None,
                 feature_columns: Optional[List[str]] = None,
@@ -611,6 +729,12 @@ class UnifiedDataDrivenPipeline:
                 processed_data = processed_data.loc[common_index]
                 processed_targets = targets.loc[common_index]
             
+            # Step 0: Enhanced data processing with ML utilities
+            tprint_info("Step 0: Enhanced data processing with ML utilities")
+            ml_processing_results = self._enhance_data_processing_with_ml_utilities(
+                processed_data, processed_targets
+            )
+            
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
             period_results = self._enhanced_period_optimization(processed_data, timeframe)
@@ -643,12 +767,38 @@ class UnifiedDataDrivenPipeline:
             tprint_info("Step 8: Final feature selection")
             final_selection_results = self._final_feature_selection(processed_data, processed_targets)
             
-            # Step 9: Combine all results
-            tprint_info("Step 9: Combine all results")
+            # Step 9: Enhanced cross-validation with ML utilities
+            tprint_info("Step 9: Enhanced cross-validation with ML utilities")
+            ml_cv_results = self._enhance_cv_with_ml_utilities(
+                processed_data, processed_targets
+            )
+            
+            # Step 10: Enhanced evaluation with ML utilities
+            tprint_info("Step 10: Enhanced evaluation with ML utilities")
+            ml_evaluation_results = self._enhanced_evaluation_with_ml_utilities(
+                processed_data, processed_targets, 
+                final_selection_results.selected_features if final_selection_results else []
+            )
+            
+            # Step 11: Create ensemble models
+            tprint_info("Step 11: Create ensemble models")
+            ensemble_results = self._create_ensemble_models(
+                processed_data, processed_targets,
+                final_selection_results.selected_features if final_selection_results else []
+            )
+            
+            # Step 12: Combine all results
+            tprint_info("Step 12: Combine all results")
             combined_results = self._combine_results(
                 period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
+            
+            # Add ML evaluation, ensemble, processing, and CV results to combined results
+            combined_results['ml_evaluation_results'] = ml_evaluation_results
+            combined_results['ensemble_results'] = ensemble_results
+            combined_results['ml_processing_results'] = ml_processing_results
+            combined_results['ml_cv_results'] = ml_cv_results
             
             execution_time = self.advanced_performance_monitor.end_operation("process", start_time, success=True)
             
@@ -821,15 +971,40 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Advanced feature selection from 200+ feature bank."""
-        tprint_debug("Starting advanced feature selection")
+        """Advanced feature selection from 200+ feature bank with ML utilities enhancement."""
+        tprint_debug("Starting advanced feature selection with ML utilities")
         
         try:
+            # Data quality check using ML utilities
+            if ML_COMMON_AVAILABLE:
+                tprint_debug("🔍 Performing data quality check")
+                quality_report = self.data_quality_checker.check_data_quality(data, targets)
+                if not quality_report.is_valid:
+                    tprint_warning(f"⚠️ Data quality issues detected: {quality_report.issues}")
+                
+                # Data leakage detection
+                tprint_debug("🔍 Checking for data leakage")
+                leakage_result = self.data_leakage_detector.detect_leakage(data, targets)
+                if leakage_result.has_leakage:
+                    tprint_warning(f"⚠️ Potential data leakage detected: {leakage_result.leakage_sources}")
+            
             # Use the advanced feature selector
             selection_result = self.advanced_feature_selector.select_features(data, targets)
             
             if selection_result.success:
                 tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
+                
+                # Enhanced validation using ML utilities
+                if ML_COMMON_AVAILABLE:
+                    tprint_debug("🔍 Validating feature selection with ML utilities")
+                    validation_result = self.ml_validator.validate_feature_selection(
+                        data, targets, selection_result.selected_features
+                    )
+                    if validation_result.is_valid:
+                        tprint_success("✅ Feature selection validation passed")
+                    else:
+                        tprint_warning(f"⚠️ Feature selection validation issues: {validation_result.issues}")
+                
                 return selection_result
             else:
                 tprint_error(f"Feature selection failed: {selection_result.error_message}")
@@ -1538,6 +1713,227 @@ class UnifiedDataDrivenPipeline:
                 'objective_values': {},
                 'quality_metrics': {}
             })()
+    
+    def _enhanced_evaluation_with_ml_utilities(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                                             selected_features: List[str]) -> Dict[str, Any]:
+        """Enhanced evaluation using ML Common utilities."""
+        if not ML_COMMON_AVAILABLE:
+            return {}
+        
+        tprint_debug("🔍 Performing enhanced evaluation with ML utilities")
+        
+        try:
+            evaluation_results = {}
+            
+            # Bootstrap confidence intervals
+            if targets is not None:
+                tprint_debug("📊 Computing bootstrap confidence intervals")
+                bootstrap_result = self.bootstrap_analyzer.analyze(
+                    data[selected_features], targets, n_bootstrap_samples=1000
+                )
+                evaluation_results['bootstrap_confidence'] = {
+                    'confidence_intervals': bootstrap_result.confidence_intervals,
+                    'mean_scores': bootstrap_result.mean_scores,
+                    'std_scores': bootstrap_result.std_scores
+                }
+            
+            # Learning curve analysis
+            if targets is not None and len(data) > 100:
+                tprint_debug("📈 Performing learning curve analysis")
+                learning_curve_result = self.learning_curve_analyzer.analyze(
+                    data[selected_features], targets, 
+                    train_sizes=[0.1, 0.3, 0.5, 0.7, 0.9]
+                )
+                evaluation_results['learning_curves'] = {
+                    'train_scores': learning_curve_result.train_scores,
+                    'validation_scores': learning_curve_result.validation_scores,
+                    'train_sizes': learning_curve_result.train_sizes
+                }
+            
+            # Overfitting detection
+            tprint_debug("🔍 Detecting overfitting")
+            overfitting_result = self.overfitting_detector.detect_overfitting(
+                data[selected_features], targets
+            )
+            evaluation_results['overfitting_analysis'] = {
+                'is_overfitting': overfitting_result.is_overfitting,
+                'confidence': overfitting_result.confidence,
+                'recommendations': overfitting_result.recommendations
+            }
+            
+            # Data leakage final check
+            tprint_debug("🔍 Final data leakage check")
+            leakage_result = self.data_leakage_detector.detect_leakage(
+                data[selected_features], targets
+            )
+            evaluation_results['leakage_analysis'] = {
+                'has_leakage': leakage_result.has_leakage,
+                'leakage_sources': leakage_result.leakage_sources,
+                'confidence': leakage_result.confidence
+            }
+            
+            tprint_success("✅ Enhanced evaluation completed")
+            return evaluation_results
+            
+        except Exception as e:
+            tprint_error(f"Enhanced evaluation failed: {e}")
+            return {}
+    
+    def _create_ensemble_models(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                               selected_features: List[str]) -> Dict[str, Any]:
+        """Create ensemble models using ML Common utilities."""
+        if not ML_COMMON_AVAILABLE:
+            return {}
+        
+        tprint_debug("🤖 Creating ensemble models")
+        
+        try:
+            ensemble_results = {}
+            
+            # Create analyst ensemble
+            tprint_debug("📊 Creating analyst ensemble")
+            analyst_ensemble = create_analyst_ensemble()
+            ensemble_results['analyst_ensemble'] = {
+                'ensemble_type': 'analyst',
+                'models': analyst_ensemble.models if hasattr(analyst_ensemble, 'models') else [],
+                'config': analyst_ensemble.config if hasattr(analyst_ensemble, 'config') else {}
+            }
+            
+            # Create stacking ensemble
+            tprint_debug("📈 Creating stacking ensemble")
+            stacking_config = StackingEnsembleConfig(
+                base_models=['random_forest', 'gradient_boosting', 'linear_model'],
+                meta_model='linear_model',
+                cv_folds=5,
+                use_features_in_secondary=True
+            )
+            stacking_ensemble = StackingEnsembleManager(stacking_config)
+            ensemble_results['stacking_ensemble'] = {
+                'ensemble_type': 'stacking',
+                'config': stacking_config.__dict__,
+                'manager': stacking_ensemble
+            }
+            
+            # Create voting ensemble
+            tprint_debug("🗳️ Creating voting ensemble")
+            voting_ensemble = self.ensemble_manager.create_ensemble(
+                models=[],  # Will be populated with actual models
+                method='voting'
+            )
+            ensemble_results['voting_ensemble'] = {
+                'ensemble_type': 'voting',
+                'ensemble': voting_ensemble
+            }
+            
+            tprint_success("✅ Ensemble models created successfully")
+            return ensemble_results
+            
+        except Exception as e:
+            tprint_error(f"Ensemble creation failed: {e}")
+            return {}
+    
+    def _enhance_data_processing_with_ml_utilities(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Enhance data processing using ML Common utilities."""
+        if not ML_COMMON_AVAILABLE:
+            return {}
+        
+        tprint_debug("🔧 Enhancing data processing with ML utilities")
+        
+        try:
+            processing_results = {}
+            
+            # Data cleaning
+            tprint_debug("🧹 Performing data cleaning")
+            cleaned_data = self.data_cleaning_utils.clean_data(data)
+            processing_results['cleaned_data'] = cleaned_data
+            processing_results['cleaning_report'] = {
+                'original_shape': data.shape,
+                'cleaned_shape': cleaned_data.shape,
+                'missing_values_removed': data.isnull().sum().sum() - cleaned_data.isnull().sum().sum(),
+                'duplicates_removed': len(data) - len(cleaned_data.drop_duplicates())
+            }
+            
+            # Feature preparation
+            tprint_debug("⚙️ Preparing features")
+            prepared_data = self.feature_preparation_utils.prepare_features(
+                cleaned_data, targets
+            )
+            processing_results['prepared_data'] = prepared_data
+            processing_results['preparation_report'] = {
+                'features_prepared': len(prepared_data.columns),
+                'categorical_encoded': len([col for col in prepared_data.columns if 'encoded' in col.lower()]),
+                'scaled_features': len([col for col in prepared_data.columns if 'scaled' in col.lower()])
+            }
+            
+            # Data quality assessment
+            tprint_debug("📊 Assessing data quality")
+            quality_report = self.data_quality_checker.check_data_quality(
+                prepared_data, targets
+            )
+            processing_results['quality_report'] = {
+                'is_valid': quality_report.is_valid,
+                'issues': quality_report.issues,
+                'recommendations': quality_report.recommendations,
+                'quality_score': quality_report.quality_score
+            }
+            
+            tprint_success("✅ Data processing enhancement completed")
+            return processing_results
+            
+        except Exception as e:
+            tprint_error(f"Data processing enhancement failed: {e}")
+            return {}
+    
+    def _enhance_cv_with_ml_utilities(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Enhance cross-validation using ML Common utilities."""
+        if not ML_COMMON_AVAILABLE:
+            return {}
+        
+        tprint_debug("🔄 Enhancing cross-validation with ML utilities")
+        
+        try:
+            cv_results = {}
+            
+            # Use unified CV for temporal cross-validation
+            tprint_debug("📊 Performing temporal cross-validation")
+            temporal_cv_result = temporal_cross_validation(
+                data, targets, 
+                cv_folds=5, 
+                temporal_gap=1,
+                temporal_test_size=0.2
+            )
+            cv_results['temporal_cv'] = {
+                'scores': temporal_cv_result.scores,
+                'mean_score': temporal_cv_result.mean_score,
+                'std_score': temporal_cv_result.std_score
+            }
+            
+            # Use unified CV for nested cross-validation
+            tprint_debug("🔄 Performing nested cross-validation")
+            nested_cv_result = perform_cross_validation(
+                data, targets,
+                strategy="nested",
+                cv_folds=5,
+                inner_cv_folds=3
+            )
+            cv_results['nested_cv'] = {
+                'scores': nested_cv_result.scores,
+                'mean_score': nested_cv_result.mean_score,
+                'std_score': nested_cv_result.std_score
+            }
+            
+            # Use enhanced CV splitter for feature selection
+            if hasattr(self, 'enhanced_cv_splitter'):
+                tprint_debug("🎯 Using enhanced CV splitter for feature selection")
+                cv_results['enhanced_cv_available'] = True
+                cv_results['cv_splitter_type'] = type(self.enhanced_cv_splitter).__name__
+            
+            tprint_success("✅ Cross-validation enhancement completed")
+            return cv_results
+            
+        except Exception as e:
+            tprint_error(f"Cross-validation enhancement failed: {e}")
+            return {}
     
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 

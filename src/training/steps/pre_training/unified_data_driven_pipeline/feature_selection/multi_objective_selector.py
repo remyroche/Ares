@@ -79,6 +79,84 @@ except ImportError as e:
     class Individual:
         def __init__(self, *args, **kwargs): pass
 
+# Import enhanced feature selection methods
+try:
+    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+    from src.feature_selection.vectorbt.vectorbt_regularization import VectorBTRegularizationSelector
+    from src.feature_selection.advanced.enhanced_ensemble_selector import EnhancedEnsembleAdvancedSelector
+    from src.feature_selection.advanced.enhanced_advanced_selector import EnhancedAdvancedFeatureSelector
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = True
+    tprint_info("✅ Enhanced feature selection methods imported successfully")
+except ImportError as e:
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced feature selection methods not available: {e}")
+    # Define fallback classes
+    class ImprovedMRMR:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTMRMRSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRFESelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRegularizationSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedEnsembleAdvancedSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedAdvancedFeatureSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+
+# Import computational awareness
+try:
+    from ..core.computational_awareness import (
+        ComputationalAwarenessManager, ComputationalConstraints, 
+        create_computational_awareness_manager, get_optimal_methods_for_data
+    )
+    COMPUTATIONAL_AWARENESS_AVAILABLE = True
+    tprint_info("✅ Computational awareness framework imported successfully")
+except ImportError as e:
+    COMPUTATIONAL_AWARENESS_AVAILABLE = False
+    tprint_warning(f"⚠️ Computational awareness framework not available: {e}")
+    # Define fallback classes
+    class ComputationalAwarenessManager:
+        def __init__(self, *args, **kwargs): pass
+        def select_optimal_methods(self, *args, **kwargs): return []
+        def monitor_execution(self, *args, **kwargs): return None
+    class ComputationalConstraints:
+        def __init__(self, *args, **kwargs): pass
+    def create_computational_awareness_manager(*args, **kwargs): return ComputationalAwarenessManager()
+    def get_optimal_methods_for_data(*args, **kwargs): return []
+
+# Import financial objective alignment
+try:
+    from ..core.financial_objective_alignment import (
+        FinancialObjectiveAligner, FinancialObjectiveConfig, FinancialObjective,
+        create_financial_objective_aligner, get_financially_aligned_methods
+    )
+    FINANCIAL_ALIGNMENT_AVAILABLE = True
+    tprint_info("✅ Financial objective alignment framework imported successfully")
+except ImportError as e:
+    FINANCIAL_ALIGNMENT_AVAILABLE = False
+    tprint_warning(f"⚠️ Financial objective alignment framework not available: {e}")
+    # Define fallback classes
+    class FinancialObjectiveAligner:
+        def __init__(self, *args, **kwargs): pass
+        def calculate_method_alignment(self, *args, **kwargs): return None
+        def rank_methods_by_alignment(self, *args, **kwargs): return []
+    class FinancialObjectiveConfig:
+        def __init__(self, *args, **kwargs): pass
+    class FinancialObjective:
+        SHARPE_RATIO = "sharpe_ratio"
+        MAX_DRAWDOWN = "max_drawdown"
+    def create_financial_objective_aligner(*args, **kwargs): return FinancialObjectiveAligner()
+    def get_financially_aligned_methods(*args, **kwargs): return []
+
 logger = logging.getLogger(__name__)
 
 
@@ -535,7 +613,9 @@ class MultiObjectiveFeatureSelector:
                  min_features: int = 5,
                  use_ml_commons: bool = True,
                  use_evolutionary: bool = True,
-                 optimization_algorithm: str = "auto"):
+                 optimization_algorithm: str = "auto",
+                 enable_computational_awareness: bool = True,
+                 computational_constraints: Optional[ComputationalConstraints] = None):
         """
         Initialize enhanced multi-objective feature selector.
         
@@ -547,6 +627,8 @@ class MultiObjectiveFeatureSelector:
             use_ml_commons: Whether to use ml_commons Pareto utilities
             use_evolutionary: Whether to use evolutionary algorithms
             optimization_algorithm: Algorithm to use ("auto", "nsga2", "spea2", "ga")
+            enable_computational_awareness: Whether to use computational awareness
+            computational_constraints: Optional computational constraints
         """
         self.objectives = objectives
         self.weights = weights or {obj.name: 1.0 for obj in objectives}
@@ -555,6 +637,42 @@ class MultiObjectiveFeatureSelector:
         self.use_ml_commons = use_ml_commons and ML_COMMONS_PARETO_AVAILABLE
         self.use_evolutionary = use_evolutionary and ML_COMMONS_PARETO_AVAILABLE
         self.optimization_algorithm = optimization_algorithm
+        self.enable_computational_awareness = enable_computational_awareness and COMPUTATIONAL_AWARENESS_AVAILABLE
+        
+        # Initialize computational awareness
+        if self.enable_computational_awareness:
+            self.computational_manager = create_computational_awareness_manager(computational_constraints)
+            tprint_info("🧠 Computational awareness enabled")
+        else:
+            self.computational_manager = None
+            tprint_info("🧠 Computational awareness disabled")
+        
+        # Initialize financial objective alignment
+        if FINANCIAL_ALIGNMENT_AVAILABLE:
+            # Extract financial objectives from objective functions
+            financial_objectives = []
+            for obj in objectives:
+                if hasattr(obj, 'name'):
+                    if 'sharpe' in obj.name.lower():
+                        financial_objectives.append(FinancialObjective.SHARPE_RATIO)
+                    elif 'drawdown' in obj.name.lower():
+                        financial_objectives.append(FinancialObjective.MAX_DRAWDOWN)
+                    elif 'stability' in obj.name.lower():
+                        financial_objectives.append(FinancialObjective.STABILITY)
+                    elif 'turnover' in obj.name.lower():
+                        financial_objectives.append(FinancialObjective.TURNOVER)
+            
+            # Default objectives if none detected
+            if not financial_objectives:
+                financial_objectives = [FinancialObjective.SHARPE_RATIO, FinancialObjective.MAX_DRAWDOWN]
+            
+            self.financial_aligner = create_financial_objective_aligner(
+                FinancialObjectiveConfig(primary_objectives=financial_objectives)
+            )
+            tprint_info("💰 Financial objective alignment enabled")
+        else:
+            self.financial_aligner = None
+            tprint_info("💰 Financial objective alignment disabled")
         
         # Initialize ml_commons utilities if available
         if self.use_ml_commons:
@@ -600,7 +718,8 @@ class MultiObjectiveFeatureSelector:
     def select_features(self, features: pd.DataFrame, 
                        targets: pd.Series,
                        cv_splits: Optional[List[Any]] = None,
-                       use_evolutionary: bool = None) -> MultiObjectiveResult:
+                       use_evolutionary: bool = None,
+                       time_constraint: Optional[float] = None) -> MultiObjectiveResult:
         """
         Select features using enhanced multi-objective optimization.
         
@@ -609,11 +728,46 @@ class MultiObjectiveFeatureSelector:
             targets: Target series
             cv_splits: Optional CV splits for stability calculation
             use_evolutionary: Override evolutionary algorithm usage
+            time_constraint: Maximum time constraint in seconds
             
         Returns:
             MultiObjectiveResult with selected features and objective values
         """
         tprint_info(f"Starting enhanced multi-objective feature selection for {features.shape[1]} features")
+        
+        # Computational awareness and financial alignment: Select optimal methods
+        if (self.enable_computational_awareness and self.computational_manager) or self.financial_aligner:
+            tprint_info("🧠💰 Using computational awareness and financial alignment for method selection")
+            
+            # Get available methods
+            available_methods = list(self.enhanced_methods.keys()) if hasattr(self, 'enhanced_methods') else []
+            
+            # Step 1: Filter by computational constraints
+            computationally_feasible_methods = available_methods
+            if self.enable_computational_awareness and self.computational_manager:
+                financial_objectives = [obj.name for obj in self.objectives]
+                computationally_feasible_methods = self.computational_manager.select_optimal_methods(
+                    data_shape=features.shape,
+                    available_methods=available_methods,
+                    financial_objectives=financial_objectives,
+                    time_constraint=time_constraint
+                )
+                tprint_info(f"🧠 Computationally feasible methods: {computationally_feasible_methods[:3]}")
+            
+            # Step 2: Rank by financial objective alignment
+            if self.financial_aligner and computationally_feasible_methods:
+                financially_aligned_methods = self.financial_aligner.get_recommended_methods(
+                    computationally_feasible_methods, top_k=3
+                )
+                tprint_info(f"💰 Financially aligned methods: {financially_aligned_methods}")
+                self._use_optimal_methods = financially_aligned_methods
+            elif computationally_feasible_methods:
+                self._use_optimal_methods = computationally_feasible_methods
+            else:
+                tprint_warning("🧠💰 No optimal methods found, using standard approach")
+                self._use_optimal_methods = None
+        else:
+            self._use_optimal_methods = None
         
         # Set CV splits for stability objective
         for obj in self.objectives:
@@ -1047,6 +1201,181 @@ class MultiObjectiveFeatureSelector:
             })
         
         return summary
+    
+    def _improved_mrmr_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                n_features: int) -> List[str]:
+        """Select features using improved mRMR (70% MI + 30% Spearman)."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Improved mRMR not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        def _execute_improved_mrmr():
+            tprint_info("🔧 Using improved mRMR selection")
+            selector = ImprovedMRMR()
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist(),
+                target_ratio=n_features / len(features.columns)
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Improved mRMR failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            # Use computational monitoring if available
+            if self.enable_computational_awareness and self.computational_manager:
+                return self.computational_manager.monitor_execution(
+                    'improved_mrmr', _execute_improved_mrmr
+                )
+            else:
+                return _execute_improved_mrmr()
+                
+        except Exception as e:
+            tprint_warning(f"Improved mRMR error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_mrmr_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized mRMR."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT mRMR not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT mRMR selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTMRMRSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT mRMR failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT mRMR error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_rfe_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                               n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized RFE."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT RFE not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT RFE selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTRFESelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT RFE failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT RFE error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _vectorbt_lasso_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                 n_features: int) -> List[str]:
+        """Select features using VectorBT-optimized LASSO regularization."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("VectorBT LASSO not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🚀 Using VectorBT LASSO selection")
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = n_features
+            selector = VectorBTRegularizationSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("VectorBT LASSO failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT LASSO error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _enhanced_ensemble_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                    n_features: int) -> List[str]:
+        """Select features using enhanced ensemble methods."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Enhanced ensemble not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🔧 Using enhanced ensemble selection")
+            from src.feature_selection.advanced.enhanced_config import EnhancedEnsembleConfig
+            config = EnhancedEnsembleConfig()
+            config.target_features = n_features
+            selector = EnhancedEnsembleAdvancedSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Enhanced ensemble failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"Enhanced ensemble error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+    
+    def _enhanced_advanced_selection(self, features: pd.DataFrame, targets: pd.Series, 
+                                    n_features: int) -> List[str]:
+        """Select features using enhanced advanced methods."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("Enhanced advanced not available, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
+        
+        try:
+            tprint_info("🔧 Using enhanced advanced selection")
+            from src.feature_selection.advanced.enhanced_config import EnhancedAdvancedConfig
+            config = EnhancedAdvancedConfig()
+            config.target_features = n_features
+            selector = EnhancedAdvancedFeatureSelector(config)
+            result = selector.select_features(
+                features.values, targets.values, 
+                feature_names=features.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                return result['selected_features']
+            else:
+                tprint_warning("Enhanced advanced failed, falling back to standard method")
+                return self._standard_feature_selection(features, targets, n_features)
+                
+        except Exception as e:
+            tprint_warning(f"Enhanced advanced error: {e}, falling back to standard method")
+            return self._standard_feature_selection(features, targets, n_features)
 
 
 # Convenience functions

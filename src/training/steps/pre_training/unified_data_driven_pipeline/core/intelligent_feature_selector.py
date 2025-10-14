@@ -39,6 +39,39 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 
+# Import enhanced feature selection methods
+try:
+    from src.feature_selection.advanced.improved_mrmr import ImprovedMRMR
+    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+    from src.feature_selection.vectorbt.vectorbt_regularization import VectorBTRegularizationSelector
+    from src.feature_selection.advanced.enhanced_ensemble_selector import EnhancedEnsembleAdvancedSelector
+    from src.feature_selection.advanced.enhanced_advanced_selector import EnhancedAdvancedFeatureSelector
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = True
+    tprint_info("✅ Enhanced feature selection methods imported successfully")
+except ImportError as e:
+    ENHANCED_FEATURE_SELECTION_AVAILABLE = False
+    tprint_warning(f"⚠️ Enhanced feature selection methods not available: {e}")
+    # Define fallback classes
+    class ImprovedMRMR:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTMRMRSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRFESelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class VectorBTRegularizationSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedEnsembleAdvancedSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+    class EnhancedAdvancedFeatureSelector:
+        def __init__(self, *args, **kwargs): pass
+        def select_features(self, *args, **kwargs): return {'selected_features': [], 'success': False}
+
 logger = logging.getLogger(__name__)
 
 
@@ -619,6 +652,135 @@ class IntelligentFeatureSelector:
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
+    
+    def _enhanced_feature_scoring(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, float]:
+        """Use enhanced feature selection methods for scoring features."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE or targets is None:
+            return {}
+        
+        try:
+            tprint_debug("🔧 Using enhanced feature selection for scoring")
+            
+            # Use improved mRMR for feature scoring
+            selector = ImprovedMRMR()
+            result = selector.select_features(
+                data.values, targets.values,
+                feature_names=data.columns.tolist(),
+                target_ratio=0.5  # Select top 50% for scoring
+            )
+            
+            if result.get('success', False):
+                # Create scoring dictionary based on selection order
+                selected_features = result['selected_features']
+                scores = {}
+                
+                # Higher score for earlier selected features
+                for i, feature in enumerate(selected_features):
+                    if feature in data.columns:
+                        scores[feature] = 1.0 - (i / len(selected_features)) * 0.5
+                
+                # Add scores for non-selected features
+                for feature in data.columns:
+                    if feature not in scores:
+                        scores[feature] = 0.1  # Low score for non-selected features
+                
+                tprint_debug(f"🔧 Enhanced scoring completed for {len(scores)} features")
+                return scores
+            else:
+                tprint_warning("Enhanced feature scoring failed, using standard method")
+                return {}
+                
+        except Exception as e:
+            tprint_warning(f"Enhanced feature scoring error: {e}")
+            return {}
+    
+    def _vectorbt_feature_scoring(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, float]:
+        """Use VectorBT-optimized methods for feature scoring."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE or targets is None:
+            return {}
+        
+        try:
+            tprint_debug("🚀 Using VectorBT feature scoring")
+            
+            # Use VectorBT mRMR for feature scoring
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            config = VectorBTFeatureSelectionConfig()
+            config.target_features = min(50, len(data.columns) // 2)
+            
+            selector = VectorBTMRMRSelector(config)
+            result = selector.select_features(
+                data.values, targets.values,
+                feature_names=data.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                # Create scoring dictionary based on selection order
+                selected_features = result['selected_features']
+                scores = {}
+                
+                # Higher score for earlier selected features
+                for i, feature in enumerate(selected_features):
+                    if feature in data.columns:
+                        scores[feature] = 1.0 - (i / len(selected_features)) * 0.5
+                
+                # Add scores for non-selected features
+                for feature in data.columns:
+                    if feature not in scores:
+                        scores[feature] = 0.1  # Low score for non-selected features
+                
+                tprint_debug(f"🚀 VectorBT scoring completed for {len(scores)} features")
+                return scores
+            else:
+                tprint_warning("VectorBT feature scoring failed, using standard method")
+                return {}
+                
+        except Exception as e:
+            tprint_warning(f"VectorBT feature scoring error: {e}")
+            return {}
+    
+    def _ensemble_feature_scoring(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, float]:
+        """Use enhanced ensemble methods for feature scoring."""
+        if not ENHANCED_FEATURE_SELECTION_AVAILABLE or targets is None:
+            return {}
+        
+        try:
+            tprint_debug("🔧 Using ensemble feature scoring")
+            
+            # Use enhanced ensemble selector for feature scoring
+            from src.feature_selection.advanced.enhanced_config import EnhancedEnsembleConfig
+            config = EnhancedEnsembleConfig()
+            config.target_features = min(50, len(data.columns) // 2)
+            
+            selector = EnhancedEnsembleAdvancedSelector(config)
+            result = selector.select_features(
+                data.values, targets.values,
+                feature_names=data.columns.tolist()
+            )
+            
+            if result.get('success', False):
+                # Create scoring dictionary based on selection order
+                selected_features = result['selected_features']
+                scores = {}
+                
+                # Higher score for earlier selected features
+                for i, feature in enumerate(selected_features):
+                    if feature in data.columns:
+                        scores[feature] = 1.0 - (i / len(selected_features)) * 0.5
+                
+                # Add scores for non-selected features
+                for feature in data.columns:
+                    if feature not in scores:
+                        scores[feature] = 0.1  # Low score for non-selected features
+                
+                tprint_debug(f"🔧 Ensemble scoring completed for {len(scores)} features")
+                return scores
+            else:
+                tprint_warning("Ensemble feature scoring failed, using standard method")
+                return {}
+                
+        except Exception as e:
+            tprint_warning(f"Ensemble feature scoring error: {e}")
+            return {}
 
 
 # Convenience functions

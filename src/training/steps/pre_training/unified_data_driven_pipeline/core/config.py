@@ -292,7 +292,7 @@ class FeatureSelectionConfig:
     """Configuration for feature selection."""
     
     # Selection strategy
-    selection_strategy: str = 'multi_objective'  # or 'single_objective', 'ensemble'
+    selection_strategy: str = 'multi_objective'  # or 'single_objective', 'ensemble', 'enhanced'
     
     # Multi-objective configuration
     multi_objective: MultiObjectiveConfig = field(default_factory=MultiObjectiveConfig)
@@ -301,9 +301,47 @@ class FeatureSelectionConfig:
     primary_objective: str = 'out_of_sample_sharpe'
     secondary_objective: str = 'stability'
     
+    # Enhanced feature selection methods
+    enable_enhanced_methods: bool = True
+    enhanced_methods: List[str] = field(default_factory=lambda: [
+        'improved_mrmr', 'vectorbt_mrmr', 'vectorbt_rfe', 'vectorbt_lasso', 
+        'enhanced_ensemble', 'enhanced_advanced'
+    ])
+    enhanced_method_weights: List[float] = field(default_factory=lambda: [0.2, 0.2, 0.15, 0.15, 0.15, 0.15])
+    
     # Ensemble configuration
     ensemble_methods: List[str] = field(default_factory=lambda: ['mrmr', 'lasso', 'random_forest'])
     ensemble_weights: List[float] = field(default_factory=lambda: [0.4, 0.3, 0.3])
+    
+    # VectorBT optimization
+    enable_vectorbt_optimization: bool = True
+    vectorbt_chunk_size: int = 1000
+    vectorbt_parallel_workers: int = 4
+    
+    # Enhanced mRMR configuration
+    improved_mrmr_config: Dict[str, Any] = field(default_factory=lambda: {
+        'mi_weight': 0.7,
+        'spearman_weight': 0.3,
+        'target_ratio': 0.5,
+        'quantile_bins': 10,
+        'enable_cv_relevance': True,
+        'cv_folds': 5
+    })
+    
+    # Computational awareness configuration
+    enable_computational_awareness: bool = True
+    computational_constraints: Optional[Dict[str, Any]] = field(default_factory=lambda: {
+        'max_memory_gb': None,  # Auto-detect if None
+        'max_cpu_cores': None,  # Auto-detect if None
+        'max_execution_time_seconds': 300.0,
+        'memory_safety_margin': 0.2,
+        'cpu_safety_margin': 0.1
+    })
+    
+    # Method selection strategy
+    method_selection_strategy: str = 'computational_aware'  # 'computational_aware', 'performance_first', 'quality_first'
+    adaptive_method_selection: bool = True
+    performance_history_weight: float = 0.3  # Weight for historical performance in method selection
     
     # Cross-validation
     cv_config: TimeSeriesCVConfig = field(default_factory=TimeSeriesCVConfig)

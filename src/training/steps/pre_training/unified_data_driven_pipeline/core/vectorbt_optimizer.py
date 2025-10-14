@@ -662,6 +662,246 @@ class VectorBTOptimizer:
         
         if self.cache:
             self.cache.clear()
+    
+    def optimize_dataframe_operations(self, df: pd.DataFrame, operations: List[str]) -> pd.DataFrame:
+        """
+        Optimize DataFrame operations using VectorBT when available.
+        
+        Args:
+            df: Input DataFrame
+            operations: List of operations to perform
+            
+        Returns:
+            Optimized DataFrame
+        """
+        if not VECTORBT_AVAILABLE or df.empty:
+            return df
+        
+        try:
+            optimized_df = df.copy()
+            
+            for operation in operations:
+                if operation == 'rolling_mean_5':
+                    optimized_df = self._apply_rolling_mean(optimized_df, window=5)
+                elif operation == 'rolling_std_10':
+                    optimized_df = self._apply_rolling_std(optimized_df, window=10)
+                elif operation == 'zscore_normalize':
+                    optimized_df = self._apply_zscore_normalization(optimized_df)
+                elif operation == 'winsorize_outliers':
+                    optimized_df = self._apply_winsorization(optimized_df)
+                elif operation == 'rank_features':
+                    optimized_df = self._apply_ranking(optimized_df)
+            
+            self.performance_stats['vectorbt_operations'] += len(operations)
+            tprint_debug(f"✅ Optimized {len(operations)} operations using VectorBT")
+            
+            return optimized_df
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT optimization failed: {e}, using pandas fallback")
+            self.performance_stats['pandas_fallbacks'] += 1
+            return df
+    
+    def _apply_rolling_mean(self, df: pd.DataFrame, window: int) -> pd.DataFrame:
+        """Apply rolling mean using VectorBT optimization."""
+        try:
+            if VECTORBT_AVAILABLE and rolling_mean is not None:
+                return rolling_mean(df, window=window)
+            else:
+                return df.rolling(window=window).mean()
+        except Exception:
+            return df.rolling(window=window).mean()
+    
+    def _apply_rolling_std(self, df: pd.DataFrame, window: int) -> pd.DataFrame:
+        """Apply rolling standard deviation using VectorBT optimization."""
+        try:
+            if VECTORBT_AVAILABLE and rolling_std is not None:
+                return rolling_std(df, window=window)
+            else:
+                return df.rolling(window=window).std()
+        except Exception:
+            return df.rolling(window=window).std()
+    
+    def _apply_zscore_normalization(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply z-score normalization using VectorBT optimization."""
+        try:
+            if VECTORBT_AVAILABLE and zscore is not None:
+                return zscore(df)
+            else:
+                return (df - df.mean()) / df.std()
+        except Exception:
+            return (df - df.mean()) / df.std()
+    
+    def _apply_winsorization(self, df: pd.DataFrame, limits: Tuple[float, float] = (0.05, 0.05)) -> pd.DataFrame:
+        """Apply winsorization using VectorBT optimization."""
+        try:
+            if VECTORBT_AVAILABLE and winsorize is not None:
+                return winsorize(df, limits=limits)
+            else:
+                # Fallback winsorization
+                return df.clip(lower=df.quantile(limits[0]), upper=df.quantile(1-limits[1]))
+        except Exception:
+            return df.clip(lower=df.quantile(limits[0]), upper=df.quantile(1-limits[1]))
+    
+    def _apply_ranking(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply ranking using VectorBT optimization."""
+        try:
+            if VECTORBT_AVAILABLE and rank is not None:
+                return rank(df)
+            else:
+                return df.rank()
+        except Exception:
+            return df.rank()
+    
+    def batch_process_features(self, features: List[pd.Series], batch_size: int = 100) -> List[pd.Series]:
+        """
+        Process features in batches for memory efficiency.
+        
+        Args:
+            features: List of feature series
+            batch_size: Number of features to process at once
+            
+        Returns:
+            List of processed features
+        """
+        processed_features = []
+        
+        for i in range(0, len(features), batch_size):
+            batch = features[i:i + batch_size]
+            
+            try:
+                # Process batch using VectorBT if available
+                if VECTORBT_AVAILABLE:
+                    batch_df = pd.concat(batch, axis=1)
+                    processed_batch_df = self.optimize_dataframe_operations(
+                        batch_df, ['zscore_normalize', 'winsorize_outliers']
+                    )
+                    processed_features.extend([processed_batch_df[col] for col in processed_batch_df.columns])
+                else:
+                    # Fallback to individual processing
+                    for feature in batch:
+                        processed_feature = self._process_single_feature(feature)
+                        processed_features.append(processed_feature)
+                
+                tprint_debug(f"✅ Processed batch {i//batch_size + 1}/{(len(features)-1)//batch_size + 1}")
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Batch processing failed: {e}, processing individually")
+                for feature in batch:
+                    try:
+                        processed_feature = self._process_single_feature(feature)
+                        processed_features.append(processed_feature)
+                    except Exception as feature_error:
+                        tprint_warning(f"⚠️ Feature processing failed: {feature_error}")
+                        processed_features.append(feature)
+        
+        return processed_features
+    
+    def _process_single_feature(self, feature: pd.Series) -> pd.Series:
+        """Process a single feature with basic operations."""
+        try:
+            # Apply basic preprocessing
+            processed = feature.fillna(feature.median())
+            processed = (processed - processed.mean()) / processed.std()
+            processed = processed.clip(lower=processed.quantile(0.05), upper=processed.quantile(0.95))
+            return processed
+        except Exception:
+            return feature
+    
+    def calculate_feature_importance_vectorbt(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
+        """
+        Calculate feature importance using VectorBT-optimized correlation analysis.
+        
+        Args:
+            features: Feature DataFrame
+            targets: Target series
+            
+        Returns:
+            Dictionary of feature importance scores
+        """
+        try:
+            importance_scores = {}
+            
+            if VECTORBT_AVAILABLE and rolling_corr is not None:
+                # Use VectorBT for optimized correlation calculation
+                for col in features.columns:
+                    try:
+                        corr = rolling_corr(features[col], targets, window=min(50, len(features)))
+                        importance_scores[col] = float(corr.abs().mean())
+                    except Exception:
+                        # Fallback to simple correlation
+                        importance_scores[col] = float(features[col].corr(targets).abs())
+            else:
+                # Fallback to pandas correlation
+                for col in features.columns:
+                    try:
+                        importance_scores[col] = float(features[col].corr(targets).abs())
+                    except Exception:
+                        importance_scores[col] = 0.0
+            
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"✅ Calculated feature importance for {len(features.columns)} features")
+            
+            return importance_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature importance calculation failed: {e}")
+            return {col: 0.0 for col in features.columns}
+    
+    def optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame memory usage using efficient data types.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            Memory-optimized DataFrame
+        """
+        try:
+            optimized_df = df.copy()
+            original_memory = df.memory_usage(deep=True).sum()
+            
+            # Optimize numeric columns
+            for col in optimized_df.select_dtypes(include=['int64']).columns:
+                if optimized_df[col].min() >= 0:
+                    if optimized_df[col].max() < 255:
+                        optimized_df[col] = optimized_df[col].astype('uint8')
+                    elif optimized_df[col].max() < 65535:
+                        optimized_df[col] = optimized_df[col].astype('uint16')
+                    elif optimized_df[col].max() < 4294967295:
+                        optimized_df[col] = optimized_df[col].astype('uint32')
+                else:
+                    if optimized_df[col].min() > -128 and optimized_df[col].max() < 127:
+                        optimized_df[col] = optimized_df[col].astype('int8')
+                    elif optimized_df[col].min() > -32768 and optimized_df[col].max() < 32767:
+                        optimized_df[col] = optimized_df[col].astype('int16')
+                    elif optimized_df[col].min() > -2147483648 and optimized_df[col].max() < 2147483647:
+                        optimized_df[col] = optimized_df[col].astype('int32')
+            
+            # Optimize float columns
+            for col in optimized_df.select_dtypes(include=['float64']).columns:
+                optimized_df[col] = optimized_df[col].astype('float32')
+            
+            # Optimize object columns
+            for col in optimized_df.select_dtypes(include=['object']).columns:
+                if optimized_df[col].dtype == 'object':
+                    try:
+                        optimized_df[col] = optimized_df[col].astype('category')
+                    except:
+                        pass
+            
+            optimized_memory = optimized_df.memory_usage(deep=True).sum()
+            memory_reduction = (original_memory - optimized_memory) / original_memory * 100
+            
+            tprint_success(f"✅ Memory optimization: {memory_reduction:.1f}% reduction")
+            tprint_debug(f"📊 Original: {original_memory / 1024**2:.1f}MB, Optimized: {optimized_memory / 1024**2:.1f}MB")
+            
+            return optimized_df
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            return df
 
     def optimize_parameters(self, 
                            data: Union[pd.Series, pd.DataFrame], 

@@ -680,6 +680,299 @@ class AdvancedCacheManager:
         except Exception as e:
             tprint_debug(f"Error generating cache key: {e}")
             return f"{prefix}_{int(time.time())}" if prefix else str(int(time.time()))
+    
+    def batch_get(self, keys: List[str]) -> Dict[str, Any]:
+        """
+        Get multiple cache entries in batch.
+        
+        Args:
+            keys: List of cache keys
+            
+        Returns:
+            Dictionary of key-value pairs
+        """
+        results = {}
+        
+        for key in keys:
+            try:
+                value = self.get(key)
+                if value is not None:
+                    results[key] = value
+            except Exception as e:
+                tprint_debug(f"Error getting key {key}: {e}")
+                continue
+        
+        tprint_debug(f"✅ Batch get: {len(results)}/{len(keys)} keys found")
+        return results
+    
+    def batch_set(self, data_dict: Dict[str, Any], 
+                  ttl: Optional[int] = None,
+                  level: CacheLevel = CacheLevel.MEMORY) -> Dict[str, bool]:
+        """
+        Set multiple cache entries in batch.
+        
+        Args:
+            data_dict: Dictionary of key-value pairs
+            ttl: Time to live in seconds
+            level: Cache level
+            
+        Returns:
+            Dictionary of key-success pairs
+        """
+        results = {}
+        
+        for key, value in data_dict.items():
+            try:
+                success = self.set(key, value, ttl, level)
+                results[key] = success
+            except Exception as e:
+                tprint_debug(f"Error setting key {key}: {e}")
+                results[key] = False
+        
+        success_count = sum(results.values())
+        tprint_debug(f"✅ Batch set: {success_count}/{len(data_dict)} keys stored")
+        return results
+    
+    def prefetch_data(self, keys: List[str], 
+                     data_generator: callable,
+                     ttl: Optional[int] = None,
+                     level: CacheLevel = CacheLevel.MEMORY) -> Dict[str, Any]:
+        """
+        Prefetch data for multiple keys using a generator function.
+        
+        Args:
+            keys: List of cache keys
+            data_generator: Function that generates data for missing keys
+            ttl: Time to live in seconds
+            level: Cache level
+            
+        Returns:
+            Dictionary of key-value pairs
+        """
+        results = {}
+        missing_keys = []
+        
+        # Check which keys are missing from cache
+        for key in keys:
+            cached_value = self.get(key)
+            if cached_value is not None:
+                results[key] = cached_value
+            else:
+                missing_keys.append(key)
+        
+        # Generate missing data
+        if missing_keys:
+            try:
+                generated_data = data_generator(missing_keys)
+                
+                # Store generated data in cache
+                for key in missing_keys:
+                    if key in generated_data:
+                        value = generated_data[key]
+                        self.set(key, value, ttl, level)
+                        results[key] = value
+                    else:
+                        tprint_warning(f"⚠️ Data generator did not produce data for key: {key}")
+                        
+            except Exception as e:
+                tprint_error(f"❌ Data generation failed: {e}")
+        
+        tprint_success(f"✅ Prefetched {len(results)}/{len(keys)} keys")
+        return results
+    
+    def warm_cache(self, warmup_data: Dict[str, Any],
+                  ttl: Optional[int] = None,
+                  level: CacheLevel = CacheLevel.MEMORY) -> int:
+        """
+        Warm up cache with predefined data.
+        
+        Args:
+            warmup_data: Dictionary of key-value pairs to cache
+            ttl: Time to live in seconds
+            level: Cache level
+            
+        Returns:
+            Number of successfully cached items
+        """
+        success_count = 0
+        
+        for key, value in warmup_data.items():
+            try:
+                if self.set(key, value, ttl, level):
+                    success_count += 1
+            except Exception as e:
+                tprint_debug(f"Error warming cache for key {key}: {e}")
+        
+        tprint_success(f"✅ Cache warmed with {success_count}/{len(warmup_data)} items")
+        return success_count
+    
+    def analyze_cache_efficiency(self) -> Dict[str, Any]:
+        """
+        Analyze cache efficiency and provide recommendations.
+        
+        Returns:
+            Dictionary with efficiency analysis
+        """
+        stats = self.get_stats()
+        
+        # Calculate efficiency metrics
+        hit_rate = stats.hit_rate
+        memory_efficiency = stats.memory_usage_mb / (self.config.memory_cache_size_mb + 1e-6)
+        disk_efficiency = stats.disk_usage_mb / (self.config.disk_cache_size_mb + 1e-6)
+        
+        # Generate recommendations
+        recommendations = []
+        
+        if hit_rate < 0.5:
+            recommendations.append("Consider increasing cache TTL or improving cache key generation")
+        
+        if memory_efficiency > 0.9:
+            recommendations.append("Memory cache is nearly full - consider increasing memory limit or enabling disk cache")
+        
+        if disk_efficiency > 0.9:
+            recommendations.append("Disk cache is nearly full - consider increasing disk limit or enabling eviction")
+        
+        if stats.evictions > stats.total_hits * 0.1:
+            recommendations.append("High eviction rate detected - consider increasing cache size or TTL")
+        
+        if stats.errors > 0:
+            recommendations.append(f"Cache errors detected ({stats.errors}) - check cache configuration")
+        
+        return {
+            'hit_rate': hit_rate,
+            'memory_efficiency': memory_efficiency,
+            'disk_efficiency': disk_efficiency,
+            'total_entries': stats.total_entries,
+            'memory_entries': stats.memory_entries,
+            'disk_entries': stats.disk_entries,
+            'evictions': stats.evictions,
+            'errors': stats.errors,
+            'recommendations': recommendations,
+            'analysis_timestamp': time.time()
+        }
+    
+    def export_cache_metadata(self, filepath: str) -> bool:
+        """
+        Export cache metadata to JSON file.
+        
+        Args:
+            filepath: Path to output JSON file
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            metadata = {
+                'cache_stats': self.cache_stats,
+                'config': {
+                    'memory_cache_size_mb': self.config.memory_cache_size_mb,
+                    'disk_cache_size_mb': self.config.disk_cache_size_mb,
+                    'cache_ttl_seconds': self.config.cache_ttl_seconds,
+                    'max_cache_entries': self.config.max_cache_entries,
+                    'enable_compression': self.config.enable_compression,
+                    'enable_encryption': self.config.enable_encryption
+                },
+                'memory_cache_keys': list(self.memory_cache.keys()),
+                'export_timestamp': time.time()
+            }
+            
+            with open(filepath, 'w') as f:
+                json.dump(metadata, f, indent=2, default=str)
+            
+            tprint_success(f"✅ Cache metadata exported to {filepath}")
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ Cache metadata export failed: {e}")
+            return False
+    
+    def cleanup_expired_entries(self) -> int:
+        """
+        Clean up expired cache entries.
+        
+        Returns:
+            Number of entries cleaned up
+        """
+        cleaned_count = 0
+        current_time = time.time()
+        
+        # Clean memory cache
+        expired_keys = []
+        for key, entry in self.memory_cache.items():
+            if current_time - entry.timestamp > entry.ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self.memory_cache[key]
+            self.cache_stats['memory_entries'] -= 1
+            cleaned_count += 1
+        
+        # Clean disk cache
+        try:
+            cache_dir = Path(self.config.cache_directory)
+            for cache_file in cache_dir.glob("*.cache"):
+                try:
+                    # Check if file is expired
+                    metadata_file = cache_file.with_suffix('.metadata')
+                    if metadata_file.exists():
+                        with open(metadata_file, 'r') as f:
+                            metadata = json.load(f)
+                        
+                        if current_time - metadata['timestamp'] > metadata['ttl']:
+                            cache_file.unlink()
+                            metadata_file.unlink()
+                            self.cache_stats['disk_entries'] -= 1
+                            cleaned_count += 1
+                            
+                except Exception as e:
+                    tprint_debug(f"Error cleaning disk cache file {cache_file}: {e}")
+                    continue
+                    
+        except Exception as e:
+            tprint_debug(f"Error cleaning disk cache: {e}")
+        
+        if cleaned_count > 0:
+            tprint_success(f"✅ Cleaned up {cleaned_count} expired cache entries")
+        
+        return cleaned_count
+    
+    def get_cache_health(self) -> Dict[str, Any]:
+        """
+        Get comprehensive cache health status.
+        
+        Returns:
+            Dictionary with cache health information
+        """
+        stats = self.get_stats()
+        efficiency = self.analyze_cache_efficiency()
+        
+        # Determine health status
+        health_score = 0
+        if stats.hit_rate > 0.7:
+            health_score += 25
+        if efficiency['memory_efficiency'] < 0.8:
+            health_score += 25
+        if efficiency['disk_efficiency'] < 0.8:
+            health_score += 25
+        if stats.errors == 0:
+            health_score += 25
+        
+        if health_score >= 75:
+            health_status = "excellent"
+        elif health_score >= 50:
+            health_status = "good"
+        elif health_score >= 25:
+            health_status = "fair"
+        else:
+            health_status = "poor"
+        
+        return {
+            'health_status': health_status,
+            'health_score': health_score,
+            'stats': stats,
+            'efficiency': efficiency,
+            'timestamp': time.time()
+        }
 
 
 def create_advanced_cache_manager(config: Optional[CacheConfig] = None) -> AdvancedCacheManager:

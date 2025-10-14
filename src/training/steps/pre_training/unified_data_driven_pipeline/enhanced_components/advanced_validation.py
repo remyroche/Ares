@@ -27,6 +27,28 @@ except ImportError:
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
+# Import features_common validation utilities
+try:
+    from src.features_common import (
+        ValidationMixin, MonitoringMixin, PerformanceMixin,
+        validate_input_data, safe_execute, validate_configuration,
+        check_system_health, get_logger, log_operation,
+        ValidationError, ConfigurationError, SilentFailureError
+    )
+    FEATURES_COMMON_VALIDATION_AVAILABLE = True
+except ImportError:
+    FEATURES_COMMON_VALIDATION_AVAILABLE = False
+
+# Import feature_generation validation utilities
+try:
+    from src.feature_generation.utils import (
+        validate_feature_quality, validate_features_dataframe,
+        feature_validation_decorator
+    )
+    FEATURE_GENERATION_VALIDATION_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_VALIDATION_AVAILABLE = False
+
 import numpy as np
 import pandas as pd
 

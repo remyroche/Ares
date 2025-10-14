@@ -48,6 +48,30 @@ try:
     tprint_info("✅ Serialization utilities available")
 except ImportError:
     SERIALIZATION_AVAILABLE = False
+
+# Import features_common caching utilities
+try:
+    from src.features_common import (
+        CachingMixin, MonitoringMixin, PerformanceMixin,
+        validate_input_data, safe_execute, get_logger, log_operation
+    )
+    FEATURES_COMMON_CACHING_AVAILABLE = True
+    tprint_info("✅ Features common caching utilities available")
+except ImportError:
+    FEATURES_COMMON_CACHING_AVAILABLE = False
+    tprint_warning("⚠️ Features common caching utilities not available")
+
+# Import feature_generation optimization utilities
+try:
+    from src.feature_generation.utils import (
+        FeatureGenerationOptimizer, FeatureOptimizationConfig,
+        validate_feature_quality, validate_features_dataframe
+    )
+    FEATURE_GENERATION_OPTIMIZATION_AVAILABLE = True
+    tprint_info("✅ Feature generation optimization utilities available")
+except ImportError:
+    FEATURE_GENERATION_OPTIMIZATION_AVAILABLE = False
+    tprint_warning("⚠️ Feature generation optimization utilities not available")
     tprint_warning("⚠️ Serialization utilities not available")
 
 logger = logging.getLogger(__name__)
@@ -152,6 +176,7 @@ class EnhancedCachingIntegration:
         
         # Initialize cache components
         self._initialize_cache_components()
+        self._initialize_enhanced_utilities()
         
         # Cache storage
         self.cache_entries: Dict[str, CacheEntry] = {}
@@ -176,6 +201,48 @@ class EnhancedCachingIntegration:
             tprint_info("✅ Serialization enabled")
         if self.enable_compression:
             tprint_info("✅ Compression enabled")
+    
+    def _initialize_enhanced_utilities(self):
+        """Initialize enhanced utilities from features_common and feature_generation."""
+        tprint_debug("Initializing enhanced caching utilities")
+        
+        # Initialize features common caching utilities
+        if FEATURES_COMMON_CACHING_AVAILABLE:
+            try:
+                # Initialize caching mixin
+                self.caching_mixin = CachingMixin()
+                self.monitoring_mixin = MonitoringMixin()
+                self.performance_mixin = PerformanceMixin()
+                
+                # Initialize logger
+                self.logger = get_logger(__name__)
+                
+                tprint_success("✅ Features common caching utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Features common caching utilities initialization failed: {e}")
+                self.caching_mixin = None
+                self.monitoring_mixin = None
+                self.performance_mixin = None
+                self.logger = None
+        else:
+            self.caching_mixin = None
+            self.monitoring_mixin = None
+            self.performance_mixin = None
+            self.logger = None
+        
+        # Initialize feature generation optimization utilities
+        if FEATURE_GENERATION_OPTIMIZATION_AVAILABLE:
+            try:
+                self.feature_optimizer = FeatureGenerationOptimizer()
+                self.feature_optimization_config = FeatureOptimizationConfig()
+                tprint_success("✅ Feature generation optimization utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Feature generation optimization utilities initialization failed: {e}")
+                self.feature_optimizer = None
+                self.feature_optimization_config = None
+        else:
+            self.feature_optimizer = None
+            self.feature_optimization_config = None
     
     def _initialize_cache_components(self):
         """Initialize cache components."""

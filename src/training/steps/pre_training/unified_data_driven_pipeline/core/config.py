@@ -122,6 +122,63 @@ class TimeSeriesCVConfig:
 
 
 @dataclass
+class WalkForwardConfig:
+    """Configuration for walk-forward validation."""
+    
+    # Basic parameters
+    n_splits: int = 5
+    min_window_size: int = 50
+    min_train_samples: int = 100
+    min_val_samples: int = 20
+    min_train_ratio: float = 0.6
+    
+    # Advanced parameters
+    enable_nested_cv: bool = True
+    nested_outer_splits: int = 3
+    nested_inner_splits: int = 2
+    frozen_decision_plan: bool = True
+    
+    # Validation
+    strict_time_ordering: bool = True
+    check_leakage: bool = True
+    validate_splits: bool = True
+
+
+@dataclass
+class LookbackOptimizationConfig:
+    """Configuration for feature lookback optimization."""
+    
+    # Lookback search space
+    min_lookback: int = 5
+    max_lookback: int = 100
+    step_size: int = 5
+    min_samples: int = 20
+    
+    # Optimization parameters
+    optimization_strategy: OptimizationStrategy = OptimizationStrategy.VECTORBT_CPU
+    enable_bayesian_optimization: bool = True
+    bayesian_trials: int = 50
+    enable_direction_optimization: bool = True
+    optimization_direction: str = 'both'  # 'longs', 'shorts', 'both'
+    
+    # Walk-forward validation
+    walk_forward: WalkForwardConfig = field(default_factory=WalkForwardConfig)
+    
+    # Regularization
+    enable_regularization: bool = True
+    regularization_strength: float = 0.1
+    preferred_min_lookback: float = 40.0
+    preferred_max_lookback: float = 80.0
+    
+    # Performance constraints
+    max_computation_time: float = 600.0  # 10 minutes
+    memory_limit_gb: float = 8.0
+    
+    # Guardrails
+    guardrails: GuardrailConfig = field(default_factory=GuardrailConfig)
+
+
+@dataclass
 class PeriodOptimizationConfig:
     """Configuration for period optimization."""
     
@@ -289,6 +346,7 @@ class UnifiedPipelineConfig:
     
     # Component configurations
     period_optimization: PeriodOptimizationConfig = field(default_factory=PeriodOptimizationConfig)
+    lookback_optimization: LookbackOptimizationConfig = field(default_factory=LookbackOptimizationConfig)
     interaction_generation: InteractionGenerationConfig = field(default_factory=InteractionGenerationConfig)
     feature_selection: FeatureSelectionConfig = field(default_factory=FeatureSelectionConfig)
     vectorization: VectorizationConfig = field(default_factory=VectorizationConfig)
@@ -300,6 +358,13 @@ class UnifiedPipelineConfig:
     enable_interaction_generation: bool = True
     enable_htf_interactions: bool = True
     enable_feature_selection: bool = True
+    
+    # Advanced lookback optimization settings
+    enable_nested_cv: bool = True
+    enable_direction_optimization: bool = True
+    enable_bayesian_optimization: bool = True
+    enable_advanced_caching: bool = True
+    enable_regularization: bool = True
     
     # Data validation
     validate_input_data: bool = True

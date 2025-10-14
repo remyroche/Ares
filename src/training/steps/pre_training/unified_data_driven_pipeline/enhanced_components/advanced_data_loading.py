@@ -12,7 +12,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 # Import utility modules
-from src.utils.common_utilities import CommonUtilities
+from src.utils.common_utilities import (
+    CommonUtilities, safe_dataframe_operation, validate_dataframe_columns,
+    analyze_nan_values_detailed, format_nan_analysis_report,
+    calculate_data_quality_metrics, create_data_quality_report,
+    safe_convert_dtypes, safe_merge_dataframes, get_dataframe_info,
+    create_summary_statistics, safe_drop_columns, safe_rename_columns
+)
 from src.utils.serialization_utils import UniversalSerializer
 
 try:
@@ -271,7 +277,7 @@ class AdvancedDataLoader:
     def prepare_data_for_optimization(self, market_data: pd.DataFrame,
                                     labeling_data: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
         """
-        Prepare data for optimization by merging market data with labels.
+        Prepare data for optimization by merging market data with labels using enhanced utilities.
         
         Args:
             market_data: Market data DataFrame
@@ -280,34 +286,54 @@ class AdvancedDataLoader:
         Returns:
             Prepared optimization data
         """
-        tprint_debug("🧰 Preparing data for optimization")
+        tprint_debug("🧰 Preparing data for optimization with enhanced utilities")
+        
+        # Validate input data using utilities
+        if not validate_dataframe_columns(market_data, ['close']):
+            tprint_warning("⚠️ Market data missing required columns")
         
         optimization_data = market_data.copy()
         
-        # Add labeling data if available
+        # Perform data quality analysis
+        tprint_debug("📊 Analyzing data quality before optimization")
+        nan_analysis = analyze_nan_values_detailed(optimization_data)
+        quality_metrics = calculate_data_quality_metrics(optimization_data)
+        
+        # Log data quality report
+        tprint_debug(format_nan_analysis_report(nan_analysis, "  "))
+        
+        # Add labeling data if available using safe operations
         if labeling_data and isinstance(labeling_data, dict):
             labels_df = labeling_data.get('labeled_data')
             if labels_df is not None and isinstance(labels_df, pd.DataFrame):
-                # Merge labels with market data
-                common_index = optimization_data.index.intersection(labels_df.index)
-                if len(common_index) > 0:
-                    optimization_data = optimization_data.loc[common_index]
-                    labels_to_merge = labels_df.loc[common_index]
-                    
-                    # Add label columns
-                    for col in labels_to_merge.columns:
-                        if col not in optimization_data.columns:
-                            optimization_data[col] = labels_to_merge[col]
-                    
-                    tprint_success(f"✅ Merged {len(labels_to_merge.columns)} label columns")
-                else:
-                    tprint_warning("⚠️ No common index found for label merging")
+                # Use safe merge operation
+                try:
+                    # Find common index
+                    common_index = optimization_data.index.intersection(labels_df.index)
+                    if len(common_index) > 0:
+                        optimization_data = optimization_data.loc[common_index]
+                        labels_to_merge = labels_df.loc[common_index]
+                        
+                        # Add label columns safely
+                        for col in labels_to_merge.columns:
+                            if col not in optimization_data.columns:
+                                optimization_data[col] = labels_to_merge[col]
+                        
+                        tprint_success(f"✅ Merged {len(labels_to_merge.columns)} label columns")
+                    else:
+                        tprint_warning("⚠️ No common index found for label merging")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Label merging failed: {e}")
             else:
                 tprint_warning("⚠️ No valid labeled data found in labeling_data")
         else:
             tprint_warning("⚠️ No labeling data provided")
 
+        # Final data quality check
+        final_quality = calculate_data_quality_metrics(optimization_data)
         tprint_success(f"✅ Prepared optimization data: {optimization_data.shape}")
+        tprint_success(f"📊 Final data quality: {final_quality.get('missing_percentage', 0):.1f}% missing, {final_quality.get('duplicate_percentage', 0):.1f}% duplicates")
+        
         return optimization_data
 
     def _extract_data_config(self, pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:

@@ -16,6 +16,16 @@ from enum import Enum
 import traceback
 from contextlib import contextmanager
 
+# Import utility modules
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns,
+    analyze_nan_values_detailed, calculate_data_quality_metrics,
+    create_data_quality_report, get_dataframe_info, create_summary_statistics,
+    safe_convert_dtypes, safe_merge_dataframes, safe_drop_columns,
+    safe_rename_columns, safe_filter_dataframe, safe_groupby_operation,
+    safe_apply_function
+)
+
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -176,7 +186,7 @@ class InputValidator(BaseModule):
     def validate_dataframe(self, 
                           data: pd.DataFrame, 
                           level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
-        """Validate a DataFrame."""
+        """Validate a DataFrame using enhanced utilities."""
         errors = []
         warnings = []
         
@@ -190,10 +200,10 @@ class InputValidator(BaseModule):
                 errors.append("DataFrame cannot be empty")
                 return ValidationResult(False, level, errors, warnings, {})
             
-            # Check required columns
+            # Use utility function for column validation
             required_columns = self.validation_rules['dataframe']['required_columns']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            if missing_columns:
+            if not validate_dataframe_columns(data, required_columns):
+                missing_columns = [col for col in required_columns if col not in data.columns]
                 errors.append(f"Missing required columns: {missing_columns}")
             
             # Check minimum rows
@@ -201,12 +211,15 @@ class InputValidator(BaseModule):
             if len(data) < min_rows:
                 errors.append(f"DataFrame must have at least {min_rows} rows")
             
-            # Check for excessive NaN values
+            # Enhanced NaN analysis using utilities
+            nan_analysis = analyze_nan_values_detailed(data)
+            quality_metrics = calculate_data_quality_metrics(data)
+            
+            # Check for excessive NaN values using utility analysis
             max_nan_ratio = self.validation_rules['dataframe']['max_nan_ratio']
-            for col in data.columns:
-                nan_ratio = data[col].isna().sum() / len(data)
-                if nan_ratio > max_nan_ratio:
-                    warnings.append(f"Column {col} has {nan_ratio:.2%} NaN values")
+            for col, nan_pct in nan_analysis['feature_nan_percentages'].items():
+                if nan_pct > max_nan_ratio * 100:
+                    warnings.append(f"Column {col} has {nan_pct:.2f}% NaN values")
             
             # Check numeric columns
             if self.validation_rules['dataframe']['numeric_columns_only']:
@@ -235,7 +248,9 @@ class InputValidator(BaseModule):
                 metadata={
                     'shape': data.shape,
                     'columns': list(data.columns),
-                    'dtypes': data.dtypes.to_dict()
+                    'dtypes': data.dtypes.to_dict(),
+                    'nan_analysis': nan_analysis,
+                    'quality_metrics': quality_metrics
                 }
             )
             
@@ -608,6 +623,66 @@ class ModularArchitecture:
             'performance_monitor_stats': self.performance_monitor.get_performance_summary(),
             'core_optimizer_stats': self.core_optimizer.get_performance_stats()
         }
+
+    def safe_dataframe_operation(self, data: pd.DataFrame, operation: Callable, *args, **kwargs) -> pd.DataFrame:
+        """Safely perform DataFrame operation using utilities."""
+        return safe_dataframe_operation(data, operation, *args, **kwargs)
+
+    def validate_dataframe_columns(self, data: pd.DataFrame, required_columns: List[str]) -> bool:
+        """Validate DataFrame columns using utilities."""
+        return validate_dataframe_columns(data, required_columns)
+
+    def analyze_data_quality(self, data: Union[pd.DataFrame, np.ndarray]) -> Dict[str, Any]:
+        """Analyze data quality using utilities."""
+        if isinstance(data, pd.DataFrame):
+            nan_analysis = analyze_nan_values_detailed(data)
+            quality_metrics = calculate_data_quality_metrics(data)
+            quality_report = create_data_quality_report(data)
+            dataframe_info = get_dataframe_info(data)
+            summary_stats = create_summary_statistics(data)
+            
+            return {
+                'nan_analysis': nan_analysis,
+                'quality_metrics': quality_metrics,
+                'quality_report': quality_report,
+                'dataframe_info': dataframe_info,
+                'summary_statistics': summary_stats
+            }
+        else:
+            # Convert numpy array to DataFrame for analysis
+            if data.ndim == 2:
+                df = pd.DataFrame(data)
+                return self.analyze_data_quality(df)
+            else:
+                return {'error': 'Unsupported data type for quality analysis'}
+
+    def safe_convert_dtypes(self, data: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.DataFrame:
+        """Safely convert DataFrame dtypes using utilities."""
+        return safe_convert_dtypes(data, dtype_mapping)
+
+    def safe_merge_dataframes(self, df1: pd.DataFrame, df2: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """Safely merge DataFrames using utilities."""
+        return safe_merge_dataframes(df1, df2, **kwargs)
+
+    def safe_drop_columns(self, data: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        """Safely drop columns using utilities."""
+        return safe_drop_columns(data, columns)
+
+    def safe_rename_columns(self, data: pd.DataFrame, column_mapping: Dict[str, str]) -> pd.DataFrame:
+        """Safely rename columns using utilities."""
+        return safe_rename_columns(data, column_mapping)
+
+    def safe_filter_dataframe(self, data: pd.DataFrame, condition: str) -> pd.DataFrame:
+        """Safely filter DataFrame using utilities."""
+        return safe_filter_dataframe(data, condition)
+
+    def safe_groupby_operation(self, data: pd.DataFrame, group_cols: List[str], agg_dict: Dict[str, str]) -> pd.DataFrame:
+        """Safely perform groupby operation using utilities."""
+        return safe_groupby_operation(data, group_cols, agg_dict)
+
+    def safe_apply_function(self, data: pd.DataFrame, func: Callable, axis: int = 0) -> pd.DataFrame:
+        """Safely apply function to DataFrame using utilities."""
+        return safe_apply_function(data, func, axis)
 
 
 # Convenience functions

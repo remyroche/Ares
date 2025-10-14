@@ -14,7 +14,12 @@ from functools import wraps
 from datetime import datetime
 
 # Import utility modules
-from src.utils.common_utilities import CommonUtilities
+from src.utils.common_utilities import (
+    CommonUtilities, safe_dataframe_operation, safe_convert_dtypes,
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
+    get_dataframe_info, create_summary_statistics
+)
 from src.utils.serialization_utils import UniversalSerializer
 
 try:
@@ -207,7 +212,7 @@ class AdvancedErrorHandler:
     def safe_dataframe_operation(self, operation: str, data: pd.DataFrame, 
                                func: Callable, *args, **kwargs) -> pd.DataFrame:
         """
-        Safely execute a DataFrame operation.
+        Safely execute a DataFrame operation using enhanced utilities.
         
         Args:
             operation: Operation name for error reporting
@@ -220,7 +225,8 @@ class AdvancedErrorHandler:
             Result DataFrame or original DataFrame if error occurs
         """
         try:
-            return func(data, *args, **kwargs)
+            # Use utility function for safe operation
+            return safe_dataframe_operation(data, func, *args, **kwargs)
         except Exception as e:
             tprint_warning(f"⚠️ DataFrame operation {operation} failed: {str(e)}")
             return data
@@ -392,6 +398,78 @@ class AdvancedErrorHandler:
         self.error_count = 0
         self.error_history = []
         tprint_success("✅ Error statistics reset")
+
+    def safe_dataframe_conversion(self, data: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.DataFrame:
+        """Safely convert DataFrame column dtypes using utilities."""
+        return self.safe_execute(
+            safe_convert_dtypes, data, dtype_mapping,
+            operation="dataframe_dtype_conversion",
+            return_value=data
+        )
+
+    def safe_dataframe_merge(self, df1: pd.DataFrame, df2: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """Safely merge DataFrames using utilities."""
+        return self.safe_execute(
+            safe_merge_dataframes, df1, df2, **kwargs,
+            operation="dataframe_merge",
+            return_value=df1
+        )
+
+    def safe_dataframe_drop_columns(self, data: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        """Safely drop columns using utilities."""
+        return self.safe_execute(
+            safe_drop_columns, data, columns,
+            operation="dataframe_drop_columns",
+            return_value=data
+        )
+
+    def safe_dataframe_rename_columns(self, data: pd.DataFrame, column_mapping: Dict[str, str]) -> pd.DataFrame:
+        """Safely rename columns using utilities."""
+        return self.safe_execute(
+            safe_rename_columns, data, column_mapping,
+            operation="dataframe_rename_columns",
+            return_value=data
+        )
+
+    def safe_dataframe_filter(self, data: pd.DataFrame, condition: str) -> pd.DataFrame:
+        """Safely filter DataFrame using utilities."""
+        return self.safe_execute(
+            safe_filter_dataframe, data, condition,
+            operation="dataframe_filter",
+            return_value=data
+        )
+
+    def safe_dataframe_groupby(self, data: pd.DataFrame, group_cols: List[str], agg_dict: Dict[str, str]) -> pd.DataFrame:
+        """Safely perform groupby operation using utilities."""
+        return self.safe_execute(
+            safe_groupby_operation, data, group_cols, agg_dict,
+            operation="dataframe_groupby",
+            return_value=data
+        )
+
+    def safe_dataframe_apply(self, data: pd.DataFrame, func: Callable, axis: int = 0) -> pd.DataFrame:
+        """Safely apply function to DataFrame using utilities."""
+        return self.safe_execute(
+            safe_apply_function, data, func, axis,
+            operation="dataframe_apply",
+            return_value=data
+        )
+
+    def get_dataframe_summary(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Get comprehensive DataFrame summary using utilities."""
+        return self.safe_execute(
+            get_dataframe_info, data,
+            operation="dataframe_summary",
+            return_value={}
+        )
+
+    def get_dataframe_statistics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Get DataFrame statistics using utilities."""
+        return self.safe_execute(
+            create_summary_statistics, data,
+            operation="dataframe_statistics",
+            return_value={}
+        )
 
 
 def error_handler_decorator(operation: str, return_value: Any = None, 

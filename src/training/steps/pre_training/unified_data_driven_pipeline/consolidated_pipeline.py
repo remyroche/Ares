@@ -958,58 +958,58 @@ class UnifiedDataDrivenPipeline:
         
         try:
             tprint_debug("🔧 Setting up utility systems from feature_generation and features_common")
-        
-        # Initialize common operations utilities
-        try:
-            tprint_debug("🔧 Initializing common operations utilities")
-            self.common_utils = CommonUtilities()
-            self.common_operations_logger = get_logger("common_operations")
-            tprint_success("✅ Common operations utilities initialized")
-        except Exception as e:
-            tprint_error(f"❌ Failed to initialize common operations utilities: {e}")
-            raise RuntimeError(f"Common operations utilities initialization failed: {e}") from e
-        
-        # Initialize M1 optimizations if available
-        try:
-            tprint_debug("🔧 Attempting M1 optimizations integration")
-            m1_integration_result = integrate_with_m1_optimizers()
-            if m1_integration_result.get('success', False):
-                tprint_success("✅ M1 optimizations integrated successfully")
-                self.m1_available = True
-            else:
-                tprint_warning("⚠️ M1 optimizations not available")
-                tprint_debug(f"⚠️ M1 integration result: {m1_integration_result}")
-                self.m1_available = False
-        except Exception as e:
-            tprint_warning(f"⚠️ M1 integration failed: {e}")
-            tprint_debug(f"⚠️ M1 integration error details: {type(e).__name__}: {str(e)}")
-            self.m1_available = False
-        
-        # Add comprehensive error handling wrapper
-        try:
-            tprint_debug("🔧 Utility systems initialization completed successfully")
-        except Exception as e:
-            tprint_error(f"❌ Critical error in utility systems initialization: {e}")
-            raise RuntimeError(f"Utility systems initialization failed: {e}") from e
-        
-        # Initialize feature generation utilities
-        if FEATURE_GENERATION_AVAILABLE:
+            
+            # Initialize common operations utilities
             try:
-                tprint_debug("🔧 Initializing feature generation utilities")
-                
-                # Initialize utility container
-                tprint_debug("📦 Creating utility container")
-                self.utility_container = get_utility_container()
-                self.utility_config = UtilityConfig()
-                tprint_success("✅ Utility container initialized")
-                
-                # Initialize enhanced feature engineering
-                tprint_debug("🔧 Creating enhanced feature engineering")
-                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
-                tprint_success("✅ Enhanced feature engineering initialized")
-                
-                # Initialize feature optimization
-                tprint_debug("🔧 Creating feature optimizer")
+                tprint_debug("🔧 Initializing common operations utilities")
+                self.common_utils = CommonUtilities()
+                self.common_operations_logger = get_logger("common_operations")
+                tprint_success("✅ Common operations utilities initialized")
+            except Exception as e:
+                tprint_error(f"❌ Failed to initialize common operations utilities: {e}")
+                raise RuntimeError(f"Common operations utilities initialization failed: {e}") from e
+            
+            # Initialize M1 optimizations if available
+            try:
+                tprint_debug("🔧 Attempting M1 optimizations integration")
+                m1_integration_result = integrate_with_m1_optimizers()
+                if m1_integration_result.get('success', False):
+                    tprint_success("✅ M1 optimizations integrated successfully")
+                    self.m1_available = True
+                else:
+                    tprint_warning("⚠️ M1 optimizations not available")
+                    tprint_debug(f"⚠️ M1 integration result: {m1_integration_result}")
+                    self.m1_available = False
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 integration failed: {e}")
+                tprint_debug(f"⚠️ M1 integration error details: {type(e).__name__}: {str(e)}")
+                self.m1_available = False
+            
+            # Add comprehensive error handling wrapper
+            try:
+                tprint_debug("🔧 Utility systems initialization completed successfully")
+            except Exception as e:
+                tprint_error(f"❌ Critical error in utility systems initialization: {e}")
+                raise RuntimeError(f"Utility systems initialization failed: {e}") from e
+            
+            # Initialize feature generation utilities
+            if FEATURE_GENERATION_AVAILABLE:
+                try:
+                    tprint_debug("🔧 Initializing feature generation utilities")
+                    
+                    # Initialize utility container
+                    tprint_debug("📦 Creating utility container")
+                    self.utility_container = get_utility_container()
+                    self.utility_config = UtilityConfig()
+                    tprint_success("✅ Utility container initialized")
+                    
+                    # Initialize enhanced feature engineering
+                    tprint_debug("🔧 Creating enhanced feature engineering")
+                    self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                    tprint_success("✅ Enhanced feature engineering initialized")
+                    
+                    # Initialize feature optimization
+                    tprint_debug("🔧 Creating feature optimizer")
                 self.feature_optimizer = FeatureGenerationOptimizer()
                 self.feature_optimization_config = FeatureOptimizationConfig()
                 tprint_success("✅ Feature optimizer initialized")
@@ -1132,6 +1132,10 @@ class UnifiedDataDrivenPipeline:
             self.unified_factory = None
             self.optimized_scaler = None
             self.batch_scaler = None
+        
+        except Exception as e:
+            tprint_error(f"❌ Critical error in utility systems initialization: {e}")
+            raise RuntimeError(f"Utility systems initialization failed: {e}") from e
     
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
@@ -2473,47 +2477,140 @@ class UnifiedDataDrivenPipeline:
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
         """Enhanced period optimization with economic evaluation and safe mathematical operations."""
-        tprint_debug("Starting enhanced period optimization")
+        tprint_info("🔍 Starting enhanced period optimization with comprehensive logging")
+        tprint_debug(f"📊 Input data shape: {data.shape}, timeframe: {timeframe}")
+        
+        # Validate input data before processing
+        if data is None or data.empty:
+            error_msg = "Input data is None or empty for period optimization"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(data, pd.DataFrame):
+            error_msg = f"Input data must be DataFrame, got {type(data)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
         
         try:
             # Use memory checkpoint for M1 optimization
+            tprint_debug("💾 Setting up memory checkpoint for period optimization")
             with memory_checkpoint("period_optimization"):
                 # Statistical period analysis with safe operations
+                tprint_info("📈 Performing statistical period analysis")
                 periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
+                tprint_debug(f"🔢 Analyzing {len(periods)} periods: {min(periods)}-{max(periods)}")
+                
                 period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+                tprint_success(f"✅ Statistical analysis completed for {len(period_analysis)} periods")
+                
+                # Validate period analysis results
+                if not period_analysis or not isinstance(period_analysis, dict):
+                    error_msg = "Period analysis returned invalid results"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
                 
                 # Economic significance evaluation with safe mathematical operations
+                tprint_info("💰 Performing economic significance evaluation")
                 candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
+                tprint_debug(f"🎯 Found {len(candidate_periods)} candidate periods for economic evaluation")
+                
+                if not candidate_periods:
+                    error_msg = "No valid candidate periods found for economic evaluation"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
                 economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
+                tprint_success(f"✅ Economic evaluation completed for {len(candidate_periods)} periods")
+                
+                # Validate economic evaluation results
+                if not economic_evaluation or not isinstance(economic_evaluation, dict):
+                    error_msg = "Economic evaluation returned invalid results"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
                 
                 # Combine statistical and economic results using safe operations
+                tprint_info("🔄 Combining statistical and economic results")
                 combined_scores = self._combine_period_scores_safe(period_analysis, economic_evaluation)
                 
+                if not combined_scores or not isinstance(combined_scores, dict):
+                    error_msg = "Combined scores calculation failed"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                tprint_success(f"✅ Combined scoring completed for {len(combined_scores)} periods")
+                
                 # Select optimal periods with validation
+                tprint_info("🏆 Selecting optimal periods")
                 optimal_periods = self._select_optimal_periods_safe(combined_scores)
                 
+                if not optimal_periods or not isinstance(optimal_periods, list):
+                    error_msg = "Optimal period selection failed"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                tprint_success(f"✅ Selected {len(optimal_periods)} optimal periods: {optimal_periods}")
+                
                 # Log metrics safely
+                tprint_debug("📊 Logging optimization metrics")
                 safe_log_metric("optimal_periods_count", len(optimal_periods))
                 safe_log_metric("candidate_periods_count", len(candidate_periods))
+                safe_log_metric("total_periods_analyzed", len(periods))
                 
-                tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
+                tprint_success(f"✅ Period optimization completed successfully: {len(optimal_periods)} optimal periods")
             
-            return {
+            result = {
                 'optimal_periods': optimal_periods,
                 'period_scores': combined_scores,
                 'economic_evaluation_results': economic_evaluation,
                 'statistical_analysis': period_analysis
             }
             
+            tprint_info(f"📋 Period optimization result summary:")
+            tprint_info(f"  - Optimal periods: {len(optimal_periods)}")
+            tprint_info(f"  - Candidate periods: {len(candidate_periods)}")
+            tprint_info(f"  - Total analyzed: {len(periods)}")
+            
+            return result
+            
         except Exception as e:
-            raise RuntimeError(f"Enhanced period optimization failed: {e}") from e
+            error_msg = f"Enhanced period optimization failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Advanced multi-stage feature selection from 200+ feature bank."""
-        tprint_debug("Starting advanced multi-stage feature selection")
+        """Advanced multi-stage feature selection from 200+ feature bank with comprehensive logging."""
+        tprint_info("🔍 Starting advanced multi-stage feature selection with comprehensive logging")
+        tprint_debug(f"📊 Input data shape: {data.shape}")
+        tprint_debug(f"🎯 Targets shape: {targets.shape if targets is not None else 'None'}")
+        
+        # Validate input data before processing
+        if data is None or data.empty:
+            error_msg = "Input data is None or empty for feature selection"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(data, pd.DataFrame):
+            error_msg = f"Input data must be DataFrame, got {type(data)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
+        
+        # Validate targets if provided
+        if targets is not None:
+            if not isinstance(targets, pd.Series):
+                error_msg = f"Targets must be Series, got {type(targets)}"
+                tprint_error(f"❌ {error_msg}")
+                raise TypeError(error_msg)
+            
+            if len(targets) != len(data):
+                error_msg = f"Data and targets length mismatch: {len(data)} vs {len(targets)}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
         
         try:
             # Configure multi-stage selection
+            tprint_info("⚙️ Configuring multi-stage feature selection")
             if not hasattr(self.advanced_feature_selector.config, 'enable_multi_stage_selection'):
                 # Update config for multi-stage selection
                 self.advanced_feature_selector.config.enable_multi_stage_selection = True
@@ -2522,329 +2619,477 @@ class UnifiedDataDrivenPipeline:
                 self.advanced_feature_selector.config.final_selection_methods = ['mrmr', 'lgbm', 'rfe']
                 self.advanced_feature_selector.config.max_screening_features = 100
                 self.advanced_feature_selector.config.final_selection_count = 40
-                tprint_info("🔧 Configured multi-stage feature selection")
+                tprint_success("✅ Configured multi-stage feature selection")
+            else:
+                tprint_debug("ℹ️ Multi-stage feature selection already configured")
+            
+            # Log configuration details
+            tprint_debug(f"🔧 Configuration details:")
+            tprint_debug(f"  - Multi-stage enabled: {getattr(self.advanced_feature_selector.config, 'enable_multi_stage_selection', False)}")
+            tprint_debug(f"  - Lightweight screening: {getattr(self.advanced_feature_selector.config, 'enable_lightweight_screening', False)}")
+            tprint_debug(f"  - Screening methods: {getattr(self.advanced_feature_selector.config, 'screening_methods', [])}")
+            tprint_debug(f"  - Final methods: {getattr(self.advanced_feature_selector.config, 'final_selection_methods', [])}")
+            tprint_debug(f"  - Max screening features: {getattr(self.advanced_feature_selector.config, 'max_screening_features', 0)}")
+            tprint_debug(f"  - Final selection count: {getattr(self.advanced_feature_selector.config, 'final_selection_count', 0)}")
+            
+            # Validate feature selector is available
+            if self.advanced_feature_selector is None:
+                error_msg = "Advanced feature selector is not initialized"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
             
             # Use the enhanced advanced feature selector
+            tprint_info("🚀 Executing multi-stage feature selection")
             selection_result = self.advanced_feature_selector.select_features(data, targets)
+            
+            # Validate selection result
+            if selection_result is None:
+                error_msg = "Feature selection returned None result"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            
+            if not hasattr(selection_result, 'success'):
+                error_msg = "Selection result missing 'success' attribute"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
             
             if selection_result.success:
-                tprint_success(f"✅ Multi-stage feature selection completed: {len(selection_result.selected_features)} features selected")
-                tprint_info(f"📊 Quality metrics: {selection_result.quality_metrics}")
-                tprint_info(f"📊 Diversity metrics: {selection_result.diversity_metrics}")
-                tprint_info(f"📊 Stability metrics: {selection_result.stability_metrics}")
+                # Validate selected features
+                if not hasattr(selection_result, 'selected_features'):
+                    error_msg = "Selection result missing 'selected_features' attribute"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                selected_count = len(selection_result.selected_features) if selection_result.selected_features else 0
+                tprint_success(f"✅ Multi-stage feature selection completed: {selected_count} features selected")
+                
+                # Log detailed metrics
+                if hasattr(selection_result, 'quality_metrics') and selection_result.quality_metrics:
+                    tprint_info(f"📊 Quality metrics: {selection_result.quality_metrics}")
+                else:
+                    tprint_warning("⚠️ Quality metrics not available")
+                
+                if hasattr(selection_result, 'diversity_metrics') and selection_result.diversity_metrics:
+                    tprint_info(f"📊 Diversity metrics: {selection_result.diversity_metrics}")
+                else:
+                    tprint_warning("⚠️ Diversity metrics not available")
+                
+                if hasattr(selection_result, 'stability_metrics') and selection_result.stability_metrics:
+                    tprint_info(f"📊 Stability metrics: {selection_result.stability_metrics}")
+                else:
+                    tprint_warning("⚠️ Stability metrics not available")
+                
+                # Log feature names (first 10)
+                if selection_result.selected_features:
+                    feature_names = [f.feature_name if hasattr(f, 'feature_name') else str(f) for f in selection_result.selected_features[:10]]
+                    tprint_debug(f"🔍 Selected features (first 10): {feature_names}")
+                    if len(selection_result.selected_features) > 10:
+                        tprint_debug(f"  ... and {len(selection_result.selected_features) - 10} more features")
+                
+                # Log selection summary
+                tprint_info(f"📋 Feature selection summary:")
+                tprint_info(f"  - Total features selected: {selected_count}")
+                tprint_info(f"  - Input features: {len(data.columns)}")
+                tprint_info(f"  - Selection ratio: {selected_count/len(data.columns):.2%}")
+                
                 return selection_result
             else:
-                tprint_error(f"Multi-stage feature selection failed: {selection_result.error_message}")
-        """Advanced feature selection from 200+ feature bank with enhanced validation and data leakage detection."""
-        tprint_debug("Starting advanced feature selection with ML Common enhancements")
+                error_msg = f"Multi-stage feature selection failed: {getattr(selection_result, 'error_message', 'Unknown error')}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
         
-        try:
-            # Step 1: Data leakage detection before feature selection
-            if ML_COMMON_AVAILABLE and self.data_leakage_detector is not None:
-                tprint_info("🔍 Performing data leakage detection...")
-                leakage_report = self.data_leakage_detector.generate_report(
-                    X_train=data,
-                    X_test=data,  # For single dataset, use same data
-                    y_train=targets,
-                    y_test=targets,
-                    features=data,
-                    target=targets,
-                    target_column='target'
-                )
-                
-                if leakage_report.has_leakage:
-                    tprint_warning(f"⚠️ Data leakage detected (score: {leakage_report.leakage_score:.3f})")
-                    for violation in leakage_report.temporal_violations[:3]:
-                        tprint_warning(f"  - Temporal: {violation}")
-                    for feature in leakage_report.feature_contamination[:3]:
-                        tprint_warning(f"  - Contamination: {feature}")
-                    for bias in leakage_report.lookahead_bias[:3]:
-                        tprint_warning(f"  - Lookahead: {bias}")
-                else:
-                    tprint_success("✅ No significant data leakage detected")
-            
-            # Step 2: Use the advanced feature selector
-            selection_result = self.advanced_feature_selector.select_features(data, targets)
-            
-            if not selection_result or not selection_result.success:
-                tprint_error(f"Feature selection failed: {getattr(selection_result, 'error_message', 'Unknown error')}")
-                return None
-            
-            tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
-            
-            # Step 3: Enhanced validation of selected features
-            if ML_COMMON_AVAILABLE and self.enhanced_validator is not None and targets is not None:
-                tprint_info("🔍 Performing enhanced validation of selected features...")
-                
-                # Create a simple model for validation (using selected features)
-                try:
-                    from sklearn.ensemble import RandomForestClassifier
-                    from sklearn.model_selection import train_test_split
-                    
-                    # Prepare data for validation
-                    selected_data = data[selection_result.selected_features].dropna()
-                    if len(selected_data) == 0:
-                        tprint_warning("⚠️ No valid data after feature selection")
-                        return selection_result
-                    
-                    # Align targets with selected data
-                    aligned_targets = targets.loc[selected_data.index]
-                    
-                    # Split data for validation
-                    X_train, X_test, y_train, y_test = train_test_split(
-                        selected_data, aligned_targets, test_size=0.2, random_state=42, stratify=aligned_targets
-                    )
-                    
-                    # Create and train a simple model
-                    model = RandomForestClassifier(n_estimators=50, random_state=42)
-                    model.fit(X_train, y_train)
-                    
-                    # Perform enhanced validation
-                    validation_report = self.enhanced_validator.validate_model(
-                        model=model,
-                        X=X_test.values,
-                        y=y_test.values,
-                        model_name="feature_selection_validation",
-                        model_type="RandomForest",
-                        dataset_name="selected_features",
-                        is_classification=True,
-                        cv_folds=3,
-                        random_state=42
-                    )
-                    
-                    # Log validation results
-                    tprint_info(f"📊 Validation Quality Score: {validation_report.validation_quality_score:.3f}")
-                    tprint_info(f"📊 Performance Stability: {validation_report.performance_stability}")
-                    tprint_info(f"📊 Validation Reliability: {validation_report.validation_reliability}")
-                    
-                    if validation_report.critical_issues:
-                        tprint_warning(f"⚠️ Critical validation issues: {len(validation_report.critical_issues)}")
-                        for issue in validation_report.critical_issues[:2]:
-                            tprint_warning(f"  - {issue}")
-                    
-                    # Add validation metrics to selection result
-                    if hasattr(selection_result, 'quality_metrics'):
-                        selection_result.quality_metrics['enhanced_validation'] = {
-                            'validation_quality_score': validation_report.validation_quality_score,
-                            'performance_stability': validation_report.performance_stability,
-                            'validation_reliability': validation_report.validation_reliability,
-                            'robustness_score': validation_report.robustness_score,
-                            'critical_issues_count': len(validation_report.critical_issues)
-                        }
-                    
-                except Exception as validation_error:
-                    tprint_warning(f"⚠️ Enhanced validation failed: {validation_error}")
-            
-            # Step 4: Integrated analysis if available
-            if ML_COMMON_AVAILABLE and self.integrated_analysis_pipeline is not None and targets is not None:
-                tprint_info("🔍 Performing integrated analysis...")
-                try:
-                    analysis_result = self.integrated_analysis_pipeline.analyze_comprehensive(
-                        current_data=data[selection_result.selected_features],
-                        target_column='target' if 'target' in data.columns else None
-                    )
-                    
-                    # Log key insights
-                    if 'recommendations' in analysis_result:
-                        tprint_info(f"📊 Analysis recommendations: {len(analysis_result['recommendations'])}")
-                        for rec in analysis_result['recommendations'][:2]:
-                            tprint_info(f"  - {rec}")
-                    
-                    # Add analysis results to selection result
-                    if hasattr(selection_result, 'quality_metrics'):
-                        selection_result.quality_metrics['integrated_analysis'] = analysis_result
-                        
-                except Exception as analysis_error:
-                    tprint_warning(f"⚠️ Integrated analysis failed: {analysis_error}")
-            
-            return selection_result
-                
         except Exception as e:
-            raise RuntimeError(f"Advanced multi-stage feature selection failed: {e}") from e
+            error_msg = f"Advanced feature selection failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
         """Generate features for the selected feature set using enhanced utilities and safe operations."""
-        tprint_debug("Generating selected features using enhanced utilities")
+        tprint_info("🔧 Starting feature generation with comprehensive logging")
+        tprint_debug(f"📊 Input data shape: {data.shape}")
+        
+        # Validate input data before processing
+        if data is None or data.empty:
+            error_msg = "Input data is None or empty for feature generation"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(data, pd.DataFrame):
+            error_msg = f"Input data must be DataFrame, got {type(data)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
+        
+        # Validate selection result
+        if selection_result is None:
+            tprint_warning("⚠️ Selection result is None, will use comprehensive feature generation")
+        elif not hasattr(selection_result, 'success'):
+            tprint_warning("⚠️ Selection result missing 'success' attribute")
+        elif not selection_result.success:
+            tprint_warning(f"⚠️ Selection result indicates failure: {getattr(selection_result, 'error_message', 'Unknown error')}")
         
         try:
             # Use memory checkpoint for M1 optimization
+            tprint_debug("💾 Setting up memory checkpoint for feature generation")
             with memory_checkpoint("feature_generation"):
                 # First, try to use enhanced feature engineering if available
                 if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
-                    tprint_debug("🔧 Using enhanced feature engineering")
+                    tprint_info("🔧 Using enhanced feature engineering")
                     try:
                         enhanced_features = self.enhanced_feature_engineering.generate_features(data)
-                        if enhanced_features is not None and not enhanced_features.empty:
+                        
+                        if enhanced_features is None:
+                            tprint_warning("⚠️ Enhanced feature engineering returned None")
+                        elif enhanced_features.empty:
+                            tprint_warning("⚠️ Enhanced feature engineering returned empty DataFrame")
+                        else:
                             tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
                             
                             # Apply feature validation if available
                             if FEATURE_GENERATION_AVAILABLE:
+                                tprint_debug("🔍 Validating generated features")
                                 try:
                                     validated_features = validate_features_dataframe(enhanced_features)
                                     if validated_features is not None:
                                         enhanced_features = validated_features
                                         tprint_success("✅ Features validated successfully")
+                                    else:
+                                        tprint_warning("⚠️ Feature validation returned None")
                                 except Exception as e:
                                     tprint_warning(f"⚠️ Feature validation failed: {e}")
                             
                             # Apply safe DataFrame operations
-                            enhanced_features = safe_dataframe_operation(
-                                enhanced_features, 
-                                lambda df: optimize_dataframe_dtypes(df)
-                            )
+                            tprint_debug("🔧 Applying safe DataFrame operations")
+                            try:
+                                enhanced_features = safe_dataframe_operation(
+                                    enhanced_features, 
+                                    lambda df: optimize_dataframe_dtypes(df)
+                                )
+                                tprint_success("✅ DataFrame operations applied successfully")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ DataFrame operations failed: {e}")
                             
                             # Calculate and log feature quality metrics
-                            feature_quality = calculate_data_quality_metrics(enhanced_features)
-                            safe_log_metric("feature_count", len(enhanced_features.columns))
-                            safe_log_metric("feature_missing_percentage", feature_quality.get('missing_percentage', 0))
+                            tprint_debug("📊 Calculating feature quality metrics")
+                            try:
+                                feature_quality = calculate_data_quality_metrics(enhanced_features)
+                                safe_log_metric("feature_count", len(enhanced_features.columns))
+                                safe_log_metric("feature_missing_percentage", feature_quality.get('missing_percentage', 0))
+                                tprint_info(f"📊 Feature quality: {feature_quality.get('missing_percentage', 0):.1f}% missing")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Quality metrics calculation failed: {e}")
                             
                             return enhanced_features
                     except Exception as e:
                         tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
-            
-            # Fallback to Feature Bank integration
-            if selection_result is None or not selection_result.success:
-                tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
-                # Use Feature Bank integration for comprehensive feature generation
+                        tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                
+                # Fallback to Feature Bank integration
+                if selection_result is None or not getattr(selection_result, 'success', False):
+                    tprint_info("🔄 Using Feature Bank for comprehensive feature generation (fallback)")
+                    
+                    # Validate feature bank integration
+                    if self.feature_bank_integration is None:
+                        error_msg = "Feature Bank integration is not initialized"
+                        tprint_error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    # Use Feature Bank integration for comprehensive feature generation
+                    feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
+                        data, force_refresh=False
+                    )
+                    
+                    if feature_generation_result is None:
+                        error_msg = "Feature Bank generation returned None result"
+                        tprint_error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    if not hasattr(feature_generation_result, 'success'):
+                        error_msg = "Feature Bank result missing 'success' attribute"
+                        tprint_error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    if feature_generation_result.success:
+                        feature_count = getattr(feature_generation_result, 'n_features_generated', 0)
+                        tprint_success(f"✅ Generated {feature_count} features using Feature Bank")
+                        
+                        if hasattr(feature_generation_result, 'feature_data') and feature_generation_result.feature_data is not None:
+                            return feature_generation_result.feature_data
+                        else:
+                            error_msg = "Feature Bank result missing feature_data"
+                            tprint_error(f"❌ {error_msg}")
+                            raise RuntimeError(error_msg)
+                    else:
+                        error_msg = f"Feature Bank generation failed: {getattr(feature_generation_result, 'error_message', 'Unknown error')}"
+                        tprint_error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                
+                # Use Feature Bank integration for selected features
+                tprint_info("🔧 Using Feature Bank integration for selected features")
+                
+                # Validate feature bank integration
+                if self.feature_bank_integration is None:
+                    error_msg = "Feature Bank integration is not initialized"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                # Generate comprehensive features first
                 feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
                     data, force_refresh=False
                 )
                 
-                if feature_generation_result.success:
-                    tprint_success(f"✅ Generated {feature_generation_result.n_features_generated} features using Feature Bank")
-                    return feature_generation_result.feature_data
+                if feature_generation_result is None:
+                    error_msg = "Feature Bank generation returned None result"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                if not hasattr(feature_generation_result, 'success'):
+                    error_msg = "Feature Bank result missing 'success' attribute"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                if not feature_generation_result.success:
+                    error_msg = f"Feature Bank generation failed: {getattr(feature_generation_result, 'error_message', 'Unknown error')}"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                # Filter to selected features
+                if not hasattr(selection_result, 'selected_features') or not selection_result.selected_features:
+                    error_msg = "Selection result missing selected_features"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
+                tprint_debug(f"🎯 Selected feature names: {len(selected_feature_names)} features")
+                
+                if not hasattr(feature_generation_result, 'feature_data') or feature_generation_result.feature_data is None:
+                    error_msg = "Feature Bank result missing feature_data"
+                    tprint_error(f"❌ {error_msg}")
+                    raise RuntimeError(error_msg)
+                
+                available_features = feature_generation_result.feature_data.columns
+                tprint_debug(f"📋 Available features: {len(available_features)} features")
+                
+                # Find matching features
+                matching_features = [f for f in selected_feature_names if f in available_features]
+                tprint_debug(f"🔍 Matching features: {len(matching_features)} out of {len(selected_feature_names)}")
+                
+                if matching_features:
+                    features_df = feature_generation_result.feature_data[matching_features]
+                    tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
+                    
+                    # Log feature generation summary
+                    tprint_info(f"📋 Feature generation summary:")
+                    tprint_info(f"  - Selected features requested: {len(selected_feature_names)}")
+                    tprint_info(f"  - Available features: {len(available_features)}")
+                    tprint_info(f"  - Matching features: {len(matching_features)}")
+                    tprint_info(f"  - Final features generated: {len(features_df.columns)}")
+                    
+                    return features_df
                 else:
-                    tprint_error(f"❌ Feature Bank generation failed: {feature_generation_result.error_message}")
-                    return pd.DataFrame(index=data.index)
-            
-            # Use Feature Bank integration for selected features
-            tprint_debug("🔧 Using Feature Bank integration for selected features")
-            
-            # Generate comprehensive features first
-            feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                data, force_refresh=False
-            )
-            
-            if not feature_generation_result.success:
-                tprint_error("❌ Feature Bank generation failed - this is required for feature generation")
-                return pd.DataFrame(index=data.index)
-            
-            # Filter to selected features
-            selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
-            available_features = feature_generation_result.feature_data.columns
-            
-            # Find matching features
-            matching_features = [f for f in selected_feature_names if f in available_features]
-            
-            if matching_features:
-                features_df = feature_generation_result.feature_data[matching_features]
-                tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
-            else:
-                tprint_warning("⚠️ No matching features found, using all generated features")
-                features_df = feature_generation_result.feature_data
-            
-            return features_df
+                    tprint_warning("⚠️ No matching features found, using all generated features")
+                    features_df = feature_generation_result.feature_data
+                    tprint_success(f"✅ Using all {len(features_df.columns)} generated features")
+                    return features_df
             
         except Exception as e:
-            raise RuntimeError(f"Feature generation failed: {e}") from e
+            error_msg = f"Feature generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
-        tprint_debug("Starting enhanced interaction generation")
+        tprint_info("🔗 Starting enhanced interaction generation with comprehensive logging")
+        tprint_debug(f"📊 Features shape: {features_df.shape}")
+        tprint_debug(f"🎯 Targets shape: {targets.shape if targets is not None else 'None'}")
+        
+        # Validate input data before processing
+        if features_df is None or features_df.empty:
+            error_msg = "Features DataFrame is None or empty for interaction generation"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(features_df, pd.DataFrame):
+            error_msg = f"Features must be DataFrame, got {type(features_df)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
+        
+        # Validate targets if provided
+        if targets is not None:
+            if not isinstance(targets, pd.Series):
+                error_msg = f"Targets must be Series, got {type(targets)}"
+                tprint_error(f"❌ {error_msg}")
+                raise TypeError(error_msg)
+            
+            if len(targets) != len(features_df):
+                error_msg = f"Features and targets length mismatch: {len(features_df)} vs {len(targets)}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
         
         try:
             interactions = []
+            tprint_debug(f"🔗 Initializing interaction generation with {len(features_df.columns)} features")
             
             # Try to use unified VectorBT manager if available
             if FEATURES_COMMON_AVAILABLE and self.unified_vectorbt_manager:
-                tprint_debug("🔧 Using unified VectorBT manager for interaction generation")
+                tprint_info("🔧 Using unified VectorBT manager for interaction generation")
                 try:
                     # Use the unified VectorBT manager for optimized interaction generation
                     vectorbt_interactions = self.unified_vectorbt_manager.generate_interactions(
                         features_df, targets
                     )
-                    if vectorbt_interactions:
+                    if vectorbt_interactions and len(vectorbt_interactions) > 0:
                         interactions.extend(vectorbt_interactions)
                         tprint_success(f"✅ Generated {len(vectorbt_interactions)} interactions using unified VectorBT manager")
+                    else:
+                        tprint_warning("⚠️ Unified VectorBT manager returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Unified VectorBT manager failed: {e}")
+                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
             
             # Try to use cross-timeframe analysis if available
             if FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
-                tprint_debug("🔧 Using cross-timeframe analysis for interaction generation")
+                tprint_info("🔧 Using cross-timeframe analysis for interaction generation")
                 try:
                     cross_timeframe_interactions = self.cross_timeframe_pipeline.generate_interactions(
                         features_df, targets
                     )
-                    if cross_timeframe_interactions:
+                    if cross_timeframe_interactions and len(cross_timeframe_interactions) > 0:
                         interactions.extend(cross_timeframe_interactions)
                         tprint_success(f"✅ Generated {len(cross_timeframe_interactions)} cross-timeframe interactions")
+                    else:
+                        tprint_warning("⚠️ Cross-timeframe analysis returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
+                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
             
-            # Fallback to original VectorBT optimizer
-            if not interactions:
-                tprint_debug("🔧 Using fallback VectorBT optimizer for interaction generation")
-                interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
-            
-            # Apply feature validation if available
-            if FEATURE_GENERATION_AVAILABLE and interactions:
-                try:
-                    validated_interactions = []
-                    for interaction in interactions:
-                        if hasattr(interaction, 'feature_data') and interaction.feature_data is not None:
-                            validated_data = validate_features_dataframe(interaction.feature_data)
-                            if validated_data is not None:
-                                interaction.feature_data = validated_data
-                                validated_interactions.append(interaction)
-                        else:
-                            validated_interactions.append(interaction)
-                    interactions = validated_interactions
-                    tprint_success("✅ Interactions validated successfully")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Interaction validation failed: {e}")
             # Use feature engineering roadmap interactions if available
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
                 tprint_info("🎯 Using feature engineering roadmap interactions")
-                
-                # Prepare data for interaction generation
-                # Convert features to the expected format for interactions
-                transformed_data = self._prepare_data_for_interactions(features_df)
-                
-                # Generate interactions using the roadmap engine with regime awareness
-                interaction_df = self.interaction_engine.build_interactions(transformed_data)
-                
-                # Add regime-aware interactions if available
-                if hasattr(self.interaction_engine, 'regime_flags'):
-                    regime_interactions = self._generate_regime_aware_interactions(transformed_data)
-                    if not regime_interactions.empty:
-                        interaction_df = pd.concat([interaction_df, regime_interactions], axis=1)
-                
-                if not interaction_df.empty:
-                    # Convert to list format expected by the pipeline
-                    for col in interaction_df.columns:
-                        interactions.append({
-                            'name': col,
-                            'values': interaction_df[col].values,
-                            'type': 'roadmap_interaction',
-                            'source': 'feature_engineering_roadmap'
-                        })
+                try:
+                    # Prepare data for interaction generation
+                    tprint_debug("🔧 Preparing data for roadmap interactions")
+                    transformed_data = self._prepare_data_for_interactions(features_df)
                     
-                    tprint_success(f"✅ Generated {len(interactions)} roadmap interactions")
-                else:
-                    tprint_warning("⚠️ No roadmap interactions generated")
+                    if transformed_data is None or transformed_data.empty:
+                        tprint_warning("⚠️ Transformed data is None or empty for roadmap interactions")
+                    else:
+                        # Generate interactions using the roadmap engine with regime awareness
+                        tprint_debug("🔧 Building interactions using roadmap engine")
+                        interaction_df = self.interaction_engine.build_interactions(transformed_data)
+                        
+                        if interaction_df is not None and not interaction_df.empty:
+                            # Add regime-aware interactions if available
+                            if hasattr(self.interaction_engine, 'regime_flags'):
+                                tprint_debug("🔧 Generating regime-aware interactions")
+                                try:
+                                    regime_interactions = self._generate_regime_aware_interactions(transformed_data)
+                                    if regime_interactions is not None and not regime_interactions.empty:
+                                        interaction_df = pd.concat([interaction_df, regime_interactions], axis=1)
+                                        tprint_success(f"✅ Added {len(regime_interactions.columns)} regime-aware interactions")
+                                    else:
+                                        tprint_warning("⚠️ No regime-aware interactions generated")
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Regime-aware interaction generation failed: {e}")
+                            
+                            # Convert to list format expected by the pipeline
+                            tprint_debug(f"🔧 Converting {len(interaction_df.columns)} interactions to pipeline format")
+                            for col in interaction_df.columns:
+                                interactions.append({
+                                    'name': col,
+                                    'values': interaction_df[col].values,
+                                    'type': 'roadmap_interaction',
+                                    'source': 'feature_engineering_roadmap'
+                                })
+                            
+                            tprint_success(f"✅ Generated {len(interaction_df.columns)} roadmap interactions")
+                        else:
+                            tprint_warning("⚠️ Roadmap engine returned no interactions")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Feature engineering roadmap interactions failed: {e}")
+                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
             
-            # Fallback to VectorBT optimizer if no roadmap interactions or as additional
-            if not interactions or self.config.feature_selection.enable_fallback_interactions:
-                tprint_info("🔄 Using VectorBT optimizer for additional interactions")
-                vectorbt_interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
-                interactions.extend(vectorbt_interactions)
+            # Fallback to original VectorBT optimizer if no interactions generated
+            if not interactions:
+                tprint_info("🔄 Using fallback VectorBT optimizer for interaction generation")
+                try:
+                    if self.vectorbt_optimizer is None:
+                        error_msg = "VectorBT optimizer is not initialized"
+                        tprint_error(f"❌ {error_msg}")
+                        raise RuntimeError(error_msg)
+                    
+                    interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+                    
+                    if interactions and len(interactions) > 0:
+                        tprint_success(f"✅ Generated {len(interactions)} interactions using fallback VectorBT optimizer")
+                    else:
+                        tprint_warning("⚠️ Fallback VectorBT optimizer returned no interactions")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Fallback VectorBT optimizer failed: {e}")
+                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
             
-            tprint_success(f"✅ Generated {len(interactions)} total interactions")
+            # Apply feature validation if available
+            if FEATURE_GENERATION_AVAILABLE and interactions:
+                tprint_info("🔍 Validating generated interactions")
+                try:
+                    validated_interactions = []
+                    validation_errors = 0
+                    
+                    for i, interaction in enumerate(interactions):
+                        try:
+                            if hasattr(interaction, 'feature_data') and interaction.feature_data is not None:
+                                validated_data = validate_features_dataframe(interaction.feature_data)
+                                if validated_data is not None:
+                                    interaction.feature_data = validated_data
+                                    validated_interactions.append(interaction)
+                                else:
+                                    tprint_warning(f"⚠️ Interaction {i} validation returned None")
+                                    validation_errors += 1
+                            else:
+                                validated_interactions.append(interaction)
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Interaction {i} validation failed: {e}")
+                            validation_errors += 1
+                    
+                    interactions = validated_interactions
+                    
+                    if validation_errors == 0:
+                        tprint_success("✅ All interactions validated successfully")
+                    else:
+                        tprint_warning(f"⚠️ {validation_errors} interactions had validation issues")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Interaction validation failed: {e}")
+                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+            
+            # Log final interaction summary
+            tprint_info(f"📋 Interaction generation summary:")
+            tprint_info(f"  - Total interactions generated: {len(interactions)}")
+            tprint_info(f"  - Input features: {len(features_df.columns)}")
+            
+            if interactions:
+                # Log interaction types
+                interaction_types = {}
+                for interaction in interactions:
+                    interaction_type = getattr(interaction, 'type', 'unknown')
+                    if isinstance(interaction, dict):
+                        interaction_type = interaction.get('type', 'unknown')
+                    interaction_types[interaction_type] = interaction_types.get(interaction_type, 0) + 1
+                
+                tprint_info(f"  - Interaction types: {interaction_types}")
+            
+            tprint_success(f"✅ Enhanced interaction generation completed: {len(interactions)} interactions")
             return interactions
             
         except Exception as e:
-            raise RuntimeError(f"Enhanced interaction generation failed: {e}") from e
+            error_msg = f"Enhanced interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _prepare_data_for_interactions(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Prepare data for feature engineering roadmap interactions."""
@@ -4241,66 +4486,201 @@ class UnifiedDataDrivenPipeline:
     def _combine_period_scores_safe(self, statistical_analysis: Dict[int, Dict[str, Any]], 
                                    economic_evaluation: Any) -> Dict[int, float]:
         """Combine statistical and economic period scores using safe mathematical operations."""
+        tprint_debug("🔄 Combining period scores with safe mathematical operations")
+        
+        # Validate inputs
+        if not statistical_analysis or not isinstance(statistical_analysis, dict):
+            error_msg = "Statistical analysis is None, empty, or not a dictionary"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
         try:
             combined_scores = {}
+            statistical_count = 0
+            economic_count = 0
+            
+            tprint_debug(f"📊 Processing {len(statistical_analysis)} statistical analysis entries")
             
             # Extract statistical scores with safe operations
             for period, analysis in statistical_analysis.items():
+                if not isinstance(analysis, dict):
+                    tprint_warning(f"⚠️ Period {period} analysis is not a dictionary, skipping")
+                    continue
+                
                 if 'error' not in analysis:
-                    # Use sharpe ratio as statistical score with safe division
-                    sharpe_ratio = safe_float(analysis.get('sharpe_ratio', 0.0))
-                    statistical_weight = safe_divide_util(sharpe_ratio * 0.4, 1.0, default=0.0)
-                    combined_scores[period] = validate_finite_util(statistical_weight, f"statistical_score_{period}")
+                    try:
+                        # Use sharpe ratio as statistical score with safe division
+                        sharpe_ratio = safe_float(analysis.get('sharpe_ratio', 0.0))
+                        statistical_weight = safe_divide_util(sharpe_ratio * 0.4, 1.0, default=0.0)
+                        validated_weight = validate_finite_util(statistical_weight, f"statistical_score_{period}")
+                        combined_scores[period] = validated_weight
+                        statistical_count += 1
+                        
+                        tprint_debug(f"📈 Period {period}: sharpe={sharpe_ratio:.3f}, weight={validated_weight:.3f}")
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Error processing statistical score for period {period}: {e}")
+                        continue
+                else:
+                    tprint_debug(f"⚠️ Period {period} has error in analysis, skipping")
+            
+            tprint_success(f"✅ Processed {statistical_count} statistical scores")
             
             # Add economic scores with safe operations
             if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
-                for period, score in economic_evaluation.period_scores.items():
-                    safe_score = safe_float(score)
-                    economic_weight = safe_divide_util(safe_score * 0.6, 1.0, default=0.0)
-                    validated_weight = validate_finite_util(economic_weight, f"economic_score_{period}")
-                    
-                    if period in combined_scores:
-                        combined_scores[period] = safe_divide_util(
-                            combined_scores[period] + validated_weight, 1.0, default=combined_scores[period]
-                        )
+                tprint_debug("💰 Processing economic evaluation scores")
+                try:
+                    economic_scores = economic_evaluation.period_scores
+                    if not isinstance(economic_scores, dict):
+                        tprint_warning("⚠️ Economic evaluation period_scores is not a dictionary")
                     else:
-                        combined_scores[period] = validated_weight
+                        for period, score in economic_scores.items():
+                            try:
+                                safe_score = safe_float(score)
+                                economic_weight = safe_divide_util(safe_score * 0.6, 1.0, default=0.0)
+                                validated_weight = validate_finite_util(economic_weight, f"economic_score_{period}")
+                                
+                                if period in combined_scores:
+                                    # Combine with existing statistical score
+                                    combined_scores[period] = safe_divide_util(
+                                        combined_scores[period] + validated_weight, 1.0, default=combined_scores[period]
+                                    )
+                                    tprint_debug(f"💰 Period {period}: combined score={combined_scores[period]:.3f}")
+                                else:
+                                    # Use only economic score
+                                    combined_scores[period] = validated_weight
+                                    tprint_debug(f"💰 Period {period}: economic-only score={validated_weight:.3f}")
+                                
+                                economic_count += 1
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Error processing economic score for period {period}: {e}")
+                                continue
+                        
+                        tprint_success(f"✅ Processed {economic_count} economic scores")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error processing economic evaluation: {e}")
+            else:
+                tprint_debug("ℹ️ No economic evaluation available or missing period_scores attribute")
+            
+            # Validate final combined scores
+            if not combined_scores:
+                error_msg = "No valid combined scores generated"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            
+            # Log final summary
+            tprint_info(f"📋 Period score combination summary:")
+            tprint_info(f"  - Statistical scores processed: {statistical_count}")
+            tprint_info(f"  - Economic scores processed: {economic_count}")
+            tprint_info(f"  - Total combined scores: {len(combined_scores)}")
+            
+            # Log top scores
+            if combined_scores:
+                top_scores = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:5]
+                tprint_debug(f"🏆 Top 5 periods: {[(p, f'{s:.3f}') for p, s in top_scores]}")
             
             return combined_scores
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error combining period scores: {e}")
-            return {}
+            error_msg = f"Error combining period scores: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _select_optimal_periods_safe(self, combined_scores: Dict[int, float]) -> List[int]:
         """Select optimal periods using safe operations and validation."""
+        tprint_debug("🏆 Selecting optimal periods with safe operations and validation")
+        
+        # Validate inputs
+        if not combined_scores or not isinstance(combined_scores, dict):
+            error_msg = "Combined scores is None, empty, or not a dictionary"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
         try:
-            if not combined_scores:
-                return []
+            tprint_debug(f"📊 Processing {len(combined_scores)} combined scores for period selection")
+            
+            # Validate and clean scores
+            valid_scores = {}
+            invalid_count = 0
+            
+            for period, score in combined_scores.items():
+                try:
+                    # Validate the score is finite and numeric
+                    validated_score = validate_finite_util(safe_float(score), f"score_{period}")
+                    if validated_score is not None and not np.isnan(validated_score):
+                        valid_scores[period] = validated_score
+                        tprint_debug(f"✅ Period {period}: score={validated_score:.3f}")
+                    else:
+                        tprint_warning(f"⚠️ Period {period}: invalid score {score}, skipping")
+                        invalid_count += 1
+                except Exception as e:
+                    tprint_warning(f"⚠️ Period {period}: error validating score {score}: {e}")
+                    invalid_count += 1
+            
+            if invalid_count > 0:
+                tprint_warning(f"⚠️ {invalid_count} periods had invalid scores and were skipped")
+            
+            if not valid_scores:
+                error_msg = "No valid scores found for period selection"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
+            
+            tprint_success(f"✅ Validated {len(valid_scores)} scores for period selection")
             
             # Sort periods by score using safe operations
+            tprint_debug("🔄 Sorting periods by score")
             sorted_periods = sorted(
-                combined_scores.items(), 
-                key=lambda x: validate_finite_util(safe_float(x[1]), f"score_{x[0]}"), 
+                valid_scores.items(), 
+                key=lambda x: x[1], 
                 reverse=True
             )
             
+            tprint_debug(f"📊 Sorted {len(sorted_periods)} periods by score")
+            
             # Select top periods with validation
             optimal_periods = []
-            for period, score in sorted_periods[:10]:  # Top 10 periods
-                validated_score = validate_finite_util(safe_float(score), f"final_score_{period}")
-                if validated_score > 0.1:  # Minimum threshold
+            min_score_threshold = 0.1  # Minimum score threshold
+            max_periods = 10  # Maximum number of periods to select
+            
+            tprint_debug(f"🎯 Selecting periods with score >= {min_score_threshold} (max {max_periods})")
+            
+            for i, (period, score) in enumerate(sorted_periods[:max_periods]):
+                if score >= min_score_threshold:
                     optimal_periods.append(period)
+                    tprint_debug(f"✅ Selected period {period}: score={score:.3f} (rank {i+1})")
+                else:
+                    tprint_debug(f"❌ Rejected period {period}: score={score:.3f} < {min_score_threshold}")
             
-            # Log selection metrics safely
-            safe_log_metric("total_candidate_periods", len(combined_scores))
-            safe_log_metric("selected_optimal_periods", len(optimal_periods))
+            # Validate selection results
+            if not optimal_periods:
+                error_msg = f"No periods met the minimum score threshold of {min_score_threshold}"
+                tprint_error(f"❌ {error_msg}")
+                raise RuntimeError(error_msg)
             
+            # Log selection summary
+            tprint_info(f"📋 Period selection summary:")
+            tprint_info(f"  - Total scores processed: {len(combined_scores)}")
+            tprint_info(f"  - Valid scores: {len(valid_scores)}")
+            tprint_info(f"  - Invalid scores: {invalid_count}")
+            tprint_info(f"  - Selected periods: {len(optimal_periods)}")
+            tprint_info(f"  - Selected periods: {optimal_periods}")
+            
+            # Log score distribution
+            if optimal_periods:
+                selected_scores = [valid_scores[p] for p in optimal_periods]
+                tprint_debug(f"📊 Selected period scores: {[f'{s:.3f}' for s in selected_scores]}")
+                tprint_debug(f"📊 Score range: {min(selected_scores):.3f} - {max(selected_scores):.3f}")
+            
+            tprint_success(f"✅ Period selection completed: {len(optimal_periods)} optimal periods selected")
             return optimal_periods
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error selecting optimal periods: {e}")
-            return []
+            error_msg = f"Error selecting optimal periods: {e}"
+            tprint_error(f"❌ {error_msg}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_error(f"❌ Error details: {str(e)}")
+            raise RuntimeError(error_msg) from e
     
     def _calculate_interaction_metrics(self, interactions: List[Any]) -> Dict[str, Any]:
         """Calculate metrics for generated interactions with math validation."""

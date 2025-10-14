@@ -310,10 +310,24 @@ class UnifiedDataDrivenPipeline:
             embargo_fraction=self.config.feature_selection.cv_config.embargo_fraction
         )
         
-        # Multi-objective feature selector
+        # Multi-objective feature selector with computational awareness
+        computational_constraints = None
+        if self.config.feature_selection.enable_computational_awareness:
+            from .core.computational_awareness import ComputationalConstraints
+            constraints_config = self.config.feature_selection.computational_constraints
+            computational_constraints = ComputationalConstraints(
+                max_memory_gb=constraints_config.get('max_memory_gb'),
+                max_cpu_cores=constraints_config.get('max_cpu_cores'),
+                max_execution_time_seconds=constraints_config.get('max_execution_time_seconds', 300.0),
+                memory_safety_margin=constraints_config.get('memory_safety_margin', 0.2),
+                cpu_safety_margin=constraints_config.get('cpu_safety_margin', 0.1)
+            )
+        
         self.feature_selector = MultiObjectiveFeatureSelector(
             objectives=create_default_objectives(),
-            cv_splitter=self.cv_splitter
+            cv_splitter=self.cv_splitter,
+            enable_computational_awareness=self.config.feature_selection.enable_computational_awareness,
+            computational_constraints=computational_constraints
         )
         
         # Economic evaluator
@@ -1643,7 +1657,15 @@ class UnifiedDataDrivenPipeline:
             
             # Fallback to standard multi-objective feature selector
             tprint_info("📊 Using standard multi-objective feature selection")
-            selection_result = self.feature_selector.select_features(data, targets)
+            
+            # Use computational awareness for time constraint
+            time_constraint = None
+            if hasattr(self.config.feature_selection, 'computational_constraints'):
+                time_constraint = self.config.feature_selection.computational_constraints.get('max_execution_time_seconds')
+            
+            selection_result = self.feature_selector.select_features(
+                data, targets, time_constraint=time_constraint
+            )
             
             if selection_result:
                 tprint_success(f"✅ Final feature selection completed: {len(selection_result.selected_features)} features selected")

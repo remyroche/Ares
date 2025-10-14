@@ -307,6 +307,21 @@ class FeatureSelectionConfig:
         'cv_folds': 5
     })
     
+    # Computational awareness configuration
+    enable_computational_awareness: bool = True
+    computational_constraints: Optional[Dict[str, Any]] = field(default_factory=lambda: {
+        'max_memory_gb': None,  # Auto-detect if None
+        'max_cpu_cores': None,  # Auto-detect if None
+        'max_execution_time_seconds': 300.0,
+        'memory_safety_margin': 0.2,
+        'cpu_safety_margin': 0.1
+    })
+    
+    # Method selection strategy
+    method_selection_strategy: str = 'computational_aware'  # 'computational_aware', 'performance_first', 'quality_first'
+    adaptive_method_selection: bool = True
+    performance_history_weight: float = 0.3  # Weight for historical performance in method selection
+    
     # Cross-validation
     cv_config: TimeSeriesCVConfig = field(default_factory=TimeSeriesCVConfig)
     

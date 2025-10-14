@@ -426,6 +426,12 @@ class OptimizedFeaturePipeline:
         """Get current memory usage in MB."""
         try:
             import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / 1024 / 1024
+        except ImportError:
+            return 0.0
+        except Exception:
+            return 0.0
 
 # VectorBT imports for native optimization
 try:
@@ -460,9 +466,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            return psutil.virtual_memory().used / (1024 * 1024)
-        except ImportError:
-            return 0.0
     
     def _update_performance_stats(self, processing_time: float, memory_usage: float, success: bool):
         """Update performance statistics."""

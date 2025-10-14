@@ -36,11 +36,21 @@ class UnifiedPipelineCommandConfig:
     symbol: str = "ETHUSDT"
     timeframe: str = "15m"
     
-    # Pipeline intensity
+    # Pipeline intensity (from ares_launcher execution mode)
     intensity: str = "blank"  # Default to 25% intensity
     
-    # Direction settings
-    direction: str = "long"  # 'long', 'short', 'both'
+    # Direction settings (from ares_launcher --direction)
+    direction: str = "longs"  # 'longs', 'shorts', 'both' (ares_launcher format)
+    
+    # Lookback settings (from ares_launcher mode config)
+    lookback_days: Optional[int] = None  # From ares_launcher mode config
+    
+    # Date range settings (from ares_launcher)
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    
+    # Exchange settings (from ares_launcher)
+    exchange: str = "binance"
     
     # Output settings
     output_dir: Optional[str] = None
@@ -57,13 +67,13 @@ class UnifiedPipelineCommandConfig:
         if self.custom_overrides is None:
             self.custom_overrides = {}
         
-        # Set direction based on command type
+        # Set direction based on command type (convert to ares_launcher format)
         if 'short' in self.command_type:
-            self.direction = 'short'
+            self.direction = 'shorts'
         elif 'long' in self.command_type:
-            self.direction = 'long'
+            self.direction = 'longs'
         else:
-            self.direction = 'long'  # Default for analyst/tactician
+            self.direction = 'longs'  # Default for analyst/tactician
 
 
 class UnifiedPipelineCommandHandler:
@@ -79,14 +89,26 @@ class UnifiedPipelineCommandHandler:
     
     def handle_analyst_command(self, 
                               symbol: str = "ETHUSDT",
+                              timeframe: str = "15m",
+                              direction: str = "longs",
                               intensity: str = "blank",
+                              lookback_days: Optional[int] = None,
+                              start_date: Optional[str] = None,
+                              end_date: Optional[str] = None,
+                              exchange: str = "binance",
                               custom_overrides: Optional[Dict[str, Any]] = None,
                               **kwargs) -> RefactoredUnifiedPipeline:
         """Handle --unified-pipeline-analyst command.
         
         Args:
             symbol: Trading symbol (default: ETHUSDT)
+            timeframe: Data timeframe (default: 15m)
+            direction: Direction type (default: longs)
             intensity: Pipeline intensity (default: blank)
+            lookback_days: Lookback period in days (optional)
+            start_date: Start date for data (optional)
+            end_date: End date for data (optional)
+            exchange: Exchange name (default: binance)
             custom_overrides: Custom configuration overrides
             **kwargs: Additional arguments
             
@@ -96,7 +118,13 @@ class UnifiedPipelineCommandHandler:
         config = UnifiedPipelineCommandConfig(
             command_type="analyst",
             symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
             intensity=intensity,
+            lookback_days=lookback_days,
+            start_date=start_date,
+            end_date=end_date,
+            exchange=exchange,
             custom_overrides=custom_overrides or {}
         )
         
@@ -105,8 +133,20 @@ class UnifiedPipelineCommandHandler:
             'labeling_system': 'tactician_analyst',
             'labeling_type': 'analyst',
             'enable_labeling_optimization': True,
-            'labeling_quality_threshold': 0.7
+            'labeling_quality_threshold': 0.7,
+            'symbol': config.symbol,
+            'timeframe': config.timeframe,
+            'direction': config.direction,
+            'exchange': config.exchange
         }
+        
+        # Add lookback and date settings if provided
+        if config.lookback_days is not None:
+            analyst_overrides['lookback_days'] = config.lookback_days
+        if config.start_date is not None:
+            analyst_overrides['start_date'] = config.start_date
+        if config.end_date is not None:
+            analyst_overrides['end_date'] = config.end_date
         
         # Merge with custom overrides
         final_overrides = {**analyst_overrides, **config.custom_overrides}
@@ -123,14 +163,26 @@ class UnifiedPipelineCommandHandler:
     
     def handle_tactician_command(self, 
                                 symbol: str = "ETHUSDT",
+                                timeframe: str = "15m",
+                                direction: str = "longs",
                                 intensity: str = "blank",
+                                lookback_days: Optional[int] = None,
+                                start_date: Optional[str] = None,
+                                end_date: Optional[str] = None,
+                                exchange: str = "binance",
                                 custom_overrides: Optional[Dict[str, Any]] = None,
                                 **kwargs) -> RefactoredUnifiedPipeline:
         """Handle --unified-pipeline-tactician command.
         
         Args:
             symbol: Trading symbol (default: ETHUSDT)
+            timeframe: Data timeframe (default: 15m)
+            direction: Direction type (default: longs)
             intensity: Pipeline intensity (default: blank)
+            lookback_days: Lookback period in days (optional)
+            start_date: Start date for data (optional)
+            end_date: End date for data (optional)
+            exchange: Exchange name (default: binance)
             custom_overrides: Custom configuration overrides
             **kwargs: Additional arguments
             
@@ -140,7 +192,13 @@ class UnifiedPipelineCommandHandler:
         config = UnifiedPipelineCommandConfig(
             command_type="tactician",
             symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
             intensity=intensity,
+            lookback_days=lookback_days,
+            start_date=start_date,
+            end_date=end_date,
+            exchange=exchange,
             custom_overrides=custom_overrides or {}
         )
         
@@ -149,8 +207,20 @@ class UnifiedPipelineCommandHandler:
             'labeling_system': 'tactician_analyst',
             'labeling_type': 'tactician',
             'enable_labeling_optimization': True,
-            'labeling_quality_threshold': 0.7
+            'labeling_quality_threshold': 0.7,
+            'symbol': config.symbol,
+            'timeframe': config.timeframe,
+            'direction': config.direction,
+            'exchange': config.exchange
         }
+        
+        # Add lookback and date settings if provided
+        if config.lookback_days is not None:
+            tactician_overrides['lookback_days'] = config.lookback_days
+        if config.start_date is not None:
+            tactician_overrides['start_date'] = config.start_date
+        if config.end_date is not None:
+            tactician_overrides['end_date'] = config.end_date
         
         # Merge with custom overrides
         final_overrides = {**tactician_overrides, **config.custom_overrides}
@@ -319,37 +389,67 @@ def create_unified_pipeline_command_handler(logger: Optional[logging.Logger] = N
 
 # Convenience functions for direct command handling
 def handle_unified_pipeline_analyst(symbol: str = "ETHUSDT", 
+                                  timeframe: str = "15m",
+                                  direction: str = "longs",
                                   intensity: str = "blank",
+                                  lookback_days: Optional[int] = None,
+                                  start_date: Optional[str] = None,
+                                  end_date: Optional[str] = None,
+                                  exchange: str = "binance",
                                   **kwargs) -> RefactoredUnifiedPipeline:
     """Handle unified pipeline analyst command.
     
     Args:
         symbol: Trading symbol
+        timeframe: Data timeframe
+        direction: Direction type
         intensity: Pipeline intensity
+        lookback_days: Lookback period in days
+        start_date: Start date for data
+        end_date: End date for data
+        exchange: Exchange name
         **kwargs: Additional arguments
         
     Returns:
         Configured pipeline for analyst mode
     """
     handler = create_unified_pipeline_command_handler()
-    return handler.handle_analyst_command(symbol, intensity, **kwargs)
+    return handler.handle_analyst_command(
+        symbol, timeframe, direction, intensity, 
+        lookback_days, start_date, end_date, exchange, **kwargs
+    )
 
 
 def handle_unified_pipeline_tactician(symbol: str = "ETHUSDT", 
+                                     timeframe: str = "15m",
+                                     direction: str = "longs",
                                      intensity: str = "blank",
+                                     lookback_days: Optional[int] = None,
+                                     start_date: Optional[str] = None,
+                                     end_date: Optional[str] = None,
+                                     exchange: str = "binance",
                                      **kwargs) -> RefactoredUnifiedPipeline:
     """Handle unified pipeline tactician command.
     
     Args:
         symbol: Trading symbol
+        timeframe: Data timeframe
+        direction: Direction type
         intensity: Pipeline intensity
+        lookback_days: Lookback period in days
+        start_date: Start date for data
+        end_date: End date for data
+        exchange: Exchange name
         **kwargs: Additional arguments
         
     Returns:
         Configured pipeline for tactician mode
     """
     handler = create_unified_pipeline_command_handler()
-    return handler.handle_tactician_command(symbol, intensity, **kwargs)
+    return handler.handle_tactician_command(
+        symbol, timeframe, direction, intensity, 
+        lookback_days, start_date, end_date, exchange, **kwargs
+    )
 
 
 def handle_unified_pipeline_analyst_short(symbol: str = "ETHUSDT", 

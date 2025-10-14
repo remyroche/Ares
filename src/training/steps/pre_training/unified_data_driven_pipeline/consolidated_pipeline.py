@@ -2436,23 +2436,51 @@ class UnifiedDataDrivenPipeline:
             raise RuntimeError(f"Data quality monitoring failed for {context}: {e}") from e
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
-        """Validate input data and parameters."""
+        """Validate input data and parameters with comprehensive checks."""
         try:
-            if data is None or data.empty:
-                tprint_error("Data is None or empty")
-                return False
+            # Check data existence and type
+            if data is None:
+                raise ValueError("Data cannot be None")
             
-            if 'close' not in data.columns:
-                tprint_error("Data must contain 'close' column")
-                return False
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
             
-            if targets is not None and len(targets) != len(data):
-                tprint_error("Targets length does not match data length")
-                return False
+            if data.empty:
+                raise ValueError("Data cannot be empty")
             
+            # Check required columns
+            required_columns = ['close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                raise ValueError(f"Data must contain required columns: {missing_columns}")
+            
+            # Check data quality
+            if data['close'].isna().all():
+                raise ValueError("Close prices cannot be all NaN")
+            
+            if (data['close'] <= 0).any():
+                raise ValueError("Close prices must be positive")
+            
+            # Check targets if provided
+            if targets is not None:
+                if not isinstance(targets, pd.Series):
+                    raise ValueError(f"Targets must be a pandas Series, got {type(targets)}")
+                
+                if len(targets) != len(data):
+                    raise ValueError(f"Targets length ({len(targets)}) does not match data length ({len(data)})")
+                
+                if targets.isna().all():
+                    raise ValueError("Targets cannot be all NaN")
+            
+            # Check for reasonable data size
+            if len(data) < 10:
+                raise ValueError(f"Data must have at least 10 rows, got {len(data)}")
+            
+            tprint_success("✅ Input validation passed")
             return True
             
         except Exception as e:
+            tprint_error(f"❌ Input validation failed: {e}")
             raise ValueError(f"Input validation failed: {e}") from e
     
     def _prepare_data(self, data: pd.DataFrame, targets: Optional[pd.Series], 
@@ -2783,7 +2811,7 @@ class UnifiedDataDrivenPipeline:
                             return enhanced_features
                     except Exception as e:
                         tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
-                        tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                        tprint_warning(f"⚠️ Falling back to Feature Bank integration")
                 
                 # Fallback to Feature Bank integration
                 if selection_result is None or not getattr(selection_result, 'success', False):
@@ -2948,7 +2976,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Unified VectorBT manager returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Unified VectorBT manager failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Falling back to standard VectorBT optimizer")
             
             # Try to use cross-timeframe analysis if available
             if FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
@@ -2964,7 +2992,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Cross-timeframe analysis returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without cross-timeframe analysis")
             
             # Use feature engineering roadmap interactions if available
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
@@ -3010,7 +3038,7 @@ class UnifiedDataDrivenPipeline:
                             tprint_warning("⚠️ Roadmap engine returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Feature engineering roadmap interactions failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without roadmap interactions")
             
             # Fallback to original VectorBT optimizer if no interactions generated
             if not interactions:
@@ -3029,7 +3057,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Fallback VectorBT optimizer returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Fallback VectorBT optimizer failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ No interactions generated - this may affect model performance")
             
             # Apply feature validation if available
             if FEATURE_GENERATION_AVAILABLE and interactions:
@@ -3063,7 +3091,7 @@ class UnifiedDataDrivenPipeline:
                         
                 except Exception as e:
                     tprint_warning(f"⚠️ Interaction validation failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without validation - features may have quality issues")
             
             # Log final interaction summary
             tprint_info(f"📋 Interaction generation summary:")
@@ -3714,8 +3742,8 @@ class UnifiedDataDrivenPipeline:
                             best_lookback = lookback
                             
                 except Exception as e:
-                    tprint_debug(f"⚠️ Lookback {lookback} failed: {e}")
-                    continue
+                    tprint_error(f"❌ Lookback {lookback} optimization failed: {e}")
+                    raise RuntimeError(f"Lookback optimization failed for period {lookback}: {e}") from e
             
             if best_score > -np.inf:
                 return {

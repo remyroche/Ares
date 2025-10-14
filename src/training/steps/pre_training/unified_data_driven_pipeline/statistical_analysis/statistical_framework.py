@@ -206,7 +206,8 @@ class NormalityTest(StatisticalTest):
                     'is_normal': shapiro_p > 0.05
                 }
             except Exception as e:
-                tprint_debug(f"Shapiro-Wilk test failed for {col}: {e}")
+                tprint_error(f"❌ Shapiro-Wilk test failed for {col}: {e}")
+                raise RuntimeError(f"Shapiro-Wilk test failed for {col}: {e}") from e
             
             # Anderson-Darling test
             try:
@@ -218,7 +219,8 @@ class NormalityTest(StatisticalTest):
                     'is_normal': ad_stat < ad_critical[2]  # 5% significance level
                 }
             except Exception as e:
-                tprint_debug(f"Anderson-Darling test failed for {col}: {e}")
+                tprint_error(f"❌ Anderson-Darling test failed for {col}: {e}")
+                raise RuntimeError(f"Anderson-Darling test failed for {col}: {e}") from e
         
         return results
     
@@ -264,7 +266,7 @@ class CorrelationTest(StatisticalTest):
                         
                         p_values.iloc[i, j] = p_val
                     except Exception as e:
-                        tprint_debug(f"Correlation test failed for {corr_matrix.columns[i]} vs {corr_matrix.columns[j]}: {e}")
+                        tprint_warning(f"⚠️ Correlation test failed for {corr_matrix.columns[i]} vs {corr_matrix.columns[j]}: {e}")
                         p_values.iloc[i, j] = 1.0
         
         results['correlation_matrix'] = corr_matrix

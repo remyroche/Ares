@@ -174,8 +174,8 @@ class OutOfSampleSharpeObjective(ObjectiveFunction):
             return ObjectiveResult(value=sharpe_ratio, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Sharpe ratio calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Sharpe ratio calculation failed: {e}")
+            raise RuntimeError(f"Sharpe ratio calculation failed: {e}") from e
 
 
 class DrawdownObjective(ObjectiveFunction):
@@ -226,8 +226,8 @@ class DrawdownObjective(ObjectiveFunction):
             return ObjectiveResult(value=max_drawdown, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Drawdown calculation failed: {e}")
-            return ObjectiveResult(value=1.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Drawdown calculation failed: {e}")
+            raise RuntimeError(f"Drawdown calculation failed: {e}") from e
     
     def _calculate_drawdown_duration(self, drawdown: pd.Series) -> int:
         """Calculate maximum drawdown duration."""
@@ -281,8 +281,8 @@ class TurnoverObjective(ObjectiveFunction):
             return ObjectiveResult(value=turnover, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Turnover calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Turnover calculation failed: {e}")
+            raise RuntimeError(f"Turnover calculation failed: {e}") from e
 
 
 class StabilityObjective(ObjectiveFunction):
@@ -335,8 +335,8 @@ class StabilityObjective(ObjectiveFunction):
             return ObjectiveResult(value=stability, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Stability calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Stability calculation failed: {e}")
+            raise RuntimeError(f"Stability calculation failed: {e}") from e
 
 
 class DiversityObjective(ObjectiveFunction):
@@ -381,8 +381,8 @@ class DiversityObjective(ObjectiveFunction):
             return ObjectiveResult(value=diversity, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Diversity calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Diversity calculation failed: {e}")
+            raise RuntimeError(f"Diversity calculation failed: {e}") from e
     
     def _calculate_correlation_penalty(self, selected_data: pd.DataFrame) -> float:
         """Calculate diversity using correlation penalty."""
@@ -417,8 +417,8 @@ class DiversityObjective(ObjectiveFunction):
             return max(0.0, diversity)
             
         except Exception as e:
-            tprint_debug(f"DPP diversity calculation failed: {e}")
-            return 0.0
+            tprint_error(f"❌ DPP diversity calculation failed: {e}")
+            raise RuntimeError(f"DPP diversity calculation failed: {e}") from e
 
 
 class MutualInformationObjective(ObjectiveFunction):
@@ -470,8 +470,8 @@ class MutualInformationObjective(ObjectiveFunction):
             return ObjectiveResult(value=avg_mi, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Mutual information calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Mutual information calculation failed: {e}")
+            raise RuntimeError(f"Mutual information calculation failed: {e}") from e
 
 
 class ProfitCenteredObjective(ObjectiveFunction):
@@ -520,8 +520,8 @@ class ProfitCenteredObjective(ObjectiveFunction):
             return ObjectiveResult(value=profit_score, metadata=metadata, is_valid=True)
             
         except Exception as e:
-            tprint_debug(f"Profit-centered calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            tprint_error(f"❌ Profit-centered calculation failed: {e}")
+            raise RuntimeError(f"Profit-centered calculation failed: {e}") from e
 
 
 class MultiObjectiveFeatureSelector:
@@ -738,8 +738,8 @@ class MultiObjectiveFeatureSelector:
             )
             
         except Exception as e:
-            tprint_warning(f"⚠️ Evolutionary feature selection failed: {e}")
-            return self._standard_feature_selection(features, targets, cv_splits)
+            tprint_error(f"❌ Evolutionary feature selection failed: {e}")
+            raise RuntimeError(f"Evolutionary feature selection failed: {e}") from e
     
     def _pareto_feature_selection(self, features: pd.DataFrame, 
                                 targets: pd.Series,
@@ -825,8 +825,8 @@ class MultiObjectiveFeatureSelector:
             )
             
         except Exception as e:
-            tprint_warning(f"⚠️ Pareto feature selection failed: {e}")
-            return self._standard_feature_selection(features, targets, cv_splits)
+            tprint_error(f"❌ Pareto feature selection failed: {e}")
+            raise RuntimeError(f"Pareto feature selection failed: {e}") from e
     
     def _standard_feature_selection(self, features: pd.DataFrame, 
                                   targets: pd.Series,
@@ -980,8 +980,8 @@ class MultiObjectiveFeatureSelector:
             return analysis
             
         except Exception as e:
-            tprint_warning(f"⚠️ Pareto front analysis failed: {e}")
-            return {}
+            tprint_error(f"❌ Pareto front analysis failed: {e}")
+            raise RuntimeError(f"Pareto front analysis failed: {e}") from e
     
     def get_financial_score(self, objective_values: Dict[str, float]) -> float:
         """Get financial score using ml_commons scalarization."""
@@ -997,8 +997,8 @@ class MultiObjectiveFeatureSelector:
             financial_weights = DEFAULT_FINANCIAL_WEIGHTS if DEFAULT_FINANCIAL_WEIGHTS else self.weights
             return scalarize_financial_goals(objective_values, financial_weights)
         except Exception as e:
-            tprint_warning(f"⚠️ Financial scoring failed: {e}")
-            return 0.0
+            tprint_error(f"❌ Financial scoring failed: {e}")
+            raise RuntimeError(f"Financial scoring failed: {e}") from e
     
     def filter_by_constraints(self, pareto_front: List[Dict[str, Any]], 
                             constraints: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1032,8 +1032,8 @@ class MultiObjectiveFeatureSelector:
             return filtered_front
             
         except Exception as e:
-            tprint_warning(f"⚠️ Constraint filtering failed: {e}")
-            return pareto_front
+            tprint_error(f"❌ Constraint filtering failed: {e}")
+            raise RuntimeError(f"Constraint filtering failed: {e}") from e
     
     def get_enhanced_summary(self) -> Dict[str, Any]:
         """Get enhanced summary with ml_commons metrics."""

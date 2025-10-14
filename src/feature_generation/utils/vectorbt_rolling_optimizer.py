@@ -170,6 +170,25 @@ class VectorBTRollingOptimizer:
             'validation_errors': 0
         }
         
+        # Enhanced memory and cache management
+        self._operation_cache = {}
+        self._cache_enabled = True
+        self._max_cache_size = 500
+        self._cache_memory_usage = 0
+        self._max_cache_memory_mb = 50  # 50MB for rolling optimizer
+        self._memory_usage_history = []
+        self._memory_peak_usage = 0
+        self._memory_cleanup_threshold = 0.8
+        
+        # Memory optimization settings
+        self._memory_optimization_enabled = memory_efficient
+        self._chunk_size = chunk_size
+        self._adaptive_chunking = True
+        self._memory_pool = {}
+        
+        # Initialize memory pool
+        self._initialize_memory_pool()
+        
         # Configure VectorBT settings with error handling
         try:
             if self.use_vectorbt:
@@ -326,8 +345,93 @@ class VectorBTRollingOptimizer:
     
     def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], func: callable, 
                      window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling apply calculation."""
-        return self._rolling_operation(data, 'apply', window, func=func, **kwargs)
+        """Optimized rolling apply calculation with enhanced error handling and validation."""
+        tprint_debug(f"🔄 Starting rolling apply calculation: window={window}, func={func.__name__ if hasattr(func, '__name__') else 'custom'}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'apply')
+        
+        # Validate function
+        if not callable(func):
+            error_msg = "Function must be callable"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='apply', data_shape=data.shape if hasattr(data, 'shape') else None, window=window)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using identity function")
+                func = lambda x: x
+        
+        try:
+            result = self._rolling_operation(data, 'apply', window, func=func, **kwargs)
+            tprint_success(f"✅ Rolling apply completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling apply calculation failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='apply', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, attempting fallback")
+                return self._fallback_rolling_apply(data, func, window, **kwargs)
+    
+    def rolling_custom_function(self, data: Union[pd.Series, pd.DataFrame], 
+                              func: callable, window: int, 
+                              func_name: str = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Enhanced rolling custom function with comprehensive error handling and validation.
+        
+        Args:
+            data: Input data
+            func: Custom function to apply
+            window: Rolling window size
+            func_name: Name of the function for logging
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling custom function
+        """
+        func_display_name = func_name or (func.__name__ if hasattr(func, '__name__') else 'custom')
+        tprint_debug(f"🔄 Starting rolling custom function: {func_display_name}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'custom_function')
+        
+        # Enhanced function validation
+        if not callable(func):
+            error_msg = f"Custom function must be callable, got {type(func)}"
+            tprint_error(f"❌ {error_msg}")
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='custom_function', data_shape=data.shape if hasattr(data, 'shape') else None, window=window)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using identity function")
+                func = lambda x: x
+        
+        # Test function on small sample
+        try:
+            test_data = data.iloc[:min(10, len(data))] if hasattr(data, 'iloc') else data[:min(10, len(data))]
+            test_result = func(test_data)
+            tprint_debug(f"✅ Custom function test passed: {func_display_name}")
+        except Exception as e:
+            error_msg = f"Custom function test failed: {e}"
+            tprint_warning(f"⚠️ {error_msg}")
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='custom_function', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+        
+        try:
+            # Use rolling apply with enhanced error handling
+            result = self.rolling_apply(data, func, window, **kwargs)
+            tprint_success(f"✅ Rolling custom function {func_display_name} completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling custom function {func_display_name} failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='custom_function', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_apply(data, func, window, **kwargs)
     
     def rolling_median(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling median calculation."""
@@ -339,64 +443,161 @@ class VectorBTRollingOptimizer:
         return self.rolling_quantile(data, window, q=percentile/100, **kwargs)
     
     def rolling_rank(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling rank calculation."""
-        return self._rolling_operation(data, 'rank', window, **kwargs)
+        """Optimized rolling rank calculation with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling rank calculation: window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'rank')
+        
+        try:
+            result = self._rolling_operation(data, 'rank', window, **kwargs)
+            tprint_success(f"✅ Rolling rank completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling rank calculation failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='rank', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, attempting fallback")
+                return self._fallback_rolling_rank(data, window, **kwargs)
     
     def rolling_ewm(self, data: Union[pd.Series, pd.DataFrame], window: int, 
                    alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized exponentially weighted moving average."""
-        if alpha is not None:
-            return data.ewm(alpha=alpha, **kwargs).mean()
-        elif span is not None:
-            return data.ewm(span=span, **kwargs).mean()
-        else:
-            return data.ewm(span=window, **kwargs).mean()
+        """Optimized exponentially weighted moving average with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling EWM calculation: window={window}, alpha={alpha}, span={span}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'ewm')
+        
+        try:
+            if alpha is not None:
+                result = data.ewm(alpha=alpha, **kwargs).mean()
+            elif span is not None:
+                result = data.ewm(span=span, **kwargs).mean()
+            else:
+                result = data.ewm(span=window, **kwargs).mean()
+            
+            tprint_success(f"✅ Rolling EWM completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling EWM calculation failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='ewm', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_ewm(data, window, alpha, span, **kwargs)
     
     def rolling_ewm_std(self, data: Union[pd.Series, pd.DataFrame], window: int, 
                        alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized exponentially weighted moving standard deviation."""
-        if alpha is not None:
-            return data.ewm(alpha=alpha, **kwargs).std()
-        elif span is not None:
-            return data.ewm(span=span, **kwargs).std()
-        else:
-            return data.ewm(span=window, **kwargs).std()
+        """Optimized exponentially weighted moving standard deviation with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling EWM std calculation: window={window}, alpha={alpha}, span={span}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'ewm_std')
+        
+        try:
+            if alpha is not None:
+                result = data.ewm(alpha=alpha, **kwargs).std()
+            elif span is not None:
+                result = data.ewm(span=span, **kwargs).std()
+            else:
+                result = data.ewm(span=window, **kwargs).std()
+            
+            tprint_success(f"✅ Rolling EWM std completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling EWM std calculation failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='ewm_std', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_ewm_std(data, window, alpha, span, **kwargs)
     
     def rolling_ewm_var(self, data: Union[pd.Series, pd.DataFrame], window: int, 
                        alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized exponentially weighted moving variance."""
-        if alpha is not None:
-            return data.ewm(alpha=alpha, **kwargs).var()
-        elif span is not None:
-            return data.ewm(span=span, **kwargs).var()
-        else:
-            return data.ewm(span=window, **kwargs).var()
+        """Optimized exponentially weighted moving variance with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling EWM var calculation: window={window}, alpha={alpha}, span={span}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'ewm_var')
+        
+        try:
+            if alpha is not None:
+                result = data.ewm(alpha=alpha, **kwargs).var()
+            elif span is not None:
+                result = data.ewm(span=span, **kwargs).var()
+            else:
+                result = data.ewm(span=window, **kwargs).var()
+            
+            tprint_success(f"✅ Rolling EWM var completed successfully: result_shape={result.shape if hasattr(result, 'shape') else 'unknown'}")
+            return result
+        except Exception as e:
+            error_msg = f"Rolling EWM var calculation failed"
+            tprint_error(f"❌ {error_msg}: {e}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='ewm_var', data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_ewm_var(data, window, alpha, span, **kwargs)
     
     def rolling_correlation_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
-        """Optimized rolling correlation matrix calculation."""
+        """Optimized rolling correlation matrix calculation with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling correlation matrix calculation: window={window}, data_shape={data.shape}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'correlation_matrix')
+        
         if not self.use_vectorbt:
+            tprint_warning("⚠️ VectorBT not available, using fallback for correlation matrix")
             return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
         
         try:
             result = rolling_corr(data, window=window, **kwargs)
             self.performance_stats['vectorbt_operations'] += 1
+            tprint_success(f"✅ Rolling correlation matrix completed successfully: result_shape={result.shape}")
             return result
         except Exception as e:
-            logger.warning(f"VectorBT rolling correlation matrix failed: {e}, using fallback")
-            return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
+            error_msg = f"VectorBT rolling correlation matrix failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='correlation_matrix', data_shape=data.shape, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_correlation_matrix(data, window, **kwargs)
     
     def rolling_covariance_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
-        """Optimized rolling covariance matrix calculation."""
+        """Optimized rolling covariance matrix calculation with enhanced logging and validation."""
+        tprint_debug(f"🔄 Starting rolling covariance matrix calculation: window={window}, data_shape={data.shape}")
+        
+        # Validate inputs
+        self._validate_rolling_inputs(data, window, 'covariance_matrix')
+        
         if not self.use_vectorbt:
+            tprint_warning("⚠️ VectorBT not available, using fallback for covariance matrix")
             return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
         
         try:
             result = rolling_cov(data, window=window, **kwargs)
             self.performance_stats['vectorbt_operations'] += 1
+            tprint_success(f"✅ Rolling covariance matrix completed successfully: result_shape={result.shape}")
             return result
         except Exception as e:
-            logger.warning(f"VectorBT rolling covariance matrix failed: {e}, using fallback")
-            return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
+            error_msg = f"VectorBT rolling covariance matrix failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            self.performance_stats['errors'] += 1
+            if self.fast_fail:
+                raise VectorBTOptimizationError(error_msg, operation='covariance_matrix', data_shape=data.shape, window=window, original_error=e)
+            else:
+                tprint_warning("⚠️ Fast fail disabled, using fallback")
+                return self._fallback_rolling_covariance_matrix(data, window, **kwargs)
     
     def rolling_quantile(self, data: Union[pd.Series, pd.DataFrame], window: int, q: float = 0.5, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling quantile calculation."""
@@ -980,6 +1181,506 @@ class VectorBTRollingOptimizer:
             error_msg = f"Fallback rolling sum failed: {e}"
             tprint_error(f"❌ {error_msg}")
             raise VectorBTOptimizationError(error_msg, operation='sum', original_error=e)
+    
+    def _fallback_rolling_correlation_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+        """Fallback rolling correlation matrix with error handling."""
+        tprint_warning("⚠️ Using fallback rolling correlation matrix implementation")
+        try:
+            return data.rolling(window=window, **kwargs).corr()
+        except Exception as e:
+            error_msg = f"Fallback rolling correlation matrix failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='correlation_matrix', original_error=e)
+    
+    def _fallback_rolling_covariance_matrix(self, data: pd.DataFrame, window: int, **kwargs) -> pd.DataFrame:
+        """Fallback rolling covariance matrix with error handling."""
+        tprint_warning("⚠️ Using fallback rolling covariance matrix implementation")
+        try:
+            return data.rolling(window=window, **kwargs).cov()
+        except Exception as e:
+            error_msg = f"Fallback rolling covariance matrix failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='covariance_matrix', original_error=e)
+    
+    def _fallback_rolling_rank(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Fallback rolling rank with error handling."""
+        tprint_warning("⚠️ Using fallback rolling rank implementation")
+        try:
+            return data.rolling(window=window, **kwargs).rank()
+        except Exception as e:
+            error_msg = f"Fallback rolling rank failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='rank', original_error=e)
+    
+    def _fallback_rolling_ewm(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                             alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Fallback rolling EWM with error handling."""
+        tprint_warning("⚠️ Using fallback rolling EWM implementation")
+        try:
+            if alpha is not None:
+                return data.ewm(alpha=alpha, **kwargs).mean()
+            elif span is not None:
+                return data.ewm(span=span, **kwargs).mean()
+            else:
+                return data.ewm(span=window, **kwargs).mean()
+        except Exception as e:
+            error_msg = f"Fallback rolling EWM failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='ewm', original_error=e)
+    
+    def _fallback_rolling_ewm_std(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                                 alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Fallback rolling EWM std with error handling."""
+        tprint_warning("⚠️ Using fallback rolling EWM std implementation")
+        try:
+            if alpha is not None:
+                return data.ewm(alpha=alpha, **kwargs).std()
+            elif span is not None:
+                return data.ewm(span=span, **kwargs).std()
+            else:
+                return data.ewm(span=window, **kwargs).std()
+        except Exception as e:
+            error_msg = f"Fallback rolling EWM std failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='ewm_std', original_error=e)
+    
+    def _fallback_rolling_ewm_var(self, data: Union[pd.Series, pd.DataFrame], window: int, 
+                                 alpha: float = None, span: float = None, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Fallback rolling EWM var with error handling."""
+        tprint_warning("⚠️ Using fallback rolling EWM var implementation")
+        try:
+            if alpha is not None:
+                return data.ewm(alpha=alpha, **kwargs).var()
+            elif span is not None:
+                return data.ewm(span=span, **kwargs).var()
+            else:
+                return data.ewm(span=window, **kwargs).var()
+        except Exception as e:
+            error_msg = f"Fallback rolling EWM var failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='ewm_var', original_error=e)
+    
+    def _fallback_rolling_apply(self, data: Union[pd.Series, pd.DataFrame], func: callable, 
+                               window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Fallback rolling apply with error handling."""
+        tprint_warning("⚠️ Using fallback rolling apply implementation")
+        try:
+            return data.rolling(window=window, **kwargs).apply(func)
+        except Exception as e:
+            error_msg = f"Fallback rolling apply failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise VectorBTOptimizationError(error_msg, operation='apply', original_error=e)
+
+    def adaptive_window_size(self, data: Union[pd.Series, pd.DataFrame], 
+                           base_window: int, volatility_factor: float = 1.0) -> int:
+        """
+        Calculate adaptive window size based on data characteristics and volatility.
+        
+        Args:
+            data: Input data
+            base_window: Base window size
+            volatility_factor: Factor to adjust for volatility (1.0 = no adjustment)
+            
+        Returns:
+            Adaptive window size
+        """
+        tprint_debug(f"🔄 Calculating adaptive window size: base={base_window}, volatility_factor={volatility_factor}")
+        
+        if not isinstance(data, (pd.Series, pd.DataFrame)):
+            tprint_warning("⚠️ Invalid data type for adaptive window sizing, using base window")
+            return base_window
+        
+        try:
+            # Calculate data characteristics
+            data_length = len(data)
+            if data_length < base_window:
+                tprint_warning(f"⚠️ Data length ({data_length}) less than base window ({base_window}), using data length")
+                return max(1, data_length)
+            
+            # Calculate volatility if data is numeric
+            if isinstance(data, pd.Series) and pd.api.types.is_numeric_dtype(data):
+                volatility = data.pct_change().std()
+            elif isinstance(data, pd.DataFrame):
+                numeric_cols = data.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) > 0:
+                    volatility = data[numeric_cols].pct_change().std().mean()
+                else:
+                    volatility = 0.1  # Default volatility
+            else:
+                volatility = 0.1  # Default volatility
+            
+            # Adjust window based on volatility
+            # Higher volatility -> smaller window for more responsiveness
+            # Lower volatility -> larger window for more stability
+            volatility_adjustment = 1.0 - (volatility * volatility_factor)
+            adaptive_window = int(base_window * volatility_adjustment)
+            
+            # Ensure window is within reasonable bounds
+            adaptive_window = max(5, min(adaptive_window, data_length // 2))
+            
+            tprint_success(f"✅ Adaptive window calculated: {base_window} -> {adaptive_window} (volatility: {volatility:.4f})")
+            return adaptive_window
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Adaptive window calculation failed: {e}, using base window")
+            return base_window
+    
+    def enhanced_memory_optimization(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Enhanced memory optimization with better data type detection and chunking strategies.
+        
+        Args:
+            data: Input data
+            
+        Returns:
+            Memory-optimized data
+        """
+        if not self.memory_efficient:
+            return data
+        
+        tprint_debug("🧠 Starting enhanced memory optimization")
+        
+        try:
+            if isinstance(data, pd.Series):
+                optimized_data = self._optimize_series_memory(data)
+            elif isinstance(data, pd.DataFrame):
+                optimized_data = self._optimize_dataframe_memory(data)
+            else:
+                tprint_warning("⚠️ Unsupported data type for memory optimization")
+                return data
+            
+            # Calculate memory savings
+            original_memory = data.memory_usage(deep=True).sum() if hasattr(data, 'memory_usage') else 0
+            optimized_memory = optimized_data.memory_usage(deep=True).sum() if hasattr(optimized_data, 'memory_usage') else 0
+            
+            if original_memory > 0:
+                memory_savings = (original_memory - optimized_memory) / original_memory * 100
+                self.performance_stats['memory_optimizations'] += 1
+                tprint_success(f"✅ Memory optimization completed: {memory_savings:.1f}% reduction")
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            return data
+    
+    def _optimize_series_memory(self, series: pd.Series) -> pd.Series:
+        """Optimize Series memory usage."""
+        optimized_series = series.copy()
+        
+        # Optimize numeric types
+        if pd.api.types.is_numeric_dtype(series):
+            if series.dtype == 'float64':
+                if (series.min() >= np.finfo(np.float32).min and 
+                    series.max() <= np.finfo(np.float32).max):
+                    optimized_series = optimized_series.astype(np.float32)
+            elif series.dtype == 'int64':
+                if (series.min() >= np.iinfo(np.int32).min and 
+                    series.max() <= np.iinfo(np.int32).max):
+                    optimized_series = optimized_series.astype(np.int32)
+                elif (series.min() >= np.iinfo(np.int16).min and 
+                      series.max() <= np.iinfo(np.int16).max):
+                    optimized_series = optimized_series.astype(np.int16)
+                elif (series.min() >= np.iinfo(np.int8).min and 
+                      series.max() <= np.iinfo(np.int8).max):
+                    optimized_series = optimized_series.astype(np.int8)
+        
+        return optimized_series
+    
+    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame memory usage."""
+        optimized_df = df.copy()
+        
+        for column in optimized_df.columns:
+            if pd.api.types.is_numeric_dtype(optimized_df[column]):
+                if optimized_df[column].dtype == 'float64':
+                    if (optimized_df[column].min() >= np.finfo(np.float32).min and 
+                        optimized_df[column].max() <= np.finfo(np.float32).max):
+                        optimized_df[column] = optimized_df[column].astype(np.float32)
+                elif optimized_df[column].dtype == 'int64':
+                    if (optimized_df[column].min() >= np.iinfo(np.int32).min and 
+                        optimized_df[column].max() <= np.iinfo(np.int32).max):
+                        optimized_df[column] = optimized_df[column].astype(np.int32)
+                    elif (optimized_df[column].min() >= np.iinfo(np.int16).min and 
+                          optimized_df[column].max() <= np.iinfo(np.int16).max):
+                        optimized_df[column] = optimized_df[column].astype(np.int16)
+                    elif (optimized_df[column].min() >= np.iinfo(np.int8).min and 
+                          optimized_df[column].max() <= np.iinfo(np.int8).max):
+                        optimized_df[column] = optimized_df[column].astype(np.int8)
+            elif optimized_df[column].dtype == 'object':
+                # Try to convert object columns to category if they have few unique values
+                unique_ratio = optimized_df[column].nunique() / len(optimized_df)
+                if unique_ratio < 0.5:  # Less than 50% unique values
+                    optimized_df[column] = optimized_df[column].astype('category')
+        
+        return optimized_df
+    
+    def get_performance_profiling(self) -> Dict[str, Any]:
+        """Get detailed performance profiling information."""
+        stats = self.get_performance_stats()
+        
+        # Add profiling information
+        profiling = {
+            'operation_breakdown': {
+                'vectorbt_operations': stats.get('vectorbt_operations', 0),
+                'pandas_fallbacks': stats.get('pandas_fallbacks', 0),
+                'numpy_fallbacks': stats.get('numpy_fallbacks', 0),
+                'gpu_operations': stats.get('gpu_operations', 0)
+            },
+            'efficiency_metrics': {
+                'vectorbt_usage_rate': stats.get('vectorbt_usage_rate', 0),
+                'gpu_usage_rate': stats.get('gpu_usage_rate', 0),
+                'memory_optimization_rate': stats.get('memory_optimizations', 0) / max(1, stats.get('total_operations', 1))
+            },
+            'error_analysis': {
+                'total_errors': stats.get('errors', 0),
+                'fast_failures': stats.get('fast_failures', 0),
+                'validation_errors': stats.get('validation_errors', 0),
+                'error_rate': stats.get('errors', 0) / max(1, stats.get('total_operations', 1))
+            },
+            'performance_bottlenecks': self._identify_bottlenecks(stats)
+        }
+        
+        return profiling
+    
+    def _identify_bottlenecks(self, stats: Dict[str, Any]) -> List[str]:
+        """Identify performance bottlenecks based on statistics."""
+        bottlenecks = []
+        
+        total_ops = stats.get('total_operations', 0)
+        if total_ops == 0:
+            return bottlenecks
+        
+        # Check for high fallback usage
+        pandas_fallback_rate = stats.get('pandas_fallbacks', 0) / total_ops
+        if pandas_fallback_rate > 0.5:
+            bottlenecks.append("High pandas fallback usage - consider enabling VectorBT or GPU")
+        
+        # Check for high error rate
+        error_rate = stats.get('errors', 0) / total_ops
+        if error_rate > 0.1:
+            bottlenecks.append("High error rate - check data quality and parameters")
+        
+        # Check for low GPU usage when available
+        if self.enable_gpu and stats.get('gpu_operations', 0) / total_ops < 0.1:
+            bottlenecks.append("Low GPU usage - consider enabling GPU for large datasets")
+        
+        # Check for memory issues
+        if stats.get('memory_optimizations', 0) / total_ops > 0.8:
+            bottlenecks.append("Frequent memory optimizations - consider increasing chunk size or memory budget")
+        
+        return bottlenecks
+    
+    def _initialize_memory_pool(self):
+        """Initialize memory pool for VectorBTRollingOptimizer."""
+        tprint_debug("🔄 Initializing VectorBT memory pool")
+        
+        try:
+            # Pre-allocate common data structures
+            self._memory_pool['empty_series'] = pd.Series(dtype=float)
+            self._memory_pool['empty_dataframe'] = pd.DataFrame()
+            self._memory_pool['small_array'] = np.empty(100, dtype=np.float64)
+            self._memory_pool['medium_array'] = np.empty(1000, dtype=np.float64)
+            self._memory_pool['large_array'] = np.empty(10000, dtype=np.float64)
+            
+            tprint_success("✅ VectorBT memory pool initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory pool initialization failed: {e}")
+    
+    def _get_adaptive_chunk_size(self, data_size: int, operation: str) -> int:
+        """Calculate adaptive chunk size based on data size and operation."""
+        if not self._adaptive_chunking:
+            return self.chunk_size
+        
+        # Base chunk size based on operation complexity
+        base_sizes = {
+            'mean': 2000,
+            'std': 1500,
+            'var': 1500,
+            'min': 2000,
+            'max': 2000,
+            'sum': 2000,
+            'quantile': 1000,
+            'skew': 800,
+            'kurt': 800,
+            'corr': 500,
+            'cov': 500,
+            'apply': 1000
+        }
+        
+        base_chunk = base_sizes.get(operation, 1000)
+        
+        # Adjust based on data size
+        if data_size < 1000:
+            return min(base_chunk, data_size)
+        elif data_size < 10000:
+            return int(base_chunk * 0.8)
+        elif data_size < 100000:
+            return int(base_chunk * 0.6)
+        else:
+            return int(base_chunk * 0.4)
+    
+    def _monitor_memory_usage(self):
+        """Monitor and track memory usage."""
+        try:
+            import psutil
+            current_memory = psutil.Process().memory_info().rss / (1024 * 1024)  # MB
+            self._memory_usage_history.append(current_memory)
+            
+            # Keep only last 50 readings
+            if len(self._memory_usage_history) > 50:
+                self._memory_usage_history = self._memory_usage_history[-50:]
+            
+            # Update peak usage
+            self._memory_peak_usage = max(self._memory_peak_usage, current_memory)
+            
+            # Check if cleanup is needed
+            if current_memory > self._max_cache_memory_mb * self._memory_cleanup_threshold:
+                self._cleanup_memory()
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory monitoring failed: {e}")
+    
+    def _cleanup_memory(self):
+        """Clean up memory when usage exceeds threshold."""
+        tprint_info("🧹 VectorBT memory cleanup triggered")
+        
+        try:
+            # Clear operation cache
+            if len(self._operation_cache) > self._max_cache_size * 0.8:
+                # Remove oldest entries
+                sorted_keys = sorted(self._operation_cache.keys(), 
+                                   key=lambda k: getattr(self, f'_cache_time_{k}', 0))
+                for key in sorted_keys[:len(sorted_keys)//2]:  # Remove half
+                    del self._operation_cache[key]
+                    if hasattr(self, f'_cache_time_{key}'):
+                        delattr(self, f'_cache_time_{key}')
+            
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            
+            tprint_success(f"✅ VectorBT memory cleanup completed: {collected} objects collected")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory cleanup failed: {e}")
+    
+    def get_memory_statistics(self) -> Dict[str, Any]:
+        """Get memory usage statistics for VectorBTRollingOptimizer."""
+        current_memory = 0
+        try:
+            import psutil
+            current_memory = psutil.Process().memory_info().rss / (1024 * 1024)
+        except:
+            pass
+        
+        return {
+            'current_memory_mb': current_memory,
+            'peak_memory_mb': self._memory_peak_usage,
+            'cache_size': len(self._operation_cache),
+            'max_cache_size': self._max_cache_size,
+            'cache_memory_mb': self._cache_memory_usage / (1024 * 1024),
+            'max_cache_memory_mb': self._max_cache_memory_mb,
+            'memory_optimization_enabled': self._memory_optimization_enabled,
+            'adaptive_chunking': self._adaptive_chunking,
+            'chunk_size': self.chunk_size,
+            'memory_usage_history': self._memory_usage_history[-10:],
+            'memory_pool_objects': len(self._memory_pool)
+        }
+    
+    def optimize_memory_usage(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """Optimize memory usage for input data."""
+        if not self._memory_optimization_enabled:
+            return data
+        
+        try:
+            # Use enhanced memory optimization
+            optimized_data = self.enhanced_memory_optimization(data)
+            
+            # Monitor memory usage
+            self._monitor_memory_usage()
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            return data
+    
+    def _cache_operation_result(self, cache_key: str, result: Union[pd.Series, pd.DataFrame]):
+        """Cache operation result with memory management."""
+        if not self._cache_enabled:
+            return
+        
+        try:
+            # Calculate memory usage
+            result_memory = self._estimate_result_memory(result)
+            
+            # Check if we need to evict entries
+            while (len(self._operation_cache) >= self._max_cache_size or 
+                   self._cache_memory_usage + result_memory > self._max_cache_memory_mb * 1024 * 1024):
+                self._evict_oldest_cache_entry()
+            
+            # Store result
+            self._operation_cache[cache_key] = result
+            setattr(self, f'_cache_time_{cache_key}', time.time())
+            self._cache_memory_usage += result_memory
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache storage failed: {e}")
+    
+    def _get_cached_result(self, cache_key: str) -> Optional[Union[pd.Series, pd.DataFrame]]:
+        """Get cached operation result."""
+        if not self._cache_enabled or cache_key not in self._operation_cache:
+            return None
+        
+        # Update access time
+        setattr(self, f'_cache_time_{cache_key}', time.time())
+        return self._operation_cache[cache_key]
+    
+    def _evict_oldest_cache_entry(self):
+        """Evict oldest cache entry."""
+        if not self._operation_cache:
+            return
+        
+        # Find oldest entry
+        oldest_key = min(self._operation_cache.keys(), 
+                        key=lambda k: getattr(self, f'_cache_time_{k}', 0))
+        
+        # Calculate memory being freed
+        freed_memory = self._estimate_result_memory(self._operation_cache[oldest_key])
+        
+        # Remove entry
+        del self._operation_cache[oldest_key]
+        if hasattr(self, f'_cache_time_{oldest_key}'):
+            delattr(self, f'_cache_time_{oldest_key}')
+        
+        # Update memory usage
+        self._cache_memory_usage = max(0, self._cache_memory_usage - freed_memory)
+    
+    def _estimate_result_memory(self, result: Union[pd.Series, pd.DataFrame]) -> int:
+        """Estimate memory usage of a result."""
+        try:
+            if hasattr(result, 'memory_usage'):
+                return result.memory_usage(deep=True).sum()
+            else:
+                return len(str(result)) * 8  # Rough estimate
+        except:
+            return 1024  # Default estimate
+    
+    def clear_operation_cache(self):
+        """Clear all cached operation results."""
+        tprint_info("🧹 Clearing VectorBT operation cache")
+        
+        self._operation_cache.clear()
+        self._cache_memory_usage = 0
+        
+        # Clear cache time attributes
+        for attr_name in dir(self):
+            if attr_name.startswith('_cache_time_'):
+                delattr(self, attr_name)
+        
+        tprint_success("✅ VectorBT operation cache cleared")
 
     def reset_stats(self):
         """Reset performance statistics."""

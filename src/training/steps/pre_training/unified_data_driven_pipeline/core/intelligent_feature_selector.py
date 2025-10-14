@@ -41,6 +41,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Robust stability is now integrated inline
+ROBUST_STABILITY_AVAILABLE = True
+
 
 @dataclass
 class FeatureScore:

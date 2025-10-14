@@ -81,6 +81,9 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
+# Robust MOEA convergence is now integrated inline
+ROBUST_MOEA_AVAILABLE = True
+
 
 @dataclass
 class ObjectiveResult:
@@ -583,6 +586,19 @@ class MultiObjectiveFeatureSelector:
             self.nsga2_optimizer = None
             self.spea2_optimizer = None
             self.ga_optimizer = None
+        
+        # Initialize robust MOEA convergence
+        self.convergence_config = {
+            'max_generations': 50,
+            'max_evaluations': 1000,
+            'max_time_seconds': 300,
+            'hypervolume_tolerance': 1e-6,
+            'epsilon_progress_tolerance': 1e-6,
+            'stagnation_generations': 10,
+            'enable_anytime_stop': True,
+            'enable_parallel': True
+        }
+        tprint_info("✅ Robust MOEA convergence initialized")
         
         # Validate weights sum to 1
         total_weight = sum(self.weights.values())

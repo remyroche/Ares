@@ -1996,14 +1996,17 @@ class BayesianTPEOptimizer:
                                 chunk_results = objective.vectorized_evaluate(chunk_params)
                             else:
                                 # Parallel evaluation using VectorBT's threading
-                                with vbt.settings.threading['num_threads'] = self.config.vectorbt_parallel_workers:
-                                    for params in chunk_params:
-                                        try:
-                                            value = objective(params)
-                                chunk_results.append(value)
-                            except Exception as e:
-                                self.logger.warning(f"⚠️ VectorBT batch evaluation {i} failed: {e}")
-                                chunk_results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
+                                vbt.settings.threading['num_threads'] = self.config.vectorbt_parallel_workers
+                                for params in chunk_params:
+                                    try:
+                                        value = objective(params)
+                                        chunk_results.append(value)
+                                    except Exception as e:
+                                        self.logger.warning(f"⚠️ VectorBT batch evaluation {i} failed: {e}")
+                                        chunk_results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ VectorBT batch evaluation {i} failed: {e}")
+                            chunk_results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
                     else:
                         # Sequential processing within chunk
                         for params in chunk_params:

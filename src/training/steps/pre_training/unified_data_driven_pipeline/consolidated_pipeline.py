@@ -1019,6 +1019,8 @@ class UnifiedDataDrivenPipeline:
             
             # Apply mode-specific optimization parameters
             use_bayesian_opt = mode_constraints.get('use_bayesian_optimization', True)
+            use_enhanced_opt = mode_constraints.get('use_enhanced_optimization', True)
+            optimization_method = mode_constraints.get('optimization_method', 'enhanced_bayesian_tpe')
             n_bootstrap = mode_constraints.get('n_bootstrap_samples', 100)
             cv_folds = mode_constraints.get('cv_folds', 5)
             
@@ -1049,7 +1051,9 @@ class UnifiedDataDrivenPipeline:
                         'regularization_settings': self._get_regularization_settings(),
                         'n_bootstrap_samples': n_bootstrap,
                         'cv_folds': cv_folds,
-                        'use_bayesian_optimization': use_bayesian_opt
+                        'use_bayesian_optimization': use_bayesian_opt,
+                        'use_enhanced_optimization': use_enhanced_opt,
+                        'optimization_method': optimization_method
                     }
                     
                     if use_nested_cv:
@@ -1224,6 +1228,8 @@ class UnifiedDataDrivenPipeline:
         constraints = {
             'light': {
                 'use_bayesian_optimization': False,
+                'use_enhanced_optimization': False,
+                'optimization_method': 'enhanced_grid_search',  # Use enhanced grid for light mode
                 'n_bootstrap_samples': 20,
                 'cv_folds': 3,
                 'max_features': 50,
@@ -1231,6 +1237,8 @@ class UnifiedDataDrivenPipeline:
             },
             'blank': {
                 'use_bayesian_optimization': False,
+                'use_enhanced_optimization': False,
+                'optimization_method': 'grid_search',  # Use basic grid for blank mode
                 'n_bootstrap_samples': 10,
                 'cv_folds': 2,
                 'max_features': 20,
@@ -1238,6 +1246,8 @@ class UnifiedDataDrivenPipeline:
             },
             'full': {
                 'use_bayesian_optimization': True,
+                'use_enhanced_optimization': True,
+                'optimization_method': 'enhanced_bayesian_tpe',  # Use enhanced TPE for full mode
                 'n_bootstrap_samples': 100,
                 'cv_folds': 5,
                 'max_features': 200,

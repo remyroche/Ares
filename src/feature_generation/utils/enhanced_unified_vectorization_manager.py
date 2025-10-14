@@ -1,21 +1,17 @@
 """
-Unified Vectorization Manager
+Enhanced Unified Vectorization Manager
 
-This module provides a centralized vectorization management system that unifies
-VectorBT optimizations, rolling operations, and batch processing for maximum
-performance in feature generation.
+This module provides an enhanced centralized vectorization management system that unifies
+VectorBT optimizations, rolling operations, and batch processing with advanced features
+including adaptive chunking, multi-level caching, and M1 GPU optimization.
 
 Key Features:
-- Unified interface for all vectorization operations
-- VectorBTRollingOptimizer integration
-- VectorBTBatchProcessor integration
-- Memory-efficient processing
-- Performance monitoring and statistics
-- GPU acceleration support
-- Parallel processing capabilities
-- Adaptive chunking and memory management
-- Advanced multi-level caching strategies
+- Enhanced VectorBTRollingOptimizer integration
+- Advanced memory management and adaptive chunking
+- Multi-level caching strategies (L1 memory, L2 disk)
 - Mac M1 GPU optimization with Metal Performance Shaders
+- Backward compatibility with existing UnifiedVectorizationManager
+- Intelligent resource management and performance monitoring
 """
 
 import numpy as np
@@ -32,8 +28,6 @@ import hashlib
 import pickle
 import os
 from pathlib import Path
-import gc
-import psutil
 
 # Enhanced logging with tprint
 try:
@@ -87,14 +81,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
 # M1 GPU optimization imports
 try:
     import torch
@@ -110,12 +96,30 @@ except ImportError:
     M1_GPU_AVAILABLE = False
     tprint_warning("⚠️ PyTorch not available for M1 GPU optimization")
 
-# Import our optimization modules
+# Optional GPU acceleration (CUDA)
 try:
-    from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    CUPY_AVAILABLE = False
+    cp = None
+
+# Import enhanced rolling optimizer
+try:
+    from .enhanced_vectorbt_rolling_optimizer import (
+        EnhancedVectorBTRollingOptimizer, 
+        MemoryConfig, 
+        CacheConfig,
+        get_vectorbt_rolling_optimizer
+    )
 except ImportError:
     # Fallback for direct import
-    from vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from enhanced_vectorbt_rolling_optimizer import (
+        EnhancedVectorBTRollingOptimizer, 
+        MemoryConfig, 
+        CacheConfig,
+        get_vectorbt_rolling_optimizer
+    )
 
 try:
     from ..core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig
@@ -166,9 +170,8 @@ class VectorizationValidationError(Exception):
             full_message += f" (Value: {value})"
         super().__init__(full_message)
 
-
 @dataclass
-class VectorizationConfig:
+class EnhancedVectorizationConfig:
     """Enhanced configuration for unified vectorization with advanced features."""
     # VectorBT settings
     enable_vectorbt: bool = True
@@ -219,46 +222,159 @@ class VectorizationConfig:
             self.enable_m1_gpu = False
             logger.warning("M1 GPU acceleration requested but not available")
 
+class PerformanceMonitor:
+    """Enhanced performance monitoring with real-time metrics."""
+    
+    def __init__(self, enable_monitoring: bool = True):
+        self.enable_monitoring = enable_monitoring
+        self.metrics = {
+            'operation_times': deque(maxlen=1000),
+            'memory_usage': deque(maxlen=1000),
+            'cache_performance': deque(maxlen=1000),
+            'error_rates': deque(maxlen=1000)
+        }
+        self._lock = threading.Lock()
+        self._monitoring_thread = None
+        self._monitoring = False
+        
+        if self.enable_monitoring:
+            self._start_monitoring()
+    
+    def record_operation(self, operation_name: str, duration: float, memory_used: float = 0.0):
+        """Record operation metrics."""
+        if not self.enable_monitoring:
+            return
+        
+        with self._lock:
+            self.metrics['operation_times'].append({
+                'operation': operation_name,
+                'duration': duration,
+                'timestamp': time.time(),
+                'memory_used': memory_used
+            })
+    
+    def record_cache_performance(self, hit: bool, operation: str):
+        """Record cache performance metrics."""
+        if not self.enable_monitoring:
+            return
+        
+        with self._lock:
+            self.metrics['cache_performance'].append({
+                'hit': hit,
+                'operation': operation,
+                'timestamp': time.time()
+            })
+    
+    def record_error(self, error_type: str, operation: str):
+        """Record error metrics."""
+        if not self.enable_monitoring:
+            return
+        
+        with self._lock:
+            self.metrics['error_rates'].append({
+                'error_type': error_type,
+                'operation': operation,
+                'timestamp': time.time()
+            })
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary statistics."""
+        with self._lock:
+            if not self.metrics['operation_times']:
+                return {'status': 'no_data'}
+            
+            durations = [op['duration'] for op in self.metrics['operation_times']]
+            memory_usage = [op['memory_used'] for op in self.metrics['operation_times'] if op['memory_used'] > 0]
+            
+            cache_hits = sum(1 for perf in self.metrics['cache_performance'] if perf['hit'])
+            cache_total = len(self.metrics['cache_performance'])
+            
+            return {
+                'total_operations': len(self.metrics['operation_times']),
+                'avg_duration': np.mean(durations) if durations else 0,
+                'max_duration': np.max(durations) if durations else 0,
+                'min_duration': np.min(durations) if durations else 0,
+                'avg_memory_usage': np.mean(memory_usage) if memory_usage else 0,
+                'max_memory_usage': np.max(memory_usage) if memory_usage else 0,
+                'cache_hit_rate': (cache_hits / cache_total * 100) if cache_total > 0 else 0,
+                'total_errors': len(self.metrics['error_rates']),
+                'error_rate': (len(self.metrics['error_rates']) / len(self.metrics['operation_times']) * 100) if self.metrics['operation_times'] else 0
+            }
+    
+    def _start_monitoring(self):
+        """Start background monitoring."""
+        if self._monitoring:
+            return
+        
+        self._monitoring = True
+        self._monitor_thread = threading.Thread(target=self._monitor_performance, daemon=True)
+        self._monitor_thread.start()
+        tprint_info("📊 Started performance monitoring")
+    
+    def _monitor_performance(self):
+        """Background performance monitoring thread."""
+        while self._monitoring:
+            try:
+                # Monitor system resources
+                import psutil
+                memory_usage = psutil.virtual_memory().percent
+                
+                with self._lock:
+                    self.metrics['memory_usage'].append({
+                        'usage_percent': memory_usage,
+                        'timestamp': time.time()
+                    })
+                
+                time.sleep(10)  # Check every 10 seconds
+            except Exception as e:
+                tprint_error(f"❌ Performance monitoring error: {e}")
+                time.sleep(30)
+    
+    def cleanup(self):
+        """Cleanup performance monitor."""
+        self._monitoring = False
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=1)
+        tprint_info("🧹 Performance monitor cleaned up")
 
-class UnifiedVectorizationManager:
+class EnhancedUnifiedVectorizationManager:
     """
-    Unified manager for all vectorization operations using VectorBT optimizations.
+    Enhanced unified manager for all vectorization operations using VectorBT optimizations
+    with advanced features including adaptive chunking, multi-level caching, and M1 GPU optimization.
     
     This class provides a single interface for:
-    - VectorBT rolling operations
+    - Enhanced VectorBT rolling operations
+    - Advanced memory management and adaptive chunking
+    - Multi-level caching strategies
+    - M1 GPU optimization
     - Batch processing
-    - Memory optimization
     - Performance monitoring
-    - GPU acceleration
     - Parallel processing
     """
     
-    def __init__(self, config: Optional[VectorizationConfig] = None, 
+    def __init__(self, config: Optional[EnhancedVectorizationConfig] = None, 
                  fast_fail: bool = True, enable_logging: bool = True):
         """
-        Initialize unified vectorization manager with enhanced logging and fast failing.
+        Initialize enhanced unified vectorization manager with advanced features.
         
         Args:
-            config: Vectorization configuration
+            config: Enhanced vectorization configuration
             fast_fail: Enable fast failing instead of silent fallbacks
             enable_logging: Enable comprehensive logging with tprint
         """
-        tprint_info("🚀 Initializing UnifiedVectorizationManager with enhanced logging and fast failing")
+        tprint_info("🚀 Initializing Enhanced UnifiedVectorizationManager with advanced features")
         
-        self.config = config or VectorizationConfig()
+        self.config = config or EnhancedVectorizationConfig()
         self.fast_fail = fast_fail
         self.enable_logging = enable_logging
         
         # Validate configuration
         self._validate_config(self.config)
         
-        # Initialize components with error handling
+        # Initialize enhanced components with error handling
         tprint_info("🔧 Initializing enhanced vectorization components")
         try:
-            # Import enhanced classes from vectorbt_rolling_optimizer
-            from .vectorbt_rolling_optimizer import MemoryConfig, CacheConfig
-            
-            # Create enhanced configurations
+            # Initialize memory and cache configurations
             memory_config = MemoryConfig(
                 max_memory_gb=self.config.max_memory_gb,
                 memory_pressure_threshold=self.config.memory_pressure_threshold,
@@ -275,6 +391,7 @@ class UnifiedVectorizationManager:
                 cache_compression=self.config.cache_compression
             )
             
+            # Initialize enhanced rolling optimizer
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=self.config.enable_gpu,
                 enable_parallel=self.config.enable_parallel,
@@ -295,7 +412,7 @@ class UnifiedVectorizationManager:
             if self.fast_fail:
                 raise UnifiedVectorizationError(error_msg, operation="initialization", original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, continuing without rolling optimizer")
+                tprint_warning("⚠️ Fast fail disabled, continuing without enhanced rolling optimizer")
                 self.rolling_optimizer = None
         
         # Initialize batch processor with error handling
@@ -324,6 +441,9 @@ class UnifiedVectorizationManager:
             tprint_warning("⚠️ VectorBTBatchProcessor not available, continuing without batch processor")
             self.batch_processor = None
         
+        # Initialize performance monitor
+        self.performance_monitor = PerformanceMonitor(self.config.enable_monitoring)
+        
         # Enhanced performance tracking with error tracking
         self.performance_stats = {
             'total_operations': 0,
@@ -348,16 +468,16 @@ class UnifiedVectorizationManager:
         
         # Cache for computed results
         self._result_cache = {}
-        self._cache_enabled = True
-        self._max_cache_size = 1000
+        self._cache_enabled = self.config.enable_caching
+        self._max_cache_size = self.config.l1_cache_size
         
-        tprint_success(f"✅ UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}, FastFail={self.fast_fail}")
-        logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
+        tprint_success(f"✅ Enhanced UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, M1GPU={self.config.enable_m1_gpu}, AdaptiveChunking={self.config.adaptive_chunking}, AdvancedCaching={self.config.enable_caching}")
+        logger.info(f"Enhanced UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, M1GPU={self.config.enable_m1_gpu}")
     
     def rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
                          operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
-        Perform optimized rolling operation with enhanced logging and validation.
+        Perform enhanced rolling operation with adaptive chunking, caching, and M1 GPU optimization.
         
         Args:
             data: Input data
@@ -372,7 +492,7 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['rolling_operations'] += 1
         
-        tprint_debug(f"🔄 Starting rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        tprint_debug(f"🔄 Starting enhanced rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         
         # Validate inputs
         self._validate_rolling_inputs(data, operation, window)
@@ -383,14 +503,16 @@ class UnifiedVectorizationManager:
             cached_result = self._get_from_cache(cache_key)
             if cached_result is not None:
                 self.performance_stats['cache_hits'] += 1
+                self.performance_monitor.record_cache_performance(True, operation)
                 tprint_debug("💾 Cache hit for rolling operation")
                 return cached_result
             self.performance_stats['cache_misses'] += 1
+            self.performance_monitor.record_cache_performance(False, operation)
             tprint_debug("💾 Cache miss for rolling operation")
         
         # Check if rolling optimizer is available
         if self.rolling_optimizer is None:
-            error_msg = "Rolling optimizer not available"
+            error_msg = "Enhanced rolling optimizer not available"
             tprint_error(f"❌ {error_msg}")
             if self.fast_fail:
                 raise UnifiedVectorizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None)
@@ -399,8 +521,8 @@ class UnifiedVectorizationManager:
                 return self._pandas_fallback_rolling(data, operation, window, **kwargs)
         
         try:
-            # Use VectorBT rolling optimizer with detailed logging
-            tprint_debug(f"🎯 Executing rolling {operation} with VectorBT optimizer")
+            # Use enhanced VectorBT rolling optimizer with detailed logging
+            tprint_debug(f"🎯 Executing enhanced rolling {operation} with VectorBT optimizer")
             
             if operation == 'mean':
                 result = self.rolling_optimizer.rolling_mean(data, window, **kwargs)
@@ -445,21 +567,26 @@ class UnifiedVectorizationManager:
                 self.performance_stats['vectorbt_operations'] += 1
             if rolling_stats.get('gpu_operations', 0) > 0:
                 self.performance_stats['gpu_operations'] += 1
+            if rolling_stats.get('m1_gpu_operations', 0) > 0:
+                self.performance_stats['m1_gpu_operations'] += 1
             if rolling_stats.get('memory_optimizations', 0) > 0:
                 self.performance_stats['memory_optimizations'] += 1
+            if rolling_stats.get('adaptive_chunk_operations', 0) > 0:
+                self.performance_stats['adaptive_chunk_operations'] += 1
             
             # Cache result
             if self._cache_enabled:
                 self._put_in_cache(cache_key, result)
                 tprint_debug("💾 Result cached successfully")
             
-            tprint_success(f"✅ Rolling {operation} completed successfully")
+            tprint_success(f"✅ Enhanced rolling {operation} completed successfully")
             return result
             
         except Exception as e:
-            error_msg = f"Rolling operation {operation} failed"
+            error_msg = f"Enhanced rolling operation {operation} failed"
             tprint_error(f"❌ {error_msg}: {e}")
             self.performance_stats['errors'] += 1
+            self.performance_monitor.record_error("rolling_operation", operation)
             
             if self.fast_fail:
                 self.performance_stats['fast_failures'] += 1
@@ -472,7 +599,8 @@ class UnifiedVectorizationManager:
         finally:
             execution_time = time.time() - start_time
             self.performance_stats['total_time'] += execution_time
-            tprint_performance(f"Rolling {operation}", execution_time)
+            self.performance_monitor.record_operation(f"rolling_{operation}", execution_time)
+            tprint_performance(f"Enhanced rolling {operation}", execution_time)
     
     def scale_data(self, data: Union[pd.Series, pd.DataFrame], 
                    method: str = 'zscore', **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -491,7 +619,7 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['scaling_operations'] += 1
         
-        tprint_debug(f"🔄 Starting data scaling: method={method}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        tprint_debug(f"🔄 Starting enhanced data scaling: method={method}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
         
         # Validate inputs
         self._validate_scaling_inputs(data, method)
@@ -501,7 +629,7 @@ class UnifiedVectorizationManager:
             return self._pandas_fallback_scaling(data, method, **kwargs)
         
         try:
-            tprint_debug(f"🎯 Executing {method} scaling with VectorBT")
+            tprint_debug(f"🎯 Executing enhanced {method} scaling with VectorBT")
             
             if method == 'zscore':
                 result = zscore(data, **kwargs)
@@ -527,13 +655,14 @@ class UnifiedVectorizationManager:
                     return self._pandas_fallback_scaling(data, method, **kwargs)
             
             self.performance_stats['vectorbt_operations'] += 1
-            tprint_success(f"✅ {method} scaling completed successfully")
+            tprint_success(f"✅ Enhanced {method} scaling completed successfully")
             return result
             
         except Exception as e:
-            error_msg = f"VectorBT scaling failed for {method}"
+            error_msg = f"Enhanced VectorBT scaling failed for {method}"
             tprint_error(f"❌ {error_msg}: {e}")
             self.performance_stats['errors'] += 1
+            self.performance_monitor.record_error("scaling", method)
             
             if self.fast_fail:
                 self.performance_stats['fast_failures'] += 1
@@ -545,12 +674,13 @@ class UnifiedVectorizationManager:
         finally:
             execution_time = time.time() - start_time
             self.performance_stats['total_time'] += execution_time
-            tprint_performance(f"Scaling {method}", execution_time)
+            self.performance_monitor.record_operation(f"scaling_{method}", execution_time)
+            tprint_performance(f"Enhanced scaling {method}", execution_time)
     
     def batch_process_features(self, data: pd.DataFrame, 
                              feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
-        Process multiple features in batch with optimization and enhanced logging.
+        Process multiple features in batch with enhanced optimization and logging.
         
         Args:
             data: Input OHLCV data
@@ -563,7 +693,7 @@ class UnifiedVectorizationManager:
         self.performance_stats['total_operations'] += 1
         self.performance_stats['batch_operations'] += 1
         
-        tprint_info(f"🔄 Starting batch feature processing: {len(feature_configs)} features, data_shape={data.shape}")
+        tprint_info(f"🔄 Starting enhanced batch feature processing: {len(feature_configs)} features, data_shape={data.shape}")
         
         # Validate inputs
         if not isinstance(data, pd.DataFrame):
@@ -585,12 +715,12 @@ class UnifiedVectorizationManager:
                 return pd.DataFrame()
         
         try:
-            # Use VectorBT batch processor
+            # Use enhanced VectorBT batch processor
             results = {}
             successful_features = 0
             failed_features = 0
             
-            tprint_debug(f"🎯 Processing {len(feature_configs)} features")
+            tprint_debug(f"🎯 Processing {len(feature_configs)} features with enhanced optimization")
             
             for i, config in enumerate(feature_configs):
                 feature_name = config.get('name', f'feature_{i}')
@@ -679,6 +809,7 @@ class UnifiedVectorizationManager:
                     error_msg = f"Feature {feature_name} failed: {e}"
                     tprint_error(f"❌ {error_msg}")
                     self.performance_stats['errors'] += 1
+                    self.performance_monitor.record_error("batch_feature", feature_name)
                     
                     if self.fast_fail:
                         self.performance_stats['fast_failures'] += 1
@@ -688,13 +819,14 @@ class UnifiedVectorizationManager:
                         results[feature_name] = pd.Series(np.nan, index=data.index)
                         failed_features += 1
             
-            tprint_success(f"✅ Batch processing completed: {successful_features} successful, {failed_features} failed")
+            tprint_success(f"✅ Enhanced batch processing completed: {successful_features} successful, {failed_features} failed")
             return pd.DataFrame(results, index=data.index)
             
         except Exception as e:
-            error_msg = f"Batch feature processing failed: {e}"
+            error_msg = f"Enhanced batch feature processing failed: {e}"
             tprint_error(f"❌ {error_msg}")
             self.performance_stats['errors'] += 1
+            self.performance_monitor.record_error("batch_processing", "batch_processing")
             
             if self.fast_fail:
                 self.performance_stats['fast_failures'] += 1
@@ -706,11 +838,12 @@ class UnifiedVectorizationManager:
         finally:
             execution_time = time.time() - start_time
             self.performance_stats['total_time'] += execution_time
-            tprint_performance(f"Batch processing ({len(feature_configs)} features)", execution_time)
+            self.performance_monitor.record_operation("batch_processing", execution_time)
+            tprint_performance(f"Enhanced batch processing ({len(feature_configs)} features)", execution_time)
     
     def optimize_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Optimize DataFrame for memory efficiency and VectorBT processing.
+        Optimize DataFrame for memory efficiency and VectorBT processing with enhanced features.
         
         Args:
             data: Input DataFrame
@@ -744,6 +877,7 @@ class UnifiedVectorizationManager:
             memory_savings = (original_memory - optimized_memory) / original_memory * 100
             self.performance_stats['memory_savings'] += memory_savings
             
+            tprint_debug(f"🧠 Memory optimization: {memory_savings:.2f}% savings")
             return optimized_data
             
         except Exception as e:
@@ -752,7 +886,7 @@ class UnifiedVectorizationManager:
     
     def _pandas_fallback_rolling(self, data: Union[pd.Series, pd.DataFrame], 
                                 operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Fallback rolling operation using pandas."""
+        """Fallback rolling operation using pandas (original implementation)."""
         rolling_obj = data.rolling(window=window, **kwargs)
         
         if operation == 'mean':
@@ -788,7 +922,7 @@ class UnifiedVectorizationManager:
     
     def _pandas_fallback_scaling(self, data: Union[pd.Series, pd.DataFrame], 
                                 method: str, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Fallback scaling using pandas/numpy."""
+        """Fallback scaling using pandas/numpy (original implementation)."""
         if method == 'zscore':
             return (data - data.mean()) / data.std()
         elif method == 'minmax':
@@ -802,7 +936,7 @@ class UnifiedVectorizationManager:
     
     def _generate_cache_key(self, data: Union[pd.Series, pd.DataFrame], 
                            operation: str, window: int, **kwargs) -> str:
-        """Generate cache key for operation."""
+        """Generate cache key for operation (original implementation)."""
         import hashlib
         
         # Create hash of data characteristics and parameters
@@ -812,7 +946,7 @@ class UnifiedVectorizationManager:
         return f"{operation}_{window}_{data_hash}_{params_hash}"
     
     def _get_from_cache(self, cache_key: str) -> Optional[Union[pd.Series, pd.DataFrame]]:
-        """Get result from cache."""
+        """Get result from cache (original implementation)."""
         if not self._cache_enabled:
             return None
         
@@ -825,7 +959,7 @@ class UnifiedVectorizationManager:
         return None
     
     def _put_in_cache(self, cache_key: str, result: Union[pd.Series, pd.DataFrame]):
-        """Put result in cache."""
+        """Put result in cache (original implementation)."""
         if not self._cache_enabled:
             return
         
@@ -842,21 +976,29 @@ class UnifiedVectorizationManager:
             logger.warning(f"Cache storage failed: {e}")
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """Get comprehensive performance statistics."""
+        """Get comprehensive enhanced performance statistics."""
         stats = self.performance_stats.copy()
         
         # Add rolling optimizer stats
-        rolling_stats = self.rolling_optimizer.get_performance_stats()
-        stats.update(rolling_stats)
+        if self.rolling_optimizer:
+            rolling_stats = self.rolling_optimizer.get_performance_stats()
+            stats.update(rolling_stats)
+        
+        # Add performance monitor stats
+        if self.performance_monitor:
+            monitor_stats = self.performance_monitor.get_performance_summary()
+            stats['performance_monitor'] = monitor_stats
         
         # Calculate efficiency metrics
         if stats['total_operations'] > 0:
             stats['average_operation_time'] = stats['total_time'] / stats['total_operations']
             stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_operations']
             stats['gpu_usage_rate'] = stats['gpu_operations'] / stats['total_operations']
+            stats['m1_gpu_usage_rate'] = stats['m1_gpu_operations'] / stats['total_operations']
             stats['batch_usage_rate'] = stats['batch_operations'] / stats['total_operations']
             stats['rolling_usage_rate'] = stats['rolling_operations'] / stats['total_operations']
             stats['scaling_usage_rate'] = stats['scaling_operations'] / stats['total_operations']
+            stats['adaptive_chunk_usage_rate'] = stats['adaptive_chunk_operations'] / stats['total_operations']
             
             # Cache statistics
             total_cache_ops = stats['cache_hits'] + stats['cache_misses']
@@ -868,19 +1010,21 @@ class UnifiedVectorizationManager:
             stats['average_operation_time'] = 0
             stats['vectorbt_usage_rate'] = 0
             stats['gpu_usage_rate'] = 0
+            stats['m1_gpu_usage_rate'] = 0
             stats['batch_usage_rate'] = 0
             stats['rolling_usage_rate'] = 0
             stats['scaling_usage_rate'] = 0
+            stats['adaptive_chunk_usage_rate'] = 0
             stats['cache_hit_rate'] = 0
         
         return stats
     
-    def _validate_config(self, config: VectorizationConfig):
-        """Validate configuration parameters with detailed error reporting."""
-        tprint_debug("🔍 Validating UnifiedVectorizationManager configuration")
+    def _validate_config(self, config: EnhancedVectorizationConfig):
+        """Validate enhanced configuration parameters with detailed error reporting."""
+        tprint_debug("🔍 Validating Enhanced UnifiedVectorizationManager configuration")
         
-        if not isinstance(config, VectorizationConfig):
-            raise VectorizationValidationError("Config must be a VectorizationConfig instance", "type_check", type(config))
+        if not isinstance(config, EnhancedVectorizationConfig):
+            raise VectorizationValidationError("Config must be an EnhancedVectorizationConfig instance", "type_check", type(config))
         
         if not isinstance(config.enable_vectorbt, bool):
             raise VectorizationValidationError("enable_vectorbt must be a boolean", "type_check", config.enable_vectorbt)
@@ -888,8 +1032,17 @@ class UnifiedVectorizationManager:
         if not isinstance(config.enable_gpu, bool):
             raise VectorizationValidationError("enable_gpu must be a boolean", "type_check", config.enable_gpu)
         
+        if not isinstance(config.enable_m1_gpu, bool):
+            raise VectorizationValidationError("enable_m1_gpu must be a boolean", "type_check", config.enable_m1_gpu)
+        
         if not isinstance(config.memory_efficient, bool):
             raise VectorizationValidationError("memory_efficient must be a boolean", "type_check", config.memory_efficient)
+        
+        if not isinstance(config.adaptive_chunking, bool):
+            raise VectorizationValidationError("adaptive_chunking must be a boolean", "type_check", config.adaptive_chunking)
+        
+        if not isinstance(config.enable_caching, bool):
+            raise VectorizationValidationError("enable_caching must be a boolean", "type_check", config.enable_caching)
         
         if not isinstance(config.chunk_size, int) or config.chunk_size <= 0:
             raise VectorizationValidationError("chunk_size must be a positive integer", "range_check", config.chunk_size)
@@ -900,11 +1053,14 @@ class UnifiedVectorizationManager:
         if config.max_memory_gb <= 0:
             raise VectorizationValidationError("max_memory_gb must be positive", "range_check", config.max_memory_gb)
         
-        tprint_success("✅ Configuration validated successfully")
+        if config.memory_pressure_threshold <= 0 or config.memory_pressure_threshold > 1:
+            raise VectorizationValidationError("memory_pressure_threshold must be between 0 and 1", "range_check", config.memory_pressure_threshold)
+        
+        tprint_success("✅ Enhanced configuration validated successfully")
     
     def _validate_rolling_inputs(self, data: Union[pd.Series, pd.DataFrame], 
                                 operation: str, window: int):
-        """Validate rolling operation inputs with comprehensive checks."""
+        """Validate rolling operation inputs with comprehensive checks (original implementation)."""
         tprint_debug(f"🔍 Validating rolling inputs for {operation}")
         
         # Check data type
@@ -930,7 +1086,7 @@ class UnifiedVectorizationManager:
         tprint_success(f"✅ Rolling inputs validated for {operation}")
     
     def _validate_scaling_inputs(self, data: Union[pd.Series, pd.DataFrame], method: str):
-        """Validate scaling operation inputs."""
+        """Validate scaling operation inputs (original implementation)."""
         tprint_debug(f"🔍 Validating scaling inputs for {method}")
         
         # Check data type
@@ -949,17 +1105,20 @@ class UnifiedVectorizationManager:
         tprint_success(f"✅ Scaling inputs validated for {method}")
 
     def reset_stats(self):
-        """Reset all performance statistics."""
-        tprint_info("🔄 Resetting UnifiedVectorizationManager performance statistics")
+        """Reset all enhanced performance statistics."""
+        tprint_info("🔄 Resetting Enhanced UnifiedVectorizationManager performance statistics")
         self.performance_stats = {
             'total_operations': 0,
             'vectorbt_operations': 0,
             'pandas_fallbacks': 0,
             'gpu_operations': 0,
+            'm1_gpu_operations': 0,
             'batch_operations': 0,
             'rolling_operations': 0,
             'scaling_operations': 0,
             'memory_optimizations': 0,
+            'adaptive_chunk_operations': 0,
+            'cache_operations': 0,
             'total_time': 0.0,
             'memory_savings': 0.0,
             'cache_hits': 0,
@@ -972,11 +1131,11 @@ class UnifiedVectorizationManager:
         if self.rolling_optimizer:
             self.rolling_optimizer.reset_stats()
         self._result_cache.clear()
-        tprint_success("✅ Performance statistics reset")
+        tprint_success("✅ Enhanced performance statistics reset")
     
     @contextmanager
     def performance_monitoring(self, operation_name: str):
-        """Context manager for performance monitoring."""
+        """Context manager for performance monitoring (original implementation)."""
         if not self.config.enable_monitoring:
             yield
             return
@@ -991,39 +1150,97 @@ class UnifiedVectorizationManager:
             execution_time = end_time - start_time
             
             logger.info(f"Operation {operation_name}: {execution_time:.3f}s")
+    
+    def cleanup(self) -> None:
+        """Enhanced cleanup with resource management."""
+        tprint("🧹 Cleaning up Enhanced UnifiedVectorizationManager resources")
+        
+        try:
+            # Cleanup rolling optimizer
+            if self.rolling_optimizer:
+                self.rolling_optimizer.cleanup()
+                tprint("✅ Rolling optimizer cleaned up")
+            
+            # Cleanup performance monitor
+            if self.performance_monitor:
+                self.performance_monitor.cleanup()
+                tprint("✅ Performance monitor cleaned up")
+            
+            # Clear caches
+            self._result_cache.clear()
+            tprint("✅ Result cache cleared")
+            
+            # Reset stats
+            self.reset_stats()
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint("✅ Garbage collection completed")
+            
+        except Exception as e:
+            tprint_error(f"❌ ERROR: Enhanced UnifiedVectorizationManager cleanup failed: {e}")
+            raise RuntimeError(f"Enhanced UnifiedVectorizationManager cleanup failed: {e}")
+        
+        tprint("✅ Enhanced UnifiedVectorizationManager cleanup completed")
+    
+    def __enter__(self) -> 'EnhancedUnifiedVectorizationManager':
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit with cleanup."""
+        self.cleanup()
 
+
+# Backward compatibility - create alias for original class name
+UnifiedVectorizationManager = EnhancedUnifiedVectorizationManager
 
 # Global instance
 _global_vectorization_manager = None
 
-
-def get_unified_vectorization_manager(config: Optional[VectorizationConfig] = None) -> UnifiedVectorizationManager:
-    """Get global unified vectorization manager instance."""
+def get_unified_vectorization_manager(config: Optional[EnhancedVectorizationConfig] = None) -> EnhancedUnifiedVectorizationManager:
+    """Get global enhanced unified vectorization manager instance with backward compatibility."""
     global _global_vectorization_manager
     if _global_vectorization_manager is None:
-        _global_vectorization_manager = UnifiedVectorizationManager(config)
+        _global_vectorization_manager = EnhancedUnifiedVectorizationManager(config)
     return _global_vectorization_manager
 
-
 def create_optimized_vectorization_pipeline(enable_gpu: bool = False, 
-                                          memory_efficient: bool = True) -> UnifiedVectorizationManager:
+                                          memory_efficient: bool = True,
+                                          enable_m1_gpu: bool = True,
+                                          adaptive_chunking: bool = True,
+                                          enable_caching: bool = True) -> EnhancedUnifiedVectorizationManager:
     """
-    Create an optimized vectorization pipeline.
+    Create an enhanced optimized vectorization pipeline with advanced features.
     
     Args:
         enable_gpu: Enable GPU acceleration
         memory_efficient: Enable memory optimization
+        enable_m1_gpu: Enable Mac M1 GPU optimization
+        adaptive_chunking: Enable adaptive chunking
+        enable_caching: Enable advanced caching
         
     Returns:
-        Unified vectorization manager
+        Enhanced unified vectorization manager
     """
-    config = VectorizationConfig(
+    config = EnhancedVectorizationConfig(
         enable_vectorbt=True,
         enable_gpu=enable_gpu,
         enable_parallel=True,
         memory_efficient=memory_efficient,
         max_memory_gb=8.0,
         chunk_size=1000,
+        adaptive_chunking=adaptive_chunking,
+        memory_pooling=True,
+        memory_pressure_threshold=0.8,
+        enable_caching=enable_caching,
+        l1_cache_size=1000,
+        l2_cache_size=10000,
+        l2_cache_dir="./cache",
+        cache_ttl=3600.0,
+        cache_compression=True,
+        enable_m1_gpu=enable_m1_gpu,
         enable_monitoring=True,
         enable_profiling=False,
         batch_size=10000,
@@ -1032,8 +1249,7 @@ def create_optimized_vectorization_pipeline(enable_gpu: bool = False,
         enable_rolling_optimization=True
     )
     
-    return UnifiedVectorizationManager(config)
-
+    return EnhancedUnifiedVectorizationManager(config)
 
 # Example usage and testing
 if __name__ == "__main__":
@@ -1049,9 +1265,12 @@ if __name__ == "__main__":
     print("Original data shape:", data.shape)
     print("Original memory usage:", data.memory_usage(deep=True).sum() / (1024**3), "GB")
     
-    # Create unified vectorization manager
-    manager = get_unified_vectorization_manager(
-        VectorizationConfig(
+    # Test enhanced unified vectorization manager with backward compatibility
+    print("\nTesting Enhanced Unified Vectorization Manager with backward compatibility...")
+    
+    # Test with original parameters (backward compatibility)
+    manager = EnhancedUnifiedVectorizationManager(
+        EnhancedVectorizationConfig(
             enable_vectorbt=True,
             enable_gpu=False,
             memory_efficient=True,
@@ -1060,19 +1279,19 @@ if __name__ == "__main__":
     )
     
     # Test rolling operations
-    print("\nTesting rolling operations...")
+    print("\nTesting enhanced rolling operations...")
     rolling_mean = manager.rolling_operation(data['close'], 'mean', window=20)
     rolling_std = manager.rolling_operation(data['close'], 'std', window=20)
     print(f"Rolling mean shape: {rolling_mean.shape}")
     print(f"Rolling std shape: {rolling_std.shape}")
     
     # Test scaling
-    print("\nTesting scaling...")
+    print("\nTesting enhanced scaling...")
     scaled_close = manager.scale_data(data['close'], method='zscore')
     print(f"Scaled close shape: {scaled_close.shape}")
     
     # Test batch processing
-    print("\nTesting batch processing...")
+    print("\nTesting enhanced batch processing...")
     feature_configs = [
         {'name': 'sma_20', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 20, 'column': 'close'}},
         {'name': 'sma_50', 'type': 'rolling', 'params': {'operation': 'mean', 'window': 50, 'column': 'close'}},
@@ -1086,12 +1305,46 @@ if __name__ == "__main__":
     print(f"Feature columns: {list(features.columns)}")
     
     # Test memory optimization
-    print("\nTesting memory optimization...")
+    print("\nTesting enhanced memory optimization...")
     optimized_data = manager.optimize_dataframe(data)
     print(f"Optimized memory usage: {optimized_data.memory_usage(deep=True).sum() / (1024**3):.3f}GB")
     
-    # Get performance stats
+    # Get enhanced performance stats
     stats = manager.get_performance_stats()
-    print(f"\nPerformance stats: {stats}")
+    print(f"\nEnhanced performance stats: {stats}")
     
-    print("\nUnified vectorization pipeline test completed successfully!")
+    # Test with enhanced features
+    print("\nTesting enhanced features...")
+    
+    # Create enhanced configuration
+    enhanced_config = EnhancedVectorizationConfig(
+        enable_vectorbt=True,
+        enable_gpu=False,
+        enable_m1_gpu=True,
+        memory_efficient=True,
+        adaptive_chunking=True,
+        memory_pooling=True,
+        memory_pressure_threshold=0.7,
+        enable_caching=True,
+        l1_cache_size=500,
+        l2_cache_size=2000,
+        cache_ttl=1800.0,  # 30 minutes
+        enable_monitoring=True
+    )
+    
+    # Test with enhanced configuration
+    enhanced_manager = EnhancedUnifiedVectorizationManager(enhanced_config)
+    
+    # Test enhanced operations
+    enhanced_mean = enhanced_manager.rolling_operation(data['close'], 'mean', window=20)
+    print(f"Enhanced rolling mean shape: {enhanced_mean.shape}")
+    
+    # Test caching (second call should hit cache)
+    cached_mean = enhanced_manager.rolling_operation(data['close'], 'mean', window=20)
+    print(f"Cached rolling mean shape: {cached_mean.shape}")
+    
+    # Enhanced performance stats
+    enhanced_stats = enhanced_manager.get_performance_stats()
+    print(f"Enhanced performance stats: {enhanced_stats}")
+    
+    print("\nEnhanced Unified Vectorization Manager test completed successfully!")

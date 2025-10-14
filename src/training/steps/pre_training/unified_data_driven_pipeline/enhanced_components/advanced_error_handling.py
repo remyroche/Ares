@@ -218,9 +218,29 @@ class AdvancedErrorHandler:
         Returns:
             Function result or return_value if error occurs
         """
+        tprint_debug(f"🔧 Executing safe operation: {operation}")
+        
         try:
-            return func(*args, **kwargs)
+            # Log function execution start
+            tprint_debug(f"🚀 Starting {operation} execution")
+            
+            # Execute the function
+            result = func(*args, **kwargs)
+            
+            # Log successful execution
+            tprint_debug(f"✅ {operation} executed successfully")
+            
+            return result
+            
         except Exception as e:
+            tprint_error(f"❌ Error in {operation}: {str(e)}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            
+            # Log context if available
+            if context:
+                tprint_debug(f"🔍 Error context: {context}")
+            
+            # Handle the error and return appropriate value
             return self.handle_error(e, operation, return_value, context)
 
     def safe_dataframe_operation(self, operation: str, data: pd.DataFrame, 
@@ -238,11 +258,38 @@ class AdvancedErrorHandler:
         Returns:
             Result DataFrame or original DataFrame if error occurs
         """
+        tprint_debug(f"🔧 Executing safe DataFrame operation: {operation}")
+        
+        # Validate input data
+        if data is None:
+            tprint_error(f"❌ DataFrame is None for operation: {operation}")
+            return pd.DataFrame()
+        
+        if data.empty:
+            tprint_warning(f"⚠️ DataFrame is empty for operation: {operation}")
+            return data
+        
+        tprint_debug(f"📊 DataFrame shape: {data.shape}, columns: {list(data.columns)}")
+        
         try:
             # Use utility function for safe operation
-            return safe_dataframe_operation(data, func, *args, **kwargs)
+            tprint_debug(f"🚀 Starting DataFrame operation: {operation}")
+            result = safe_dataframe_operation(data, func, *args, **kwargs)
+            
+            # Validate result
+            if result is None:
+                tprint_warning(f"⚠️ Operation {operation} returned None, returning original data")
+                return data
+            
+            tprint_success(f"✅ DataFrame operation {operation} completed successfully")
+            tprint_debug(f"📊 Result shape: {result.shape}")
+            
+            return result
+            
         except Exception as e:
-            tprint_warning(f"⚠️ DataFrame operation {operation} failed: {str(e)}")
+            tprint_error(f"❌ DataFrame operation {operation} failed: {str(e)}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_warning(f"⚠️ Returning original DataFrame for operation: {operation}")
             return data
 
     def safe_numpy_operation(self, operation: str, data: np.ndarray, 
@@ -260,10 +307,38 @@ class AdvancedErrorHandler:
         Returns:
             Result array or original array if error occurs
         """
+        tprint_debug(f"🔧 Executing safe NumPy operation: {operation}")
+        
+        # Validate input data
+        if data is None:
+            tprint_error(f"❌ NumPy array is None for operation: {operation}")
+            return np.array([])
+        
+        if data.size == 0:
+            tprint_warning(f"⚠️ NumPy array is empty for operation: {operation}")
+            return data
+        
+        tprint_debug(f"📊 Array shape: {data.shape}, dtype: {data.dtype}")
+        
         try:
-            return func(data, *args, **kwargs)
+            # Execute the function
+            tprint_debug(f"🚀 Starting NumPy operation: {operation}")
+            result = func(data, *args, **kwargs)
+            
+            # Validate result
+            if result is None:
+                tprint_warning(f"⚠️ Operation {operation} returned None, returning original array")
+                return data
+            
+            tprint_success(f"✅ NumPy operation {operation} completed successfully")
+            tprint_debug(f"📊 Result shape: {result.shape}")
+            
+            return result
+            
         except Exception as e:
-            tprint_warning(f"⚠️ NumPy operation {operation} failed: {str(e)}")
+            tprint_error(f"❌ NumPy operation {operation} failed: {str(e)}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
+            tprint_warning(f"⚠️ Returning original array for operation: {operation}")
             return data
 
     def _classify_error_severity(self, error: Exception) -> ErrorSeverity:

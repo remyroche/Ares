@@ -174,17 +174,49 @@ class AdvancedPerformanceMonitor:
         Returns:
             Dictionary with data quality metrics
         """
+        tprint_debug(f"📊 Starting data quality monitoring for: {operation_name}")
         start_time = time.time()
+        
+        # Validate input data
+        if data is None:
+            tprint_error(f"❌ Data is None for quality monitoring: {operation_name}")
+            return {
+                'operation_name': operation_name,
+                'error': 'Data is None',
+                'timestamp': datetime.now().isoformat(),
+                'analysis_time': 0.0
+            }
+        
+        if data.empty:
+            tprint_warning(f"⚠️ Data is empty for quality monitoring: {operation_name}")
+            return {
+                'operation_name': operation_name,
+                'warning': 'Data is empty',
+                'timestamp': datetime.now().isoformat(),
+                'analysis_time': time.time() - start_time
+            }
+        
+        tprint_debug(f"📊 Data shape: {data.shape}, columns: {len(data.columns)}")
         
         try:
             # Use utility functions for comprehensive analysis
+            tprint_debug("🔍 Analyzing NaN values")
             nan_analysis = analyze_nan_values_detailed(data)
+            
+            tprint_debug("🔍 Calculating quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
+            
+            tprint_debug("🔍 Creating quality report")
             quality_report = create_data_quality_report(data)
+            
+            tprint_debug("🔍 Getting dataframe info")
             dataframe_info = get_dataframe_info(data)
+            
+            tprint_debug("🔍 Creating summary statistics")
             summary_stats = create_summary_statistics(data)
             
             # Record metrics
+            tprint_debug("📝 Recording quality metrics")
             self.record_metric(
                 MetricType.QUALITY,
                 quality_metrics.get('missing_percentage', 0),
@@ -208,15 +240,33 @@ class AdvancedPerformanceMonitor:
                 'analysis_time': time.time() - start_time
             }
             
-            tprint_performance(f"📊 Data quality analysis completed for {operation_name}: {quality_metrics.get('missing_percentage', 0):.1f}% missing")
+            # Log quality metrics
+            missing_pct = quality_metrics.get('missing_percentage', 0)
+            quality_score = quality_metrics.get('quality_score', 0)
+            
+            if missing_pct > 50:
+                tprint_warning(f"⚠️ High missing data percentage: {missing_pct:.1f}% for {operation_name}")
+            elif missing_pct > 20:
+                tprint_warning(f"⚠️ Moderate missing data percentage: {missing_pct:.1f}% for {operation_name}")
+            else:
+                tprint_success(f"✅ Low missing data percentage: {missing_pct:.1f}% for {operation_name}")
+            
+            if quality_score < 0.5:
+                tprint_warning(f"⚠️ Low quality score: {quality_score:.3f} for {operation_name}")
+            else:
+                tprint_success(f"✅ Good quality score: {quality_score:.3f} for {operation_name}")
+            
+            tprint_performance(f"📊 Data quality analysis completed for {operation_name}: {missing_pct:.1f}% missing, score: {quality_score:.3f}")
             
             return quality_summary
             
         except Exception as e:
             tprint_error(f"❌ Data quality monitoring failed for {operation_name}: {e}")
+            tprint_error(f"❌ Error type: {type(e).__name__}")
             return {
                 'operation_name': operation_name,
                 'error': str(e),
+                'error_type': type(e).__name__,
                 'timestamp': datetime.now().isoformat(),
                 'analysis_time': time.time() - start_time
             }
@@ -231,16 +281,21 @@ class AdvancedPerformanceMonitor:
         Returns:
             Start time as timestamp
         """
+        tprint_debug(f"⏱️ Starting operation: {operation_name}")
+        
         start_time = time.time()
         self.operation_start_times[operation_name] = start_time
         
         if operation_name not in self.operation_counts:
             self.operation_counts[operation_name] = 0
             self.operation_total_times[operation_name] = 0.0
+            tprint_debug(f"📊 First time tracking operation: {operation_name}")
         
         self.operation_counts[operation_name] += 1
         
-        tprint_debug(f"⏱️ Started operation: {operation_name}")
+        # Log operation start with context
+        tprint_debug(f"⏱️ Started operation: {operation_name} (count: {self.operation_counts[operation_name]})")
+        
         return start_time
 
     def end_operation(self, operation_name: str, start_time: float, success: bool = True) -> float:
@@ -255,26 +310,45 @@ class AdvancedPerformanceMonitor:
         Returns:
             Execution time in seconds
         """
+        tprint_debug(f"⏱️ Ending operation: {operation_name}")
+        
         end_time = time.time()
         execution_time = end_time - start_time
+        
+        # Validate execution time
+        if execution_time < 0:
+            tprint_warning(f"⚠️ Negative execution time for {operation_name}: {execution_time:.3f}s")
+            execution_time = 0.0
         
         # Update operation statistics
         self.operation_total_times[operation_name] += execution_time
         self.performance_metrics['execution_times'][operation_name] = execution_time
         
         # Record metric
-        self.record_metric(
-            name=f"{operation_name}_execution_time",
-            value=execution_time,
-            metric_type=MetricType.PERFORMANCE,
-            tags={'operation': operation_name, 'success': str(success)}
-        )
+        try:
+            self.record_metric(
+                name=f"{operation_name}_execution_time",
+                value=execution_time,
+                metric_type=MetricType.PERFORMANCE,
+                tags={'operation': operation_name, 'success': str(success)}
+            )
+            tprint_debug(f"📝 Recorded metric for {operation_name}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to record metric for {operation_name}: {e}")
         
         # Clean up
         if operation_name in self.operation_start_times:
             del self.operation_start_times[operation_name]
+            tprint_debug(f"🧹 Cleaned up start time for {operation_name}")
         
-        tprint_performance(f"⏱️ Completed operation {operation_name} in {execution_time:.3f}s")
+        # Log completion with success status
+        if success:
+            tprint_success(f"✅ Completed operation {operation_name} in {execution_time:.3f}s")
+        else:
+            tprint_warning(f"⚠️ Completed operation {operation_name} with issues in {execution_time:.3f}s")
+        
+        tprint_performance(f"⏱️ Operation {operation_name} finished: {execution_time:.3f}s (success: {success})")
+        
         return execution_time
 
     def record_metric(self, name: str, value: float, metric_type: MetricType = MetricType.PERFORMANCE,

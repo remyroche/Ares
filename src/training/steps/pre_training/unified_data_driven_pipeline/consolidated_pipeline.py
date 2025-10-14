@@ -681,60 +681,178 @@ class UnifiedDataDrivenPipeline:
     
     def _initialize_labeling_adapter(self):
         """Initialize the labeling adapter for tactician/analyst labeling."""
-        tprint_debug("Initializing labeling adapter")
+        tprint_debug("🔧 Initializing labeling adapter")
         
         try:
+            tprint_info("📋 Creating labeling adapter with config")
             self.labeling_adapter = LabelingAdapter(self.config)
             tprint_success(f"✅ Labeling adapter initialized: {self.config.labeling_system}/{self.config.labeling_type}")
+            
+            # Validate the adapter is functional
+            if hasattr(self.labeling_adapter, 'validate_configuration'):
+                validation_result = self.labeling_adapter.validate_configuration()
+                if validation_result:
+                    tprint_success("✅ Labeling adapter configuration validated")
+                else:
+                    tprint_warning("⚠️ Labeling adapter configuration validation failed")
+            else:
+                tprint_debug("🔍 Labeling adapter validation method not available")
+                
         except Exception as e:
             tprint_error(f"❌ Failed to initialize labeling adapter: {e}")
-            # Create a fallback adapter
-            self.labeling_adapter = None
+            tprint_error(f"❌ Error details: {type(e).__name__}: {str(e)}")
+            # This is a critical failure - we should not proceed silently
+            raise RuntimeError(f"Labeling adapter initialization failed: {e}") from e
+            
         if self.m1_available:
             tprint_success("✅ M1 optimizations integrated")
+        else:
+            tprint_debug("ℹ️ M1 optimizations not available")
     
     def cleanup(self):
         """Clean up resources and M1 optimizations."""
+        tprint_info("🧹 Starting pipeline cleanup process")
+        
         try:
             tprint_debug("🧹 Cleaning up pipeline resources")
             
-            # Clean up M1 optimizations
-            if self.m1_available:
+            # Clean up labeling adapter
+            if hasattr(self, 'labeling_adapter') and self.labeling_adapter:
+                try:
+                    if hasattr(self.labeling_adapter, 'cleanup'):
+                        self.labeling_adapter.cleanup()
+                        tprint_success("✅ Labeling adapter cleaned up")
+                    else:
+                        tprint_debug("ℹ️ Labeling adapter has no cleanup method")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error cleaning up labeling adapter: {e}")
+            
+            # Clean up core components
+            cleanup_components = [
+                ('economic_evaluator', 'Economic evaluator'),
+                ('intelligent_feature_selector', 'Intelligent feature selector'),
+                ('vectorbt_optimizer', 'VectorBT optimizer'),
+                ('template_interaction_generator', 'Template interaction generator'),
+                ('common_feature_generator', 'Common feature generator'),
+                ('common_lookback_optimizer', 'Common lookback optimizer')
+            ]
+            
+            for attr_name, display_name in cleanup_components:
+                if hasattr(self, attr_name):
+                    component = getattr(self, attr_name)
+                    if component:
+                        try:
+                            if hasattr(component, 'cleanup'):
+                                component.cleanup()
+                                tprint_success(f"✅ {display_name} cleaned up")
+                            else:
+                                tprint_debug(f"ℹ️ {display_name} has no cleanup method")
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error cleaning up {display_name}: {e}")
+            
+            # Clean up enhanced components
+            enhanced_components = [
+                ('advanced_error_handler', 'Advanced error handler'),
+                ('advanced_performance_monitor', 'Advanced performance monitor'),
+                ('advanced_validation', 'Advanced validation'),
+                ('advanced_caching', 'Advanced caching'),
+                ('advanced_data_loading', 'Advanced data loading'),
+                ('advanced_feature_selection', 'Advanced feature selection'),
+                ('advanced_lookback_optimizer', 'Advanced lookback optimizer'),
+                ('feature_bank_integration', 'Feature bank integration'),
+                ('math_validation_integration', 'Math validation integration')
+            ]
+            
+            for attr_name, display_name in enhanced_components:
+                if hasattr(self, attr_name):
+                    component = getattr(self, attr_name)
+                    if component:
+                        try:
+                            if hasattr(component, 'cleanup'):
+                                component.cleanup()
+                                tprint_success(f"✅ {display_name} cleaned up")
+                            else:
+                                tprint_debug(f"ℹ️ {display_name} has no cleanup method")
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Error cleaning up {display_name}: {e}")
+            
+            tprint_success("✅ Pipeline cleanup completed successfully")
+            
+        except Exception as e:
+            tprint_error(f"❌ Error during pipeline cleanup: {e}")
+            tprint_error(f"❌ Cleanup error details: {type(e).__name__}: {str(e)}")
+            # Don't re-raise here as cleanup should be best-effort
+        
+        # Clean up M1 optimizations
+        if hasattr(self, 'm1_available') and self.m1_available:
+            try:
                 cleanup_result = cleanup_m1_optimizers()
                 if cleanup_result:
                     tprint_success("✅ M1 optimizations cleaned up")
                 else:
                     tprint_warning("⚠️ M1 cleanup failed")
-            
-            # Clean up other resources
-            if hasattr(self, 'advanced_performance_monitor'):
-                self.advanced_performance_monitor.stop_monitoring()
-            
-            tprint_success("✅ Pipeline cleanup completed")
-            
+            except Exception as e:
+                tprint_warning(f"⚠️ Error cleaning up M1 optimizations: {e}")
+        
+        # Clean up other resources
+        try:
+            if hasattr(self, 'advanced_performance_monitor') and self.advanced_performance_monitor:
+                if hasattr(self.advanced_performance_monitor, 'stop_monitoring'):
+                    self.advanced_performance_monitor.stop_monitoring()
+                    tprint_success("✅ Performance monitoring stopped")
+                else:
+                    tprint_debug("ℹ️ Performance monitor has no stop_monitoring method")
         except Exception as e:
-            tprint_warning(f"⚠️ Error during cleanup: {e}")
+            tprint_warning(f"⚠️ Error stopping performance monitoring: {e}")
+        
+        tprint_success("✅ Pipeline cleanup completed")
     
     def __del__(self):
         """Destructor to ensure cleanup."""
         try:
+            tprint_debug("🗑️ Pipeline destructor called - initiating cleanup")
             self.cleanup()
-        except Exception:
-            pass  # Ignore errors during destruction
+        except Exception as e:
+            # Log the error but don't re-raise during destruction
+            tprint_warning(f"⚠️ Error during pipeline destruction: {e}")
+            tprint_debug(f"⚠️ Destruction error details: {type(e).__name__}: {str(e)}")
     
     def get_enhanced_performance_stats(self) -> Dict[str, Any]:
         """Get enhanced performance statistics using common operations utilities."""
+        tprint_debug("📊 Collecting enhanced performance statistics")
+        
         try:
             # Get basic performance stats
-            basic_stats = self.advanced_performance_monitor.get_performance_summary()
+            if hasattr(self, 'advanced_performance_monitor') and self.advanced_performance_monitor:
+                try:
+                    basic_stats = self.advanced_performance_monitor.get_performance_summary()
+                    tprint_debug("✅ Basic performance stats collected")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error getting basic performance stats: {e}")
+                    basic_stats = {}
+            else:
+                tprint_warning("⚠️ Advanced performance monitor not available")
+                basic_stats = {}
             
             # Get memory usage
-            memory_usage = get_memory_usage()
+            try:
+                memory_usage = get_memory_usage()
+                tprint_debug(f"💾 Memory usage: {memory_usage / (1024 * 1024):.2f} MB")
+            except Exception as e:
+                tprint_warning(f"⚠️ Error getting memory usage: {e}")
+                memory_usage = 0
             
             # Get M1 status if available
             m1_status = {}
-            if self.m1_available and hasattr(self, 'common_utils'):
-                m1_status = self.common_utils.get_m1_status()
+            if hasattr(self, 'm1_available') and self.m1_available and hasattr(self, 'common_utils'):
+                try:
+                    m1_status = self.common_utils.get_m1_status()
+                    tprint_debug("✅ M1 status collected")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Error getting M1 status: {e}")
+                    m1_status = {}
+            else:
+                tprint_debug("ℹ️ M1 optimizations not available")
             
             # Combine all statistics
             enhanced_stats = {
@@ -750,90 +868,171 @@ class UnifiedDataDrivenPipeline:
             }
             
             # Log performance metrics safely
-            safe_log_metric("memory_usage_mb", enhanced_stats['memory_usage_mb'])
-            safe_log_metric("total_operations", basic_stats.get('total_operations', 0))
+            try:
+                safe_log_metric("memory_usage_mb", enhanced_stats['memory_usage_mb'])
+                safe_log_metric("total_operations", basic_stats.get('total_operations', 0))
+                tprint_debug("✅ Performance metrics logged successfully")
+            except Exception as e:
+                tprint_warning(f"⚠️ Error logging performance metrics: {e}")
             
+            tprint_success("✅ Enhanced performance statistics collected successfully")
             return enhanced_stats
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error getting enhanced performance stats: {e}")
-            return {'error': str(e)}
+            tprint_error(f"❌ Error getting enhanced performance stats: {e}")
+            tprint_error(f"❌ Performance stats error details: {type(e).__name__}: {str(e)}")
+            return {'error': str(e), 'error_type': type(e).__name__}
     
     def optimize_pipeline_performance(self) -> Dict[str, Any]:
         """Optimize pipeline performance using common operations utilities."""
+        tprint_info("🔧 Starting pipeline performance optimization")
+        
         try:
             tprint_debug("🔧 Optimizing pipeline performance")
             
             optimization_results = {}
             
             # Memory optimization
-            if self.m1_available:
-                memory_opt_result = optimize_memory()
-                optimization_results['memory_optimization'] = memory_opt_result
+            if hasattr(self, 'm1_available') and self.m1_available:
+                try:
+                    tprint_debug("💾 Running M1 memory optimization")
+                    memory_opt_result = optimize_memory()
+                    optimization_results['memory_optimization'] = memory_opt_result
+                    if memory_opt_result.get('success', False):
+                        tprint_success("✅ M1 memory optimization completed successfully")
+                    else:
+                        tprint_warning("⚠️ M1 memory optimization completed with warnings")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimization failed: {e}")
+                    optimization_results['memory_optimization'] = {'success': False, 'error': str(e)}
+            else:
+                tprint_debug("ℹ️ M1 optimizations not available, skipping M1 memory optimization")
+                optimization_results['memory_optimization'] = {'success': False, 'reason': 'M1 not available'}
             
             # General memory optimization
-            general_memory_opt = optimize_memory_usage()
-            optimization_results['general_memory_optimization'] = general_memory_opt
+            try:
+                tprint_debug("💾 Running general memory optimization")
+                general_memory_opt = optimize_memory_usage()
+                optimization_results['general_memory_optimization'] = general_memory_opt
+                if general_memory_opt.get('success', False):
+                    tprint_success("✅ General memory optimization completed successfully")
+                else:
+                    tprint_warning("⚠️ General memory optimization completed with warnings")
+            except Exception as e:
+                tprint_warning(f"⚠️ General memory optimization failed: {e}")
+                optimization_results['general_memory_optimization'] = {'success': False, 'error': str(e)}
             
             # Log optimization results
-            safe_log_metric("memory_optimization_success", 1 if optimization_results.get('memory_optimization', {}).get('success', False) else 0)
+            try:
+                memory_success = optimization_results.get('memory_optimization', {}).get('success', False)
+                safe_log_metric("memory_optimization_success", 1 if memory_success else 0)
+                tprint_debug("✅ Optimization results logged successfully")
+            except Exception as e:
+                tprint_warning(f"⚠️ Error logging optimization results: {e}")
             
-            tprint_success("✅ Pipeline performance optimization completed")
+            # Check overall optimization success
+            overall_success = any(
+                result.get('success', False) 
+                for result in optimization_results.values() 
+                if isinstance(result, dict)
+            )
+            
+            if overall_success:
+                tprint_success("✅ Pipeline performance optimization completed successfully")
+            else:
+                tprint_warning("⚠️ Pipeline performance optimization completed with issues")
+            
             return optimization_results
             
         except Exception as e:
-            tprint_warning(f"⚠️ Performance optimization failed: {e}")
-            return {'error': str(e)}
+            tprint_error(f"❌ Performance optimization failed: {e}")
+            tprint_error(f"❌ Optimization error details: {type(e).__name__}: {str(e)}")
+            return {'error': str(e), 'error_type': type(e).__name__}
     
     def _initialize_utility_systems(self):
         """Initialize utility systems from feature_generation and features_common."""
-        tprint_debug("Initializing utility systems")
+        tprint_info("🔧 Initializing utility systems")
+        
+        try:
+            tprint_debug("🔧 Setting up utility systems from feature_generation and features_common")
         
         # Initialize common operations utilities
-        tprint_debug("🔧 Initializing common operations utilities")
-        self.common_utils = CommonUtilities()
-        self.common_operations_logger = get_logger("common_operations")
+        try:
+            tprint_debug("🔧 Initializing common operations utilities")
+            self.common_utils = CommonUtilities()
+            self.common_operations_logger = get_logger("common_operations")
+            tprint_success("✅ Common operations utilities initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize common operations utilities: {e}")
+            raise RuntimeError(f"Common operations utilities initialization failed: {e}") from e
         
         # Initialize M1 optimizations if available
         try:
+            tprint_debug("🔧 Attempting M1 optimizations integration")
             m1_integration_result = integrate_with_m1_optimizers()
             if m1_integration_result.get('success', False):
                 tprint_success("✅ M1 optimizations integrated successfully")
                 self.m1_available = True
             else:
                 tprint_warning("⚠️ M1 optimizations not available")
+                tprint_debug(f"⚠️ M1 integration result: {m1_integration_result}")
                 self.m1_available = False
         except Exception as e:
             tprint_warning(f"⚠️ M1 integration failed: {e}")
+            tprint_debug(f"⚠️ M1 integration error details: {type(e).__name__}: {str(e)}")
             self.m1_available = False
+        
+        # Add comprehensive error handling wrapper
+        try:
+            tprint_debug("🔧 Utility systems initialization completed successfully")
+        except Exception as e:
+            tprint_error(f"❌ Critical error in utility systems initialization: {e}")
+            raise RuntimeError(f"Utility systems initialization failed: {e}") from e
         
         # Initialize feature generation utilities
         if FEATURE_GENERATION_AVAILABLE:
             try:
+                tprint_debug("🔧 Initializing feature generation utilities")
+                
                 # Initialize utility container
+                tprint_debug("📦 Creating utility container")
                 self.utility_container = get_utility_container()
                 self.utility_config = UtilityConfig()
+                tprint_success("✅ Utility container initialized")
                 
                 # Initialize enhanced feature engineering
+                tprint_debug("🔧 Creating enhanced feature engineering")
                 self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                tprint_success("✅ Enhanced feature engineering initialized")
                 
                 # Initialize feature optimization
+                tprint_debug("🔧 Creating feature optimizer")
                 self.feature_optimizer = FeatureGenerationOptimizer()
                 self.feature_optimization_config = FeatureOptimizationConfig()
+                tprint_success("✅ Feature optimizer initialized")
                 
                 # Initialize cross-timeframe analysis
+                tprint_debug("🔧 Creating cross-timeframe pipeline")
                 self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                tprint_success("✅ Cross-timeframe pipeline initialized")
                 
                 # Initialize fractional differentiation
+                tprint_debug("🔧 Creating fractional differentiation pipeline")
                 self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                tprint_success("✅ Fractional differentiation pipeline initialized")
                 
                 # Initialize matrix operations
+                tprint_debug("🔧 Creating enhanced matrix operations")
                 self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                tprint_success("✅ Enhanced matrix operations initialized")
                 
-                tprint_success("✅ Feature generation utilities initialized")
+                tprint_success("✅ All feature generation utilities initialized successfully")
             except Exception as e:
+                tprint_error(f"❌ Failed to initialize feature generation utilities: {e}")
+                tprint_error(f"❌ Feature generation error details: {type(e).__name__}: {str(e)}")
                 raise RuntimeError(f"Failed to initialize feature generation utilities: {e}") from e
         else:
+            tprint_warning("⚠️ Feature generation utilities not available - setting to None")
             self.utility_container = None
             self.enhanced_feature_engineering = None
             self.feature_optimizer = None
@@ -844,19 +1043,27 @@ class UnifiedDataDrivenPipeline:
         # Initialize VectorBT utilities
         if VECTORBT_UTILITIES_AVAILABLE:
             try:
+                tprint_debug("🔧 Initializing VectorBT utilities")
+                
                 # Initialize VectorBT Rolling Optimizer
+                tprint_debug("🔧 Creating VectorBT rolling optimizer")
+                gpu_enabled = self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False
+                tprint_debug(f"🔧 GPU enabled: {gpu_enabled}")
+                
                 self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
-                    enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
+                    enable_gpu=gpu_enabled,
                     enable_parallel=True,
                     memory_efficient=True,
                     chunk_size=1000,
                     fast_fail=True,
                     enable_logging=True
                 )
+                tprint_success("✅ VectorBT rolling optimizer initialized")
                 
                 # Initialize Unified Vectorization Manager
+                tprint_debug("🔧 Creating unified vectorization manager")
                 vectorization_config = VectorizationConfig(
-                    enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
+                    enable_gpu=gpu_enabled,
                     enable_parallel=True,
                     memory_efficient=True,
                     batch_size=1000,
@@ -869,11 +1076,15 @@ class UnifiedDataDrivenPipeline:
                     fast_fail=True,
                     enable_logging=True
                 )
+                tprint_success("✅ Unified vectorization manager initialized")
                 
-                tprint_success("✅ VectorBT utilities initialized")
+                tprint_success("✅ All VectorBT utilities initialized successfully")
             except Exception as e:
+                tprint_error(f"❌ Failed to initialize VectorBT utilities: {e}")
+                tprint_error(f"❌ VectorBT error details: {type(e).__name__}: {str(e)}")
                 raise RuntimeError(f"Failed to initialize VectorBT utilities: {e}") from e
         else:
+            tprint_warning("⚠️ VectorBT utilities not available - setting to None")
             self.vectorbt_rolling_optimizer = None
             self.unified_vectorization_manager = None
 

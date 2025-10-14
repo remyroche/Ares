@@ -14,6 +14,23 @@ from pathlib import Path
 # Add the src directory to the path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent))
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: tprint utilities not available: {e}")  # Keep this as print since tprint not available
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_info(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_success(msg, **kwargs): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg, **kwargs): print(f"[WARNING] {msg}")
+    def tprint_error(msg, **kwargs): print(f"[ERROR] {msg}")
+    def tprint_debug(msg, **kwargs): print(f"[DEBUG] {msg}")
+
 try:
     from src.training.steps.pre_training.unified_data_driven_pipeline import (
         UnifiedDataDrivenPipeline,
@@ -22,9 +39,9 @@ try:
         process_with_unified_pipeline,
         UnifiedPipelineConfig
     )
-    print("✅ Successfully imported consolidated pipeline")
+    tprint_success("Successfully imported consolidated pipeline")
 except ImportError as e:
-    print(f"❌ Failed to import consolidated pipeline: {e}")
+    tprint_error(f"Failed to import consolidated pipeline: {e}")
     sys.exit(1)
 
 
@@ -63,7 +80,7 @@ def create_sample_targets(data: pd.DataFrame) -> pd.Series:
 
 def test_basic_functionality():
     """Test basic pipeline functionality."""
-    print("\n🧪 Testing basic functionality...")
+    tprint_info("Testing basic functionality...")
     
     try:
         # Create sample data
@@ -87,21 +104,21 @@ def test_basic_functionality():
         assert len(result.selected_features) > 0, "Should select some features"
         assert result.processing_time > 0, "Processing time should be positive"
         
-        print("✅ Basic functionality test passed")
-        print(f"   - Selected {len(result.selected_features)} features")
-        print(f"   - Processing time: {result.processing_time:.3f}s")
-        print(f"   - Success: {result.success}")
+        tprint_success("Basic functionality test passed")
+        tprint_info(f"   - Selected {len(result.selected_features)} features")
+        tprint_info(f"   - Processing time: {result.processing_time:.3f}s")
+        tprint_info(f"   - Success: {result.success}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Basic functionality test failed: {e}")
+        tprint_error(f"Basic functionality test failed: {e}")
         return False
 
 
 def test_enhanced_features():
     """Test enhanced features are available."""
-    print("\n🧪 Testing enhanced features...")
+    tprint_info("Testing enhanced features...")
     
     try:
         # Create sample data
@@ -131,23 +148,23 @@ def test_enhanced_features():
         assert result.no_features is not None, "Should have no features"
         assert result.comparison_features is not None, "Should have comparison features"
         
-        print("✅ Enhanced features test passed")
-        print(f"   - Optimal periods: {len(result.optimal_periods)}")
-        print(f"   - Generated interactions: {len(result.generated_interactions)}")
-        print(f"   - HTF interactions: {len(result.htf_interactions)}")
-        print(f"   - Optimized lookbacks: {len(result.optimized_lookbacks)}")
-        print(f"   - Cross-timeframe features: {len(result.cross_timeframe_features)}")
+        tprint_success("Enhanced features test passed")
+        tprint_info(f"   - Optimal periods: {len(result.optimal_periods)}")
+        tprint_info(f"   - Generated interactions: {len(result.generated_interactions)}")
+        tprint_info(f"   - HTF interactions: {len(result.htf_interactions)}")
+        tprint_info(f"   - Optimized lookbacks: {len(result.optimized_lookbacks)}")
+        tprint_info(f"   - Cross-timeframe features: {len(result.cross_timeframe_features)}")
         
         return True
         
     except Exception as e:
-        print(f"❌ Enhanced features test failed: {e}")
+        tprint_error(f"Enhanced features test failed: {e}")
         return False
 
 
 def test_performance_metrics():
     """Test performance metrics are available."""
-    print("\n🧪 Testing performance metrics...")
+    tprint_info("Testing performance metrics...")
     
     try:
         # Create sample data
@@ -177,22 +194,22 @@ def test_performance_metrics():
         assert 'successful_pipeline_runs' in stats, "Should have successful pipeline runs"
         assert 'vectorbt_operations' in stats, "Should have VectorBT operations"
         
-        print("✅ Performance metrics test passed")
-        print(f"   - Memory usage: {result.memory_usage_mb:.2f} MB")
-        print(f"   - VectorBT operations: {result.vectorbt_operations}")
-        print(f"   - Cache hit rate: {result.cache_hit_rate:.2%}")
-        print(f"   - Processing time: {result.processing_time:.3f}s")
+        tprint_success("Performance metrics test passed")
+        tprint_info(f"   - Memory usage: {result.memory_usage_mb:.2f} MB")
+        tprint_info(f"   - VectorBT operations: {result.vectorbt_operations}")
+        tprint_info(f"   - Cache hit rate: {result.cache_hit_rate:.2%}")
+        tprint_info(f"   - Processing time: {result.processing_time:.3f}s")
         
         return True
         
     except Exception as e:
-        print(f"❌ Performance metrics test failed: {e}")
+        tprint_error(f"Performance metrics test failed: {e}")
         return False
 
 
 def test_convenience_function():
     """Test convenience function works."""
-    print("\n🧪 Testing convenience function...")
+    tprint_info("Testing convenience function...")
     
     try:
         # Create sample data
@@ -211,20 +228,20 @@ def test_convenience_function():
         assert isinstance(result, ConsolidatedPipelineResult), "Result should be ConsolidatedPipelineResult"
         assert result.success, f"Pipeline should succeed, but got error: {result.error_message}"
         
-        print("✅ Convenience function test passed")
-        print(f"   - Selected {len(result.selected_features)} features")
-        print(f"   - Processing time: {result.processing_time:.3f}s")
+        tprint_success("Convenience function test passed")
+        tprint_info(f"   - Selected {len(result.selected_features)} features")
+        tprint_info(f"   - Processing time: {result.processing_time:.3f}s")
         
         return True
         
     except Exception as e:
-        print(f"❌ Convenience function test failed: {e}")
+        tprint_error(f"Convenience function test failed: {e}")
         return False
 
 
 def test_configuration():
     """Test configuration system works."""
-    print("\n🧪 Testing configuration system...")
+    tprint_info("Testing configuration system...")
     
     try:
         # Test default configuration
@@ -236,21 +253,21 @@ def test_configuration():
         custom_config.feature_selection.multi_objective.max_features = 20
         custom_pipeline = UnifiedDataDrivenPipeline(custom_config)
         
-        print("✅ Configuration system test passed")
-        print(f"   - Default config created successfully")
-        print(f"   - Custom config created successfully")
+        tprint_success("Configuration system test passed")
+        tprint_info(f"   - Default config created successfully")
+        tprint_info(f"   - Custom config created successfully")
         
         return True
         
     except Exception as e:
-        print(f"❌ Configuration system test failed: {e}")
+        tprint_error(f"Configuration system test failed: {e}")
         return False
 
 
 def main():
     """Run all tests."""
-    print("🚀 Testing Consolidated Unified Data-Driven Pipeline")
-    print("=" * 60)
+    tprint_info("Testing Consolidated Unified Data-Driven Pipeline")
+    tprint_info("=" * 60)
     
     tests = [
         test_basic_functionality,
@@ -268,16 +285,16 @@ def main():
             if test():
                 passed += 1
         except Exception as e:
-            print(f"❌ Test {test.__name__} failed with exception: {e}")
+            tprint_error(f"Test {test.__name__} failed with exception: {e}")
     
-    print("\n" + "=" * 60)
-    print(f"📊 Test Results: {passed}/{total} tests passed")
+    tprint_info("\n" + "=" * 60)
+    tprint_info(f"Test Results: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed! Consolidated pipeline is working correctly.")
+        tprint_success("All tests passed! Consolidated pipeline is working correctly.")
         return True
     else:
-        print("⚠️  Some tests failed. Please check the implementation.")
+        tprint_warning("Some tests failed. Please check the implementation.")
         return False
 
 

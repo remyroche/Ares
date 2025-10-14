@@ -16,6 +16,23 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: tprint utilities not available: {e}")  # Keep this as print since tprint not available
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_info(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_success(msg, **kwargs): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg, **kwargs): print(f"[WARNING] {msg}")
+    def tprint_error(msg, **kwargs): print(f"[ERROR] {msg}")
+    def tprint_debug(msg, **kwargs): print(f"[DEBUG] {msg}")
+
 def create_test_data(n_samples=500, n_features=100):
     """Create test data for feature selection."""
     np.random.seed(42)
@@ -54,23 +71,23 @@ def create_test_data(n_samples=500, n_features=100):
 
 def test_basic_feature_selection():
     """Test basic feature selection functionality."""
-    print("🧪 Testing basic feature selection functionality")
+    tprint_info("Testing basic feature selection functionality")
     
     try:
         # Create test data
         data, target = create_test_data(n_samples=200, n_features=50)
         
-        print(f"📊 Created test data: {data.shape[0]} samples, {data.shape[1]} features")
+        tprint_info(f"Created test data: {data.shape[0]} samples, {data.shape[1]} features")
         
         # Test variance screening
         variances = data.var()
         high_variance_features = variances[variances > 0.1].index.tolist()
-        print(f"📊 Variance screening: {len(high_variance_features)} features with variance > 0.1")
+        tprint_info(f"Variance screening: {len(high_variance_features)} features with variance > 0.1")
         
         # Test correlation screening
         correlations = data.corrwith(target).abs()
         high_correlation_features = correlations[correlations > 0.05].index.tolist()
-        print(f"📊 Correlation screening: {len(high_correlation_features)} features with correlation > 0.05")
+        tprint_info(f"Correlation screening: {len(high_correlation_features)} features with correlation > 0.05")
         
         # Test mutual information screening
         from sklearn.feature_selection import mutual_info_regression
@@ -78,11 +95,11 @@ def test_basic_feature_selection():
         mi_scores = mutual_info_regression(numeric_data, target, random_state=42)
         mi_series = pd.Series(mi_scores, index=numeric_data.columns)
         high_mi_features = mi_series[mi_series > 0.01].index.tolist()
-        print(f"📊 Mutual information screening: {len(high_mi_features)} features with MI > 0.01")
+        tprint_info(f"Mutual information screening: {len(high_mi_features)} features with MI > 0.01")
         
         # Combine screening results
         screened_features = set(high_variance_features) & set(high_correlation_features) & set(high_mi_features)
-        print(f"📊 Combined screening: {len(screened_features)} features passed all filters")
+        tprint_info(f"Combined screening: {len(screened_features)} features passed all filters")
         
         # Test feature importance ranking
         from sklearn.ensemble import RandomForestRegressor
@@ -94,19 +111,19 @@ def test_basic_feature_selection():
         feature_importance_pairs.sort(key=lambda x: x[1], reverse=True)
         
         top_features = [feat[0] for feat in feature_importance_pairs[:20]]
-        print(f"📊 Feature importance: {len(top_features)} top features selected")
+        tprint_info(f"Feature importance: {len(top_features)} top features selected")
         
-        print("✅ Basic feature selection test completed successfully")
+        tprint_success("Basic feature selection test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ Basic feature selection test failed: {e}")
+        tprint_error(f"Basic feature selection test failed: {e}")
         return False
 
 
 def test_mrmr_selection():
     """Test mRMR feature selection."""
-    print("🧪 Testing mRMR feature selection")
+    tprint_info("Testing mRMR feature selection")
     
     try:
         # Create test data
@@ -141,20 +158,20 @@ def test_mrmr_selection():
         sorted_features = sorted(mrmr_scores.items(), key=lambda x: x[1], reverse=True)
         selected_features = [feat[0] for feat in sorted_features[:15]]
         
-        print(f"📊 mRMR selection: {len(selected_features)} features selected")
-        print(f"📊 Top 5 features: {selected_features[:5]}")
+        tprint_info(f"mRMR selection: {len(selected_features)} features selected")
+        tprint_info(f"Top 5 features: {selected_features[:5]}")
         
-        print("✅ mRMR selection test completed successfully")
+        tprint_success("mRMR selection test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ mRMR selection test failed: {e}")
+        tprint_error(f"mRMR selection test failed: {e}")
         return False
 
 
 def test_lasso_selection():
     """Test LASSO feature selection."""
-    print("🧪 Testing LASSO feature selection")
+    tprint_info("Testing LASSO feature selection")
     
     try:
         # Create test data
@@ -175,20 +192,20 @@ def test_lasso_selection():
         selected_mask = np.abs(lasso.coef_) > 1e-6
         selected_features = data.columns[selected_mask].tolist()
         
-        print(f"📊 LASSO selection: {len(selected_features)} features selected")
-        print(f"📊 Selected features: {selected_features}")
+        tprint_info(f"LASSO selection: {len(selected_features)} features selected")
+        tprint_info(f"Selected features: {selected_features}")
         
-        print("✅ LASSO selection test completed successfully")
+        tprint_success("LASSO selection test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ LASSO selection test failed: {e}")
+        tprint_error(f"LASSO selection test failed: {e}")
         return False
 
 
 def test_rfe_selection():
     """Test RFE feature selection."""
-    print("🧪 Testing RFE feature selection")
+    tprint_info("Testing RFE feature selection")
     
     try:
         # Create test data
@@ -207,20 +224,20 @@ def test_rfe_selection():
         # Get selected features
         selected_features = data.columns[rfe.support_].tolist()
         
-        print(f"📊 RFE selection: {len(selected_features)} features selected")
-        print(f"📊 Selected features: {selected_features}")
+        tprint_info(f"RFE selection: {len(selected_features)} features selected")
+        tprint_info(f"Selected features: {selected_features}")
         
-        print("✅ RFE selection test completed successfully")
+        tprint_success("RFE selection test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ RFE selection test failed: {e}")
+        tprint_error(f"RFE selection test failed: {e}")
         return False
 
 
 def test_ensemble_selection():
     """Test ensemble feature selection combining multiple methods."""
-    print("🧪 Testing ensemble feature selection")
+    tprint_info("Testing ensemble feature selection")
     
     try:
         # Create test data
@@ -267,7 +284,7 @@ def test_ensemble_selection():
         # Combine results using voting
         feature_votes = {}
         for method, features in method_results.items():
-            print(f"📊 {method}: {len(features)} features")
+            tprint_info(f"{method}: {len(features)} features")
             for feature in features:
                 feature_votes[feature] = feature_votes.get(feature, 0) + 1
         
@@ -275,20 +292,20 @@ def test_ensemble_selection():
         sorted_features = sorted(feature_votes.items(), key=lambda x: x[1], reverse=True)
         ensemble_features = [feature for feature, votes in sorted_features[:15]]
         
-        print(f"📊 Ensemble selection: {len(ensemble_features)} features selected")
-        print(f"📊 Top 5 features: {ensemble_features[:5]}")
+        tprint_info(f"Ensemble selection: {len(ensemble_features)} features selected")
+        tprint_info(f"Top 5 features: {ensemble_features[:5]}")
         
-        print("✅ Ensemble selection test completed successfully")
+        tprint_success("Ensemble selection test completed successfully")
         return True
         
     except Exception as e:
-        print(f"❌ Ensemble selection test failed: {e}")
+        tprint_error(f"Ensemble selection test failed: {e}")
         return False
 
 
 def main():
     """Run all tests."""
-    print("🚀 Starting enhanced feature selection tests")
+    tprint_info("Starting enhanced feature selection tests")
     
     tests = [
         ("Basic Feature Selection", test_basic_feature_selection),
@@ -301,42 +318,42 @@ def main():
     results = []
     
     for test_name, test_func in tests:
-        print(f"\n{'='*50}")
-        print(f"Running test: {test_name}")
-        print(f"{'='*50}")
+        tprint_info(f"\n{'='*50}")
+        tprint_info(f"Running test: {test_name}")
+        tprint_info(f"{'='*50}")
         
         try:
             success = test_func()
             results.append((test_name, success))
             
             if success:
-                print(f"✅ {test_name} passed")
+                tprint_success(f"{test_name} passed")
             else:
-                print(f"❌ {test_name} failed")
+                tprint_error(f"{test_name} failed")
                 
         except Exception as e:
-            print(f"❌ {test_name} failed with exception: {e}")
+            tprint_error(f"{test_name} failed with exception: {e}")
             results.append((test_name, False))
     
     # Summary
-    print(f"\n{'='*50}")
-    print("TEST SUMMARY")
-    print(f"{'='*50}")
+    tprint_info(f"\n{'='*50}")
+    tprint_info("TEST SUMMARY")
+    tprint_info(f"{'='*50}")
     
     passed = sum(1 for _, success in results if success)
     total = len(results)
     
     for test_name, success in results:
         status = "✅ PASSED" if success else "❌ FAILED"
-        print(f"{test_name}: {status}")
+        tprint_info(f"{test_name}: {status}")
     
-    print(f"\nOverall: {passed}/{total} tests passed")
+    tprint_info(f"Overall: {passed}/{total} tests passed")
     
     if passed == total:
-        print("🎉 All tests passed! Enhanced feature selection is working correctly.")
+        tprint_success("All tests passed! Enhanced feature selection is working correctly.")
         return 0
     else:
-        print(f"⚠️ {total - passed} tests failed. Please check the implementation.")
+        tprint_warning(f"{total - passed} tests failed. Please check the implementation.")
         return 1
 
 

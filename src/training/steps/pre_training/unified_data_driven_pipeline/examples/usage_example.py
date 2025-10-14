@@ -11,6 +11,23 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: tprint utilities not available: {e}")
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_info(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_success(msg, **kwargs): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg, **kwargs): print(f"[WARNING] {msg}")
+    def tprint_error(msg, **kwargs): print(f"[ERROR] {msg}")
+    def tprint_debug(msg, **kwargs): print(f"[DEBUG] {msg}")
+
 # Import the consolidated unified pipeline
 from .. import (
     UnifiedDataDrivenPipeline,
@@ -22,7 +39,7 @@ from .. import (
 
 def create_sample_data(n_samples: int = 1000, n_features: int = 50) -> Tuple[pd.DataFrame, pd.Series]:
     """Create sample financial data for demonstration."""
-    print("Creating sample financial data...")
+    tprint_info("Creating sample financial data...")
     
     # Create date index
     dates = pd.date_range(start='2020-01-01', periods=n_samples, freq='D')

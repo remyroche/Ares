@@ -163,6 +163,48 @@ from src.utils.math_validation import (
     safe_weighted_average, safe_kelly_calculation, MathValidation
 )
 
+# Import comprehensive common operations utilities
+from src.utils.common_operations import (
+    # Data processing utilities
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes, 
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
+    safe_timestamp_conversion, optimize_dataframe_dtypes,
+    
+    # Data quality utilities
+    calculate_data_quality_metrics, get_dataframe_info, create_data_quality_report,
+    validate_dataframe, validate_dataframe_columns, validate_timestamp_column,
+    
+    # Mathematical utilities
+    safe_divide as safe_divide_util, safe_log as safe_log_util, safe_sqrt as safe_sqrt_util,
+    safe_power as safe_power_util, safe_mean as safe_mean_util, safe_std as safe_std_util,
+    safe_correlation as safe_correlation_util, safe_float, safe_int,
+    validate_finite as validate_finite_util, validate_positive as validate_positive_util,
+    validate_range as validate_range_util, safe_kelly_calculation as safe_kelly_util,
+    safe_weighted_average as safe_weighted_avg_util, safe_percentage_change as safe_pct_change_util,
+    
+    # File I/O utilities
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
+    safe_copy, safe_deepcopy,
+    
+    # Performance utilities
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    optimize_memory_usage, parallel_processing_optimizer,
+    
+    # M1 optimization utilities
+    integrate_with_m1_optimizers, cleanup_m1_optimizers, memory_checkpoint, gpu_context,
+    optimize_memory, get_memory_usage, CommonUtilities,
+    
+    # Advanced utilities
+    safe_resample, align_dataframes, validate_dataframe_schema,
+    guard_dataframe_nulls, create_summary_statistics,
+    
+    # Logging utilities
+    get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
+)
+
 # Import math validation integration
 from .enhanced_components.math_validation_integration import (
     MathValidationIntegration, MathValidationResult, validate_pipeline_calculation
@@ -427,10 +469,122 @@ class UnifiedDataDrivenPipeline:
             tprint_success("✅ Feature generation utilities integrated")
         if FEATURES_COMMON_AVAILABLE:
             tprint_success("✅ Features common utilities integrated")
+        if self.m1_available:
+            tprint_success("✅ M1 optimizations integrated")
+    
+    def cleanup(self):
+        """Clean up resources and M1 optimizations."""
+        try:
+            tprint_debug("🧹 Cleaning up pipeline resources")
+            
+            # Clean up M1 optimizations
+            if self.m1_available:
+                cleanup_result = cleanup_m1_optimizers()
+                if cleanup_result:
+                    tprint_success("✅ M1 optimizations cleaned up")
+                else:
+                    tprint_warning("⚠️ M1 cleanup failed")
+            
+            # Clean up other resources
+            if hasattr(self, 'advanced_performance_monitor'):
+                self.advanced_performance_monitor.stop_monitoring()
+            
+            tprint_success("✅ Pipeline cleanup completed")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error during cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except Exception:
+            pass  # Ignore errors during destruction
+    
+    def get_enhanced_performance_stats(self) -> Dict[str, Any]:
+        """Get enhanced performance statistics using common operations utilities."""
+        try:
+            # Get basic performance stats
+            basic_stats = self.advanced_performance_monitor.get_performance_summary()
+            
+            # Get memory usage
+            memory_usage = get_memory_usage()
+            
+            # Get M1 status if available
+            m1_status = {}
+            if self.m1_available and hasattr(self, 'common_utils'):
+                m1_status = self.common_utils.get_m1_status()
+            
+            # Combine all statistics
+            enhanced_stats = {
+                **basic_stats,
+                'memory_usage_bytes': memory_usage,
+                'memory_usage_mb': memory_usage / (1024 * 1024),
+                'm1_optimizations': m1_status,
+                'pipeline_components': {
+                    'feature_generation_available': FEATURE_GENERATION_AVAILABLE,
+                    'features_common_available': FEATURES_COMMON_AVAILABLE,
+                    'm1_available': self.m1_available
+                }
+            }
+            
+            # Log performance metrics safely
+            safe_log_metric("memory_usage_mb", enhanced_stats['memory_usage_mb'])
+            safe_log_metric("total_operations", basic_stats.get('total_operations', 0))
+            
+            return enhanced_stats
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error getting enhanced performance stats: {e}")
+            return {'error': str(e)}
+    
+    def optimize_pipeline_performance(self) -> Dict[str, Any]:
+        """Optimize pipeline performance using common operations utilities."""
+        try:
+            tprint_debug("🔧 Optimizing pipeline performance")
+            
+            optimization_results = {}
+            
+            # Memory optimization
+            if self.m1_available:
+                memory_opt_result = optimize_memory()
+                optimization_results['memory_optimization'] = memory_opt_result
+            
+            # General memory optimization
+            general_memory_opt = optimize_memory_usage()
+            optimization_results['general_memory_optimization'] = general_memory_opt
+            
+            # Log optimization results
+            safe_log_metric("memory_optimization_success", 1 if optimization_results.get('memory_optimization', {}).get('success', False) else 0)
+            
+            tprint_success("✅ Pipeline performance optimization completed")
+            return optimization_results
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Performance optimization failed: {e}")
+            return {'error': str(e)}
     
     def _initialize_utility_systems(self):
         """Initialize utility systems from feature_generation and features_common."""
         tprint_debug("Initializing utility systems")
+        
+        # Initialize common operations utilities
+        tprint_debug("🔧 Initializing common operations utilities")
+        self.common_utils = CommonUtilities()
+        self.common_operations_logger = get_logger("common_operations")
+        
+        # Initialize M1 optimizations if available
+        try:
+            m1_integration_result = integrate_with_m1_optimizers()
+            if m1_integration_result.get('success', False):
+                tprint_success("✅ M1 optimizations integrated successfully")
+                self.m1_available = True
+            else:
+                tprint_warning("⚠️ M1 optimizations not available")
+                self.m1_available = False
+        except Exception as e:
+            tprint_warning(f"⚠️ M1 integration failed: {e}")
+            self.m1_available = False
         
         # Initialize feature generation utilities
         if FEATURE_GENERATION_AVAILABLE:
@@ -1069,7 +1223,7 @@ class UnifiedDataDrivenPipeline:
                 if len(quality_result.issues) > 3:
                     tprint_warning(f"  ... and {len(quality_result.issues) - 3} more issues")
             
-            # Step 2: Process and validate data using unified utilities
+            # Step 2: Process and validate data using unified utilities with enhanced common operations
             processed_data, processing_report = self.unified_data_utils.process_and_validate(
                 data=data,
                 validate_quality=True,
@@ -1082,6 +1236,28 @@ class UnifiedDataDrivenPipeline:
                 exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
                 timeframe=timeframe
             )
+            
+            # Apply additional common operations enhancements
+            if processed_data is not None and not processed_data.empty:
+                tprint_debug("🔧 Applying common operations enhancements to processed data")
+                
+                # Optimize DataFrame dtypes for memory efficiency
+                processed_data = optimize_dataframe_dtypes(processed_data)
+                
+                # Guard against excessive null values
+                processed_data = guard_dataframe_nulls(processed_data, threshold=0.5)
+                
+                # Validate DataFrame schema
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                if validate_dataframe_schema(processed_data, required_columns):
+                    tprint_success("✅ DataFrame schema validation passed")
+                else:
+                    tprint_warning("⚠️ DataFrame schema validation failed")
+                
+                # Calculate and log data quality metrics
+                quality_metrics = calculate_data_quality_metrics(processed_data)
+                safe_log_metric("data_quality_score", quality_metrics.get('missing_percentage', 0))
+                safe_log_metric("duplicate_percentage", quality_metrics.get('duplicate_percentage', 0))
             
             # Log processing results
             tprint_success(f"✅ Data processing completed: {processing_report['final_shape']} shape")
@@ -1449,6 +1625,11 @@ class UnifiedDataDrivenPipeline:
             # Enhanced error handling with data quality recovery
             tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
             
+            # Log error metrics safely
+            safe_log_metric("pipeline_error", 1)
+            safe_log_params({"error_type": type(e).__name__, "error_message": str(e)})
+            safe_log_artifact("error_log", f"pipeline_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            
             # Try to recover data quality if possible
             try:
                 tprint_info("🔧 Attempting data quality recovery...")
@@ -1499,7 +1680,7 @@ class UnifiedDataDrivenPipeline:
     
     def _monitor_data_quality_throughout_pipeline(self, data: pd.DataFrame, context: str) -> Dict[str, Any]:
         """
-        Monitor data quality throughout the pipeline using unified data utilities.
+        Monitor data quality throughout the pipeline using unified data utilities and common operations.
         
         Args:
             data: DataFrame to monitor
@@ -1509,8 +1690,17 @@ class UnifiedDataDrivenPipeline:
             Dictionary with quality monitoring results
         """
         try:
-            # Get comprehensive quality metrics
-            quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+            # Get comprehensive quality metrics using common operations
+            quality_metrics = calculate_data_quality_metrics(data)
+            
+            # Get additional quality information
+            dataframe_info = get_dataframe_info(data)
+            quality_report = create_data_quality_report(data)
+            
+            # Log quality metrics safely
+            safe_log_metric(f"{context}_quality_score", quality_metrics.get('missing_percentage', 0))
+            safe_log_metric(f"{context}_duplicate_percentage", quality_metrics.get('duplicate_percentage', 0))
+            safe_log_metric(f"{context}_memory_usage", dataframe_info.get('memory_usage', 0))
             
             # Get quality validation result
             quality_result = self.quality_framework.validate_dataframe_quality(data, context)
@@ -1594,25 +1784,31 @@ class UnifiedDataDrivenPipeline:
         return processed_data, processed_targets
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
-        """Enhanced period optimization with economic evaluation."""
+        """Enhanced period optimization with economic evaluation and safe mathematical operations."""
         tprint_debug("Starting enhanced period optimization")
         
         try:
-            # Statistical period analysis
-            periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
-            period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
-            
-            # Economic significance evaluation
-            candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
-            economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
-            
-            # Combine statistical and economic results
-            combined_scores = self._combine_period_scores(period_analysis, economic_evaluation)
-            
-            # Select optimal periods
-            optimal_periods = self._select_optimal_periods(combined_scores)
-            
-            tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
+            # Use memory checkpoint for M1 optimization
+            with memory_checkpoint("period_optimization"):
+                # Statistical period analysis with safe operations
+                periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
+                period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+                
+                # Economic significance evaluation with safe mathematical operations
+                candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
+                economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
+                
+                # Combine statistical and economic results using safe operations
+                combined_scores = self._combine_period_scores_safe(period_analysis, economic_evaluation)
+                
+                # Select optimal periods with validation
+                optimal_periods = self._select_optimal_periods_safe(combined_scores)
+                
+                # Log metrics safely
+                safe_log_metric("optimal_periods_count", len(optimal_periods))
+                safe_log_metric("candidate_periods_count", len(candidate_periods))
+                
+                tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
             
             return {
                 'optimal_periods': optimal_periods,
@@ -1786,31 +1982,44 @@ class UnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using enhanced utilities."""
+        """Generate features for the selected feature set using enhanced utilities and safe operations."""
         tprint_debug("Generating selected features using enhanced utilities")
         
         try:
-            # First, try to use enhanced feature engineering if available
-            if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
-                tprint_debug("🔧 Using enhanced feature engineering")
-                try:
-                    enhanced_features = self.enhanced_feature_engineering.generate_features(data)
-                    if enhanced_features is not None and not enhanced_features.empty:
-                        tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
-                        
-                        # Apply feature validation if available
-                        if FEATURE_GENERATION_AVAILABLE:
-                            try:
-                                validated_features = validate_features_dataframe(enhanced_features)
-                                if validated_features is not None:
-                                    enhanced_features = validated_features
-                                    tprint_success("✅ Features validated successfully")
-                            except Exception as e:
-                                tprint_warning(f"⚠️ Feature validation failed: {e}")
-                        
-                        return enhanced_features
-                except Exception as e:
-                    tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
+            # Use memory checkpoint for M1 optimization
+            with memory_checkpoint("feature_generation"):
+                # First, try to use enhanced feature engineering if available
+                if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
+                    tprint_debug("🔧 Using enhanced feature engineering")
+                    try:
+                        enhanced_features = self.enhanced_feature_engineering.generate_features(data)
+                        if enhanced_features is not None and not enhanced_features.empty:
+                            tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                            
+                            # Apply feature validation if available
+                            if FEATURE_GENERATION_AVAILABLE:
+                                try:
+                                    validated_features = validate_features_dataframe(enhanced_features)
+                                    if validated_features is not None:
+                                        enhanced_features = validated_features
+                                        tprint_success("✅ Features validated successfully")
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Feature validation failed: {e}")
+                            
+                            # Apply safe DataFrame operations
+                            enhanced_features = safe_dataframe_operation(
+                                enhanced_features, 
+                                lambda df: optimize_dataframe_dtypes(df)
+                            )
+                            
+                            # Calculate and log feature quality metrics
+                            feature_quality = calculate_data_quality_metrics(enhanced_features)
+                            safe_log_metric("feature_count", len(enhanced_features.columns))
+                            safe_log_metric("feature_missing_percentage", feature_quality.get('missing_percentage', 0))
+                            
+                            return enhanced_features
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
             
             # Fallback to Feature Bank integration
             if selection_result is None or not selection_result.success:
@@ -3412,6 +3621,70 @@ class UnifiedDataDrivenPipeline:
         optimal_periods = [period for period, score in sorted_periods[:max_periods] if score > 0.1]
         
         return optimal_periods
+    
+    def _combine_period_scores_safe(self, statistical_analysis: Dict[int, Dict[str, Any]], 
+                                   economic_evaluation: Any) -> Dict[int, float]:
+        """Combine statistical and economic period scores using safe mathematical operations."""
+        try:
+            combined_scores = {}
+            
+            # Extract statistical scores with safe operations
+            for period, analysis in statistical_analysis.items():
+                if 'error' not in analysis:
+                    # Use sharpe ratio as statistical score with safe division
+                    sharpe_ratio = safe_float(analysis.get('sharpe_ratio', 0.0))
+                    statistical_weight = safe_divide_util(sharpe_ratio * 0.4, 1.0, default=0.0)
+                    combined_scores[period] = validate_finite_util(statistical_weight, f"statistical_score_{period}")
+            
+            # Add economic scores with safe operations
+            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
+                for period, score in economic_evaluation.period_scores.items():
+                    safe_score = safe_float(score)
+                    economic_weight = safe_divide_util(safe_score * 0.6, 1.0, default=0.0)
+                    validated_weight = validate_finite_util(economic_weight, f"economic_score_{period}")
+                    
+                    if period in combined_scores:
+                        combined_scores[period] = safe_divide_util(
+                            combined_scores[period] + validated_weight, 1.0, default=combined_scores[period]
+                        )
+                    else:
+                        combined_scores[period] = validated_weight
+            
+            return combined_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error combining period scores: {e}")
+            return {}
+    
+    def _select_optimal_periods_safe(self, combined_scores: Dict[int, float]) -> List[int]:
+        """Select optimal periods using safe operations and validation."""
+        try:
+            if not combined_scores:
+                return []
+            
+            # Sort periods by score using safe operations
+            sorted_periods = sorted(
+                combined_scores.items(), 
+                key=lambda x: validate_finite_util(safe_float(x[1]), f"score_{x[0]}"), 
+                reverse=True
+            )
+            
+            # Select top periods with validation
+            optimal_periods = []
+            for period, score in sorted_periods[:10]:  # Top 10 periods
+                validated_score = validate_finite_util(safe_float(score), f"final_score_{period}")
+                if validated_score > 0.1:  # Minimum threshold
+                    optimal_periods.append(period)
+            
+            # Log selection metrics safely
+            safe_log_metric("total_candidate_periods", len(combined_scores))
+            safe_log_metric("selected_optimal_periods", len(optimal_periods))
+            
+            return optimal_periods
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting optimal periods: {e}")
+            return []
     
     def _calculate_interaction_metrics(self, interactions: List[Any]) -> Dict[str, Any]:
         """Calculate metrics for generated interactions with math validation."""

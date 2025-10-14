@@ -144,6 +144,85 @@ class FeaturePipelineResult:
     performance_monitoring_data: Dict[str, Any] = None
 
 
+@dataclass
+class InteractionType:
+    """Represents a type of interaction feature with enhanced metadata."""
+    name: str
+    function: callable
+    description: str
+    complexity: int  # 1-5 scale
+    vectorbt_optimized: bool = True
+    parameters: Optional[Dict[str, Any]] = None
+    batch_processable: bool = True
+    memory_efficient: bool = True
+    gpu_accelerated: bool = False
+
+
+@dataclass
+class InteractionResult:
+    """Result of interaction feature generation with enhanced metadata."""
+    feature_name: str
+    feature_series: pd.Series
+    parent_features: List[str]
+    interaction_type: str
+    utility_score: float
+    metadata: Dict[str, Any]
+    processing_time: float = 0.0
+    memory_usage: float = 0.0
+    optimization_method: str = "pandas"
+
+
+@dataclass
+class EnhancedInteractionConfig:
+    """Enhanced configuration for interaction generation."""
+    # Basic settings
+    max_interactions: int = 100
+    utility_threshold: float = 0.1
+    correlation_threshold: float = 0.95
+    
+    # VectorBT settings
+    enable_vectorbt: bool = True
+    enable_gpu: bool = False
+    enable_parallel: bool = True
+    
+    # Memory management
+    memory_efficient: bool = True
+    max_memory_gb: float = 8.0
+    chunk_size: int = 1000
+    
+    # Batch processing
+    enable_batch_processing: bool = True
+    batch_size: int = 10000
+    max_workers: int = None
+    
+    # Performance monitoring
+    enable_monitoring: bool = True
+    enable_profiling: bool = False
+    enable_caching: bool = True
+    cache_size: int = 1000
+    
+    # Processing optimization
+    enable_rolling_optimization: bool = True
+    rolling_optimization_threshold: int = 1000
+    enable_scaling_optimization: bool = True
+    
+    def __post_init__(self):
+        tprint_info("🔧 Initializing EnhancedInteractionConfig")
+        
+        if not VECTORBT_AVAILABLE:
+            self.enable_vectorbt = False
+            tprint_warning("⚠️ VectorBT not available, disabling optimizations")
+        
+        if self.max_workers is None:
+            try:
+                import multiprocessing as mp
+                self.max_workers = min(mp.cpu_count(), 8)
+                tprint_success(f"✅ Set max_workers to {self.max_workers}")
+            except Exception as e:
+                tprint_error(f"❌ ERROR: Failed to detect CPU count: {e}")
+                raise RuntimeError(f"Failed to initialize max_workers: {e}")
+
+
 class UnifiedDataDrivenPipeline:
     """
     Main orchestrator for unified data-driven feature generation and selection.
@@ -1570,7 +1649,7 @@ class UnifiedDataDrivenPipeline:
             return prices.pct_change()
     
     def _generate_feature_interactions_advanced(self, feature_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
-        """Generate interactions between selected features with advanced VectorBT optimization."""
+        """Generate interactions between selected features with advanced VectorBT optimization and sophisticated categorization."""
         tprint_debug(f"Advanced generating interactions for {len(feature_df.columns)} features")
         
         interactions = []
@@ -1579,9 +1658,20 @@ class UnifiedDataDrivenPipeline:
         # Generate different types of interactions with advanced methods
         interaction_types = [
             'product', 'ratio', 'difference', 'sum', 'log_product', 
-            'log_ratio', 'polynomial', 'conditional', 'rolling_mean',
-            'correlation', 'covariance', 'zscore_product', 'rank_correlation'
+            'log_ratio', 'log_sum', 'log_difference', 'log_return_product',
+            'log_return_ratio', 'polynomial', 'conditional', 'rolling_mean',
+            'correlation', 'covariance', 'zscore_product', 'rank_correlation',
+            'skewness', 'kurtosis'
         ]
+        
+        # Categorize features for intelligent interaction generation
+        feature_categories = self._categorize_features(feature_names)
+        category_distribution = self._get_category_distribution(feature_categories)
+        tprint_debug(f"Feature categories: {category_distribution}")
+        
+        # Generate feature combinations using sophisticated categorization
+        feature_combinations = self._generate_category_combinations(feature_names, feature_categories)
+        tprint_debug(f"Generated {len(feature_combinations)} feature combinations using categorization")
         
         # Use batch processing if available
         if self.batch_processor and ADVANCED_VECTORBT_AVAILABLE:
@@ -1594,19 +1684,26 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_debug(f"Batch processing failed, using sequential: {e}")
         
-        # Sequential processing with VectorBT optimization
-        for i, feat1 in enumerate(feature_names):
-            for feat2 in feature_names[i+1:]:
-                for interaction_type in interaction_types:
-                    try:
-                        interaction = self._create_interaction_advanced(
-                            feature_df, feat1, feat2, interaction_type, targets
-                        )
-                        if interaction:
+        # Sequential processing with VectorBT optimization and duplicate detection
+        for feat1, feat2 in feature_combinations:
+            for interaction_type in interaction_types:
+                try:
+                    # Check memory usage periodically
+                    if len(interactions) % 100 == 0:
+                        self._check_memory_usage()
+                    
+                    interaction = self._create_interaction_advanced(
+                        feature_df, feat1, feat2, interaction_type, targets
+                    )
+                    if interaction:
+                        # Check for duplicates before adding
+                        if not self._is_duplicate_interaction(interaction['feature_series'], interaction['utility_score']):
                             interactions.append(interaction)
-                    except Exception as e:
-                        tprint_debug(f"Error creating {interaction_type} interaction {feat1}-{feat2}: {e}")
-                        continue
+                        else:
+                            tprint_debug(f"Skipping duplicate interaction: {interaction['name']}")
+                except Exception as e:
+                    tprint_debug(f"Error creating {interaction_type} interaction {feat1}-{feat2}: {e}")
+                    continue
         
         # Single-feature interactions
         for feat in feature_names:
@@ -1758,6 +1855,60 @@ class UnifiedDataDrivenPipeline:
                     )
                 else:
                     interaction_series = series1 * condition
+            elif interaction_type == 'log_sum':
+                # Sum of log-transformed features
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    log_s1 = self.vectorization_manager.log_transform(pd.Series(s1_safe, index=series1.index))
+                    log_s2 = self.vectorization_manager.log_transform(pd.Series(s2_safe, index=series2.index))
+                    interaction_series = self.vectorization_manager.add_series(log_s1, log_s2)
+                else:
+                    interaction_series = np.log(s1_safe) + np.log(s2_safe)
+            elif interaction_type == 'log_difference':
+                # Difference of log-transformed features
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    log_s1 = self.vectorization_manager.log_transform(pd.Series(s1_safe, index=series1.index))
+                    log_s2 = self.vectorization_manager.log_transform(pd.Series(s2_safe, index=series2.index))
+                    interaction_series = self.vectorization_manager.subtract_series(log_s1, log_s2)
+                else:
+                    interaction_series = np.log(s1_safe) - np.log(s2_safe)
+            elif interaction_type == 'log_return_product':
+                # Product of log returns
+                log_ret1 = np.log(series1 / series1.shift(1)).fillna(0)
+                log_ret2 = np.log(series2 / series2.shift(1)).fillna(0)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.multiply_series(log_ret1, log_ret2)
+                else:
+                    interaction_series = log_ret1 * log_ret2
+            elif interaction_type == 'log_return_ratio':
+                # Ratio of log returns
+                log_ret1 = np.log(series1 / series1.shift(1)).fillna(0)
+                log_ret2 = np.log(series2 / series2.shift(1)).fillna(0)
+                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
+                    interaction_series = self.vectorization_manager.divide_series(log_ret1, log_ret2 + 1e-8)
+                else:
+                    interaction_series = log_ret1 / (log_ret2 + 1e-8)
+            elif interaction_type == 'skewness':
+                # Rolling skewness of first feature
+                try:
+                    if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE and hasattr(self.rolling_optimizer, 'rolling_skew'):
+                        interaction_series = self.rolling_optimizer.rolling_skew(series1, window=20)
+                    else:
+                        interaction_series = series1.rolling(20).skew()
+                except Exception:
+                    interaction_series = series1.rolling(20).skew()
+            elif interaction_type == 'kurtosis':
+                # Rolling kurtosis of first feature
+                try:
+                    if self.rolling_optimizer and ADVANCED_VECTORBT_AVAILABLE and hasattr(self.rolling_optimizer, 'rolling_kurt'):
+                        interaction_series = self.rolling_optimizer.rolling_kurt(series1, window=20)
+                    else:
+                        interaction_series = series1.rolling(20).kurt()
+                except Exception:
+                    interaction_series = series1.rolling(20).kurt()
             else:
                 return None
             
@@ -1837,45 +1988,84 @@ class UnifiedDataDrivenPipeline:
         """Calculate utility score for an interaction with advanced methods."""
         try:
             if targets is None:
-                # Use variance as utility score with advanced analysis
-                if self.vectorization_manager and ADVANCED_VECTORBT_AVAILABLE:
-                    try:
-                        variance_metrics = self.vectorization_manager.calculate_variance_metrics(interaction_series)
-                        return variance_metrics.get('normalized_variance', float(interaction_series.var()))
-                    except:
-                        return float(interaction_series.var())
+                # Use comprehensive variance analysis as utility score
+                variance = float(interaction_series.var())
+                if pd.isna(variance) or variance <= 0:
+                    return 0.0
+                
+                # Normalize variance by series range for better comparison
+                series_range = float(interaction_series.max() - interaction_series.min())
+                if series_range > 0:
+                    normalized_variance = variance / (series_range ** 2)
                 else:
-                    return float(interaction_series.var())
-            
-            # Align with targets
-            common_idx = interaction_series.index.intersection(targets.index)
-            if len(common_idx) < 10:
-                return 0.0
-            
-            aligned_series = interaction_series.loc[common_idx]
-            aligned_targets = targets.loc[common_idx]
-            
-            # Calculate correlation with advanced methods
-            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                    normalized_variance = variance
+                
+                # Add skewness and kurtosis penalties for stability
                 try:
-                    correlation_metrics = self.matrix_ops.correlation_analysis(
-                        aligned_series.values.reshape(-1, 1),
-                        aligned_targets.values.reshape(-1, 1)
-                    )
-                    correlation = correlation_metrics.get('advanced_correlation', 0.0)
+                    skewness = abs(float(interaction_series.skew()))
+                    kurtosis = abs(float(interaction_series.kurt()))
+                    
+                    # Penalize extreme skewness and kurtosis
+                    skewness_penalty = min(0.5, skewness / 3.0)  # Max 0.5 penalty
+                    kurtosis_penalty = min(0.3, kurtosis / 10.0)  # Max 0.3 penalty
+                    
+                    stability_factor = 1.0 - skewness_penalty - kurtosis_penalty
+                    return normalized_variance * max(0.1, stability_factor)
                 except:
-                    correlation = aligned_series.corr(aligned_targets)
+                    return normalized_variance
             else:
-                correlation = aligned_series.corr(aligned_targets)
-            
-            if np.isnan(correlation):
-                return 0.0
-            
-            # Use absolute correlation as utility score
-            return abs(correlation)
-            
+                # Align with targets
+                common_idx = interaction_series.index.intersection(targets.index)
+                if len(common_idx) < 10:
+                    return 0.0
+                
+                aligned_series = interaction_series.loc[common_idx]
+                aligned_targets = targets.loc[common_idx]
+                
+                # Calculate multiple correlation metrics
+                try:
+                    # Pearson correlation
+                    pearson_corr = aligned_series.corr(aligned_targets)
+                    if pd.isna(pearson_corr):
+                        pearson_corr = 0.0
+                    
+                    # Spearman correlation (rank-based)
+                    spearman_corr = aligned_series.corr(aligned_targets, method='spearman')
+                    if pd.isna(spearman_corr):
+                        spearman_corr = 0.0
+                    
+                    # Mutual information (if available)
+                    mi_score = 0.0
+                    try:
+                        from sklearn.feature_selection import mutual_info_regression
+                        mi_score = mutual_info_regression(
+                            aligned_series.values.reshape(-1, 1), 
+                            aligned_targets.values
+                        )[0]
+                    except:
+                        pass
+                    
+                    # Combine metrics with weights
+                    utility_score = (
+                        0.4 * abs(pearson_corr) + 
+                        0.3 * abs(spearman_corr) + 
+                        0.3 * min(1.0, mi_score)
+                    )
+                    
+                    # Add variance component for non-target case
+                    variance_component = min(0.2, float(aligned_series.var()) / 100.0)
+                    utility_score += variance_component
+                    
+                    return min(1.0, utility_score)
+                    
+                except Exception as e:
+                    tprint_debug(f"Advanced utility calculation failed: {e}")
+                    # Fallback to simple correlation
+                    correlation = aligned_series.corr(aligned_targets)
+                    return abs(correlation) if not pd.isna(correlation) else 0.0
+                    
         except Exception as e:
-            tprint_debug(f"Error calculating advanced utility score: {e}")
+            tprint_debug(f"Utility score calculation failed: {e}")
             return 0.0
     
     def _filter_and_rank_interactions_advanced(self, interactions: List[Dict[str, Any]], targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
@@ -1883,15 +2073,36 @@ class UnifiedDataDrivenPipeline:
         if not interactions:
             return []
         
-        # Sort by utility score
-        interactions.sort(key=lambda x: x['utility_score'], reverse=True)
+        tprint_debug(f"Advanced filtering and ranking {len(interactions)} interactions")
         
-        # Remove highly correlated interactions with advanced correlation analysis
-        filtered_interactions = self._remove_correlated_interactions_advanced(interactions)
+        # Step 1: Filter by utility threshold
+        utility_threshold = 0.1
+        filtered_interactions = [i for i in interactions if i['utility_score'] >= utility_threshold]
+        tprint_debug(f"After utility filtering: {len(filtered_interactions)} interactions")
         
-        # Limit to top interactions
+        # Step 2: Filter by data quality
+        quality_filtered = []
+        for interaction in filtered_interactions:
+            series = interaction['feature_series']
+            # Check for valid data
+            if (not series.empty and 
+                not series.isna().all() and 
+                series.nunique() > 1 and
+                len(series.dropna()) >= 10):
+                quality_filtered.append(interaction)
+        
+        tprint_debug(f"After quality filtering: {len(quality_filtered)} interactions")
+        
+        # Step 3: Sort by utility score
+        quality_filtered.sort(key=lambda x: x['utility_score'], reverse=True)
+        
+        # Step 4: Remove highly correlated interactions
+        final_interactions = self._remove_correlated_interactions_advanced(quality_filtered)
+        tprint_debug(f"After correlation filtering: {len(final_interactions)} interactions")
+        
+        # Step 5: Limit to top interactions
         max_interactions = 100
-        return filtered_interactions[:max_interactions]
+        return final_interactions[:max_interactions]
     
     def _remove_correlated_interactions_advanced(self, interactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Remove highly correlated interactions with advanced correlation analysis."""
@@ -2264,7 +2475,10 @@ class UnifiedDataDrivenPipeline:
         # Generate different types of interactions
         interaction_types = [
             'product', 'ratio', 'difference', 'sum', 'log_product', 
-            'log_ratio', 'polynomial', 'conditional', 'rolling_mean'
+            'log_ratio', 'log_sum', 'log_difference', 'log_return_product',
+            'log_return_ratio', 'polynomial', 'conditional', 'rolling_mean',
+            'correlation', 'covariance', 'zscore_product', 'rank_correlation',
+            'skewness', 'kurtosis'
         ]
         
         for i, feat1 in enumerate(feature_names):
@@ -2341,6 +2555,40 @@ class UnifiedDataDrivenPipeline:
                 # Conditional interaction: feat1 * (feat2 > feat2.median())
                 condition = (series2 > series2.median()).astype(float)
                 interaction_series = series1 * condition
+            elif interaction_type == 'log_sum':
+                # Sum of log-transformed features
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                interaction_series = np.log(s1_safe) + np.log(s2_safe)
+            elif interaction_type == 'log_difference':
+                # Difference of log-transformed features
+                s1_safe = np.where(series1 <= 0, np.abs(series1) + 1e-8, series1)
+                s2_safe = np.where(series2 <= 0, np.abs(series2) + 1e-8, series2)
+                interaction_series = np.log(s1_safe) - np.log(s2_safe)
+            elif interaction_type == 'log_return_product':
+                # Product of log returns
+                log_ret1 = np.log(series1 / series1.shift(1)).fillna(0)
+                log_ret2 = np.log(series2 / series2.shift(1)).fillna(0)
+                interaction_series = log_ret1 * log_ret2
+            elif interaction_type == 'log_return_ratio':
+                # Ratio of log returns
+                log_ret1 = np.log(series1 / series1.shift(1)).fillna(0)
+                log_ret2 = np.log(series2 / series2.shift(1)).fillna(0)
+                interaction_series = log_ret1 / (log_ret2 + 1e-8)
+            elif interaction_type == 'correlation':
+                interaction_series = series1.rolling(20).corr(series2)
+            elif interaction_type == 'covariance':
+                interaction_series = series1.rolling(20).cov(series2)
+            elif interaction_type == 'zscore_product':
+                z1 = (series1 - series1.mean()) / series1.std()
+                z2 = (series2 - series2.mean()) / series2.std()
+                interaction_series = z1 * z2
+            elif interaction_type == 'rank_correlation':
+                interaction_series = series1.rolling(20).corr(series2.rank())
+            elif interaction_type == 'skewness':
+                interaction_series = series1.rolling(20).skew()
+            elif interaction_type == 'kurtosis':
+                interaction_series = series1.rolling(20).kurt()
             else:
                 return None
             
@@ -3019,6 +3267,172 @@ class UnifiedDataDrivenPipeline:
             json.dump(metadata, f, indent=2)
         
         tprint_success(f"Result saved to {output_path}")
+    
+    def _categorize_features(self, feature_names: List[str]) -> Dict[str, str]:
+        """Categorize features based on their names with sophisticated patterns."""
+        tprint_debug("🏷️ Categorizing features with advanced patterns")
+        
+        feature_categories = {}
+        
+        # Define comprehensive category patterns
+        category_patterns = {
+            'momentum': ['rsi', 'momentum', 'roc', 'cci', 'williams', 'stoch', 'macd_signal', 'macd_histogram'],
+            'volatility': ['volatility', 'atr', 'bb', 'bollinger', 'std', 'var', 'vol', 'volatility_ratio'],
+            'trend': ['sma', 'ema', 'ma_', 'trend', 'macd', 'adx', 'dmi', 'aroon', 'parabolic'],
+            'volume': ['volume', 'obv', 'ad', 'mfi', 'vwap', 'volume_ratio', 'volume_sma'],
+            'returns': ['return', 'log_return', 'pct_change', 'price_change', 'yield'],
+            'oscillator': ['oscillator', 'rsi', 'stoch', 'williams', 'cci', 'momentum_oscillator'],
+            'support_resistance': ['support', 'resistance', 'pivot', 'fibonacci', 'level'],
+            'candlestick': ['doji', 'hammer', 'engulfing', 'pattern', 'candle', 'shadow'],
+            'microstructure': ['microstructure', 'bid_ask', 'spread', 'tick', 'order_flow'],
+            'entropy': ['entropy', 'shannon', 'information', 'complexity'],
+            'time': ['time', 'hour', 'day', 'week', 'month', 'seasonal', 'cyclical'],
+            'cross_timeframe': ['cross', 'timeframe', 'multi_timeframe', 'htf', 'ltf'],
+            'regime': ['regime', 'state', 'regime_change', 'markov', 'hidden_state'],
+            'acceleration': ['acceleration', 'jerk', 'second_derivative', 'momentum_change'],
+            'advanced_statistical': ['skewness', 'kurtosis', 'quantile', 'percentile', 'distribution'],
+            'spectral_wavelet': ['spectral', 'wavelet', 'fourier', 'fft', 'frequency'],
+            'correlation': ['corr', 'correlation', 'covariance', 'beta', 'alpha'],
+            'regression': ['regression', 'residual', 'error', 'fitted', 'prediction'],
+            'clustering': ['cluster', 'centroid', 'distance', 'similarity'],
+            'neural': ['neural', 'activation', 'hidden', 'layer', 'network']
+        }
+        
+        for feature_name in feature_names:
+            feature_lower = feature_name.lower()
+            category = 'custom'  # Default category
+            
+            # Find matching category with priority scoring
+            category_scores = {}
+            for cat, patterns in category_patterns.items():
+                score = 0
+                for pattern in patterns:
+                    if pattern in feature_lower:
+                        # Longer patterns get higher scores
+                        score += len(pattern)
+                if score > 0:
+                    category_scores[cat] = score
+            
+            # Select category with highest score
+            if category_scores:
+                category = max(category_scores, key=category_scores.get)
+            
+            feature_categories[feature_name] = category
+        
+        tprint_success(f"✅ Categorized {len(feature_categories)} features across {len(set(feature_categories.values()))} categories")
+        return feature_categories
+    
+    def _generate_category_combinations(self, feature_names: List[str], feature_categories: Dict[str, str]) -> List[Tuple[str, str]]:
+        """Generate both within-category and between-category combinations."""
+        tprint_debug("🔄 Generating category-based combinations")
+        
+        combinations = []
+        
+        # Group features by category
+        category_groups = {}
+        for feature, category in feature_categories.items():
+            if category not in category_groups:
+                category_groups[category] = []
+            category_groups[category].append(feature)
+        
+        # Generate within-category combinations (features from same category)
+        within_category_combinations = []
+        for category, features in category_groups.items():
+            if len(features) >= 2:
+                from itertools import combinations as itertools_combinations
+                category_combos = list(itertools_combinations(features, 2))
+                within_category_combinations.extend(category_combos)
+                tprint_debug(f"✅ Generated {len(category_combos)} within-category combinations for {category}")
+        
+        # Generate between-category combinations (features from different categories)
+        between_category_combinations = []
+        categories = list(category_groups.keys())
+        for i, cat1 in enumerate(categories):
+            for cat2 in categories[i+1:]:
+                for feat1 in category_groups[cat1]:
+                    for feat2 in category_groups[cat2]:
+                        between_category_combinations.append((feat1, feat2))
+        
+        tprint_debug(f"✅ Generated {len(within_category_combinations)} within-category combinations")
+        tprint_debug(f"✅ Generated {len(between_category_combinations)} between-category combinations")
+        
+        combinations.extend(within_category_combinations)
+        combinations.extend(between_category_combinations)
+        
+        return combinations
+    
+    def _get_category_distribution(self, feature_categories: Dict[str, str]) -> Dict[str, int]:
+        """Get distribution of features across categories."""
+        distribution = {}
+        for category in feature_categories.values():
+            distribution[category] = distribution.get(category, 0) + 1
+        return distribution
+    
+    def _is_duplicate_interaction(self, series: pd.Series, utility_score: float) -> bool:
+        """Check if interaction is duplicate based on series characteristics."""
+        tprint_debug("🔍 Checking for duplicate interaction")
+        
+        try:
+            # Initialize seen hashes if not exists
+            if not hasattr(self, '_seen_hashes'):
+                self._seen_hashes = set()
+            
+            # Simple duplicate check based on series characteristics
+            series_hash = hash(tuple(series.dropna().head(100).values))
+            
+            if series_hash in self._seen_hashes:
+                return True
+            else:
+                self._seen_hashes.add(series_hash)
+                return False
+                
+        except Exception as e:
+            tprint_debug(f"⚠️ WARNING: Duplicate check failed: {e}")
+            return False
+    
+    def _check_memory_usage(self) -> None:
+        """Check current memory usage and cleanup if necessary."""
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            # Update peak memory usage
+            if not hasattr(self, 'peak_memory_usage_mb'):
+                self.peak_memory_usage_mb = 0.0
+            
+            if memory_mb > self.peak_memory_usage_mb:
+                self.peak_memory_usage_mb = memory_mb
+            
+            # Check if memory usage exceeds limit (8GB default)
+            max_memory_gb = getattr(self, 'max_memory_gb', 8.0)
+            if memory_mb > max_memory_gb * 1024:
+                tprint_warning(f"⚠️ WARNING: Memory usage {memory_mb:.1f}MB exceeds limit {max_memory_gb}GB")
+                self._cleanup_memory()
+                
+        except ImportError:
+            tprint_warning("⚠️ WARNING: psutil not available, cannot monitor memory usage")
+        except Exception as e:
+            tprint_debug(f"⚠️ WARNING: Memory check failed: {e}")
+    
+    def _cleanup_memory(self) -> None:
+        """Perform memory cleanup operations."""
+        tprint_debug("🧹 Performing memory cleanup")
+        
+        try:
+            # Clear seen hashes if they're getting large
+            if hasattr(self, '_seen_hashes') and len(self._seen_hashes) > 10000:
+                self._seen_hashes.clear()
+                tprint_debug("✅ Cleared seen hashes for memory cleanup")
+            
+            # Force garbage collection
+            import gc
+            gc.collect()
+            tprint_debug("✅ Memory cleanup completed")
+            
+        except Exception as e:
+            tprint_error(f"❌ ERROR: Memory cleanup failed: {e}")
+            raise RuntimeError(f"Memory cleanup failed: {e}")
 
 
 # Convenience functions

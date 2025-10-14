@@ -651,3 +651,283 @@ class AdvancedPerformanceMonitor:
         hits = cache_metrics.get('hits', 0)
         misses = cache_metrics.get('misses', 0)
         self.record_cache_metrics(hits, misses)
+    
+    def track_operation_performance(self, operation_name: str, 
+                                  start_time: Optional[datetime] = None,
+                                  end_time: Optional[datetime] = None,
+                                  memory_before: Optional[float] = None,
+                                  memory_after: Optional[float] = None,
+                                  **metadata) -> None:
+        """
+        Track detailed performance metrics for a specific operation.
+        
+        Args:
+            operation_name: Name of the operation
+            start_time: Operation start time (defaults to now)
+            end_time: Operation end time (defaults to now)
+            memory_before: Memory usage before operation (MB)
+            memory_after: Memory usage after operation (MB)
+            **metadata: Additional metadata
+        """
+        if start_time is None:
+            start_time = datetime.now()
+        if end_time is None:
+            end_time = datetime.now()
+        
+        execution_time = (end_time - start_time).total_seconds()
+        
+        # Record execution time
+        self.record_metric(
+            name=f"{operation_name}_execution_time",
+            value=execution_time,
+            metric_type=MetricType.PERFORMANCE,
+            level=MetricLevel.INFO,
+            metadata=metadata
+        )
+        
+        # Record memory usage if provided
+        if memory_before is not None and memory_after is not None:
+            memory_delta = memory_after - memory_before
+            self.record_metric(
+                name=f"{operation_name}_memory_delta",
+                value=memory_delta,
+                metric_type=MetricType.RESOURCE,
+                level=MetricLevel.INFO if abs(memory_delta) < 100 else MetricLevel.WARNING,
+                metadata=metadata
+            )
+        
+        # Update operation counts
+        self.operation_counts[operation_name] = self.operation_counts.get(operation_name, 0) + 1
+        self.operation_total_times[operation_name] = self.operation_total_times.get(operation_name, 0.0) + execution_time
+        
+        tprint_debug(f"📊 Tracked operation '{operation_name}': {execution_time:.3f}s")
+    
+    def analyze_performance_trends(self, metric_name: str, 
+                                 window_size: int = 10) -> Dict[str, Any]:
+        """
+        Analyze performance trends for a specific metric.
+        
+        Args:
+            metric_name: Name of the metric to analyze
+            window_size: Window size for trend analysis
+            
+        Returns:
+            Dictionary with trend analysis results
+        """
+        try:
+            # Get metric values
+            metric_values = [m.value for m in self.metrics if m.name == metric_name]
+            
+            if len(metric_values) < window_size:
+                return {'error': 'Insufficient data for trend analysis'}
+            
+            # Calculate rolling statistics
+            rolling_mean = []
+            rolling_std = []
+            
+            for i in range(window_size - 1, len(metric_values)):
+                window_values = metric_values[i - window_size + 1:i + 1]
+                rolling_mean.append(np.mean(window_values))
+                rolling_std.append(np.std(window_values))
+            
+            # Calculate trend direction
+            if len(rolling_mean) >= 2:
+                trend_direction = 'improving' if rolling_mean[-1] < rolling_mean[0] else 'degrading'
+                trend_strength = abs(rolling_mean[-1] - rolling_mean[0]) / rolling_mean[0] if rolling_mean[0] != 0 else 0
+            else:
+                trend_direction = 'stable'
+                trend_strength = 0.0
+            
+            # Calculate volatility
+            volatility = np.std(rolling_std) if rolling_std else 0.0
+            
+            return {
+                'metric_name': metric_name,
+                'total_samples': len(metric_values),
+                'window_size': window_size,
+                'current_value': metric_values[-1],
+                'trend_direction': trend_direction,
+                'trend_strength': trend_strength,
+                'volatility': volatility,
+                'rolling_mean': rolling_mean,
+                'rolling_std': rolling_std,
+                'analysis_timestamp': datetime.now()
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Trend analysis failed for {metric_name}: {e}")
+            return {'error': str(e)}
+    
+    def detect_performance_anomalies(self, metric_name: str, 
+                                   threshold_std: float = 2.0) -> List[Dict[str, Any]]:
+        """
+        Detect performance anomalies in a metric.
+        
+        Args:
+            metric_name: Name of the metric to analyze
+            threshold_std: Standard deviation threshold for anomaly detection
+            
+        Returns:
+            List of detected anomalies
+        """
+        try:
+            metric_data = [(m.timestamp, m.value) for m in self.metrics if m.name == metric_name]
+            
+            if len(metric_data) < 10:
+                return []
+            
+            timestamps, values = zip(*metric_data)
+            values = np.array(values)
+            
+            # Calculate z-scores
+            mean_val = np.mean(values)
+            std_val = np.std(values)
+            
+            if std_val == 0:
+                return []
+            
+            z_scores = np.abs((values - mean_val) / std_val)
+            
+            # Find anomalies
+            anomalies = []
+            for i, (timestamp, value, z_score) in enumerate(zip(timestamps, values, z_scores)):
+                if z_score > threshold_std:
+                    anomalies.append({
+                        'timestamp': timestamp,
+                        'value': value,
+                        'z_score': z_score,
+                        'severity': 'high' if z_score > threshold_std * 2 else 'medium',
+                        'index': i
+                    })
+            
+            if anomalies:
+                tprint_warning(f"⚠️ Detected {len(anomalies)} anomalies in {metric_name}")
+            
+            return anomalies
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Anomaly detection failed for {metric_name}: {e}")
+            return []
+    
+    def generate_performance_report(self, 
+                                  include_trends: bool = True,
+                                  include_anomalies: bool = True) -> Dict[str, Any]:
+        """
+        Generate comprehensive performance report.
+        
+        Args:
+            include_trends: Include trend analysis
+            include_anomalies: Include anomaly detection
+            
+        Returns:
+            Comprehensive performance report
+        """
+        try:
+            report = {
+                'report_timestamp': datetime.now(),
+                'component_name': self.component_name,
+                'monitoring_duration': self._get_monitoring_duration(),
+                'summary': self.get_performance_summary()
+            }
+            
+            # Get unique metric names
+            metric_names = list(set(m.name for m in self.metrics))
+            
+            if include_trends:
+                report['trends'] = {}
+                for metric_name in metric_names:
+                    trend_analysis = self.analyze_performance_trends(metric_name)
+                    if 'error' not in trend_analysis:
+                        report['trends'][metric_name] = trend_analysis
+            
+            if include_anomalies:
+                report['anomalies'] = {}
+                for metric_name in metric_names:
+                    anomalies = self.detect_performance_anomalies(metric_name)
+                    if anomalies:
+                        report['anomalies'][metric_name] = anomalies
+            
+            # Add recommendations
+            report['recommendations'] = self._generate_performance_recommendations()
+            
+            tprint_success("✅ Generated comprehensive performance report")
+            return report
+            
+        except Exception as e:
+            tprint_error(f"❌ Performance report generation failed: {e}")
+            return {'error': str(e)}
+    
+    def _generate_performance_recommendations(self) -> List[str]:
+        """Generate performance recommendations based on metrics."""
+        recommendations = []
+        
+        # Check memory usage
+        memory_stats = self._get_memory_stats()
+        if memory_stats['peak_mb'] > 1000:
+            recommendations.append("Consider optimizing memory usage - peak usage exceeded 1GB")
+        
+        # Check execution times
+        operation_summary = self._get_operation_summary()
+        for operation, stats in operation_summary.items():
+            if stats['average_time'] > 10:  # 10 seconds
+                recommendations.append(f"Consider optimizing '{operation}' - average execution time is {stats['average_time']:.1f}s")
+        
+        # Check error rates
+        if self.performance_metrics['error_counts'] > 0:
+            recommendations.append(f"Address {self.performance_metrics['error_counts']} errors detected during monitoring")
+        
+        # Check cache performance
+        cache_stats = self.performance_metrics['cache_metrics']
+        if cache_stats['hit_rate'] < 0.5 and (cache_stats['hits'] + cache_stats['misses']) > 0:
+            recommendations.append("Consider improving cache hit rate - currently below 50%")
+        
+        return recommendations
+    
+    def export_metrics_to_csv(self, filepath: str, 
+                            metric_names: Optional[List[str]] = None) -> bool:
+        """
+        Export metrics to CSV file.
+        
+        Args:
+            filepath: Path to output CSV file
+            metric_names: Specific metrics to export (None = all)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import csv
+            
+            # Filter metrics if specific names provided
+            if metric_names:
+                filtered_metrics = [m for m in self.metrics if m.name in metric_names]
+            else:
+                filtered_metrics = self.metrics
+            
+            if not filtered_metrics:
+                tprint_warning("⚠️ No metrics to export")
+                return False
+            
+            # Write to CSV
+            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+                fieldnames = ['timestamp', 'name', 'value', 'metric_type', 'level', 'tags', 'metadata']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                
+                writer.writeheader()
+                for metric in filtered_metrics:
+                    writer.writerow({
+                        'timestamp': metric.timestamp.isoformat(),
+                        'name': metric.name,
+                        'value': metric.value,
+                        'metric_type': metric.metric_type.value,
+                        'level': metric.level.value,
+                        'tags': str(metric.tags),
+                        'metadata': str(metric.metadata)
+                    })
+            
+            tprint_success(f"✅ Exported {len(filtered_metrics)} metrics to {filepath}")
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ CSV export failed: {e}")
+            return False

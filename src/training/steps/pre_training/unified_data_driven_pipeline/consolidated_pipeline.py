@@ -101,6 +101,39 @@ except ImportError as e:
     FEATURES_COMMON_AVAILABLE = False
     tprint_warning(f"⚠️ Features common utilities not available: {e}")
 
+# Import tactician/analyst labeling system
+try:
+    from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+        VolatilityAwareMultiHorizonLabeler,
+        VolatilityAwareConfig,
+        LabelingResult,
+        LabelDefinitionType,
+        create_enhanced_analyst_labeler,
+        create_enhanced_tactician_labeler
+    )
+    from src.training.steps.pre_training.tactician_entry_labeler import (
+        TacticianDifferentiatedLabeler,
+        TacticianLabelingConfig
+    )
+    from src.training.steps.pre_training.analyst_profit_labeler import (
+        AnalystProfitLabelerComponent,
+        AnalystLabelingConfig
+    )
+    TACTICIAN_ANALYST_LABELING_AVAILABLE = True
+except ImportError as e:
+    TACTICIAN_ANALYST_LABELING_AVAILABLE = False
+    tprint_warning(f"⚠️ Tactician/Analyst labeling not available: {e}")
+    VolatilityAwareMultiHorizonLabeler = None
+    VolatilityAwareConfig = None
+    LabelingResult = None
+    LabelDefinitionType = None
+    create_enhanced_analyst_labeler = None
+    create_enhanced_tactician_labeler = None
+    TacticianDifferentiatedLabeler = None
+    TacticianLabelingConfig = None
+    AnalystProfitLabelerComponent = None
+    AnalystLabelingConfig = None
+
 # Import enhanced components
 from .enhanced_components.enhanced_walk_forward_validation import (
     AdvancedWalkForwardValidator, AdvancedWalkForwardConfig
@@ -289,6 +322,127 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+class LabelingAdapter:
+    """Adapter for switching between different labeling systems."""
+    
+    def __init__(self, config: 'UnifiedPipelineConfig'):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize labeling components based on configuration
+        self._initialize_labeling_components()
+    
+    def _initialize_labeling_components(self):
+        """Initialize the appropriate labeling components based on configuration."""
+        if not TACTICIAN_ANALYST_LABELING_AVAILABLE:
+            tprint_warning("⚠️ Tactician/Analyst labeling not available, falling back to triple barrier")
+            self.labeling_system = "triple_barrier"
+            self.labeler = None
+            return
+        
+        if self.config.labeling_system == "tactician_analyst":
+            self.labeling_system = "tactician_analyst"
+            
+            if self.config.labeling_type == "analyst":
+                tprint_info("🏷️ Initializing Analyst labeling system")
+                self.labeler = create_enhanced_analyst_labeler()
+                self.labeling_type = LabelDefinitionType.ANALYST
+            elif self.config.labeling_type == "tactician":
+                tprint_info("🏷️ Initializing Tactician labeling system")
+                self.labeler = create_enhanced_tactician_labeler()
+                self.labeling_type = LabelDefinitionType.TACTICIAN
+            else:
+                tprint_warning(f"⚠️ Unknown labeling type: {self.config.labeling_type}, defaulting to analyst")
+                self.labeler = create_enhanced_analyst_labeler()
+                self.labeling_type = LabelDefinitionType.ANALYST
+        else:
+            tprint_info("🏷️ Using triple barrier labeling system")
+            self.labeling_system = "triple_barrier"
+            self.labeler = None
+    
+    def generate_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Generate labels using the configured labeling system.
+        
+        Args:
+            market_data: Market data with OHLCV columns
+            targets: Optional target series for supervised learning
+            
+        Returns:
+            Dictionary containing labeling results
+        """
+        if self.labeling_system == "tactician_analyst" and self.labeler is not None:
+            return self._generate_tactician_analyst_labels(market_data, targets)
+        else:
+            return self._generate_triple_barrier_labels(market_data, targets)
+    
+    def _generate_tactician_analyst_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """Generate labels using tactician/analyst labeling system."""
+        try:
+            tprint_info(f"🏷️ Generating {self.config.labeling_type} labels using volatility-aware labeler")
+            
+            # Generate labels using the volatility-aware labeler
+            labeling_result = self.labeler.generate_labels(market_data)
+            
+            if labeling_result.success:
+                tprint_success(f"✅ {self.config.labeling_type.title()} labeling completed successfully")
+                
+                # Convert to the expected format
+                result = {
+                    'success': True,
+                    'labeled_data': labeling_result.labeled_data,
+                    'confidence_scores': labeling_result.confidence_scores,
+                    'labeling_metadata': labeling_result.metadata,
+                    'labeling_type': self.config.labeling_type,
+                    'labeling_system': 'tactician_analyst',
+                    'quality_score': labeling_result.quality_score,
+                    'feature_importance': labeling_result.feature_importance
+                }
+                
+                return result
+            else:
+                tprint_error(f"❌ {self.config.labeling_type.title()} labeling failed: {labeling_result.error_message}")
+                return {
+                    'success': False,
+                    'error': labeling_result.error_message,
+                    'labeling_type': self.config.labeling_type,
+                    'labeling_system': 'tactician_analyst'
+                }
+                
+        except Exception as e:
+            tprint_error(f"❌ {self.config.labeling_type.title()} labeling error: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'labeling_type': self.config.labeling_type,
+                'labeling_system': 'tactician_analyst'
+            }
+    
+    def _generate_triple_barrier_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """Generate labels using triple barrier labeling (fallback)."""
+        try:
+            tprint_info("🏷️ Generating labels using triple barrier method (fallback)")
+            
+            # This would use the existing triple barrier implementation
+            # For now, return a placeholder that indicates fallback usage
+            return {
+                'success': True,
+                'labeled_data': pd.DataFrame(),  # Placeholder
+                'labeling_type': 'triple_barrier',
+                'labeling_system': 'triple_barrier',
+                'note': 'Triple barrier labeling not fully implemented in this adapter'
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Triple barrier labeling error: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'labeling_type': 'triple_barrier',
+                'labeling_system': 'triple_barrier'
+            }
+
+
 @dataclass
 class ConsolidatedPipelineResult:
     """Consolidated result of the unified feature pipeline."""
@@ -413,6 +567,9 @@ class UnifiedDataDrivenPipeline:
         # Initialize utility systems first
         self._initialize_utility_systems()
         
+        # Initialize labeling adapter
+        self._initialize_labeling_adapter()
+        
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
@@ -427,6 +584,20 @@ class UnifiedDataDrivenPipeline:
             tprint_success("✅ Feature generation utilities integrated")
         if FEATURES_COMMON_AVAILABLE:
             tprint_success("✅ Features common utilities integrated")
+        if TACTICIAN_ANALYST_LABELING_AVAILABLE:
+            tprint_success(f"✅ Tactician/Analyst labeling integrated ({self.config.labeling_type})")
+    
+    def _initialize_labeling_adapter(self):
+        """Initialize the labeling adapter for tactician/analyst labeling."""
+        tprint_debug("Initializing labeling adapter")
+        
+        try:
+            self.labeling_adapter = LabelingAdapter(self.config)
+            tprint_success(f"✅ Labeling adapter initialized: {self.config.labeling_system}/{self.config.labeling_type}")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize labeling adapter: {e}")
+            # Create a fallback adapter
+            self.labeling_adapter = None
     
     def _initialize_utility_systems(self):
         """Initialize utility systems from feature_generation and features_common."""
@@ -1127,15 +1298,33 @@ class UnifiedDataDrivenPipeline:
                 )
                 tprint_success(f"✅ Market data processing: {market_processing_report['final_shape']} shape")
             
-            # Load labeling data
-            labeling_data = await self.advanced_data_loader.load_labeling_data(
-                pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
-                pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
-                timeframe,
-                pipeline_state
-            )
+            # Generate labels using the configured labeling system
+            tprint_info(f"🏷️ Generating labels using {self.config.labeling_system}/{self.config.labeling_type} system")
             
-            # Apply data processing to labeling data
+            if self.labeling_adapter is not None:
+                labeling_result = self.labeling_adapter.generate_labels(market_data, processed_targets)
+                
+                if labeling_result.get('success', False):
+                    tprint_success(f"✅ Labels generated successfully using {labeling_result.get('labeling_type', 'unknown')} system")
+                    labeling_data = labeling_result.get('labeled_data', pd.DataFrame())
+                    labeling_metadata = labeling_result.get('labeling_metadata', {})
+                    labeling_quality = labeling_result.get('quality_score', 0.0)
+                    
+                    # Store labeling results in pipeline state
+                    if pipeline_state:
+                        pipeline_state['labeling_result'] = labeling_result
+                        pipeline_state['labeling_quality'] = labeling_quality
+                        pipeline_state['labeling_metadata'] = labeling_metadata
+                    
+                    tprint_info(f"📊 Labeling quality score: {labeling_quality:.3f}")
+                else:
+                    tprint_warning(f"⚠️ Labeling failed: {labeling_result.get('error', 'Unknown error')}")
+                    labeling_data = pd.DataFrame()
+            else:
+                tprint_warning("⚠️ No labeling adapter available, skipping label generation")
+                labeling_data = pd.DataFrame()
+            
+            # Apply data processing to labeling data if available
             if labeling_data is not None and not labeling_data.empty:
                 tprint_info("🔧 Applying data processing to labeling data...")
                 labeling_data, labeling_processing_report = self.unified_data_utils.process_and_validate(

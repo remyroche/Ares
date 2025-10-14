@@ -31,14 +31,8 @@ try:
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
     )
     TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+except ImportError as e:
+    raise ImportError(f"Required tprint utilities not available: {e}") from e
 
 # Import core components
 from .core.config import UnifiedPipelineConfig, create_default_config
@@ -59,6 +53,16 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import common logic components
+from .enhanced_components.common_feature_logic import (
+    CommonFeatureGenerator, FeatureGenerationConfig, 
+    create_common_feature_generator
+)
+from .enhanced_components.common_lookback_optimizer import (
+    CommonLookbackOptimizer, LookbackOptimizationConfig,
+    create_common_lookback_optimizer
+)
+
 # Import feature_generation utilities
 try:
     from src.feature_generation.utils import (
@@ -71,8 +75,7 @@ try:
     )
     FEATURE_GENERATION_AVAILABLE = True
 except ImportError as e:
-    FEATURE_GENERATION_AVAILABLE = False
-    tprint_warning(f"⚠️ Feature generation utilities not available: {e}")
+    raise ImportError(f"Required feature generation utilities not available: {e}") from e
 
 # Import features_common utilities
 try:
@@ -98,8 +101,7 @@ try:
     )
     FEATURES_COMMON_AVAILABLE = True
 except ImportError as e:
-    FEATURES_COMMON_AVAILABLE = False
-    tprint_warning(f"⚠️ Features common utilities not available: {e}")
+    raise ImportError(f"Required features common utilities not available: {e}") from e
 
 # Import tactician/analyst labeling system
 try:
@@ -194,6 +196,48 @@ from src.utils.math_validation import (
     validate_positive, validate_range, safe_correlation, safe_covariance,
     safe_mean, safe_std, safe_percentile, safe_percentage_change,
     safe_weighted_average, safe_kelly_calculation, MathValidation
+)
+
+# Import comprehensive common operations utilities
+from src.utils.common_operations import (
+    # Data processing utilities
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes, 
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
+    safe_timestamp_conversion, optimize_dataframe_dtypes,
+    
+    # Data quality utilities
+    calculate_data_quality_metrics, get_dataframe_info, create_data_quality_report,
+    validate_dataframe, validate_dataframe_columns, validate_timestamp_column,
+    
+    # Mathematical utilities
+    safe_divide as safe_divide_util, safe_log as safe_log_util, safe_sqrt as safe_sqrt_util,
+    safe_power as safe_power_util, safe_mean as safe_mean_util, safe_std as safe_std_util,
+    safe_correlation as safe_correlation_util, safe_float, safe_int,
+    validate_finite as validate_finite_util, validate_positive as validate_positive_util,
+    validate_range as validate_range_util, safe_kelly_calculation as safe_kelly_util,
+    safe_weighted_average as safe_weighted_avg_util, safe_percentage_change as safe_pct_change_util,
+    
+    # File I/O utilities
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
+    safe_copy, safe_deepcopy,
+    
+    # Performance utilities
+    timed_operation, format_bytes, chunked_iterable, parallel_map,
+    optimize_memory_usage, parallel_processing_optimizer,
+    
+    # M1 optimization utilities
+    integrate_with_m1_optimizers, cleanup_m1_optimizers, memory_checkpoint, gpu_context,
+    optimize_memory, get_memory_usage, CommonUtilities,
+    
+    # Advanced utilities
+    safe_resample, align_dataframes, validate_dataframe_schema,
+    guard_dataframe_nulls, create_summary_statistics,
+    
+    # Logging utilities
+    get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
 )
 
 # Import math validation integration
@@ -646,10 +690,122 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Failed to initialize labeling adapter: {e}")
             # Create a fallback adapter
             self.labeling_adapter = None
+        if self.m1_available:
+            tprint_success("✅ M1 optimizations integrated")
+    
+    def cleanup(self):
+        """Clean up resources and M1 optimizations."""
+        try:
+            tprint_debug("🧹 Cleaning up pipeline resources")
+            
+            # Clean up M1 optimizations
+            if self.m1_available:
+                cleanup_result = cleanup_m1_optimizers()
+                if cleanup_result:
+                    tprint_success("✅ M1 optimizations cleaned up")
+                else:
+                    tprint_warning("⚠️ M1 cleanup failed")
+            
+            # Clean up other resources
+            if hasattr(self, 'advanced_performance_monitor'):
+                self.advanced_performance_monitor.stop_monitoring()
+            
+            tprint_success("✅ Pipeline cleanup completed")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error during cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup."""
+        try:
+            self.cleanup()
+        except Exception:
+            pass  # Ignore errors during destruction
+    
+    def get_enhanced_performance_stats(self) -> Dict[str, Any]:
+        """Get enhanced performance statistics using common operations utilities."""
+        try:
+            # Get basic performance stats
+            basic_stats = self.advanced_performance_monitor.get_performance_summary()
+            
+            # Get memory usage
+            memory_usage = get_memory_usage()
+            
+            # Get M1 status if available
+            m1_status = {}
+            if self.m1_available and hasattr(self, 'common_utils'):
+                m1_status = self.common_utils.get_m1_status()
+            
+            # Combine all statistics
+            enhanced_stats = {
+                **basic_stats,
+                'memory_usage_bytes': memory_usage,
+                'memory_usage_mb': memory_usage / (1024 * 1024),
+                'm1_optimizations': m1_status,
+                'pipeline_components': {
+                    'feature_generation_available': FEATURE_GENERATION_AVAILABLE,
+                    'features_common_available': FEATURES_COMMON_AVAILABLE,
+                    'm1_available': self.m1_available
+                }
+            }
+            
+            # Log performance metrics safely
+            safe_log_metric("memory_usage_mb", enhanced_stats['memory_usage_mb'])
+            safe_log_metric("total_operations", basic_stats.get('total_operations', 0))
+            
+            return enhanced_stats
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error getting enhanced performance stats: {e}")
+            return {'error': str(e)}
+    
+    def optimize_pipeline_performance(self) -> Dict[str, Any]:
+        """Optimize pipeline performance using common operations utilities."""
+        try:
+            tprint_debug("🔧 Optimizing pipeline performance")
+            
+            optimization_results = {}
+            
+            # Memory optimization
+            if self.m1_available:
+                memory_opt_result = optimize_memory()
+                optimization_results['memory_optimization'] = memory_opt_result
+            
+            # General memory optimization
+            general_memory_opt = optimize_memory_usage()
+            optimization_results['general_memory_optimization'] = general_memory_opt
+            
+            # Log optimization results
+            safe_log_metric("memory_optimization_success", 1 if optimization_results.get('memory_optimization', {}).get('success', False) else 0)
+            
+            tprint_success("✅ Pipeline performance optimization completed")
+            return optimization_results
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Performance optimization failed: {e}")
+            return {'error': str(e)}
     
     def _initialize_utility_systems(self):
         """Initialize utility systems from feature_generation and features_common."""
         tprint_debug("Initializing utility systems")
+        
+        # Initialize common operations utilities
+        tprint_debug("🔧 Initializing common operations utilities")
+        self.common_utils = CommonUtilities()
+        self.common_operations_logger = get_logger("common_operations")
+        
+        # Initialize M1 optimizations if available
+        try:
+            m1_integration_result = integrate_with_m1_optimizers()
+            if m1_integration_result.get('success', False):
+                tprint_success("✅ M1 optimizations integrated successfully")
+                self.m1_available = True
+            else:
+                tprint_warning("⚠️ M1 optimizations not available")
+                self.m1_available = False
+        except Exception as e:
+            tprint_warning(f"⚠️ M1 integration failed: {e}")
+            self.m1_available = False
         
         # Initialize feature generation utilities
         if FEATURE_GENERATION_AVAILABLE:
@@ -676,13 +832,7 @@ class UnifiedDataDrivenPipeline:
                 
                 tprint_success("✅ Feature generation utilities initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Feature generation utilities initialization failed: {e}")
-                self.utility_container = None
-                self.enhanced_feature_engineering = None
-                self.feature_optimizer = None
-                self.cross_timeframe_pipeline = None
-                self.fractional_diff_pipeline = None
-                self.enhanced_matrix_ops = None
+                raise RuntimeError(f"Failed to initialize feature generation utilities: {e}") from e
         else:
             self.utility_container = None
             self.enhanced_feature_engineering = None
@@ -722,9 +872,7 @@ class UnifiedDataDrivenPipeline:
                 
                 tprint_success("✅ VectorBT utilities initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ VectorBT utilities initialization failed: {e}")
-                self.vectorbt_rolling_optimizer = None
-                self.unified_vectorization_manager = None
+                raise RuntimeError(f"Failed to initialize VectorBT utilities: {e}") from e
         else:
             self.vectorbt_rolling_optimizer = None
             self.unified_vectorization_manager = None
@@ -755,20 +903,7 @@ class UnifiedDataDrivenPipeline:
                 
                 tprint_success("✅ Features common utilities initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Features common utilities initialization failed: {e}")
-                self.unified_config = None
-                self.optimization_config = None
-                self.vectorbt_config = None
-                self.unified_vectorbt_manager = None
-                self.vectorbt_optimization_engine = None
-                self.gpu_accelerator = None
-                self.vectorbt_performance_monitor = None
-                self.scaler_factory = None
-                self.optimizer_factory = None
-                self.registry_factory = None
-                self.unified_factory = None
-                self.optimized_scaler = None
-                self.batch_scaler = None
+                raise RuntimeError(f"Failed to initialize features common utilities: {e}") from e
         else:
             self.unified_config = None
             self.optimization_config = None
@@ -933,6 +1068,32 @@ class UnifiedDataDrivenPipeline:
         )
         self.enhanced_feature_generator = EnhancedFeatureGenerator(feature_gen_config)
         
+        # Common feature generation logic
+        common_feature_config = FeatureGenerationConfig(
+            min_lookback=5,
+            max_lookback=100,
+            lookback_step=5,
+            num_informative_periods=3,
+            utility_threshold=0.1,
+            correlation_threshold=0.95,
+            stability_threshold=0.7
+        )
+        self.common_feature_generator = create_common_feature_generator(common_feature_config)
+        
+        # Common lookback optimization logic
+        lookback_opt_config = LookbackOptimizationConfig(
+            min_lookback=5,
+            max_lookback=100,
+            lookback_step=5,
+            num_candidate_periods=10,
+            num_informative_periods=3,
+            redundancy_threshold=0.8,
+            informativeness_threshold=0.1,
+            cross_timeframe_min_periods=2,
+            cross_timeframe_max_periods=5
+        )
+        self.common_lookback_optimizer = create_common_lookback_optimizer(lookback_opt_config)
+        
         # LightGBM + Featuretools + ALE feature generator
         lightgbm_config = LightGBMFeatureToolsConfig(
             model_type='lightgbm',  # Can be 'lightgbm' or 'catboost'
@@ -985,15 +1146,7 @@ class UnifiedDataDrivenPipeline:
         """Initialize ML Common utilities for enhanced validation and ensemble methods."""
         tprint_debug("Initializing ML Common utilities")
         
-        if not ML_COMMON_AVAILABLE:
-            tprint_warning("⚠️ ML Common utilities not available, using fallback implementations")
-            # Initialize dummy components for graceful degradation
-            self.data_leakage_detector = DataLeakageDetector()
-            self.enhanced_validator = EnhancedValidator()
-            self.ensemble_manager = None
-            self.oof_stacking_manager = None
-            self.integrated_analysis_pipeline = None
-            return
+        self._validate_dependency_available("ML Common utilities", ML_COMMON_AVAILABLE)
         
         try:
             # Data leakage detector with VectorBT integration
@@ -1106,14 +1259,7 @@ class UnifiedDataDrivenPipeline:
             tprint_success("✅ Unified cross-validator initialized")
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error initializing ML Common utilities: {e}")
-            # Fallback to dummy components
-            self.data_leakage_detector = DataLeakageDetector()
-            self.enhanced_validator = EnhancedValidator()
-            self.ensemble_manager = None
-            self.oof_stacking_manager = None
-            self.integrated_analysis_pipeline = None
-            self.unified_cv = None
+            raise RuntimeError(f"Failed to initialize ML Common utilities: {e}") from e
         
         tprint_success("✅ ML Common utilities initialized")
     
@@ -1273,6 +1419,9 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
+            # Fast fail validation - check critical requirements first
+            self._validate_critical_requirements(data, targets, timeframe, pipeline_state)
+            
             # Enhanced data processing and validation using unified utilities
             tprint_info("🔍 Performing comprehensive data validation and processing...")
             
@@ -1282,13 +1431,20 @@ class UnifiedDataDrivenPipeline:
             )
             
             if not quality_result.passed:
+                # Fast fail on critical quality issues
+                critical_issues = [issue for issue in quality_result.issues if 'critical' in issue.lower() or 'fatal' in issue.lower()]
+                if critical_issues:
+                    error_msg = f"Critical data quality issues detected: {critical_issues}"
+                    tprint_error(f"❌ {error_msg}")
+                    return self._create_empty_result(start_time, error_msg)
+                
                 tprint_warning(f"⚠️ Data quality issues detected: {len(quality_result.issues)} issues")
                 for issue in quality_result.issues[:3]:  # Show first 3 issues
                     tprint_warning(f"  - {issue}")
                 if len(quality_result.issues) > 3:
                     tprint_warning(f"  ... and {len(quality_result.issues) - 3} more issues")
             
-            # Step 2: Process and validate data using unified utilities
+            # Step 2: Process and validate data using unified utilities with enhanced common operations
             processed_data, processing_report = self.unified_data_utils.process_and_validate(
                 data=data,
                 validate_quality=True,
@@ -1301,6 +1457,28 @@ class UnifiedDataDrivenPipeline:
                 exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
                 timeframe=timeframe
             )
+            
+            # Apply additional common operations enhancements
+            if processed_data is not None and not processed_data.empty:
+                tprint_debug("🔧 Applying common operations enhancements to processed data")
+                
+                # Optimize DataFrame dtypes for memory efficiency
+                processed_data = optimize_dataframe_dtypes(processed_data)
+                
+                # Guard against excessive null values
+                processed_data = guard_dataframe_nulls(processed_data, threshold=0.5)
+                
+                # Validate DataFrame schema
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                if validate_dataframe_schema(processed_data, required_columns):
+                    tprint_success("✅ DataFrame schema validation passed")
+                else:
+                    tprint_warning("⚠️ DataFrame schema validation failed")
+                
+                # Calculate and log data quality metrics
+                quality_metrics = calculate_data_quality_metrics(processed_data)
+                safe_log_metric("data_quality_score", quality_metrics.get('missing_percentage', 0))
+                safe_log_metric("duplicate_percentage", quality_metrics.get('duplicate_percentage', 0))
             
             # Log processing results
             tprint_success(f"✅ Data processing completed: {processing_report['final_shape']} shape")
@@ -1317,6 +1495,7 @@ class UnifiedDataDrivenPipeline:
             )
             
             if not is_valid:
+                # Fast fail on validation failures
                 error_msg = f"Advanced validation failed: {validation_summary.recommendations}"
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
@@ -1328,6 +1507,12 @@ class UnifiedDataDrivenPipeline:
             market_data = await self.advanced_data_loader.load_market_data(
                 cleaned_data, pipeline_state, force_refresh=False
             )
+            
+            # Fast fail if market data loading failed
+            if market_data is None:
+                error_msg = "Market data loading failed - no data returned"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
             
             # Apply additional data processing to market data
             if market_data is not None and not market_data.empty:
@@ -1413,6 +1598,10 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning(f"  - {issue}")
                 
                 tprint_info(f"📊 Final data quality score: {final_quality_result.quality_score:.1f}/100")
+            else:
+                error_msg = "Processed data is empty or None after data loading"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
             
             # Generate features for optimization
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
@@ -1426,12 +1615,17 @@ class UnifiedDataDrivenPipeline:
             
             tprint_success(f"✅ Generated {len(feature_columns)} features for optimization")
             
-            # Prepare targets
+            # Prepare targets and ensure data consistency
             processed_targets = targets
             if targets is not None and len(targets) != len(processed_data):
                 common_index = processed_data.index.intersection(targets.index)
+                if len(common_index) == 0:
+                    error_msg = "No common index between data and targets"
+                    tprint_error(f"❌ {error_msg}")
+                    return self._create_empty_result(start_time, error_msg)
                 processed_data = processed_data.loc[common_index]
                 processed_targets = targets.loc[common_index]
+                tprint_info(f"📊 Aligned data and targets to {len(common_index)} common rows")
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
@@ -1457,6 +1651,11 @@ class UnifiedDataDrivenPipeline:
             # Step 2: Advanced feature selection from 200+ feature bank
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
             feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
+            
+            if not feature_selection_results or not hasattr(feature_selection_results, 'selected_features'):
+                error_msg = "Feature selection failed - no valid results"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
             
             # Step 2.5: Use dynamic roadmap pipeline for optimized feature selection
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.dynamic_roadmap_pipeline is not None:
@@ -1692,6 +1891,11 @@ class UnifiedDataDrivenPipeline:
             # Enhanced error handling with data quality recovery
             tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
             
+            # Log error metrics safely
+            safe_log_metric("pipeline_error", 1)
+            safe_log_params({"error_type": type(e).__name__, "error_message": str(e)})
+            safe_log_artifact("error_log", f"pipeline_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            
             # Try to recover data quality if possible
             try:
                 tprint_info("🔧 Attempting data quality recovery...")
@@ -1725,12 +1929,12 @@ class UnifiedDataDrivenPipeline:
             }
             
             # Add data quality metrics to error context if available
-            try:
-                if 'data' in locals() and data is not None and not data.empty:
+            if 'data' in locals() and data is not None and not data.empty:
+                try:
                     quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
                     error_context['data_quality_metrics'] = quality_metrics
-            except Exception:
-                pass  # Don't fail on quality metrics calculation
+                except Exception as quality_error:
+                    error_context['quality_metrics_error'] = str(quality_error)
             
             error_result = self.advanced_error_handler.handle_error(
                 e, "process", 
@@ -1742,7 +1946,7 @@ class UnifiedDataDrivenPipeline:
     
     def _monitor_data_quality_throughout_pipeline(self, data: pd.DataFrame, context: str) -> Dict[str, Any]:
         """
-        Monitor data quality throughout the pipeline using unified data utilities.
+        Monitor data quality throughout the pipeline using unified data utilities and common operations.
         
         Args:
             data: DataFrame to monitor
@@ -1752,8 +1956,17 @@ class UnifiedDataDrivenPipeline:
             Dictionary with quality monitoring results
         """
         try:
-            # Get comprehensive quality metrics
-            quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+            # Get comprehensive quality metrics using common operations
+            quality_metrics = calculate_data_quality_metrics(data)
+            
+            # Get additional quality information
+            dataframe_info = get_dataframe_info(data)
+            quality_report = create_data_quality_report(data)
+            
+            # Log quality metrics safely
+            safe_log_metric(f"{context}_quality_score", quality_metrics.get('missing_percentage', 0))
+            safe_log_metric(f"{context}_duplicate_percentage", quality_metrics.get('duplicate_percentage', 0))
+            safe_log_metric(f"{context}_memory_usage", dataframe_info.get('memory_usage', 0))
             
             # Get quality validation result
             quality_result = self.quality_framework.validate_dataframe_quality(data, context)
@@ -1787,13 +2000,7 @@ class UnifiedDataDrivenPipeline:
             return monitoring_result
             
         except Exception as e:
-            tprint_warning(f"⚠️ Data quality monitoring failed for {context}: {e}")
-            return {
-                'context': context,
-                'timestamp': pd.Timestamp.now().isoformat(),
-                'error': str(e),
-                'data_shape': data.shape if data is not None else 'unknown'
-            }
+            raise RuntimeError(f"Data quality monitoring failed for {context}: {e}") from e
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
@@ -1813,8 +2020,7 @@ class UnifiedDataDrivenPipeline:
             return True
             
         except Exception as e:
-            tprint_error(f"Input validation failed: {e}")
-            return False
+            raise ValueError(f"Input validation failed: {e}") from e
     
     def _prepare_data(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                      feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
@@ -1837,25 +2043,31 @@ class UnifiedDataDrivenPipeline:
         return processed_data, processed_targets
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
-        """Enhanced period optimization with economic evaluation."""
+        """Enhanced period optimization with economic evaluation and safe mathematical operations."""
         tprint_debug("Starting enhanced period optimization")
         
         try:
-            # Statistical period analysis
-            periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
-            period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
-            
-            # Economic significance evaluation
-            candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
-            economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
-            
-            # Combine statistical and economic results
-            combined_scores = self._combine_period_scores(period_analysis, economic_evaluation)
-            
-            # Select optimal periods
-            optimal_periods = self._select_optimal_periods(combined_scores)
-            
-            tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
+            # Use memory checkpoint for M1 optimization
+            with memory_checkpoint("period_optimization"):
+                # Statistical period analysis with safe operations
+                periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
+                period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+                
+                # Economic significance evaluation with safe mathematical operations
+                candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
+                economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
+                
+                # Combine statistical and economic results using safe operations
+                combined_scores = self._combine_period_scores_safe(period_analysis, economic_evaluation)
+                
+                # Select optimal periods with validation
+                optimal_periods = self._select_optimal_periods_safe(combined_scores)
+                
+                # Log metrics safely
+                safe_log_metric("optimal_periods_count", len(optimal_periods))
+                safe_log_metric("candidate_periods_count", len(candidate_periods))
+                
+                tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
             
             return {
                 'optimal_periods': optimal_periods,
@@ -1865,13 +2077,7 @@ class UnifiedDataDrivenPipeline:
             }
             
         except Exception as e:
-            tprint_error(f"Enhanced period optimization failed: {e}")
-            return {
-                'optimal_periods': [],
-                'period_scores': {},
-                'economic_evaluation_results': None,
-                'statistical_analysis': {}
-            }
+            raise RuntimeError(f"Enhanced period optimization failed: {e}") from e
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
         """Advanced multi-stage feature selection from 200+ feature bank."""
@@ -2025,35 +2231,47 @@ class UnifiedDataDrivenPipeline:
             return selection_result
                 
         except Exception as e:
-            tprint_error(f"Advanced multi-stage feature selection failed: {e}")
-            return None
+            raise RuntimeError(f"Advanced multi-stage feature selection failed: {e}") from e
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using enhanced utilities."""
+        """Generate features for the selected feature set using enhanced utilities and safe operations."""
         tprint_debug("Generating selected features using enhanced utilities")
         
         try:
-            # First, try to use enhanced feature engineering if available
-            if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
-                tprint_debug("🔧 Using enhanced feature engineering")
-                try:
-                    enhanced_features = self.enhanced_feature_engineering.generate_features(data)
-                    if enhanced_features is not None and not enhanced_features.empty:
-                        tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
-                        
-                        # Apply feature validation if available
-                        if FEATURE_GENERATION_AVAILABLE:
-                            try:
-                                validated_features = validate_features_dataframe(enhanced_features)
-                                if validated_features is not None:
-                                    enhanced_features = validated_features
-                                    tprint_success("✅ Features validated successfully")
-                            except Exception as e:
-                                tprint_warning(f"⚠️ Feature validation failed: {e}")
-                        
-                        return enhanced_features
-                except Exception as e:
-                    tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
+            # Use memory checkpoint for M1 optimization
+            with memory_checkpoint("feature_generation"):
+                # First, try to use enhanced feature engineering if available
+                if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
+                    tprint_debug("🔧 Using enhanced feature engineering")
+                    try:
+                        enhanced_features = self.enhanced_feature_engineering.generate_features(data)
+                        if enhanced_features is not None and not enhanced_features.empty:
+                            tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                            
+                            # Apply feature validation if available
+                            if FEATURE_GENERATION_AVAILABLE:
+                                try:
+                                    validated_features = validate_features_dataframe(enhanced_features)
+                                    if validated_features is not None:
+                                        enhanced_features = validated_features
+                                        tprint_success("✅ Features validated successfully")
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Feature validation failed: {e}")
+                            
+                            # Apply safe DataFrame operations
+                            enhanced_features = safe_dataframe_operation(
+                                enhanced_features, 
+                                lambda df: optimize_dataframe_dtypes(df)
+                            )
+                            
+                            # Calculate and log feature quality metrics
+                            feature_quality = calculate_data_quality_metrics(enhanced_features)
+                            safe_log_metric("feature_count", len(enhanced_features.columns))
+                            safe_log_metric("feature_missing_percentage", feature_quality.get('missing_percentage', 0))
+                            
+                            return enhanced_features
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
             
             # Fallback to Feature Bank integration
             if selection_result is None or not selection_result.success:
@@ -2099,8 +2317,7 @@ class UnifiedDataDrivenPipeline:
             return features_df
             
         except Exception as e:
-            tprint_error(f"❌ Feature generation failed: {e}")
-            return pd.DataFrame(index=data.index)
+            raise RuntimeError(f"Feature generation failed: {e}") from e
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
@@ -2198,8 +2415,7 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_error(f"Enhanced interaction generation failed: {e}")
-            return []
+            raise RuntimeError(f"Enhanced interaction generation failed: {e}") from e
     
     def _prepare_data_for_interactions(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Prepare data for feature engineering roadmap interactions."""
@@ -2229,17 +2445,14 @@ class UnifiedDataDrivenPipeline:
             return transformed_data
             
         except Exception as e:
-            tprint_error(f"Data preparation for interactions failed: {e}")
-            return features_df
+            raise RuntimeError(f"Data preparation for interactions failed: {e}") from e
     
     def _apply_statistical_transforms(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Apply statistical transforms using feature engineering roadmap."""
         tprint_debug("Starting statistical transforms")
         
         try:
-            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.transform_router is None:
-                tprint_warning("⚠️ Statistical transforms not available, returning original features")
-                return features_df
+            self._validate_dependency_available("Statistical transforms", FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.transform_router is not None)
             
             # Initialize transform router if not already done
             if self.transform_router is None:
@@ -2258,17 +2471,14 @@ class UnifiedDataDrivenPipeline:
             return transformed_df
             
         except Exception as e:
-            tprint_error(f"Statistical transforms failed: {e}")
-            return features_df
+            raise RuntimeError(f"Statistical transforms failed: {e}") from e
     
     def _apply_dynamic_roadmap_pipeline(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
         """Apply dynamic roadmap pipeline for optimized feature selection."""
         tprint_debug("Starting dynamic roadmap pipeline")
         
         try:
-            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.dynamic_roadmap_pipeline is None:
-                tprint_warning("⚠️ Dynamic roadmap pipeline not available")
-                return {}
+            self._validate_dependency_available("Dynamic roadmap pipeline", FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.dynamic_roadmap_pipeline is not None)
             
             # Run the dynamic roadmap pipeline
             roadmap_results = self.dynamic_roadmap_pipeline.run(data, targets)
@@ -2289,8 +2499,7 @@ class UnifiedDataDrivenPipeline:
                 return {}
             
         except Exception as e:
-            tprint_error(f"Dynamic roadmap pipeline failed: {e}")
-            return {}
+            raise RuntimeError(f"Dynamic roadmap pipeline failed: {e}") from e
     
     def _generate_regime_aware_interactions(self, transformed_data: pd.DataFrame) -> pd.DataFrame:
         """Generate regime-aware interactions using the interaction engine's regime flags."""
@@ -2330,8 +2539,7 @@ class UnifiedDataDrivenPipeline:
                 return pd.DataFrame()
                 
         except Exception as e:
-            tprint_error(f"Regime-aware interactions generation failed: {e}")
-            return pd.DataFrame()
+            raise RuntimeError(f"Regime-aware interactions generation failed: {e}") from e
     
     def _htf_interaction_generation(self, data: pd.DataFrame, features_df: pd.DataFrame, 
                                   targets: Optional[pd.Series]) -> List[Any]:
@@ -2351,8 +2559,7 @@ class UnifiedDataDrivenPipeline:
             return htf_interactions
             
         except Exception as e:
-            tprint_error(f"HTF interaction generation failed: {e}")
-            return []
+            raise RuntimeError(f"HTF interaction generation failed: {e}") from e
     
     def _create_htf_features(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Create simulated HTF features."""
@@ -2373,8 +2580,7 @@ class UnifiedDataDrivenPipeline:
             return htf_features
             
         except Exception as e:
-            tprint_error(f"HTF feature creation failed: {e}")
-            return {}
+            raise RuntimeError(f"HTF feature creation failed: {e}") from e
     
     def _advanced_lookback_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                       features_df: pd.DataFrame, pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -2564,20 +2770,7 @@ class UnifiedDataDrivenPipeline:
             }
             
         except Exception as e:
-            tprint_error(f"❌ Advanced lookback optimization failed: {e}")
-            return {
-                'long_pipeline': {},
-                'short_pipeline': {},
-                'long_target': None,
-                'short_target': None,
-                'total_features_optimized': 0,
-                'optimization_method': 'failed',
-                'feature_lag_metadata': {},
-                'execution_mode': 'failed',
-                'nested_cv_applied': False,
-                'outer_fold_count': 0,
-                'error': str(e)
-            }
+            raise RuntimeError(f"Advanced lookback optimization failed: {e}") from e
     
     def _build_walk_forward_splits(self, data_length: int, wf_config: Optional[Dict[str, Any]] = None) -> List[Tuple[slice, slice]]:
         """Create walk-forward outer CV splits when enough history is available with configurable parameters."""
@@ -2660,8 +2853,7 @@ class UnifiedDataDrivenPipeline:
             return None
             
         except Exception as e:
-            tprint_error(f"❌ Target column selection failed for {direction}: {e}")
-            return None
+            raise RuntimeError(f"Target column selection failed for {direction}: {e}") from e
     
     def _create_mode_aware_constraints(self, execution_mode: str) -> Dict[str, Any]:
         """Create mode-aware constraints for optimization based on execution mode."""
@@ -2803,8 +2995,7 @@ class UnifiedDataDrivenPipeline:
                 )
             
         except Exception as e:
-            tprint_error(f"❌ Feature optimization failed for {feature} ({direction}): {e}")
-            return None
+            raise RuntimeError(f"Feature optimization failed for {feature} ({direction}): {e}") from e
     
     def _fallback_optimization(self, data: pd.DataFrame, feature: str, target_column: str,
                              lookback_range: Tuple[int, int], optimizer_kwargs: Dict[str, Any],
@@ -2864,12 +3055,10 @@ class UnifiedDataDrivenPipeline:
                     'convergence_achieved': True
                 }
             else:
-                tprint_warning(f"⚠️ Fallback optimization failed for {feature}")
-                return None
+                raise RuntimeError(f"Fallback optimization failed for {feature} - no valid lookback found")
                 
         except Exception as e:
-            tprint_error(f"❌ Fallback optimization failed for {feature}: {e}")
-            return None
+            raise RuntimeError(f"Fallback optimization failed for {feature}: {e}") from e
     
     def _normalize_feature_key(self, feature: str) -> str:
         """Normalize feature key for consistent naming."""
@@ -2945,8 +3134,7 @@ class UnifiedDataDrivenPipeline:
                 return self._create_empty_enhanced_feature_result()
                 
         except Exception as e:
-            tprint_error(f"❌ LightGBM + Featuretools feature generation failed: {e}")
-            return self._create_empty_enhanced_feature_result()
+            raise RuntimeError(f"LightGBM + Featuretools feature generation failed: {e}") from e
     
     def _create_empty_enhanced_feature_result(self) -> Dict[str, Any]:
         """Create empty enhanced feature result."""
@@ -3000,14 +3188,7 @@ class UnifiedDataDrivenPipeline:
                 }
                 
         except Exception as e:
-            tprint_error(f"❌ Enhanced feature generation failed: {e}")
-            return {
-                'cross_timeframe_features': [],
-                'interaction_features': [],
-                'no_features': [],
-                'comparison_features': [],
-                'enhanced_feature_metrics': {}
-            }
+            raise RuntimeError(f"Enhanced feature generation failed: {e}") from e
     
     def _final_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
         """Final feature selection using enhanced multi-objective optimization."""
@@ -3025,28 +3206,16 @@ class UnifiedDataDrivenPipeline:
                     tprint_info(f"📊 Quality metrics: {selection_result.quality_metrics}")
                 return selection_result
             else:
-                tprint_warning("⚠️ Enhanced final feature selection failed, using all available features")
-                return type('FeatureSelectionResult', (), {
-                    'selected_features': list(data.columns),
-                    'objective_values': {},
-                    'quality_metrics': {}
-                })()
+                raise RuntimeError("Enhanced final feature selection failed - no valid features selected")
                 
         except Exception as e:
-            tprint_error(f"Enhanced final feature selection failed: {e}")
-            return type('FeatureSelectionResult', (), {
-                'selected_features': list(data.columns),
-                'objective_values': {},
-                'quality_metrics': {}
-            })()
+            raise RuntimeError(f"Enhanced final feature selection failed: {e}") from e
     
     async def _create_ensemble_models(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
         """Create ensemble models using ML Common ensemble utilities."""
         tprint_debug("Creating ensemble models with ML Common utilities")
         
-        if not ML_COMMON_AVAILABLE or self.ensemble_manager is None:
-            tprint_warning("⚠️ ML Common ensemble utilities not available")
-            return {'ensemble_models': [], 'ensemble_metrics': {}}
+        self._validate_dependency_available("ML Common ensemble utilities", ML_COMMON_AVAILABLE and self.ensemble_manager is not None)
         
         try:
             ensemble_results = {}
@@ -3135,16 +3304,13 @@ class UnifiedDataDrivenPipeline:
             return ensemble_results
             
         except Exception as e:
-            tprint_error(f"❌ Ensemble model creation failed: {e}")
-            return {'ensemble_models': [], 'ensemble_metrics': {}}
+            raise RuntimeError(f"Ensemble model creation failed: {e}") from e
     
     def _create_oof_stacking_ensemble(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
         """Create OOF stacking ensemble using ML Common utilities."""
         tprint_debug("Creating OOF stacking ensemble with ML Common utilities")
         
-        if not ML_COMMON_AVAILABLE or self.oof_stacking_manager is None:
-            tprint_warning("⚠️ ML Common OOF stacking utilities not available")
-            return {'oof_ensemble': None, 'oof_metrics': {}}
+        self._validate_dependency_available("ML Common OOF stacking utilities", ML_COMMON_AVAILABLE and self.oof_stacking_manager is not None)
         
         try:
             if targets is not None:
@@ -3209,17 +3375,14 @@ class UnifiedDataDrivenPipeline:
                 return {'oof_ensemble': None, 'oof_metrics': {}}
                 
         except Exception as e:
-            tprint_error(f"❌ OOF stacking ensemble creation failed: {e}")
-            return {'oof_ensemble': None, 'oof_metrics': {}}
+            raise RuntimeError(f"OOF stacking ensemble creation failed: {e}") from e
     
     def _evaluate_with_unified_metrics(self, model: Any, X: np.ndarray, y: np.ndarray, 
                                      is_classification: bool = True) -> Dict[str, Any]:
         """Evaluate model using unified evaluation metrics from ML Common."""
         tprint_debug("Evaluating model with unified metrics")
         
-        if not ML_COMMON_AVAILABLE:
-            tprint_warning("⚠️ ML Common evaluation utilities not available")
-            return {'evaluation_metrics': {}}
+        self._validate_dependency_available("ML Common evaluation utilities", ML_COMMON_AVAILABLE)
         
         try:
             # Use unified evaluator for comprehensive metrics
@@ -3254,8 +3417,7 @@ class UnifiedDataDrivenPipeline:
             return combined_metrics
             
         except Exception as e:
-            tprint_error(f"❌ Unified model evaluation failed: {e}")
-            return {'evaluation_metrics': {}, 'error': str(e)}
+            raise RuntimeError(f"Unified model evaluation failed: {e}") from e
     
     def _vectorized_rolling_operations(self, data: pd.DataFrame, windows: List[int] = None) -> pd.DataFrame:
         """
@@ -3268,9 +3430,7 @@ class UnifiedDataDrivenPipeline:
         Returns:
             DataFrame with vectorized rolling features
         """
-        if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
-            tprint_warning("⚠️ VectorBT utilities not available, skipping vectorized rolling operations")
-            return data
+        self._validate_dependency_available("VectorBT utilities", VECTORBT_UTILITIES_AVAILABLE and self.vectorbt_rolling_optimizer is not None)
         
         if windows is None:
             windows = [5, 10, 20, 50, 100]
@@ -3337,9 +3497,7 @@ class UnifiedDataDrivenPipeline:
         Returns:
             DataFrame with vectorized features
         """
-        if not VECTORBT_UTILITIES_AVAILABLE or self.unified_vectorization_manager is None:
-            tprint_warning("⚠️ VectorBT utilities not available, skipping unified vectorization")
-            return data
+        self._validate_dependency_available("VectorBT utilities", VECTORBT_UTILITIES_AVAILABLE and self.unified_vectorization_manager is not None)
         
         tprint_info("🚀 Starting unified vectorization processing")
         
@@ -3359,8 +3517,7 @@ class UnifiedDataDrivenPipeline:
                 tprint_success(f"✅ Unified vectorization completed: {vectorized_result.features_generated} features generated")
                 return vectorized_result.processed_data
             else:
-                tprint_warning(f"⚠️ Unified vectorization failed: {vectorized_result.error_message}")
-                return data
+                raise RuntimeError(f"Unified vectorization failed: {vectorized_result.error_message}")
                 
         except Exception as e:
             tprint_error(f"❌ Unified vectorization processing failed: {e}")
@@ -3442,8 +3599,7 @@ class UnifiedDataDrivenPipeline:
             return data
             
         except Exception as e:
-            tprint_warning(f"⚠️ Correlation features failed: {e}")
-            return data
+            raise RuntimeError(f"Correlation features failed: {e}") from e
     
     def _add_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add momentum-based features using vectorized operations."""
@@ -3474,8 +3630,7 @@ class UnifiedDataDrivenPipeline:
             return data
             
         except Exception as e:
-            tprint_warning(f"⚠️ Momentum features failed: {e}")
-            return data
+            raise RuntimeError(f"Momentum features failed: {e}") from e
     
     def _add_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add volatility-based features using vectorized operations."""
@@ -3505,8 +3660,7 @@ class UnifiedDataDrivenPipeline:
             return data
             
         except Exception as e:
-            tprint_warning(f"⚠️ Volatility features failed: {e}")
-            return data
+            raise RuntimeError(f"Volatility features failed: {e}") from e
     
     def _add_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based features using vectorized operations."""
@@ -3538,8 +3692,7 @@ class UnifiedDataDrivenPipeline:
             return data
             
         except Exception as e:
-            tprint_warning(f"⚠️ Volume features failed: {e}")
-            return data
+            raise RuntimeError(f"Volume features failed: {e}") from e
 
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 
@@ -3655,6 +3808,70 @@ class UnifiedDataDrivenPipeline:
         optimal_periods = [period for period, score in sorted_periods[:max_periods] if score > 0.1]
         
         return optimal_periods
+    
+    def _combine_period_scores_safe(self, statistical_analysis: Dict[int, Dict[str, Any]], 
+                                   economic_evaluation: Any) -> Dict[int, float]:
+        """Combine statistical and economic period scores using safe mathematical operations."""
+        try:
+            combined_scores = {}
+            
+            # Extract statistical scores with safe operations
+            for period, analysis in statistical_analysis.items():
+                if 'error' not in analysis:
+                    # Use sharpe ratio as statistical score with safe division
+                    sharpe_ratio = safe_float(analysis.get('sharpe_ratio', 0.0))
+                    statistical_weight = safe_divide_util(sharpe_ratio * 0.4, 1.0, default=0.0)
+                    combined_scores[period] = validate_finite_util(statistical_weight, f"statistical_score_{period}")
+            
+            # Add economic scores with safe operations
+            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
+                for period, score in economic_evaluation.period_scores.items():
+                    safe_score = safe_float(score)
+                    economic_weight = safe_divide_util(safe_score * 0.6, 1.0, default=0.0)
+                    validated_weight = validate_finite_util(economic_weight, f"economic_score_{period}")
+                    
+                    if period in combined_scores:
+                        combined_scores[period] = safe_divide_util(
+                            combined_scores[period] + validated_weight, 1.0, default=combined_scores[period]
+                        )
+                    else:
+                        combined_scores[period] = validated_weight
+            
+            return combined_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error combining period scores: {e}")
+            return {}
+    
+    def _select_optimal_periods_safe(self, combined_scores: Dict[int, float]) -> List[int]:
+        """Select optimal periods using safe operations and validation."""
+        try:
+            if not combined_scores:
+                return []
+            
+            # Sort periods by score using safe operations
+            sorted_periods = sorted(
+                combined_scores.items(), 
+                key=lambda x: validate_finite_util(safe_float(x[1]), f"score_{x[0]}"), 
+                reverse=True
+            )
+            
+            # Select top periods with validation
+            optimal_periods = []
+            for period, score in sorted_periods[:10]:  # Top 10 periods
+                validated_score = validate_finite_util(safe_float(score), f"final_score_{period}")
+                if validated_score > 0.1:  # Minimum threshold
+                    optimal_periods.append(period)
+            
+            # Log selection metrics safely
+            safe_log_metric("total_candidate_periods", len(combined_scores))
+            safe_log_metric("selected_optimal_periods", len(optimal_periods))
+            
+            return optimal_periods
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting optimal periods: {e}")
+            return []
     
     def _calculate_interaction_metrics(self, interactions: List[Any]) -> Dict[str, Any]:
         """Calculate metrics for generated interactions with math validation."""
@@ -3905,6 +4122,62 @@ class UnifiedDataDrivenPipeline:
             error_message=error_message,
             warnings=[]
         )
+    
+    def _handle_missing_dependency(self, dependency_name: str, fallback_value: Any = None) -> Any:
+        """Handle missing dependencies with consistent error handling."""
+        tprint_warning(f"⚠️ {dependency_name} not available")
+        if fallback_value is not None:
+            return fallback_value
+        raise ImportError(f"Required dependency {dependency_name} not available")
+    
+    def _validate_dependency_available(self, dependency_name: str, is_available: bool) -> None:
+        """Validate that a required dependency is available."""
+        if not is_available:
+            raise ImportError(f"Required dependency {dependency_name} not available")
+    
+    def _validate_critical_requirements(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                                      timeframe: str, pipeline_state: Optional[Dict[str, Any]]) -> None:
+        """Fast fail validation for critical requirements."""
+        # Validate data is not None or empty
+        if data is None:
+            raise ValueError("Data cannot be None")
+        if data.empty:
+            raise ValueError("Data cannot be empty")
+        
+        # Validate required OHLCV columns
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+        
+        # Validate data types for OHLCV columns
+        for col in required_columns:
+            if not pd.api.types.is_numeric_dtype(data[col]):
+                raise ValueError(f"Column '{col}' must be numeric, got {data[col].dtype}")
+        
+        # Validate OHLCV data integrity
+        if (data['high'] < data[['open', 'close']].max(axis=1)).any():
+            raise ValueError("High prices cannot be less than open or close prices")
+        if (data['low'] > data[['open', 'close']].min(axis=1)).any():
+            raise ValueError("Low prices cannot be greater than open or close prices")
+        
+        # Validate targets if provided
+        if targets is not None:
+            if len(targets) != len(data):
+                raise ValueError(f"Targets length ({len(targets)}) must match data length ({len(data)})")
+            if not pd.api.types.is_numeric_dtype(targets):
+                raise ValueError("Targets must be numeric")
+        
+        # Validate timeframe format
+        if not isinstance(timeframe, str) or not timeframe:
+            raise ValueError("Timeframe must be a non-empty string")
+        
+        # Validate pipeline state if provided
+        if pipeline_state is not None:
+            if not isinstance(pipeline_state, dict):
+                raise ValueError("Pipeline state must be a dictionary")
+        
+        tprint_success("✅ Critical requirements validation passed")
     
     async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str, 
                                interval: str, batch_id: Optional[str] = None,

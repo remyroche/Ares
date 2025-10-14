@@ -24,6 +24,7 @@ from dataclasses import dataclass
 import logging
 import time
 from pathlib import Path
+from datetime import datetime
 
 try:
     from src.utils.tprint import (
@@ -124,6 +125,12 @@ from src.utils.math_validation import (
 from .enhanced_components.math_validation_integration import (
     MathValidationIntegration, MathValidationResult, validate_pipeline_calculation
 )
+# Import unified data utilities
+from src.utils.data import UnifiedDataUtils, unified_data_utils
+from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds
+from src.utils.data.quality.data_cleaning import DataCleaner
+from src.utils.data.validation.validators import CrossStepValidator
 
 # Import existing components
 from .time_series_cv import PurgedEmbargoedWalkForwardCV, create_purged_embargoed_cv
@@ -148,6 +155,22 @@ try:
 except ImportError:
     VECTORBT_AVAILABLE = False
     tprint_warning("VectorBT utilities not available, using fallback implementations")
+
+# Import feature engineering roadmap utilities
+try:
+    from src.feature_engineering_roadmap.interactions import (
+        InteractionEngine, create_default_interaction_config, InteractionConfig, InteractionType
+    )
+    from src.feature_engineering_roadmap.transforms import (
+        TransformRouter, create_default_transform_config, OnlineEWZ, TODRank, SignedLog, MADScaler, Winsorization
+    )
+    from src.feature_engineering_roadmap.dynamic_feature_selector import (
+        DynamicRoadmapPipeline, OptimizedPipelineConfig
+    )
+    FEATURE_ENGINEERING_ROADMAP_AVAILABLE = True
+except ImportError:
+    FEATURE_ENGINEERING_ROADMAP_AVAILABLE = False
+    tprint_warning("Feature engineering roadmap utilities not available")
 
 # Import caching and serialization
 try:
@@ -463,6 +486,38 @@ class UnifiedDataDrivenPipeline:
         )
         self.lightgbm_featuretools_generator = LightGBMFeatureToolsGenerator(lightgbm_config)
         
+        # Feature engineering roadmap components
+        if FEATURE_ENGINEERING_ROADMAP_AVAILABLE:
+            # Interaction engine for theory-driven interactions
+            self.interaction_engine = InteractionEngine(
+                create_default_interaction_config(),
+                use_vectorbt=VECTORBT_AVAILABLE,
+                use_gpu=self.config.performance.enable_gpu,
+                enable_parallel=True
+            )
+            
+            # Transform router for statistical transforms
+            self.transform_router = None  # Will be initialized when we have feature names
+            
+            # Dynamic roadmap pipeline for optimized feature selection
+            roadmap_config = OptimizedPipelineConfig(
+                n_candidate_features=100,
+                n_selected_features=32,
+                use_bayesian_opt=True,
+                bayesian_trials=50,
+                use_vectorbt=VECTORBT_AVAILABLE,
+                use_gpu=self.config.performance.enable_gpu,
+                enable_parallel=True
+            )
+            self.dynamic_roadmap_pipeline = DynamicRoadmapPipeline(roadmap_config)
+            
+            tprint_info("✅ Feature engineering roadmap components initialized")
+        else:
+            self.interaction_engine = None
+            self.transform_router = None
+            self.dynamic_roadmap_pipeline = None
+            tprint_warning("⚠️  Feature engineering roadmap components not available")
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_validation_components(self):
@@ -499,6 +554,30 @@ class UnifiedDataDrivenPipeline:
             config=GPUConfig()
         )
         
+        # Unified data utilities
+        self.unified_data_utils = UnifiedDataUtils(
+            quality_thresholds=QualityThresholds(
+                max_nan_ratio=0.05,  # Allow 5% NaN for calculated features
+                max_infinite_count=0,
+                min_unique_values=2,
+                max_constant_ratio=0.95,
+                max_gap_hours=48,
+                price_tolerance=0.001,
+                volume_tolerance=0.001,
+                max_correlation_threshold=0.95,
+                min_feature_count=40
+            ),
+            enable_streaming=True,
+            chunk_size=10000,
+            memory_threshold=0.8
+        )
+        
+        # Individual data utilities for specific operations
+        self.data_processor = DataProcessor()
+        self.data_cleaner = DataCleaner()
+        self.quality_framework = DataQualityFramework()
+        self.cross_step_validator = CrossStepValidator()
+        
         tprint_success("✅ Validation components initialized")
     
     def _initialize_advanced_infrastructure(self):
@@ -519,8 +598,21 @@ class UnifiedDataDrivenPipeline:
             component_name="UnifiedDataDrivenPipeline"
         )
         
-        # Advanced data loading
-        self.advanced_data_loader = AdvancedDataLoader(logger=self.logger)
+        # Advanced data loading with enhanced utilities
+        data_loader_config = {
+            'klines_storage': {
+                'base_dir': 'historical_data',
+                'compression': 'zstd',
+                'compression_level': 3,
+                'enable_metadata': True,
+                'enable_validation': True,
+                'max_file_size_mb': 100
+            }
+        }
+        self.advanced_data_loader = AdvancedDataLoader(
+            logger=self.logger, 
+            config=data_loader_config
+        )
         
         # Advanced artifact management
         self.advanced_artifact_manager = AdvancedArtifactManager(
@@ -578,22 +670,78 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
-            # Advanced input validation
+            # Enhanced data processing and validation using unified utilities
+            tprint_info("🔍 Performing comprehensive data validation and processing...")
+            
+            # Step 1: Comprehensive data validation and quality assessment
+            quality_result = self.quality_framework.validate_dataframe_quality(
+                data, context=f"pipeline_input_{timeframe}"
+            )
+            
+            if not quality_result.passed:
+                tprint_warning(f"⚠️ Data quality issues detected: {len(quality_result.issues)} issues")
+                for issue in quality_result.issues[:3]:  # Show first 3 issues
+                    tprint_warning(f"  - {issue}")
+                if len(quality_result.issues) > 3:
+                    tprint_warning(f"  ... and {len(quality_result.issues) - 3} more issues")
+            
+            # Step 2: Process and validate data using unified utilities
+            processed_data, processing_report = self.unified_data_utils.process_and_validate(
+                data=data,
+                validate_quality=True,
+                clean_missing_values=True,
+                detect_outliers=True,
+                optimize_dtypes=True,
+                regularize_timestamps=True,
+                context=f"pipeline_processing_{timeframe}",
+                symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                timeframe=timeframe
+            )
+            
+            # Log processing results
+            tprint_success(f"✅ Data processing completed: {processing_report['final_shape']} shape")
+            tprint_info(f"📊 Processing steps: {', '.join(processing_report['steps_completed'])}")
+            if processing_report.get('optimization_results'):
+                memory_reduction = processing_report['optimization_results'].get('memory_reduction_percent', 0)
+                tprint_info(f"💾 Memory optimization: {memory_reduction:.1f}% reduction")
+            
+            # Step 3: Advanced input validation for pipeline-specific requirements
             is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
-                data, 
+                processed_data, 
                 required_columns=['open', 'high', 'low', 'close', 'volume'],
                 target_columns=feature_columns
             )
             
             if not is_valid:
-                error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                error_msg = f"Advanced validation failed: {validation_summary.recommendations}"
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
+            
+            # Use the processed data from unified utilities
+            cleaned_data = processed_data
             
             # Load market data using advanced data loader
             market_data = await self.advanced_data_loader.load_market_data(
                 cleaned_data, pipeline_state, force_refresh=False
             )
+            
+            # Apply additional data processing to market data
+            if market_data is not None and not market_data.empty:
+                tprint_info("🔧 Applying additional data processing to market data...")
+                market_data, market_processing_report = self.unified_data_utils.process_and_validate(
+                    data=market_data,
+                    validate_quality=True,
+                    clean_missing_values=True,
+                    detect_outliers=False,  # Don't remove outliers from market data
+                    optimize_dtypes=True,
+                    regularize_timestamps=True,
+                    context=f"market_data_{timeframe}",
+                    symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                    exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                    timeframe=timeframe
+                )
+                tprint_success(f"✅ Market data processing: {market_processing_report['final_shape']} shape")
             
             # Load labeling data
             labeling_data = await self.advanced_data_loader.load_labeling_data(
@@ -603,10 +751,41 @@ class UnifiedDataDrivenPipeline:
                 pipeline_state
             )
             
+            # Apply data processing to labeling data
+            if labeling_data is not None and not labeling_data.empty:
+                tprint_info("🔧 Applying data processing to labeling data...")
+                labeling_data, labeling_processing_report = self.unified_data_utils.process_and_validate(
+                    data=labeling_data,
+                    validate_quality=True,
+                    clean_missing_values=True,
+                    detect_outliers=False,  # Don't remove outliers from labels
+                    optimize_dtypes=True,
+                    regularize_timestamps=True,
+                    context=f"labeling_data_{timeframe}",
+                    symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                    exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                    timeframe=timeframe
+                )
+                tprint_success(f"✅ Labeling data processing: {labeling_processing_report['final_shape']} shape")
+            
             # Prepare data for optimization
             processed_data = self.advanced_data_loader.prepare_data_for_optimization(
                 market_data, labeling_data
             )
+            
+            # Final data quality check before feature generation
+            if processed_data is not None and not processed_data.empty:
+                tprint_info("🔍 Performing final data quality check...")
+                final_quality_result = self.quality_framework.validate_dataframe_quality(
+                    processed_data, context=f"pre_feature_generation_{timeframe}"
+                )
+                
+                if not final_quality_result.passed:
+                    tprint_warning(f"⚠️ Final quality check issues: {len(final_quality_result.issues)} issues")
+                    for issue in final_quality_result.issues[:2]:  # Show first 2 issues
+                        tprint_warning(f"  - {issue}")
+                
+                tprint_info(f"📊 Final data quality score: {final_quality_result.quality_score:.1f}/100")
             
             # Generate features for optimization
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
@@ -629,19 +808,92 @@ class UnifiedDataDrivenPipeline:
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
+            
+            # Monitor data quality before period optimization
+            period_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                processed_data, f"pre_period_optimization_{timeframe}"
+            )
+            
             period_results = self._enhanced_period_optimization(processed_data, timeframe)
+            
+            # Cross-step validation: Input -> Period Optimization
+            validation_result_1 = self.cross_step_validator.validate_step_transition(
+                from_step="input_data",
+                to_step="period_optimization",
+                input_data=processed_data,
+                output_data=processed_data,  # Period optimization doesn't change data
+                step_metadata={"timeframe": timeframe, "period_results": period_results}
+            )
+            if not validation_result_1.get('valid', True):
+                tprint_warning(f"⚠️ Cross-step validation warning: {validation_result_1.get('message', 'Unknown issue')}")
             
             # Step 2: Advanced feature selection from 200+ feature bank
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
             feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
             
+            # Step 2.5: Use dynamic roadmap pipeline for optimized feature selection
+            if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.dynamic_roadmap_pipeline is not None:
+                tprint_info("Step 2.5: Using dynamic roadmap pipeline for optimized feature selection")
+                roadmap_results = self._apply_dynamic_roadmap_pipeline(processed_data, processed_targets)
+                if roadmap_results:
+                    feature_selection_results.update(roadmap_results)
+            
             # Step 3: Generate selected features
             tprint_info("Step 3: Generate selected features")
             selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
             
+            # Step 3.5: Apply statistical transforms using feature engineering roadmap
+            tprint_info("Step 3.5: Apply statistical transforms")
+            transformed_features_df = self._apply_statistical_transforms(selected_features_df)
+            # Monitor data quality after feature generation
+            if not selected_features_df.empty:
+                feature_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                    selected_features_df, f"post_feature_generation_{timeframe}"
+                )
+            
+            # Cross-step validation: Feature Selection -> Feature Generation
+            validation_result_2 = self.cross_step_validator.validate_step_transition(
+                from_step="feature_selection",
+                to_step="feature_generation",
+                input_data=processed_data,
+                output_data=selected_features_df,
+                step_metadata={"selected_features": len(feature_selection_results.get('selected_features', [])), "generated_features": len(selected_features_df.columns)}
+            )
+            if not validation_result_2.get('valid', True):
+                tprint_warning(f"⚠️ Cross-step validation warning: {validation_result_2.get('message', 'Unknown issue')}")
+            
+            # Apply data quality check to generated features
+            if not selected_features_df.empty:
+                tprint_info("🔍 Validating generated features quality...")
+                features_quality_result = self.quality_framework.validate_dataframe_quality(
+                    selected_features_df, context=f"generated_features_{timeframe}"
+                )
+                tprint_info(f"📊 Generated features quality score: {features_quality_result.quality_score:.1f}/100")
+                
+                # Apply memory optimization to generated features
+                tprint_info("💾 Applying memory optimization to generated features...")
+                selected_features_df, memory_optimization_report = self.unified_data_utils.optimize_data(
+                    data=selected_features_df,
+                    stage='intermediate',
+                    preserve_categorical=True
+                )
+                memory_reduction = memory_optimization_report.get('memory_reduction_percent', 0)
+                tprint_success(f"✅ Memory optimization: {memory_reduction:.1f}% reduction")
+                
+                # Check if we need streaming for large datasets
+                data_size_mb = selected_features_df.memory_usage(deep=True).sum() / 1024 / 1024
+                if data_size_mb > 100:  # If larger than 100MB, consider streaming
+                    tprint_info(f"📊 Large dataset detected ({data_size_mb:.1f}MB), enabling streaming optimizations...")
+                    # Apply streaming optimizations for large datasets
+                    selected_features_df = self.unified_data_utils.process_large_dataset(
+                        data=selected_features_df,
+                        processing_func=lambda x: x,  # Identity function for now
+                        combine_results=True
+                    )
+            
             # Step 4: Enhanced interaction generation with VectorBT optimization
             tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
-            interaction_results = self._enhanced_interaction_generation(selected_features_df, processed_targets)
+            interaction_results = self._enhanced_interaction_generation(transformed_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
@@ -665,6 +917,19 @@ class UnifiedDataDrivenPipeline:
                 period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
+            
+            # Final comprehensive quality monitoring
+            tprint_info("🔍 Performing final comprehensive quality monitoring...")
+            final_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                processed_data, f"final_pipeline_output_{timeframe}"
+            )
+            
+            # Add quality monitoring data to combined results
+            combined_results['quality_monitoring'] = {
+                'period_optimization': period_quality_monitoring if 'period_quality_monitoring' in locals() else None,
+                'feature_generation': feature_quality_monitoring if 'feature_quality_monitoring' in locals() else None,
+                'final_output': final_quality_monitoring
+            }
             
             execution_time = self.advanced_performance_monitor.end_operation("process", start_time, success=True)
             
@@ -694,6 +959,9 @@ class UnifiedDataDrivenPipeline:
             
             # Update performance stats
             self._update_performance_stats(execution_time, combined_results)
+            
+            # Update VectorBT performance stats
+            self._update_vectorbt_performance_stats()
             
             tprint_success(f"✅ Consolidated pipeline processing completed in {execution_time:.3f}s")
             tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "
@@ -749,14 +1017,111 @@ class UnifiedDataDrivenPipeline:
             self.advanced_performance_monitor.end_operation("process", start_time, success=False)
             self.advanced_performance_monitor.stop_monitoring()
             
+            # Enhanced error handling with data quality recovery
+            tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
+            
+            # Try to recover data quality if possible
+            try:
+                tprint_info("🔧 Attempting data quality recovery...")
+                if 'data' in locals() and data is not None and not data.empty:
+                    # Apply basic data cleaning as recovery attempt
+                    recovered_data, recovery_report = self.unified_data_utils.clean_data(
+                        data=data,
+                        detect_outliers=False,  # Don't remove outliers during recovery
+                        outlier_method='zscore',
+                        outlier_threshold=3.0
+                    )
+                    
+                    if recovery_report.get('success', False):
+                        tprint_success(f"✅ Data quality recovery successful: {recovery_report['final_shape']} shape")
+                        # Log recovery details
+                        if recovery_report.get('outliers_detected', 0) > 0:
+                            tprint_info(f"📊 Recovery: {recovery_report['outliers_detected']} outliers detected")
+                    else:
+                        tprint_warning("⚠️ Data quality recovery failed")
+                        
+            except Exception as recovery_error:
+                tprint_warning(f"⚠️ Data quality recovery failed: {recovery_error}")
+            
+            # Create enhanced error context with data quality information
+            error_context = {
+                'data_shape': data.shape if 'data' in locals() and data is not None else 'unknown',
+                'timeframe': timeframe,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'recovery_attempted': True
+            }
+            
+            # Add data quality metrics to error context if available
+            try:
+                if 'data' in locals() and data is not None and not data.empty:
+                    quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+                    error_context['data_quality_metrics'] = quality_metrics
+            except Exception:
+                pass  # Don't fail on quality metrics calculation
+            
             error_result = self.advanced_error_handler.handle_error(
                 e, "process", 
                 return_value=self._create_empty_result(start_time, str(e)),
-                context={'data_shape': data.shape, 'timeframe': timeframe}
+                context=error_context
             )
             
-            tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
             return error_result
+    
+    def _monitor_data_quality_throughout_pipeline(self, data: pd.DataFrame, context: str) -> Dict[str, Any]:
+        """
+        Monitor data quality throughout the pipeline using unified data utilities.
+        
+        Args:
+            data: DataFrame to monitor
+            context: Context string for logging
+            
+        Returns:
+            Dictionary with quality monitoring results
+        """
+        try:
+            # Get comprehensive quality metrics
+            quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+            
+            # Get quality validation result
+            quality_result = self.quality_framework.validate_dataframe_quality(data, context)
+            
+            # Get processing summary from unified utilities
+            processing_summary = self.unified_data_utils.get_processing_summary()
+            
+            monitoring_result = {
+                'context': context,
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'data_shape': data.shape,
+                'quality_metrics': quality_metrics,
+                'quality_result': quality_result.get_summary(),
+                'processing_capabilities': processing_summary,
+                'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
+                'overall_quality_score': quality_result.quality_score,
+                'issues_count': len(quality_result.issues),
+                'warnings_count': len(quality_result.warnings)
+            }
+            
+            # Log quality status
+            if quality_result.quality_score >= 90:
+                tprint_success(f"✅ {context}: Excellent data quality ({quality_result.quality_score:.1f}/100)")
+            elif quality_result.quality_score >= 70:
+                tprint_info(f"ℹ️ {context}: Good data quality ({quality_result.quality_score:.1f}/100)")
+            elif quality_result.quality_score >= 50:
+                tprint_warning(f"⚠️ {context}: Moderate data quality ({quality_result.quality_score:.1f}/100)")
+            else:
+                tprint_error(f"❌ {context}: Poor data quality ({quality_result.quality_score:.1f}/100)")
+            
+            return monitoring_result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data quality monitoring failed for {context}: {e}")
+            return {
+                'context': context,
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'error': str(e),
+                'data_shape': data.shape if data is not None else 'unknown'
+            }
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
@@ -907,19 +1272,187 @@ class UnifiedDataDrivenPipeline:
             return pd.DataFrame(index=data.index)
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Enhanced interaction generation with VectorBT optimization."""
+        """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
         tprint_debug("Starting enhanced interaction generation")
         
         try:
-            # Use VectorBT optimizer for interaction generation
-            interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            interactions = []
             
-            tprint_success(f"✅ Generated {len(interactions)} interactions")
+            # Use feature engineering roadmap interactions if available
+            if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
+                tprint_info("🎯 Using feature engineering roadmap interactions")
+                
+                # Prepare data for interaction generation
+                # Convert features to the expected format for interactions
+                transformed_data = self._prepare_data_for_interactions(features_df)
+                
+                # Generate interactions using the roadmap engine with regime awareness
+                interaction_df = self.interaction_engine.build_interactions(transformed_data)
+                
+                # Add regime-aware interactions if available
+                if hasattr(self.interaction_engine, 'regime_flags'):
+                    regime_interactions = self._generate_regime_aware_interactions(transformed_data)
+                    if not regime_interactions.empty:
+                        interaction_df = pd.concat([interaction_df, regime_interactions], axis=1)
+                
+                if not interaction_df.empty:
+                    # Convert to list format expected by the pipeline
+                    for col in interaction_df.columns:
+                        interactions.append({
+                            'name': col,
+                            'values': interaction_df[col].values,
+                            'type': 'roadmap_interaction',
+                            'source': 'feature_engineering_roadmap'
+                        })
+                    
+                    tprint_success(f"✅ Generated {len(interactions)} roadmap interactions")
+                else:
+                    tprint_warning("⚠️ No roadmap interactions generated")
+            
+            # Fallback to VectorBT optimizer if no roadmap interactions or as additional
+            if not interactions or self.config.feature_selection.enable_fallback_interactions:
+                tprint_info("🔄 Using VectorBT optimizer for additional interactions")
+                vectorbt_interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+                interactions.extend(vectorbt_interactions)
+            
+            tprint_success(f"✅ Generated {len(interactions)} total interactions")
             return interactions
             
         except Exception as e:
             tprint_error(f"Enhanced interaction generation failed: {e}")
             return []
+    
+    def _prepare_data_for_interactions(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Prepare data for feature engineering roadmap interactions."""
+        try:
+            # Convert feature names to the expected format for interactions
+            # The interaction engine expects features with specific prefixes like 't/p/'
+            transformed_data = features_df.copy()
+            
+            # Add prefix to feature names to match interaction engine expectations
+            feature_mapping = {}
+            for col in features_df.columns:
+                # Map common feature types to expected prefixes
+                if any(keyword in col.lower() for keyword in ['rsi', 'bollinger', 'bollz', 'atr', 'volatility']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['momentum', 'mom', 'return', 'ret']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['volume', 'vol', 'spread', 'ofi']):
+                    feature_mapping[col] = f't/p/{col}'
+                elif any(keyword in col.lower() for keyword in ['vwap', 'price', 'close', 'open', 'high', 'low']):
+                    feature_mapping[col] = f't/p/{col}'
+                else:
+                    feature_mapping[col] = f't/p/{col}'
+            
+            # Rename columns
+            transformed_data = transformed_data.rename(columns=feature_mapping)
+            
+            return transformed_data
+            
+        except Exception as e:
+            tprint_error(f"Data preparation for interactions failed: {e}")
+            return features_df
+    
+    def _apply_statistical_transforms(self, features_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply statistical transforms using feature engineering roadmap."""
+        tprint_debug("Starting statistical transforms")
+        
+        try:
+            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.transform_router is None:
+                tprint_warning("⚠️ Statistical transforms not available, returning original features")
+                return features_df
+            
+            # Initialize transform router if not already done
+            if self.transform_router is None:
+                transform_config = create_default_transform_config(features_df.columns.tolist())
+                self.transform_router = TransformRouter(
+                    transform_config,
+                    use_vectorbt=VECTORBT_AVAILABLE,
+                    use_gpu=self.config.performance.enable_gpu,
+                    enable_parallel=True
+                )
+            
+            # Apply transforms
+            transformed_df = self.transform_router.fit_transform(features_df)
+            
+            tprint_success(f"✅ Applied statistical transforms to {len(transformed_df.columns)} features")
+            return transformed_df
+            
+        except Exception as e:
+            tprint_error(f"Statistical transforms failed: {e}")
+            return features_df
+    
+    def _apply_dynamic_roadmap_pipeline(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Apply dynamic roadmap pipeline for optimized feature selection."""
+        tprint_debug("Starting dynamic roadmap pipeline")
+        
+        try:
+            if not FEATURE_ENGINEERING_ROADMAP_AVAILABLE or self.dynamic_roadmap_pipeline is None:
+                tprint_warning("⚠️ Dynamic roadmap pipeline not available")
+                return {}
+            
+            # Run the dynamic roadmap pipeline
+            roadmap_results = self.dynamic_roadmap_pipeline.run(data, targets)
+            
+            if roadmap_results and 'final' in roadmap_results:
+                final_features = roadmap_results['final']
+                tprint_success(f"✅ Dynamic roadmap pipeline selected {len(final_features.columns)} features")
+                
+                return {
+                    'roadmap_features': final_features.columns.tolist(),
+                    'roadmap_original': roadmap_results.get('original', pd.DataFrame()),
+                    'roadmap_transformed': roadmap_results.get('transformed', pd.DataFrame()),
+                    'roadmap_interactions': roadmap_results.get('interactions', pd.DataFrame()),
+                    'roadmap_final': final_features
+                }
+            else:
+                tprint_warning("⚠️ Dynamic roadmap pipeline returned no results")
+                return {}
+            
+        except Exception as e:
+            tprint_error(f"Dynamic roadmap pipeline failed: {e}")
+            return {}
+    
+    def _generate_regime_aware_interactions(self, transformed_data: pd.DataFrame) -> pd.DataFrame:
+        """Generate regime-aware interactions using the interaction engine's regime flags."""
+        try:
+            if not hasattr(self.interaction_engine, 'regime_flags'):
+                return pd.DataFrame()
+            
+            regime_flags = self.interaction_engine.regime_flags
+            
+            # Calculate regime flags
+            regime_flags.calculate_quantiles(transformed_data)
+            
+            # Get regime flags
+            high_vol_flag = regime_flags.get_high_vol_flag(transformed_data)
+            wide_spread_flag = regime_flags.get_wide_spread_flag(transformed_data)
+            
+            # Create regime-aware interactions
+            regime_interactions = {}
+            
+            # High volatility regime interactions
+            if not high_vol_flag.empty and high_vol_flag.sum() > 0:
+                # Find features that might benefit from high vol regime
+                for col in transformed_data.columns:
+                    if any(keyword in col.lower() for keyword in ['rsi', 'momentum', 'volatility']):
+                        regime_interactions[f'regime_high_vol_{col}'] = transformed_data[col] * high_vol_flag
+            
+            # Wide spread regime interactions
+            if not wide_spread_flag.empty and wide_spread_flag.sum() > 0:
+                # Find features that might benefit from wide spread regime
+                for col in transformed_data.columns:
+                    if any(keyword in col.lower() for keyword in ['bollinger', 'spread', 'microstructure']):
+                        regime_interactions[f'regime_wide_spread_{col}'] = transformed_data[col] * wide_spread_flag
+            
+            if regime_interactions:
+                return pd.DataFrame(regime_interactions, index=transformed_data.index)
+            else:
+                return pd.DataFrame()
+                
+        except Exception as e:
+            tprint_error(f"Regime-aware interactions generation failed: {e}")
+            return pd.DataFrame()
     
     def _htf_interaction_generation(self, data: pd.DataFrame, features_df: pd.DataFrame, 
                                   targets: Optional[pd.Series]) -> List[Any]:
@@ -1920,6 +2453,99 @@ class UnifiedDataDrivenPipeline:
             warnings=[]
         )
     
+    async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str, 
+                               interval: str, batch_id: Optional[str] = None,
+                               metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Store klines data using the enhanced data loader.
+        
+        Args:
+            data: Klines DataFrame with OHLCV data
+            symbol: Trading symbol (e.g., "ETHUSDT")
+            exchange: Exchange name (e.g., "binance")
+            interval: Data interval (e.g., "1m")
+            batch_id: Optional batch identifier
+            metadata: Additional metadata to store
+            
+        Returns:
+            True if storage was successful, False otherwise
+        """
+        try:
+            tprint_info(f"📦 Storing klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.store_klines_data(
+                data, symbol, exchange, interval, batch_id, metadata
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to store klines data: {e}")
+            return False
+
+    async def load_klines_data(self, symbol: str, exchange: str, interval: str,
+                              start_time: Optional[datetime] = None,
+                              end_time: Optional[datetime] = None,
+                              batch_id: Optional[str] = None) -> pd.DataFrame:
+        """
+        Load klines data using the enhanced data loader.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            batch_id: Optional specific batch to load
+            
+        Returns:
+            DataFrame containing klines data
+        """
+        try:
+            tprint_info(f"📥 Loading klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.load_klines_data(
+                symbol, exchange, interval, start_time, end_time, batch_id
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to load klines data: {e}")
+            return pd.DataFrame()
+
+    def get_klines_storage_stats(self) -> Dict[str, Any]:
+        """Get klines storage statistics."""
+        try:
+            return self.advanced_data_loader.get_klines_storage_stats()
+        except Exception as e:
+            tprint_error(f"❌ Failed to get storage stats: {e}")
+            return {"error": str(e)}
+
+    def list_available_klines_data(self) -> List[Dict[str, Any]]:
+        """List all available klines data."""
+        try:
+            return self.advanced_data_loader.list_available_klines_data()
+        except Exception as e:
+            tprint_error(f"❌ Failed to list available data: {e}")
+            return []
+
+    async def update_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str,
+                                interval: str, append_mode: bool = True) -> bool:
+        """
+        Update existing klines data.
+        
+        Args:
+            data: New klines data
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            append_mode: If True, append to existing data; if False, replace
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            tprint_info(f"🔄 Updating klines data for {symbol} on {exchange} ({interval})")
+            return await self.advanced_data_loader.update_klines_data(
+                data, symbol, exchange, interval, append_mode
+            )
+        except Exception as e:
+            tprint_error(f"❌ Failed to update klines data: {e}")
+            return False
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()
@@ -1949,6 +2575,23 @@ class UnifiedDataDrivenPipeline:
         stats['advanced_artifact_manager'] = {
             'artifact_registry_size': len(self.advanced_artifact_manager.get_artifact_registry()),
             'save_history_size': len(self.advanced_artifact_manager.get_save_history())
+        }
+        
+        # Add unified data utilities stats
+        stats['unified_data_utils'] = self.unified_data_utils.get_processing_summary()
+        stats['data_processor'] = {
+            'optimization_capabilities': list(self.data_processor.get_optimal_dtypes_for_features().keys()),
+            'memory_optimization_enabled': True,
+            'timestamp_regularization_enabled': True
+        }
+        stats['quality_framework'] = {
+            'validation_rules': list(self.quality_framework.validation_rules.keys()),
+            'quality_policies': self.quality_framework.quality_policies,
+            'duplicate_analyzer_available': hasattr(self.quality_framework, 'duplicate_analyzer') and self.quality_framework.duplicate_analyzer is not None
+        }
+        stats['cross_step_validator'] = {
+            'validation_enabled': True,
+            'step_transition_tracking': True
         }
         
         return stats
@@ -1989,6 +2632,37 @@ class UnifiedDataDrivenPipeline:
         self.advanced_performance_monitor.reset_stats()
         self.advanced_data_loader.reset_cache_metrics()
         self.advanced_error_handler.reset_error_stats()
+    
+    def _update_vectorbt_performance_stats(self):
+        """Update VectorBT performance statistics."""
+        try:
+            # Update VectorBT operations count
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'vectorbt_operations'):
+                    self.performance_stats['vectorbt_operations'] += getattr(self.interaction_engine, 'vectorbt_operations', 0)
+            
+            if hasattr(self, 'transform_router') and self.transform_router is not None:
+                if hasattr(self.transform_router, 'vectorbt_operations'):
+                    self.performance_stats['vectorbt_operations'] += getattr(self.transform_router, 'vectorbt_operations', 0)
+            
+            # Update GPU operations count
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'gpu_operations'):
+                    self.performance_stats['gpu_operations'] += getattr(self.interaction_engine, 'gpu_operations', 0)
+            
+            if hasattr(self, 'transform_router') and self.transform_router is not None:
+                if hasattr(self.transform_router, 'gpu_operations'):
+                    self.performance_stats['gpu_operations'] += getattr(self.transform_router, 'gpu_operations', 0)
+            
+            # Update cache statistics
+            if hasattr(self, 'interaction_engine') and self.interaction_engine is not None:
+                if hasattr(self.interaction_engine, 'cache_hits'):
+                    self.performance_stats['cache_hits'] += getattr(self.interaction_engine, 'cache_hits', 0)
+                if hasattr(self.interaction_engine, 'cache_misses'):
+                    self.performance_stats['cache_misses'] += getattr(self.interaction_engine, 'cache_misses', 0)
+            
+        except Exception as e:
+            tprint_warning(f"Failed to update VectorBT performance stats: {e}")
 
 
 # Convenience functions

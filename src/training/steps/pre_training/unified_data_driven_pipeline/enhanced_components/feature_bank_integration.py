@@ -298,8 +298,8 @@ class FeatureBankIntegration:
         """Generate features using the Feature Bank system."""
         try:
             if not FEATURE_BANK_AVAILABLE or not self.feature_bank:
-                tprint_warning("⚠️ Feature Bank not available, using fallback feature generation")
-                return self._generate_fallback_features(data)
+                tprint_error("❌ Feature Bank not available - this is required for feature generation")
+                return None
             
             # Standardize column names to lowercase for consistent feature generation
             data_for_features = data.copy()
@@ -311,8 +311,8 @@ class FeatureBankIntegration:
             feature_data = self.feature_bank.generate_features(data_for_features)
             
             if feature_data is None or feature_data.empty:
-                tprint_warning("⚠️ Feature Bank returned empty features, using fallback")
-                return self._generate_fallback_features(data)
+                tprint_error("❌ Feature Bank returned empty features - this is not expected")
+                return None
             
             # Align with original data index
             feature_data = feature_data.reindex(data.index)
@@ -326,62 +326,8 @@ class FeatureBankIntegration:
             
         except Exception as e:
             tprint_error(f"❌ Feature Bank generation failed: {e}")
-            return self._generate_fallback_features(data)
+            return None
     
-    def _generate_fallback_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate fallback features when Feature Bank is not available."""
-        tprint_debug("🔧 Generating fallback features")
-        
-        try:
-            features_df = pd.DataFrame(index=data.index)
-            
-            # Basic technical indicators
-            if 'close' in data.columns:
-                close_prices = data['close']
-                
-                # Moving averages
-                for period in [5, 10, 20, 50]:
-                    features_df[f'sma_{period}'] = close_prices.rolling(period).mean()
-                    features_df[f'ema_{period}'] = close_prices.ewm(span=period).mean()
-                
-                # Momentum indicators
-                features_df['rsi_14'] = self._calculate_rsi(close_prices, 14)
-                features_df['macd'] = self._calculate_macd(close_prices)
-                features_df['macd_signal'] = self._calculate_macd_signal(close_prices)
-                
-                # Volatility indicators
-                features_df['volatility_20'] = close_prices.rolling(20).std()
-                features_df['bb_upper'] = close_prices.rolling(20).mean() + 2 * features_df['volatility_20']
-                features_df['bb_lower'] = close_prices.rolling(20).mean() - 2 * features_df['volatility_20']
-                
-                # Price-based features
-                features_df['price_change'] = close_prices.pct_change()
-                features_df['price_change_5'] = close_prices.pct_change(5)
-                features_df['price_change_20'] = close_prices.pct_change(20)
-                
-                # Volume features
-                if 'volume' in data.columns:
-                    features_df['volume_sma_20'] = data['volume'].rolling(20).mean()
-                    features_df['volume_ratio'] = data['volume'] / features_df['volume_sma_20']
-                    features_df['price_volume'] = close_prices * data['volume']
-            
-            # High-low features
-            if 'high' in data.columns and 'low' in data.columns:
-                features_df['hl_ratio'] = data['high'] / data['low']
-                features_df['hl_range'] = data['high'] - data['low']
-                features_df['hl_range_norm'] = features_df['hl_range'] / data['close']
-            
-            # Open-close features
-            if 'open' in data.columns and 'close' in data.columns:
-                features_df['oc_ratio'] = data['close'] / data['open']
-                features_df['oc_change'] = (data['close'] - data['open']) / data['open']
-            
-            tprint_success(f"✅ Generated {len(features_df.columns)} fallback features")
-            return features_df
-            
-        except Exception as e:
-            tprint_error(f"❌ Fallback feature generation failed: {e}")
-            return pd.DataFrame(index=data.index)
     
     def _apply_feature_filtering(
         self,
@@ -512,36 +458,6 @@ class FeatureBankIntegration:
         except:
             return 0.0
     
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except:
-            return pd.Series(index=prices.index, dtype=float)
-    
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
-        """Calculate MACD indicator."""
-        try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except:
-            return pd.Series(index=prices.index, dtype=float)
-    
-    def _calculate_macd_signal(self, prices: pd.Series, signal: int = 9) -> pd.Series:
-        """Calculate MACD signal line."""
-        try:
-            macd = self._calculate_macd(prices)
-            signal_line = macd.ewm(span=signal).mean()
-            return signal_line
-        except:
-            return pd.Series(index=prices.index, dtype=float)
     
     def generate_multi_horizon_targets(
         self,

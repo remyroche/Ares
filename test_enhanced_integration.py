@@ -119,7 +119,7 @@ def test_enhanced_pipeline():
         print("  Testing feature bank integration...")
         feature_bank_stats = stats.get('feature_bank_integration', {})
         print(f"    Total generations: {feature_bank_stats.get('total_generations', 0)}")
-        print(f"    Features generated: {feature_bank_stats.get('features_generated', 0)}")
+        print(f"    Features generated: {feature_bank_stats.get('features_generated', 0)} from Feature Bank (no artificial limits)")
         print(f"    Cache hits: {feature_bank_stats.get('cache_hits', 0)}")
         print(f"    Cache misses: {feature_bank_stats.get('cache_misses', 0)}")
         
@@ -205,11 +205,11 @@ def test_individual_components():
         result = feature_bank.generate_features_for_optimization(data)
         
         if result.success:
-            print(f"  ✅ Generated {result.n_features_generated} features")
+            print(f"  ✅ Generated {result.n_features_generated} features from Feature Bank")
             print(f"  Cache hit: {result.cache_hit}")
             print(f"  Memory usage: {result.memory_usage_mb:.1f} MB")
         else:
-            print(f"  ❌ Feature generation failed: {result.error_message}")
+            print(f"  ❌ Feature Bank generation failed: {result.error_message}")
         
     except Exception as e:
         print(f"  ❌ Feature bank integration test failed: {e}")

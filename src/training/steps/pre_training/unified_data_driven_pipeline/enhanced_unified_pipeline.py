@@ -635,8 +635,8 @@ class EnhancedUnifiedDataDrivenPipeline:
             )
             
             if not feature_generation_result.success:
-                tprint_warning("⚠️ Feature Bank generation failed, falling back to individual feature generation")
-                return self._generate_fallback_features(data, selection_result)
+                tprint_error("❌ Feature Bank generation failed - this is required for feature generation")
+                return pd.DataFrame(index=data.index)
             
             # Filter to selected features
             selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
@@ -659,108 +659,7 @@ class EnhancedUnifiedDataDrivenPipeline:
             self.error_handler.handle_error(e, ErrorCategory.COMPUTATION, ErrorSeverity.HIGH)
             return pd.DataFrame(index=data.index)
     
-    def _generate_fallback_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate fallback features when Feature Bank is not available."""
-        tprint_debug("Generating fallback features")
-        
-        try:
-            # Create feature DataFrame
-            features_df = pd.DataFrame(index=data.index)
-            
-            # Generate features based on selection result
-            for feature_score in selection_result.selected_features:
-                feature_name = feature_score.feature_name
-                
-                # Generate the feature based on its name and category
-                feature_series = self._generate_single_feature(data, feature_name, feature_score.category)
-                
-                if feature_series is not None:
-                    features_df[feature_name] = feature_series
-            
-            tprint_success(f"✅ Generated {len(features_df.columns)} fallback features")
-            return features_df
-            
-        except Exception as e:
-            tprint_error(f"❌ Fallback feature generation failed: {e}")
-            return pd.DataFrame(index=data.index)
     
-    def _generate_single_feature(self, data: pd.DataFrame, feature_name: str, category: str) -> Optional[pd.Series]:
-        """Generate a single feature based on its name and category."""
-        try:
-            if 'close' not in data.columns:
-                return None
-            
-            close_prices = data['close']
-            feature_series = None
-            
-            # Generate feature based on category and name
-            if category == 'momentum':
-                if 'rsi' in feature_name.lower():
-                    feature_series = self._calculate_rsi(close_prices, 14)
-                elif 'macd' in feature_name.lower():
-                    feature_series = self._calculate_macd(close_prices)
-                else:
-                    feature_series = close_prices.pct_change(20)  # Default momentum
-                    
-            elif category == 'volatility':
-                if 'vol' in feature_name.lower():
-                    feature_series = close_prices.rolling(20).std()
-                else:
-                    feature_series = close_prices.rolling(20).var()
-                    
-            elif category == 'trend':
-                if 'sma' in feature_name.lower():
-                    period = int(feature_name.split('_')[-1]) if feature_name.split('_')[-1].isdigit() else 20
-                    feature_series = close_prices.rolling(period).mean()
-                elif 'ema' in feature_name.lower():
-                    period = int(feature_name.split('_')[-1]) if feature_name.split('_')[-1].isdigit() else 12
-                    feature_series = close_prices.ewm(span=period).mean()
-                else:
-                    feature_series = close_prices.rolling(20).mean()  # Default trend
-                    
-            elif category == 'volume':
-                if 'volume' in data.columns:
-                    feature_series = data['volume'].rolling(20).mean()
-                else:
-                    feature_series = pd.Series(0, index=close_prices.index)
-                    
-            elif category == 'returns':
-                if 'return' in feature_name.lower():
-                    feature_series = close_prices.pct_change()
-                else:
-                    feature_series = close_prices.pct_change()
-                    
-            else:
-                # Default feature generation
-                feature_series = close_prices.rolling(20).mean()
-            
-            return feature_series
-            
-        except Exception as e:
-            tprint_debug(f"Feature generation failed for {feature_name}: {e}")
-            return None
-    
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-            rs = gain / loss
-            rsi = 100 - (100 / (1 + rs))
-            return rsi
-        except:
-            return pd.Series(index=prices.index, dtype=float)
-    
-    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
-        """Calculate MACD indicator."""
-        try:
-            ema_fast = prices.ewm(span=fast).mean()
-            ema_slow = prices.ewm(span=slow).mean()
-            macd = ema_fast - ema_slow
-            return macd
-        except:
-            return pd.Series(index=prices.index, dtype=float)
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization."""

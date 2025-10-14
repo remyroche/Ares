@@ -626,11 +626,26 @@ class AdvancedLookbackOptimizer:
                 
                 return score
             
+            # Get optimization parameters from kwargs
+            n_trials = kwargs.get('n_trials', 100)
+            early_stopping_patience = kwargs.get('early_stopping_patience', 10)
+            coarse_grid_trials = kwargs.get('coarse_grid_trials', 25)
+            fine_grid_trials = kwargs.get('fine_grid_trials', 25)
+            tpe_trials = kwargs.get('tpe_trials', 50)
+            
+            # Update optimizer configuration
+            if hasattr(self.bayesian_tpe_optimizer, 'config'):
+                self.bayesian_tpe_optimizer.config.n_trials = n_trials
+                self.bayesian_tpe_optimizer.config.early_stopping_patience = early_stopping_patience
+                self.bayesian_tpe_optimizer.config.coarse_grid_trials = coarse_grid_trials
+                self.bayesian_tpe_optimizer.config.fine_grid_trials = fine_grid_trials
+                self.bayesian_tpe_optimizer.config.tpe_trials = tpe_trials
+            
             # Run optimization
             self.bayesian_tpe_optimizer.optimize(
                 objective,
                 search_space,
-                n_trials=min(100, max_lookback - min_lookback + 1)
+                n_trials=min(n_trials, max_lookback - min_lookback + 1)
             )
             
             # Get best parameters

@@ -1021,10 +1021,17 @@ class UnifiedDataDrivenPipeline:
             use_bayesian_opt = mode_constraints.get('use_bayesian_optimization', True)
             use_enhanced_opt = mode_constraints.get('use_enhanced_optimization', True)
             optimization_method = mode_constraints.get('optimization_method', 'enhanced_bayesian_tpe')
+            n_trials = mode_constraints.get('n_trials', 100)
             n_bootstrap = mode_constraints.get('n_bootstrap_samples', 100)
             cv_folds = mode_constraints.get('cv_folds', 5)
+            early_stopping_patience = mode_constraints.get('early_stopping_patience', 10)
+            coarse_grid_trials = mode_constraints.get('coarse_grid_trials', 25)
+            fine_grid_trials = mode_constraints.get('fine_grid_trials', 25)
+            tpe_trials = mode_constraints.get('tpe_trials', 50)
             
-            tprint_debug(f"⚙️ Optimization settings: bayesian={use_bayesian_opt}, bootstrap={n_bootstrap}, cv_folds={cv_folds}")
+            tprint_debug(f"⚙️ Optimization settings: bayesian={use_bayesian_opt}, method={optimization_method}, trials={n_trials}")
+            tprint_debug(f"⚙️ Grid settings: coarse={coarse_grid_trials}, fine={fine_grid_trials}, tpe={tpe_trials}")
+            tprint_debug(f"⚙️ Stopping: patience={early_stopping_patience}, bootstrap={n_bootstrap}, cv_folds={cv_folds}")
             tprint_debug(f"🎯 Directions: longs={optimize_longs}, shorts={optimize_shorts}")
             
             # Separate optimization for long and short directions
@@ -1053,7 +1060,12 @@ class UnifiedDataDrivenPipeline:
                         'cv_folds': cv_folds,
                         'use_bayesian_optimization': use_bayesian_opt,
                         'use_enhanced_optimization': use_enhanced_opt,
-                        'optimization_method': optimization_method
+                        'optimization_method': optimization_method,
+                        'n_trials': n_trials,
+                        'early_stopping_patience': early_stopping_patience,
+                        'coarse_grid_trials': coarse_grid_trials,
+                        'fine_grid_trials': fine_grid_trials,
+                        'tpe_trials': tpe_trials
                     }
                     
                     if use_nested_cv:
@@ -1227,31 +1239,46 @@ class UnifiedDataDrivenPipeline:
         """Create mode-aware constraints for optimization based on execution mode."""
         constraints = {
             'light': {
-                'use_bayesian_optimization': False,
-                'use_enhanced_optimization': False,
-                'optimization_method': 'enhanced_grid_search',  # Use enhanced grid for light mode
+                'use_bayesian_optimization': True,
+                'use_enhanced_optimization': True,
+                'optimization_method': 'enhanced_bayesian_tpe',  # Always use Bayesian TPE
+                'n_trials': 25,  # Reduced iterations for light mode
                 'n_bootstrap_samples': 20,
                 'cv_folds': 3,
                 'max_features': 50,
-                'max_lookback': 30
+                'max_lookback': 30,
+                'early_stopping_patience': 5,  # Earlier stopping for light mode
+                'coarse_grid_trials': 10,  # Reduced grid trials
+                'fine_grid_trials': 10,
+                'tpe_trials': 5
             },
             'blank': {
-                'use_bayesian_optimization': False,
-                'use_enhanced_optimization': False,
-                'optimization_method': 'grid_search',  # Use basic grid for blank mode
+                'use_bayesian_optimization': True,
+                'use_enhanced_optimization': True,
+                'optimization_method': 'enhanced_bayesian_tpe',  # Always use Bayesian TPE
+                'n_trials': 15,  # Minimal iterations for blank mode
                 'n_bootstrap_samples': 10,
                 'cv_folds': 2,
                 'max_features': 20,
-                'max_lookback': 20
+                'max_lookback': 20,
+                'early_stopping_patience': 3,  # Very early stopping for blank mode
+                'coarse_grid_trials': 5,  # Minimal grid trials
+                'fine_grid_trials': 5,
+                'tpe_trials': 5
             },
             'full': {
                 'use_bayesian_optimization': True,
                 'use_enhanced_optimization': True,
-                'optimization_method': 'enhanced_bayesian_tpe',  # Use enhanced TPE for full mode
+                'optimization_method': 'enhanced_bayesian_tpe',  # Always use Bayesian TPE
+                'n_trials': 100,  # Full iterations for full mode
                 'n_bootstrap_samples': 100,
                 'cv_folds': 5,
                 'max_features': 200,
-                'max_lookback': 100
+                'max_lookback': 100,
+                'early_stopping_patience': 15,  # More patience for full mode
+                'coarse_grid_trials': 25,  # Full grid trials
+                'fine_grid_trials': 25,
+                'tpe_trials': 50
             }
         }
         
@@ -1276,33 +1303,65 @@ class UnifiedDataDrivenPipeline:
         tprint_debug(f"🎯 Optimizing {feature} for {direction} direction using {target_column}")
         
         try:
-            # Try VectorBT optimization first if available
-            if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
-                tprint_debug(f"🚀 Using VectorBT optimization for {feature} ({direction})")
+            # Use advanced lookback optimizer with enhanced Bayesian TPE
+            if hasattr(self, 'advanced_lookback_optimizer') and self.advanced_lookback_optimizer:
+                tprint_debug(f"🚀 Using advanced lookback optimizer for {feature} ({direction})")
                 try:
-                    result = self.vectorbt_optimizer.optimize_feature_lookback(
-                        data,
-                        feature,
+                    # Determine optimization method from kwargs
+                    optimization_method = optimizer_kwargs.get('optimization_method', 'enhanced_bayesian_tpe')
+                    
+                    # Convert string method to enum
+                    from .enhanced_components.advanced_lookback_optimizer import OptimizationMethod
+                    if optimization_method == 'enhanced_bayesian_tpe':
+                        method = OptimizationMethod.ENHANCED_BAYESIAN_TPE
+                    elif optimization_method == 'enhanced_grid_search':
+                        method = OptimizationMethod.ENHANCED_GRID_SEARCH
+                    elif optimization_method == 'bayesian_tpe':
+                        method = OptimizationMethod.BAYESIAN_TPE
+                    elif optimization_method == 'grid_search':
+                        method = OptimizationMethod.GRID_SEARCH
+                    else:
+                        method = OptimizationMethod.ENHANCED_BAYESIAN_TPE
+                    
+                    # Prepare data for optimization
+                    feature_data = data[[feature]].copy()
+                    feature_data[target_column] = data[target_column]
+                    
+                    # Run optimization
+                    result = self.advanced_lookback_optimizer.optimize_features_parallel_batch(
+                        feature_data,
+                        [feature],
                         target_column,
                         lookback_range=lookback_range,
-                        regularization_settings=optimizer_kwargs.get('regularization_settings', {})
+                        method=method,
+                        regularization_settings=optimizer_kwargs.get('regularization_settings', {}),
+                        **optimizer_kwargs
                     )
                     
-                    tprint_debug(f"✅ VectorBT optimization completed: period={result.best_lookback_period}, score={result.best_score:.4f}")
-                    
-                    # Convert VectorBT result to expected format
-                    return {
-                        'best_lookback_period': result.best_lookback_period,
-                        'best_score': result.best_score,
-                        'optimization_method': getattr(result, 'optimization_method', 'vectorbt'),
-                        'target_column': target_column,
-                        'direction': direction,
-                        'total_trials': getattr(result, 'total_trials', 1),
-                        'optimization_time': getattr(result, 'optimization_time', 0.0),
-                        'convergence_achieved': getattr(result, 'convergence_achieved', True)
-                    }
+                    if result and len(result) > 0:
+                        opt_result = result[0]
+                        tprint_debug(f"✅ Advanced optimization completed: period={opt_result.optimal_lookback}, score={opt_result.score:.4f}")
+                        
+                        # Convert result to expected format
+                        return {
+                            'best_lookback_period': opt_result.optimal_lookback,
+                            'best_score': opt_result.score,
+                            'optimization_method': opt_result.method,
+                            'target_column': target_column,
+                            'direction': direction,
+                            'total_trials': getattr(opt_result, 'total_trials', 1),
+                            'optimization_time': getattr(opt_result, 'execution_time', 0.0),
+                            'convergence_achieved': getattr(opt_result, 'success', True)
+                        }
+                    else:
+                        tprint_warning(f"⚠️ Advanced optimization returned no results for {feature}")
+                        return self._fallback_optimization(
+                            data, feature, target_column, lookback_range, 
+                            optimizer_kwargs, use_bayesian_opt, execution_mode
+                        )
+                        
                 except Exception as e:
-                    tprint_warning(f"⚠️ VectorBT optimization failed, falling back to standard: {e}")
+                    tprint_warning(f"⚠️ Advanced optimization failed, falling back to standard: {e}")
                     return self._fallback_optimization(
                         data, feature, target_column, lookback_range, 
                         optimizer_kwargs, use_bayesian_opt, execution_mode

@@ -1,0 +1,428 @@
+"""
+Advanced Error Handling Framework for Unified Data-Driven Pipeline.
+
+This module provides comprehensive error handling infrastructure similar to
+FeatureLookbackOptimizationComponent but adapted for the unified pipeline.
+"""
+
+import logging
+import traceback
+from typing import Any, Optional, Dict, List, Callable, Type, Union
+from dataclasses import dataclass
+from enum import Enum
+from functools import wraps
+from datetime import datetime
+
+# Import utility modules
+from src.utils.common_utilities import CommonUtilities
+from src.utils.serialization_utils import UniversalSerializer
+
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
+import numpy as np
+import pandas as pd
+
+
+# Exception classes for fast failing
+class PipelineError(Exception):
+    """Base exception for pipeline-related errors."""
+    pass
+
+
+class DataValidationError(PipelineError):
+    """Exception raised when data validation fails."""
+    pass
+
+
+class FeatureGenerationError(PipelineError):
+    """Exception raised when feature generation fails."""
+    pass
+
+
+class OptimizationError(PipelineError):
+    """Exception raised when optimization fails."""
+    pass
+
+
+class CacheError(PipelineError):
+    """Exception raised when cache operations fail."""
+    pass
+
+
+class MemoryError(PipelineError):
+    """Exception raised when memory operations fail."""
+    pass
+
+
+class ErrorSeverity(Enum):
+    """Error severity levels."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ErrorCategory(Enum):
+    """Error categories."""
+    VALIDATION = "validation"
+    OPTIMIZATION = "optimization"
+    DATA_PROCESSING = "data_processing"
+    FEATURE_GENERATION = "feature_generation"
+    FILE_IO = "file_io"
+    MEMORY = "memory"
+    NETWORK = "network"
+    CONFIGURATION = "configuration"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class ErrorDetails:
+    """Detailed error information."""
+    error: Exception
+    severity: ErrorSeverity
+    category: ErrorCategory
+    operation: str
+    timestamp: str
+    context: Dict[str, Any]
+    stack_trace: str
+    recoverable: bool = False
+
+
+class AdvancedErrorHandler:
+    """
+    Advanced error handler for unified pipeline.
+    
+    Provides comprehensive error handling with fast failing,
+    detailed logging, and utility functions for safe operations.
+    """
+
+    def __init__(self, logger=None, component_name: str = "UnifiedDataDrivenPipeline"):
+        """Initialize the advanced error handler."""
+        tprint(f"🔧 Initializing AdvancedErrorHandler for {component_name}...")
+        self.logger = logger or logging.getLogger(__name__)
+        self.component_name = component_name
+        self.common_utils = CommonUtilities()
+        self.serializer = UniversalSerializer()
+
+        # Error tracking
+        self.error_count = 0
+        self.error_history: List[ErrorDetails] = []
+        self.max_error_history = 1000
+
+        tprint_success(f"✅ AdvancedErrorHandler initialized for {component_name}")
+
+    def handle_error(self, error: Exception, operation: str, 
+                    return_value: Any = None, context: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        Handle an error with comprehensive logging and tracking.
+        
+        Args:
+            error: The exception that occurred
+            operation: The operation that failed
+            return_value: Value to return if error is handled
+            context: Additional context information
+            
+        Returns:
+            The return_value if provided, otherwise raises the error
+        """
+        self.error_count += 1
+        
+        # Determine error severity and category
+        severity = self._classify_error_severity(error)
+        category = self._classify_error_category(error)
+        
+        # Create error details
+        error_details = ErrorDetails(
+            error=error,
+            severity=severity,
+            category=category,
+            operation=operation,
+            timestamp=datetime.now().isoformat(),
+            context=context or {},
+            stack_trace=traceback.format_exc(),
+            recoverable=self._is_recoverable(error)
+        )
+        
+        # Add to error history
+        self.error_history.append(error_details)
+        if len(self.error_history) > self.max_error_history:
+            self.error_history = self.error_history[-self.max_error_history:]
+        
+        # Log error based on severity
+        self._log_error(error_details)
+        
+        # For critical errors, always raise
+        if severity == ErrorSeverity.CRITICAL:
+            tprint_error(f"❌ CRITICAL ERROR in {operation}: {str(error)}")
+            raise error
+        
+        # For high severity errors, raise unless return_value is provided
+        if severity == ErrorSeverity.HIGH:
+            if return_value is not None:
+                tprint_warning(f"⚠️ HIGH SEVERITY ERROR in {operation}: {str(error)} - using return value")
+                return return_value
+            else:
+                tprint_error(f"❌ HIGH SEVERITY ERROR in {operation}: {str(error)}")
+                raise error
+        
+        # For medium and low severity, use return_value if provided
+        if return_value is not None:
+            tprint_warning(f"⚠️ {severity.value.upper()} ERROR in {operation}: {str(error)} - using return value")
+            return return_value
+        
+        # Otherwise raise the error
+        tprint_error(f"❌ {severity.value.upper()} ERROR in {operation}: {str(error)}")
+        raise error
+
+    def safe_execute(self, func: Callable, *args, return_value: Any = None, 
+                    operation: str = "unknown", context: Optional[Dict[str, Any]] = None, **kwargs) -> Any:
+        """
+        Safely execute a function with error handling.
+        
+        Args:
+            func: Function to execute
+            *args: Positional arguments for the function
+            return_value: Value to return if function fails
+            operation: Operation name for error reporting
+            context: Additional context information
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Function result or return_value if error occurs
+        """
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            return self.handle_error(e, operation, return_value, context)
+
+    def safe_dataframe_operation(self, operation: str, data: pd.DataFrame, 
+                               func: Callable, *args, **kwargs) -> pd.DataFrame:
+        """
+        Safely execute a DataFrame operation.
+        
+        Args:
+            operation: Operation name for error reporting
+            data: DataFrame to operate on
+            func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result DataFrame or original DataFrame if error occurs
+        """
+        try:
+            return func(data, *args, **kwargs)
+        except Exception as e:
+            tprint_warning(f"⚠️ DataFrame operation {operation} failed: {str(e)}")
+            return data
+
+    def safe_numpy_operation(self, operation: str, data: np.ndarray, 
+                           func: Callable, *args, **kwargs) -> np.ndarray:
+        """
+        Safely execute a NumPy operation.
+        
+        Args:
+            operation: Operation name for error reporting
+            data: NumPy array to operate on
+            func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result array or original array if error occurs
+        """
+        try:
+            return func(data, *args, **kwargs)
+        except Exception as e:
+            tprint_warning(f"⚠️ NumPy operation {operation} failed: {str(e)}")
+            return data
+
+    def _classify_error_severity(self, error: Exception) -> ErrorSeverity:
+        """Classify error severity based on error type and message."""
+        error_type = type(error).__name__
+        error_message = str(error).lower()
+        
+        # Critical errors
+        if any(keyword in error_message for keyword in ['critical', 'fatal', 'cannot proceed', 'abort']):
+            return ErrorSeverity.CRITICAL
+        
+        if error_type in ['MemoryError', 'SystemError', 'KeyboardInterrupt']:
+            return ErrorSeverity.CRITICAL
+        
+        # High severity errors
+        if any(keyword in error_message for keyword in ['failed', 'error', 'exception', 'invalid']):
+            return ErrorSeverity.HIGH
+        
+        if error_type in ['ValueError', 'TypeError', 'KeyError', 'AttributeError']:
+            return ErrorSeverity.HIGH
+        
+        # Medium severity errors
+        if any(keyword in error_message for keyword in ['warning', 'caution', 'unexpected']):
+            return ErrorSeverity.MEDIUM
+        
+        if error_type in ['UserWarning', 'DeprecationWarning', 'FutureWarning']:
+            return ErrorSeverity.MEDIUM
+        
+        # Low severity errors
+        return ErrorSeverity.LOW
+
+    def _classify_error_category(self, error: Exception) -> ErrorCategory:
+        """Classify error category based on error type and message."""
+        error_type = type(error).__name__
+        error_message = str(error).lower()
+        
+        if 'validation' in error_message or error_type in ['DataValidationError', 'ValidationError']:
+            return ErrorCategory.VALIDATION
+        
+        if 'optimization' in error_message or error_type in ['OptimizationError']:
+            return ErrorCategory.OPTIMIZATION
+        
+        if 'feature' in error_message or error_type in ['FeatureGenerationError']:
+            return ErrorCategory.FEATURE_GENERATION
+        
+        if 'data' in error_message or error_type in ['DataError', 'DataFrameError']:
+            return ErrorCategory.DATA_PROCESSING
+        
+        if 'cache' in error_message or error_type in ['CacheError']:
+            return ErrorCategory.FILE_IO
+        
+        if 'memory' in error_message or error_type in ['MemoryError']:
+            return ErrorCategory.MEMORY
+        
+        if 'network' in error_message or error_type in ['ConnectionError', 'TimeoutError']:
+            return ErrorCategory.NETWORK
+        
+        if 'config' in error_message or error_type in ['ConfigurationError']:
+            return ErrorCategory.CONFIGURATION
+        
+        return ErrorCategory.UNKNOWN
+
+    def _is_recoverable(self, error: Exception) -> bool:
+        """Determine if an error is recoverable."""
+        error_type = type(error).__name__
+        error_message = str(error).lower()
+        
+        # Non-recoverable errors
+        if error_type in ['MemoryError', 'SystemError', 'KeyboardInterrupt']:
+            return False
+        
+        if any(keyword in error_message for keyword in ['critical', 'fatal', 'cannot proceed']):
+            return False
+        
+        # Recoverable errors
+        if error_type in ['ValueError', 'TypeError', 'KeyError', 'AttributeError']:
+            return True
+        
+        if any(keyword in error_message for keyword in ['warning', 'caution', 'unexpected']):
+            return True
+        
+        return True
+
+    def _log_error(self, error_details: ErrorDetails):
+        """Log error based on severity."""
+        log_message = f"[{error_details.severity.value.upper()}] {error_details.operation}: {str(error_details.error)}"
+        
+        if error_details.severity == ErrorSeverity.CRITICAL:
+            self.logger.critical(log_message, extra={'error_details': error_details.__dict__})
+            tprint_error(f"❌ CRITICAL: {log_message}")
+        elif error_details.severity == ErrorSeverity.HIGH:
+            self.logger.error(log_message, extra={'error_details': error_details.__dict__})
+            tprint_error(f"❌ ERROR: {log_message}")
+        elif error_details.severity == ErrorSeverity.MEDIUM:
+            self.logger.warning(log_message, extra={'error_details': error_details.__dict__})
+            tprint_warning(f"⚠️ WARNING: {log_message}")
+        else:
+            self.logger.info(log_message, extra={'error_details': error_details.__dict__})
+            tprint_debug(f"ℹ️ INFO: {log_message}")
+
+    def get_error_stats(self) -> Dict[str, Any]:
+        """Get error statistics."""
+        if not self.error_history:
+            return {
+                'total_errors': 0,
+                'error_count': self.error_count,
+                'severity_distribution': {},
+                'category_distribution': {},
+                'recent_errors': []
+            }
+        
+        # Calculate severity distribution
+        severity_counts = {}
+        for error in self.error_history:
+            severity = error.severity.value
+            severity_counts[severity] = severity_counts.get(severity, 0) + 1
+        
+        # Calculate category distribution
+        category_counts = {}
+        for error in self.error_history:
+            category = error.category.value
+            category_counts[category] = category_counts.get(category, 0) + 1
+        
+        # Get recent errors (last 10)
+        recent_errors = [
+            {
+                'operation': error.operation,
+                'severity': error.severity.value,
+                'category': error.category.value,
+                'message': str(error.error),
+                'timestamp': error.timestamp
+            }
+            for error in self.error_history[-10:]
+        ]
+        
+        return {
+            'total_errors': len(self.error_history),
+            'error_count': self.error_count,
+            'severity_distribution': severity_counts,
+            'category_distribution': category_counts,
+            'recent_errors': recent_errors
+        }
+
+    def reset_error_stats(self):
+        """Reset error statistics."""
+        self.error_count = 0
+        self.error_history = []
+        tprint_success("✅ Error statistics reset")
+
+
+def error_handler_decorator(operation: str, return_value: Any = None, 
+                          context: Optional[Dict[str, Any]] = None):
+    """
+    Decorator for automatic error handling.
+    
+    Args:
+        operation: Operation name for error reporting
+        return_value: Value to return if error occurs
+        context: Additional context information
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Try to get error handler from self if available
+            error_handler = None
+            if args and hasattr(args[0], 'error_handler'):
+                error_handler = args[0].error_handler
+            
+            if error_handler:
+                return error_handler.safe_execute(func, *args, return_value=return_value, 
+                                                operation=operation, context=context, **kwargs)
+            else:
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    tprint_error(f"❌ Unhandled error in {operation}: {str(e)}")
+                    if return_value is not None:
+                        return return_value
+                    raise
+        
+        return wrapper
+    return decorator

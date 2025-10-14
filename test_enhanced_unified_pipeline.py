@@ -1,46 +1,48 @@
 #!/usr/bin/env python3
 """
-Test script for Enhanced UnifiedDataDrivenPipeline with comprehensive feature generation.
+Test script for the enhanced UnifiedDataDrivenPipeline with new infrastructure.
 
-This script demonstrates the enhanced pipeline capabilities including:
-- Cross timeframe features with optimized lookback period
-- Interaction (2-3) features with optimized lookback period  
-- Feature creation in multiple ways (addition, subtraction, log, multiplication, division)
-- No features with optimized lookback period
+This script tests the integration of all the new infrastructure components
+that were missing from the original UnifiedDataDrivenPipeline.
 """
 
-import numpy as np
+import asyncio
 import pandas as pd
-import time
+import numpy as np
 from datetime import datetime, timedelta
+import sys
+import os
 
-# Import the enhanced pipeline
+# Add the src directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
 try:
-    from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_unified_pipeline import (
-        EnhancedUnifiedDataDrivenPipeline, create_enhanced_unified_pipeline
+    from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import (
+        UnifiedDataDrivenPipeline, create_unified_pipeline, process_with_unified_pipeline
     )
-    from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.enhanced_feature_generator import (
-        FeatureGenerationConfig
-    )
-    PIPELINE_AVAILABLE = True
+    from src.training.steps.pre_training.unified_data_driven_pipeline.core.config import create_default_config
+    print("✅ Successfully imported UnifiedDataDrivenPipeline")
 except ImportError as e:
-    print(f"❌ Failed to import enhanced pipeline: {e}")
-    PIPELINE_AVAILABLE = False
+    print(f"❌ Failed to import UnifiedDataDrivenPipeline: {e}")
+    sys.exit(1)
 
-def create_sample_data(n_samples: int = 1000) -> pd.DataFrame:
-    """Create sample OHLCV data for testing."""
-    print(f"📊 Creating sample data with {n_samples} samples")
+
+def create_test_data(n_periods: int = 1000) -> pd.DataFrame:
+    """Create synthetic test data."""
+    print("🔧 Creating synthetic test data...")
     
-    # Generate realistic price data
+    # Generate date range
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=n_periods // 24)  # Assuming hourly data
+    date_range = pd.date_range(start=start_date, end=end_date, freq='H')
+    
+    # Generate synthetic OHLCV data
     np.random.seed(42)
+    n_periods = len(date_range)
     
-    # Create time index
-    start_time = datetime.now() - timedelta(minutes=n_samples * 15)
-    time_index = [start_time + timedelta(minutes=i * 15) for i in range(n_samples)]
-    
-    # Generate price data with trend and volatility
+    # Generate price series with random walk
     base_price = 100.0
-    returns = np.random.normal(0.0001, 0.02, n_samples)  # 0.01% mean return, 2% volatility
+    returns = np.random.normal(0, 0.02, n_periods)
     prices = [base_price]
     
     for ret in returns[1:]:
@@ -48,217 +50,246 @@ def create_sample_data(n_samples: int = 1000) -> pd.DataFrame:
     
     prices = np.array(prices)
     
-    # Generate OHLCV data
-    data = pd.DataFrame(index=time_index)
-    data['open'] = prices * (1 + np.random.normal(0, 0.001, n_samples))
-    data['high'] = np.maximum(data['open'], prices) * (1 + np.abs(np.random.normal(0, 0.005, n_samples)))
-    data['low'] = np.minimum(data['open'], prices) * (1 - np.abs(np.random.normal(0, 0.005, n_samples)))
-    data['close'] = prices
-    data['volume'] = np.random.lognormal(10, 1, n_samples)
+    # Generate OHLCV
+    data = {
+        'open': prices * (1 + np.random.normal(0, 0.001, n_periods)),
+        'high': prices * (1 + np.abs(np.random.normal(0, 0.01, n_periods))),
+        'low': prices * (1 - np.abs(np.random.normal(0, 0.01, n_periods))),
+        'close': prices,
+        'volume': np.random.uniform(1000, 10000, n_periods)
+    }
     
-    # Ensure high >= low
-    data['high'] = np.maximum(data['high'], data['low'])
+    df = pd.DataFrame(data, index=date_range)
     
-    print(f"✅ Sample data created: {data.shape}")
-    print(f"   Price range: {data['close'].min():.2f} - {data['close'].max():.2f}")
-    print(f"   Volume range: {data['volume'].min():.0f} - {data['volume'].max():.0f}")
+    # Ensure high >= max(open, close) and low <= min(open, close)
+    df['high'] = np.maximum(df['high'], np.maximum(df['open'], df['close']))
+    df['low'] = np.minimum(df['low'], np.minimum(df['open'], df['close']))
     
-    return data
+    print(f"✅ Created test data: {df.shape[0]} rows, {df.shape[1]} columns")
+    return df
 
-def create_sample_targets(data: pd.DataFrame) -> pd.Series:
-    """Create sample targets for supervised learning."""
-    print("🎯 Creating sample targets")
+
+def create_test_targets(data: pd.DataFrame) -> pd.Series:
+    """Create synthetic targets for testing."""
+    print("🔧 Creating synthetic targets...")
     
-    # Create forward returns as targets
-    targets = data['close'].pct_change(5).shift(-5)  # 5-period forward returns
-    targets = targets.dropna()
+    # Create simple targets based on price movements
+    returns = data['close'].pct_change()
+    targets = (returns > returns.rolling(20).mean()).astype(int)
     
-    print(f"✅ Targets created: {len(targets)} samples")
-    print(f"   Target range: {targets.min():.4f} - {targets.max():.4f}")
-    print(f"   Target mean: {targets.mean():.4f}, std: {targets.std():.4f}")
-    
+    print(f"✅ Created targets: {len(targets)} values")
     return targets
 
-def test_enhanced_feature_generation():
-    """Test the enhanced feature generation capabilities."""
-    print("\n" + "="*80)
-    print("🚀 TESTING ENHANCED FEATURE GENERATION")
-    print("="*80)
-    
-    if not PIPELINE_AVAILABLE:
-        print("❌ Enhanced pipeline not available")
-        return
-    
-    try:
-        # Create sample data
-        data = create_sample_data(500)  # Smaller dataset for faster testing
-        targets = create_sample_targets(data)
-        
-        # Create enhanced pipeline
-        print("\n🔧 Creating enhanced pipeline")
-        pipeline = create_enhanced_unified_pipeline()
-        
-        # Test enhanced feature generator directly
-        print("\n🧪 Testing enhanced feature generator directly")
-        from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.enhanced_feature_generator import (
-            create_enhanced_feature_generator
-        )
-        
-        feature_generator = create_enhanced_feature_generator()
-        
-        # Generate base features for interaction testing
-        base_features = pd.DataFrame()
-        base_features['price_change'] = data['close'].pct_change()
-        base_features['volume_change'] = data['volume'].pct_change()
-        base_features['high_low_ratio'] = data['high'] / data['low']
-        base_features['close_open_ratio'] = data['close'] / data['open']
-        
-        # Generate enhanced features
-        print("\n⚡ Generating enhanced features")
-        start_time = time.time()
-        
-        feature_result = feature_generator.generate_features(
-            data, targets, base_features
-        )
-        
-        generation_time = time.time() - start_time
-        
-        if feature_result.success:
-            print(f"✅ Enhanced feature generation completed in {generation_time:.3f}s")
-            print(f"   Cross-timeframe features: {len(feature_result.cross_timeframe_features)}")
-            print(f"   Interaction features: {len(feature_result.interaction_features)}")
-            print(f"   No features: {len(feature_result.no_features)}")
-            print(f"   Total features: {len(feature_result.all_features)}")
-            
-            # Display sample features
-            print("\n📋 Sample Cross-Timeframe Features:")
-            for i, feature in enumerate(feature_result.cross_timeframe_features[:5]):
-                print(f"   {i+1}. {feature.name}")
-                print(f"      Formula: {feature.formula}")
-                print(f"      Utility: {feature.utility_score:.4f}")
-                print(f"      Lookback: {feature.lookback_period}")
-                print(f"      Method: {feature.creation_method}")
-            
-            print("\n📋 Sample Interaction Features:")
-            for i, feature in enumerate(feature_result.interaction_features[:5]):
-                print(f"   {i+1}. {feature.name}")
-                print(f"      Formula: {feature.formula}")
-                print(f"      Parents: {feature.parent_features}")
-                print(f"      Utility: {feature.utility_score:.4f}")
-                print(f"      Method: {feature.creation_method}")
-            
-            print("\n📋 Sample No Features:")
-            for i, feature in enumerate(feature_result.no_features[:5]):
-                print(f"   {i+1}. {feature.name}")
-                print(f"      Formula: {feature.formula}")
-                print(f"      Utility: {feature.utility_score:.4f}")
-                print(f"      Method: {feature.creation_method}")
-            
-            # Test feature quality
-            print("\n📊 Feature Quality Analysis:")
-            all_features = feature_result.all_features
-            if all_features:
-                utilities = [f.utility_score for f in all_features]
-                print(f"   Average utility: {np.mean(utilities):.4f}")
-                print(f"   Max utility: {np.max(utilities):.4f}")
-                print(f"   Min utility: {np.min(utilities):.4f}")
-                print(f"   Features with utility > 0.1: {sum(1 for u in utilities if u > 0.1)}")
-                
-                # Check for different creation methods
-                methods = [f.creation_method for f in all_features if f.creation_method]
-                method_counts = pd.Series(methods).value_counts()
-                print(f"   Creation methods used: {dict(method_counts)}")
-            
-        else:
-            print(f"❌ Enhanced feature generation failed: {feature_result.error_message}")
-        
-    except Exception as e:
-        print(f"❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
 
-def test_full_pipeline():
-    """Test the full enhanced pipeline."""
-    print("\n" + "="*80)
-    print("🚀 TESTING FULL ENHANCED PIPELINE")
-    print("="*80)
-    
-    if not PIPELINE_AVAILABLE:
-        print("❌ Enhanced pipeline not available")
-        return
+async def test_basic_functionality():
+    """Test basic pipeline functionality."""
+    print("\n🧪 Testing basic pipeline functionality...")
     
     try:
-        # Create sample data
-        data = create_sample_data(1000)
-        targets = create_sample_targets(data)
+        # Create test data
+        data = create_test_data(500)  # Smaller dataset for faster testing
+        targets = create_test_targets(data)
         
-        # Create enhanced pipeline
-        print("\n🔧 Creating enhanced pipeline")
-        pipeline = create_enhanced_unified_pipeline()
+        # Create pipeline
+        pipeline = create_unified_pipeline()
+        print("✅ Pipeline created successfully")
         
-        # Run full pipeline
-        print("\n⚡ Running full enhanced pipeline")
-        start_time = time.time()
-        
-        result = pipeline.process(data, targets, "15m")
-        
-        execution_time = time.time() - start_time
+        # Test pipeline processing
+        print("🚀 Running pipeline processing...")
+        result = await pipeline.process(
+            data=data,
+            targets=targets,
+            timeframe="1h",
+            pipeline_state={
+                'symbol': 'TESTUSDT',
+                'exchange': 'test',
+                'timeframe': '1h',
+                'execution_mode': 'light'
+            }
+        )
         
         if result.success:
-            print(f"✅ Full pipeline completed in {execution_time:.3f}s")
-            print(f"   Optimal periods: {len(result.optimal_periods)}")
-            print(f"   Selected features: {len(result.selected_features)}")
-            print(f"   Generated interactions: {len(result.generated_interactions)}")
-            print(f"   HTF interactions: {len(result.htf_interactions)}")
-            print(f"   Cross-timeframe features: {len(result.cross_timeframe_features)}")
-            print(f"   Interaction features: {len(result.interaction_features)}")
-            print(f"   No features: {len(result.no_features)}")
-            
-            # Display performance stats
-            print("\n📊 Performance Statistics:")
-            stats = pipeline.get_performance_stats()
-            print(f"   VectorBT operations: {stats['vectorbt_operations']}")
-            print(f"   Economic evaluations: {stats['economic_evaluations']}")
-            print(f"   Feature selections: {stats['feature_selections']}")
-            print(f"   Interaction generations: {stats['interaction_generations']}")
-            print(f"   HTF generations: {stats['htf_generations']}")
-            print(f"   Lookback optimizations: {stats['lookback_optimizations']}")
-            print(f"   Enhanced feature generations: {stats['enhanced_feature_generations']}")
-            
-            # Display enhanced feature metrics
-            if result.enhanced_feature_metrics:
-                print("\n📈 Enhanced Feature Metrics:")
-                for key, value in result.enhanced_feature_metrics.items():
-                    print(f"   {key}: {value}")
-            
+            print("✅ Pipeline processing completed successfully")
+            print(f"📊 Results: {len(result.selected_features)} features selected")
+            print(f"⏱️ Processing time: {result.processing_time:.3f}s")
+            print(f"💾 Artifacts saved: {result.artifacts_saved if hasattr(result, 'artifacts_saved') else 'N/A'}")
         else:
-            print(f"❌ Full pipeline failed: {result.error_message}")
+            print(f"❌ Pipeline processing failed: {result.error_message}")
+            return False
+        
+        return True
         
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"❌ Test failed with exception: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
-def main():
-    """Main test function."""
-    print("🧪 ENHANCED UNIFIED PIPELINE TEST SUITE")
-    print("="*80)
-    print("Testing comprehensive feature generation including:")
-    print("✅ Cross timeframe features with optimized lookback period")
-    print("✅ Interaction (2-3) features with optimized lookback period")
-    print("✅ Feature creation in multiple ways (addition, subtraction, log, multiplication, division)")
-    print("✅ No features with optimized lookback period")
-    print("="*80)
+
+async def test_infrastructure_components():
+    """Test individual infrastructure components."""
+    print("\n🧪 Testing infrastructure components...")
     
-    # Test enhanced feature generation
-    test_enhanced_feature_generation()
+    try:
+        # Create pipeline
+        pipeline = create_unified_pipeline()
+        
+        # Test advanced validator
+        print("🔍 Testing advanced validator...")
+        data = create_test_data(100)
+        is_valid, summary, cleaned_data = pipeline.advanced_validator.validate_data(data)
+        print(f"✅ Validator test: valid={is_valid}, quality_score={summary.quality_score}")
+        
+        # Test advanced error handler
+        print("🛡️ Testing advanced error handler...")
+        try:
+            pipeline.advanced_error_handler.safe_execute(
+                lambda x: x / 0, 1, operation="test_division", return_value=0
+            )
+            print("✅ Error handler test: handled division by zero gracefully")
+        except Exception as e:
+            print(f"❌ Error handler test failed: {e}")
+        
+        # Test advanced performance monitor
+        print("📊 Testing advanced performance monitor...")
+        pipeline.advanced_performance_monitor.start_monitoring()
+        pipeline.advanced_performance_monitor.record_memory_usage()
+        pipeline.advanced_performance_monitor.record_cpu_usage()
+        stats = pipeline.advanced_performance_monitor.get_performance_summary()
+        print(f"✅ Performance monitor test: {len(stats)} metrics recorded")
+        
+        # Test advanced data loader
+        print("📥 Testing advanced data loader...")
+        cache_metrics = pipeline.advanced_data_loader.get_cache_metrics()
+        print(f"✅ Data loader test: cache metrics available")
+        
+        # Test advanced artifact manager
+        print("💾 Testing advanced artifact manager...")
+        registry = pipeline.advanced_artifact_manager.get_artifact_registry()
+        print(f"✅ Artifact manager test: registry size={len(registry)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Infrastructure test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+async def test_performance_monitoring():
+    """Test performance monitoring capabilities."""
+    print("\n🧪 Testing performance monitoring...")
     
-    # Test full pipeline
-    test_full_pipeline()
+    try:
+        pipeline = create_unified_pipeline()
+        
+        # Start monitoring
+        pipeline.advanced_performance_monitor.start_monitoring()
+        
+        # Simulate some operations
+        for i in range(5):
+            start_time = pipeline.advanced_performance_monitor.start_operation(f"test_operation_{i}")
+            await asyncio.sleep(0.1)  # Simulate work
+            pipeline.advanced_performance_monitor.end_operation(f"test_operation_{i}", start_time, success=True)
+            pipeline.advanced_performance_monitor.record_memory_usage()
+            pipeline.advanced_performance_monitor.record_cpu_usage()
+        
+        # Get performance summary
+        summary = pipeline.advanced_performance_monitor.get_performance_summary()
+        
+        print(f"✅ Performance monitoring test completed")
+        print(f"📊 Operations tracked: {len(summary.get('operations', {}))}")
+        print(f"📊 Memory samples: {summary.get('memory_stats', {}).get('samples', 0)}")
+        print(f"📊 CPU samples: {summary.get('cpu_stats', {}).get('samples', 0)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Performance monitoring test failed: {e}")
+        return False
+
+
+async def test_error_handling():
+    """Test error handling capabilities."""
+    print("\n🧪 Testing error handling...")
     
-    print("\n" + "="*80)
-    print("🎉 TEST SUITE COMPLETED")
-    print("="*80)
+    try:
+        pipeline = create_unified_pipeline()
+        
+        # Test safe execution with error
+        result = pipeline.advanced_error_handler.safe_execute(
+            lambda: 1 / 0,  # This will raise ZeroDivisionError
+            operation="test_division",
+            return_value="error_handled"
+        )
+        
+        if result == "error_handled":
+            print("✅ Error handling test: safely handled division by zero")
+        else:
+            print(f"❌ Error handling test: unexpected result: {result}")
+            return False
+        
+        # Test error statistics
+        error_stats = pipeline.advanced_error_handler.get_error_stats()
+        print(f"✅ Error statistics: {error_stats['total_errors']} errors recorded")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error handling test failed: {e}")
+        return False
+
+
+async def main():
+    """Run all tests."""
+    print("🚀 Starting Enhanced UnifiedDataDrivenPipeline Tests")
+    print("=" * 60)
+    
+    tests = [
+        ("Infrastructure Components", test_infrastructure_components),
+        ("Performance Monitoring", test_performance_monitoring),
+        ("Error Handling", test_error_handling),
+        ("Basic Functionality", test_basic_functionality),
+    ]
+    
+    results = []
+    
+    for test_name, test_func in tests:
+        print(f"\n{'='*20} {test_name} {'='*20}")
+        try:
+            result = await test_func()
+            results.append((test_name, result))
+            if result:
+                print(f"✅ {test_name}: PASSED")
+            else:
+                print(f"❌ {test_name}: FAILED")
+        except Exception as e:
+            print(f"❌ {test_name}: ERROR - {e}")
+            results.append((test_name, False))
+    
+    # Summary
+    print("\n" + "="*60)
+    print("📊 TEST SUMMARY")
+    print("="*60)
+    
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for test_name, result in results:
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"{test_name}: {status}")
+    
+    print(f"\nOverall: {passed}/{total} tests passed")
+    
+    if passed == total:
+        print("🎉 All tests passed! Enhanced UnifiedDataDrivenPipeline is working correctly.")
+    else:
+        print("⚠️ Some tests failed. Please check the implementation.")
+    
+    return passed == total
+
 
 if __name__ == "__main__":
-    main()
+    success = asyncio.run(main())
+    sys.exit(0 if success else 1)

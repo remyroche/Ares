@@ -93,6 +93,25 @@ from .enhanced_components.enhanced_feature_generator import (
     EnhancedFeatureGenerator, FeatureGenerationConfig
 )
 
+# Import new advanced infrastructure components
+from .enhanced_components.advanced_validation import (
+    AdvancedInputValidator, ValidationLevel, ValidationStatus
+)
+from .enhanced_components.advanced_error_handling import (
+    AdvancedErrorHandler, PipelineError, DataValidationError, 
+    FeatureGenerationError, OptimizationError, CacheError, MemoryError,
+    ErrorSeverity, ErrorCategory, error_handler_decorator
+)
+from .enhanced_components.advanced_performance_monitoring import (
+    AdvancedPerformanceMonitor, MetricType, MetricLevel
+)
+from .enhanced_components.advanced_data_loading import (
+    AdvancedDataLoader
+)
+from .enhanced_components.advanced_artifact_management import (
+    AdvancedArtifactManager, ArtifactMetadata, ArtifactSaveReport
+)
+
 # Import existing components
 from .time_series_cv import PurgedEmbargoedWalkForwardCV, create_purged_embargoed_cv
 from .statistical_analysis import StatisticalAnalysisFramework
@@ -270,6 +289,7 @@ class UnifiedDataDrivenPipeline:
         self._initialize_enhanced_components()
         self._initialize_validation_components()
         self._initialize_performance_tracking()
+        self._initialize_advanced_infrastructure()
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
@@ -468,6 +488,35 @@ class UnifiedDataDrivenPipeline:
         
         tprint_success("✅ Validation components initialized")
     
+    def _initialize_advanced_infrastructure(self):
+        """Initialize advanced infrastructure components."""
+        tprint_debug("Initializing advanced infrastructure components")
+        
+        # Advanced validation
+        self.advanced_validator = AdvancedInputValidator(logger=self.logger)
+        
+        # Advanced error handling
+        self.advanced_error_handler = AdvancedErrorHandler(
+            logger=self.logger, 
+            component_name="UnifiedDataDrivenPipeline"
+        )
+        
+        # Advanced performance monitoring
+        self.advanced_performance_monitor = AdvancedPerformanceMonitor(
+            component_name="UnifiedDataDrivenPipeline"
+        )
+        
+        # Advanced data loading
+        self.advanced_data_loader = AdvancedDataLoader(logger=self.logger)
+        
+        # Advanced artifact management
+        self.advanced_artifact_manager = AdvancedArtifactManager(
+            base_dir="artifacts/unified_pipeline",
+            logger=self.logger
+        )
+        
+        tprint_success("✅ Advanced infrastructure components initialized")
+    
     def _initialize_performance_tracking(self):
         """Initialize performance tracking."""
         self.performance_stats = {
@@ -487,7 +536,7 @@ class UnifiedDataDrivenPipeline:
             'cache_misses': 0
         }
     
-    def process(self, data: pd.DataFrame, 
+    async def process(self, data: pd.DataFrame, 
                 targets: Optional[pd.Series] = None,
                 feature_columns: Optional[List[str]] = None,
                 timeframe: str = "15m",
@@ -500,6 +549,7 @@ class UnifiedDataDrivenPipeline:
             targets: Optional target series for supervised learning
             feature_columns: Optional list of feature columns to use
             timeframe: Target timeframe (e.g., "15m", "5m", "1h")
+            pipeline_state: Optional pipeline state dictionary
             
         Returns:
             ConsolidatedPipelineResult with comprehensive results
@@ -507,15 +557,59 @@ class UnifiedDataDrivenPipeline:
         tprint_info("🚀 Starting consolidated unified pipeline processing")
         tprint_info(f"📊 Data shape: {data.shape}, timeframe: {timeframe}")
         
-        start_time = time.time()
+        # Start performance monitoring
+        self.advanced_performance_monitor.start_monitoring()
+        start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
-            # Validate inputs
-            if not self._validate_inputs(data, targets):
-                return self._create_empty_result(start_time, "Invalid inputs")
+            # Advanced input validation
+            is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
+                data, 
+                required_columns=['open', 'high', 'low', 'close', 'volume'],
+                target_columns=feature_columns
+            )
             
-            # Prepare data
-            processed_data, processed_targets = self._prepare_data(data, targets, feature_columns)
+            if not is_valid:
+                error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            # Load market data using advanced data loader
+            market_data = await self.advanced_data_loader.load_market_data(
+                cleaned_data, pipeline_state, force_refresh=False
+            )
+            
+            # Load labeling data
+            labeling_data = await self.advanced_data_loader.load_labeling_data(
+                pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                timeframe,
+                pipeline_state
+            )
+            
+            # Prepare data for optimization
+            processed_data = self.advanced_data_loader.prepare_data_for_optimization(
+                market_data, labeling_data
+            )
+            
+            # Generate features for optimization
+            feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
+                processed_data, pipeline_state, force_refresh=False
+            )
+            
+            if not feature_columns:
+                error_msg = "Feature generation failed - no features generated"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            tprint_success(f"✅ Generated {len(feature_columns)} features for optimization")
+            
+            # Prepare targets
+            processed_targets = targets
+            if targets is not None and len(targets) != len(processed_data):
+                common_index = processed_data.index.intersection(targets.index)
+                processed_data = processed_data.loc[common_index]
+                processed_targets = targets.loc[common_index]
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
@@ -556,7 +650,31 @@ class UnifiedDataDrivenPipeline:
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
             
-            execution_time = time.time() - start_time
+            execution_time = self.advanced_performance_monitor.end_operation("process", start_time, success=True)
+            
+            # Create comprehensive artifacts
+            artifacts = self.advanced_artifact_manager.create_optimization_artifacts(
+                combined_results, pipeline_state
+            )
+            
+            # Create outcome report
+            outcome_report = self.advanced_artifact_manager.create_outcome_report(
+                combined_results, 
+                self.advanced_performance_monitor.get_performance_summary(),
+                pipeline_state
+            )
+            
+            # Save artifacts
+            save_report = await self.advanced_artifact_manager.save_artifacts(
+                artifacts, 
+                {
+                    'optimization_status': 'completed',
+                    'total_features_optimized': len(combined_results.get('selected_features', [])),
+                    'validation_summary': validation_summary.__dict__ if 'validation_summary' in locals() else None,
+                    'performance_metrics': self.advanced_performance_monitor.get_performance_summary(),
+                    'outcome_report': outcome_report
+                }
+            )
             
             # Update performance stats
             self._update_performance_stats(execution_time, combined_results)
@@ -565,6 +683,8 @@ class UnifiedDataDrivenPipeline:
             tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "
                        f"{len(combined_results['generated_interactions'])} interactions, "
                        f"{len(combined_results['htf_interactions'])} HTF interactions")
+            tprint_success(f"💾 Artifacts saved: {save_report.artifacts_saved} artifacts, "
+                          f"correlation_id: {save_report.correlation_id}")
             
             return ConsolidatedPipelineResult(
                 selected_features=combined_results['selected_features'],
@@ -609,8 +729,18 @@ class UnifiedDataDrivenPipeline:
             )
             
         except Exception as e:
+            # Use advanced error handler
+            self.advanced_performance_monitor.end_operation("process", start_time, success=False)
+            self.advanced_performance_monitor.stop_monitoring()
+            
+            error_result = self.advanced_error_handler.handle_error(
+                e, "process", 
+                return_value=self._create_empty_result(start_time, str(e)),
+                context={'data_shape': data.shape, 'timeframe': timeframe}
+            )
+            
             tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
-            return self._create_empty_result(start_time, str(e))
+            return error_result
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
@@ -1717,6 +1847,16 @@ class UnifiedDataDrivenPipeline:
         stats['memory_manager'] = self.memory_manager.get_memory_stats()
         stats['hardware_accelerator'] = self.hardware_accelerator.get_acceleration_info()
         
+        # Add advanced infrastructure stats
+        stats['advanced_validator'] = self.advanced_validator.get_validation_stats()
+        stats['advanced_error_handler'] = self.advanced_error_handler.get_error_stats()
+        stats['advanced_performance_monitor'] = self.advanced_performance_monitor.get_performance_summary()
+        stats['advanced_data_loader'] = self.advanced_data_loader.get_cache_metrics()
+        stats['advanced_artifact_manager'] = {
+            'artifact_registry_size': len(self.advanced_artifact_manager.get_artifact_registry()),
+            'save_history_size': len(self.advanced_artifact_manager.get_save_history())
+        }
+        
         return stats
     
     def reset_stats(self):
@@ -1750,6 +1890,11 @@ class UnifiedDataDrivenPipeline:
         
         # Reset modular architecture stats
         self.performance_monitor.reset_stats()
+        
+        # Reset advanced infrastructure stats
+        self.advanced_performance_monitor.reset_stats()
+        self.advanced_data_loader.reset_cache_metrics()
+        self.advanced_error_handler.reset_error_stats()
 
 
 # Convenience functions
@@ -1758,7 +1903,7 @@ def create_unified_pipeline(config: Optional[UnifiedPipelineConfig] = None) -> U
     return UnifiedDataDrivenPipeline(config)
 
 
-def process_with_unified_pipeline(data: pd.DataFrame,
+async def process_with_unified_pipeline(data: pd.DataFrame,
                                 targets: Optional[pd.Series] = None,
                                 feature_columns: Optional[List[str]] = None,
                                 timeframe: str = "15m",

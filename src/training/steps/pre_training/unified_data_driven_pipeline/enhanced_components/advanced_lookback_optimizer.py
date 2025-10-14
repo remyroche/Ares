@@ -36,11 +36,17 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-# Import existing grid utilities and grid+TPE optimizer
+# Import existing grid utilities and enhanced Bayesian TPE optimizer
 try:
     from src.utils.ml_common.optimization.grid_utils import (
         build_coarse_grid_from_search_space,
-        build_fine_grid_around_best
+        build_fine_grid_around_best,
+        generate_grid,
+        GridSearchOptimizer
+    )
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        OptimizationConfig as BayesianOptimizationConfig
     )
     from src.training.steps.market_analysis.optimized_multi_horizon_optimizer.grid_bayesian_optimizer import (
         GridBayesianOptimizer
@@ -49,12 +55,18 @@ try:
         OptimizationConfig, GridSearchConfig, BayesianTPEConfig, SearchSpace, OptimizationResult as GridOptimizationResult
     )
     GRID_UTILS_AVAILABLE = True
+    BAYESIAN_TPE_AVAILABLE = True
     GRID_BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
     GRID_UTILS_AVAILABLE = False
+    BAYESIAN_TPE_AVAILABLE = False
     GRID_BAYESIAN_OPTIMIZER_AVAILABLE = False
     build_coarse_grid_from_search_space = None
     build_fine_grid_around_best = None
+    generate_grid = None
+    GridSearchOptimizer = None
+    BayesianTPEOptimizer = None
+    BayesianOptimizationConfig = None
     GridBayesianOptimizer = None
     OptimizationConfig = None
     GridSearchConfig = None
@@ -113,7 +125,9 @@ class OptimizationMethod(Enum):
     """Optimization methods available."""
     COARSE_TO_REFINE = "coarse_to_refine"
     BAYESIAN_TPE = "bayesian_tpe"
+    ENHANCED_BAYESIAN_TPE = "enhanced_bayesian_tpe"
     GRID_SEARCH = "grid_search"
+    ENHANCED_GRID_SEARCH = "enhanced_grid_search"
     RANDOM_SEARCH = "random_search"
     MRMR = "mrmr"
 
@@ -213,6 +227,47 @@ class AdvancedLookbackOptimizer:
         else:
             self.grid_bayesian_optimizer = None
             tprint_warning("⚠️ Grid+Bayesian optimizer not available")
+        
+        # Initialize Enhanced Bayesian TPE optimizer
+        if BAYESIAN_TPE_AVAILABLE:
+            try:
+                # Configure for lookback optimization
+                tpe_config = BayesianOptimizationConfig(
+                    n_trials=100,
+                    enable_staged_optimization=True,
+                    coarse_grid_points=5,
+                    fine_grid_points=5,
+                    coarse_grid_trials=25,
+                    fine_grid_trials=25,
+                    tpe_trials=50,
+                    enable_hardware_optimization=True,
+                    enable_vectorbt_optimization=VECTORBT_AVAILABLE,
+                    early_stopping_patience=10,
+                    enable_adaptive_optimization=True
+                )
+                self.bayesian_tpe_optimizer = BayesianTPEOptimizer(tpe_config)
+                tprint_success("✅ Enhanced Bayesian TPE optimizer initialized")
+            except Exception as e:
+                self.bayesian_tpe_optimizer = None
+                tprint_warning(f"⚠️ Enhanced Bayesian TPE optimizer initialization failed: {e}")
+        else:
+            self.bayesian_tpe_optimizer = None
+            tprint_warning("⚠️ Enhanced Bayesian TPE optimizer not available")
+        
+        # Initialize Enhanced Grid Search optimizer
+        if GRID_UTILS_AVAILABLE:
+            try:
+                self.grid_search_optimizer = GridSearchOptimizer(
+                    scoring='neg_mean_squared_error',
+                    cv=5
+                )
+                tprint_success("✅ Enhanced Grid Search optimizer initialized")
+            except Exception as e:
+                self.grid_search_optimizer = None
+                tprint_warning(f"⚠️ Enhanced Grid Search optimizer initialization failed: {e}")
+        else:
+            self.grid_search_optimizer = None
+            tprint_warning("⚠️ Enhanced Grid Search optimizer not available")
         
         # Initialize matrix operations
         if MATRIX_OPS_AVAILABLE:
@@ -376,8 +431,19 @@ class AdvancedLookbackOptimizer:
                     regularization_settings=regularization_settings,
                     **kwargs_with_matrix
                 )
+            elif method == OptimizationMethod.ENHANCED_BAYESIAN_TPE:
+                kwargs_with_matrix = {**kwargs, 'precomputed_forward_returns': precomputed_forward_returns}
+                return self._optimize_with_enhanced_bayesian_tpe(
+                    data, feature_name, target_column, lookback_range,
+                    regularization_settings=regularization_settings,
+                    **kwargs_with_matrix
+                )
             elif method == OptimizationMethod.GRID_SEARCH:
                 return self._optimize_grid_search(
+                    data, feature_name, target_column, lookback_range, **kwargs
+                )
+            elif method == OptimizationMethod.ENHANCED_GRID_SEARCH:
+                return self._optimize_enhanced_grid_search(
                     data, feature_name, target_column, lookback_range, **kwargs
                 )
             elif method == OptimizationMethod.RANDOM_SEARCH:
@@ -498,6 +564,121 @@ class AdvancedLookbackOptimizer:
             tprint_error(f"❌ Coarse-to-refine optimization failed for {feature_name}: {e}")
             return self._create_failed_result(feature_name, "coarse_to_refine", str(e))
     
+    def _optimize_with_enhanced_bayesian_tpe(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
+        regularization_settings: Optional[Dict[str, float]],
+        **kwargs
+    ) -> OptimizationResult:
+        """Optimize using enhanced Bayesian TPE optimizer with hardware acceleration."""
+        if not BAYESIAN_TPE_AVAILABLE or not self.bayesian_tpe_optimizer:
+            tprint_warning("⚠️ Enhanced Bayesian TPE optimizer not available, falling back to existing method")
+            return self._optimize_with_bayesian_tpe(
+                data, feature_name, target_column, lookback_range,
+                regularization_settings=regularization_settings, **kwargs
+            )
+        
+        tprint_debug(f"🧠 Starting Enhanced Bayesian TPE optimization for {feature_name}")
+        
+        try:
+            min_lookback, max_lookback = lookback_range
+            
+            # Create search space for enhanced TPE optimizer
+            search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': min_lookback,
+                    'high': max_lookback
+                }
+            }
+            
+            # Add regularization parameters if provided
+            if regularization_settings:
+                for param, value in regularization_settings.items():
+                    if isinstance(value, (int, float)):
+                        search_space[param] = {
+                            'type': 'float',
+                            'low': max(0.0, value * 0.1),
+                            'high': min(1.0, value * 10.0)
+                        }
+            
+            # Define objective function
+            def objective(trial):
+                lookback = trial.suggest_int('lookback', min_lookback, max_lookback)
+                
+                # Add regularization parameters
+                reg_params = {}
+                for param in search_space:
+                    if param != 'lookback' and search_space[param]['type'] == 'float':
+                        reg_params[param] = trial.suggest_float(
+                            param, 
+                            search_space[param]['low'], 
+                            search_space[param]['high']
+                        )
+                
+                # Evaluate the lookback
+                score = self._evaluate_lookback_with_regularization(
+                    data, feature_name, target_column, lookback, reg_params
+                )
+                
+                return score
+            
+            # Get optimization parameters from kwargs
+            n_trials = kwargs.get('n_trials', 100)
+            early_stopping_patience = kwargs.get('early_stopping_patience', 10)
+            coarse_grid_trials = kwargs.get('coarse_grid_trials', 25)
+            fine_grid_trials = kwargs.get('fine_grid_trials', 25)
+            tpe_trials = kwargs.get('tpe_trials', 50)
+            
+            # Update optimizer configuration
+            if hasattr(self.bayesian_tpe_optimizer, 'config'):
+                self.bayesian_tpe_optimizer.config.n_trials = n_trials
+                self.bayesian_tpe_optimizer.config.early_stopping_patience = early_stopping_patience
+                self.bayesian_tpe_optimizer.config.coarse_grid_trials = coarse_grid_trials
+                self.bayesian_tpe_optimizer.config.fine_grid_trials = fine_grid_trials
+                self.bayesian_tpe_optimizer.config.tpe_trials = tpe_trials
+            
+            # Run optimization
+            self.bayesian_tpe_optimizer.optimize(
+                objective,
+                search_space,
+                n_trials=min(n_trials, max_lookback - min_lookback + 1)
+            )
+            
+            # Get best parameters
+            best_params = self.bayesian_tpe_optimizer.get_best_params()
+            best_score = self.bayesian_tpe_optimizer.get_best_value()
+            
+            if best_params is None:
+                tprint_warning(f"⚠️ No valid parameters found for {feature_name}")
+                return self._create_failed_result(feature_name, "enhanced_bayesian_tpe", "No valid parameters found")
+            
+            optimal_lookback = best_params.get('lookback', min_lookback)
+            
+            tprint_success(f"✅ Enhanced Bayesian TPE optimization completed for {feature_name}: lookback={optimal_lookback}, score={best_score:.4f}")
+            
+            return OptimizationResult(
+                feature_name=feature_name,
+                optimal_lookback=optimal_lookback,
+                score=best_score,
+                method="enhanced_bayesian_tpe",
+                success=True,
+                execution_time=0.0,  # Will be set by caller
+                metadata={
+                    'best_params': best_params,
+                    'optimization_history': self.bayesian_tpe_optimizer.optimization_history,
+                    'hardware_optimized': True,
+                    'vectorbt_optimized': VECTORBT_AVAILABLE
+                }
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced Bayesian TPE optimization failed for {feature_name}: {e}")
+            return self._create_failed_result(feature_name, "enhanced_bayesian_tpe", str(e))
+
     def _optimize_with_bayesian_tpe(
         self,
         data: pd.DataFrame,
@@ -591,6 +772,78 @@ class AdvancedLookbackOptimizer:
             tprint_error(f"❌ Grid+Bayesian TPE optimization failed for {feature_name}: {e}")
             return self._create_failed_result(feature_name, "grid_bayesian_tpe", str(e))
     
+    def _optimize_enhanced_grid_search(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
+        **kwargs
+    ) -> OptimizationResult:
+        """Optimize using enhanced grid search with GridSearchOptimizer."""
+        tprint_debug(f"🧠 Starting enhanced grid search optimization for {feature_name}")
+        
+        try:
+            if not GRID_UTILS_AVAILABLE or not self.grid_search_optimizer:
+                tprint_warning("⚠️ Enhanced grid search not available, using fallback grid search")
+                return self._optimize_grid_search(data, feature_name, target_column, lookback_range)
+            
+            min_lookback, max_lookback = lookback_range
+            
+            # Use generate_grid utility for better grid generation
+            search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': min_lookback,
+                    'high': max_lookback
+                }
+            }
+            
+            # Generate optimized grid
+            max_trials = min(50, max_lookback - min_lookback + 1)
+            grid_params = generate_grid(search_space, max_trials)
+            
+            if not grid_params:
+                tprint_warning(f"⚠️ No grid parameters generated for {feature_name}")
+                return self._optimize_grid_search(data, feature_name, target_column, lookback_range)
+            
+            # Evaluate grid points with enhanced scoring
+            best_score = float('-inf')
+            best_lookback = min_lookback
+            scores = {}
+            
+            for params in grid_params:
+                lookback = params['lookback']
+                score = self._evaluate_lookback_period(
+                    data, feature_name, target_column, lookback, None
+                )
+                scores[lookback] = score
+                
+                if score > best_score:
+                    best_score = score
+                    best_lookback = lookback
+            
+            tprint_success(f"✅ Enhanced grid search optimization completed for {feature_name}: lookback={best_lookback}, score={best_score:.4f}")
+            
+            return OptimizationResult(
+                feature_name=feature_name,
+                optimal_lookback=best_lookback,
+                score=best_score,
+                method="enhanced_grid_search",
+                success=True,
+                execution_time=0.0,  # Will be set by caller
+                metadata={
+                    'all_scores': scores,
+                    'grid_size': len(grid_params),
+                    'enhanced_grid_utilities_used': True,
+                    'max_trials': max_trials
+                }
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced grid search optimization failed for {feature_name}: {e}")
+            return self._optimize_grid_search(data, feature_name, target_column, lookback_range)
+
     def _optimize_grid_search(
         self,
         data: pd.DataFrame,

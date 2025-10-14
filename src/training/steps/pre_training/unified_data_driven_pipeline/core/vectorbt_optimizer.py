@@ -63,6 +63,30 @@ except ImportError:
     quantile = None
     tprint_warning("⚠️ VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# Import optimization utilities
+try:
+    from src.utils.ml_common.optimization.grid_utils import (
+        build_coarse_grid_from_search_space,
+        build_fine_grid_around_best,
+        generate_grid,
+        GridSearchOptimizer
+    )
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer,
+        OptimizationConfig as BayesianOptimizationConfig
+    )
+    OPTIMIZATION_UTILS_AVAILABLE = True
+    tprint_info("✅ Optimization utilities imported successfully")
+except ImportError:
+    OPTIMIZATION_UTILS_AVAILABLE = False
+    build_coarse_grid_from_search_space = None
+    build_fine_grid_around_best = None
+    generate_grid = None
+    GridSearchOptimizer = None
+    BayesianTPEOptimizer = None
+    BayesianOptimizationConfig = None
+    tprint_warning("⚠️ Optimization utilities not available")
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -638,6 +662,183 @@ class VectorBTOptimizer:
         
         if self.cache:
             self.cache.clear()
+
+    def optimize_parameters(self, 
+                           data: Union[pd.Series, pd.DataFrame], 
+                           parameter_space: Dict[str, Any],
+                           objective_function: Callable,
+                           method: str = 'enhanced_grid_search',
+                           **kwargs) -> Dict[str, Any]:
+        """
+        Optimize parameters using enhanced optimization utilities.
+        
+        Args:
+            data: Input data for optimization
+            parameter_space: Dictionary defining parameter search space
+            objective_function: Function to evaluate parameter combinations
+            method: Optimization method ('enhanced_grid_search', 'enhanced_bayesian_tpe', 'grid_search')
+            **kwargs: Additional optimization parameters
+            
+        Returns:
+            Dictionary with optimization results
+        """
+        if not OPTIMIZATION_UTILS_AVAILABLE:
+            tprint_warning("⚠️ Optimization utilities not available, using fallback")
+            return self._fallback_parameter_optimization(data, parameter_space, objective_function, **kwargs)
+        
+        try:
+            if method == 'enhanced_bayesian_tpe':
+                return self._optimize_with_enhanced_bayesian_tpe(data, parameter_space, objective_function, **kwargs)
+            elif method == 'enhanced_grid_search':
+                return self._optimize_with_enhanced_grid_search(data, parameter_space, objective_function, **kwargs)
+            elif method == 'grid_search':
+                return self._optimize_with_grid_search(data, parameter_space, objective_function, **kwargs)
+            else:
+                tprint_warning(f"⚠️ Unknown optimization method: {method}, using enhanced grid search")
+                return self._optimize_with_enhanced_grid_search(data, parameter_space, objective_function, **kwargs)
+                
+        except Exception as e:
+            tprint_error(f"❌ Parameter optimization failed: {e}")
+            return self._fallback_parameter_optimization(data, parameter_space, objective_function, **kwargs)
+    
+    def _optimize_with_enhanced_bayesian_tpe(self, data, parameter_space, objective_function, **kwargs):
+        """Optimize using enhanced Bayesian TPE."""
+        if not BayesianTPEOptimizer:
+            raise ImportError("BayesianTPEOptimizer not available")
+        
+        # Configure TPE optimizer for VectorBT operations
+        config = BayesianOptimizationConfig(
+            n_trials=kwargs.get('n_trials', 50),
+            enable_staged_optimization=True,
+            enable_hardware_optimization=True,
+            enable_vectorbt_optimization=VECTORBT_AVAILABLE,
+            early_stopping_patience=kwargs.get('patience', 10)
+        )
+        
+        optimizer = BayesianTPEOptimizer(config)
+        
+        def objective(trial):
+            params = {}
+            for param_name, param_config in parameter_space.items():
+                if param_config['type'] == 'int':
+                    params[param_name] = trial.suggest_int(
+                        param_name, param_config['low'], param_config['high']
+                    )
+                elif param_config['type'] == 'float':
+                    params[param_name] = trial.suggest_float(
+                        param_name, param_config['low'], param_config['high']
+                    )
+                elif param_config['type'] == 'categorical':
+                    params[param_name] = trial.suggest_categorical(
+                        param_name, param_config['choices']
+                    )
+            
+            return objective_function(data, params)
+        
+        # Run optimization
+        optimizer.optimize(objective, parameter_space)
+        
+        return {
+            'best_params': optimizer.get_best_params(),
+            'best_score': optimizer.get_best_value(),
+            'optimization_history': optimizer.optimization_history,
+            'method': 'enhanced_bayesian_tpe'
+        }
+    
+    def _optimize_with_enhanced_grid_search(self, data, parameter_space, objective_function, **kwargs):
+        """Optimize using enhanced grid search."""
+        if not generate_grid:
+            raise ImportError("Grid utilities not available")
+        
+        # Generate optimized grid
+        max_trials = kwargs.get('max_trials', 50)
+        grid_params = generate_grid(parameter_space, max_trials)
+        
+        if not grid_params:
+            raise ValueError("No grid parameters generated")
+        
+        # Evaluate all combinations
+        best_score = float('-inf')
+        best_params = None
+        all_scores = []
+        
+        for params in grid_params:
+            score = objective_function(data, params)
+            all_scores.append((params, score))
+            
+            if score > best_score:
+                best_score = score
+                best_params = params
+        
+        return {
+            'best_params': best_params,
+            'best_score': best_score,
+            'all_scores': all_scores,
+            'method': 'enhanced_grid_search'
+        }
+    
+    def _optimize_with_grid_search(self, data, parameter_space, objective_function, **kwargs):
+        """Optimize using basic grid search."""
+        if not build_coarse_grid_from_search_space:
+            raise ImportError("Grid utilities not available")
+        
+        grid_points = kwargs.get('grid_points', 5)
+        grid_params = build_coarse_grid_from_search_space(parameter_space, grid_points)
+        
+        if not grid_params:
+            raise ValueError("No grid parameters generated")
+        
+        # Evaluate all combinations
+        best_score = float('-inf')
+        best_params = None
+        
+        for params in grid_params:
+            score = objective_function(data, params)
+            
+            if score > best_score:
+                best_score = score
+                best_params = params
+        
+        return {
+            'best_params': best_params,
+            'best_score': best_score,
+            'method': 'grid_search'
+        }
+    
+    def _fallback_parameter_optimization(self, data, parameter_space, objective_function, **kwargs):
+        """Fallback parameter optimization when utilities are not available."""
+        tprint_warning("⚠️ Using fallback parameter optimization")
+        
+        # Simple random search fallback
+        n_trials = kwargs.get('n_trials', 20)
+        best_score = float('-inf')
+        best_params = None
+        
+        for _ in range(n_trials):
+            params = {}
+            for param_name, param_config in parameter_space.items():
+                if param_config['type'] == 'int':
+                    params[param_name] = np.random.randint(
+                        param_config['low'], param_config['high'] + 1
+                    )
+                elif param_config['type'] == 'float':
+                    params[param_name] = np.random.uniform(
+                        param_config['low'], param_config['high']
+                    )
+                elif param_config['type'] == 'categorical':
+                    params[param_name] = np.random.choice(param_config['choices'])
+            
+            score = objective_function(data, params)
+            
+            if score > best_score:
+                best_score = score
+                best_params = params
+        
+        return {
+            'best_params': best_params,
+            'best_score': best_score,
+            'method': 'fallback_random_search'
+        }
 
 
 # Convenience functions

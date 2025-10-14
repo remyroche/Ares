@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 
 # Import original research framework components
-from src.research.profit_labeling import (
+from research.profit_labeling import (
     HeuristicAnalyzer,
     LabelingValidator,
     ParameterOptimizer,
@@ -28,7 +28,7 @@ from src.research.profit_labeling import (
 )
 
 # Import enhanced components
-from src.research.profit_labeling import (
+from research.profit_labeling import (
     # Enhanced labeling system
     EnhancedMultiHorizonProfitLabeler,
     EnhancedLabelingConfig,
@@ -261,7 +261,7 @@ def example_integration_with_existing_labeler():
     print(f"   → Overall opportunity mean: {original_labels['overall_opportunity'].mean():.3f}")
     
     # Enhance existing labeler
-    from src.research.profit_labeling import enhance_existing_labeler
+    from research.profit_labeling import enhance_existing_labeler
     enhanced_labeler = enhance_existing_labeler(existing_labeler, EnhancementLevel.ML_ENHANCED)
     
     print("\n🚀 Enhanced labeler:")

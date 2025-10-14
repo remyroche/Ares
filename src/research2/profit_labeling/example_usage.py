@@ -20,7 +20,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import the research framework
-from src.research.profit_labeling import (
+from research.profit_labeling import (
     HeuristicAnalyzer,
     HeuristicAnalysisConfig,
     LabelingValidator,

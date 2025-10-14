@@ -90,7 +90,7 @@ def demonstrate_data_driven_optimization():
     print(f"📊 Generated {len(market_data)} samples of market data")
     
     try:
-        from src.research.profit_labeling import (
+        from research.profit_labeling import (
             optimize_bonus_penalty_parameters,
             BonusPenaltyOptimizationConfig
         )
@@ -145,7 +145,7 @@ def demonstrate_performance_comparison():
         print(f"   → Overall opportunity: {original_opportunity:.3f} ± {original_std:.3f}")
         
         # Test optimized labeler
-        from src.research.profit_labeling import create_optimized_labeler
+        from research.profit_labeling import create_optimized_labeler
         
         print("\n2. Optimized Labeler (Data-Driven Parameters):")
         
@@ -204,7 +204,7 @@ def demonstrate_regime_specific_optimization():
     market_data = generate_realistic_market_data(1500)
     
     try:
-        from src.research.profit_labeling import RegimeSpecificBonusPenaltyOptimizer
+        from research.profit_labeling import RegimeSpecificBonusPenaltyOptimizer
         
         # Create regime-specific optimizer
         regime_optimizer = RegimeSpecificBonusPenaltyOptimizer()
@@ -248,7 +248,7 @@ def demonstrate_integration_with_multi_horizon_labeler():
     
     print("Step 1: Get optimal bonus/penalty configuration")
     try:
-        from src.research.profit_labeling import get_optimal_bonus_penalty_config
+        from research.profit_labeling import get_optimal_bonus_penalty_config
         
         optimal_config = get_optimal_bonus_penalty_config(market_data)
         
@@ -290,7 +290,7 @@ def demonstrate_integration_with_multi_horizon_labeler():
     
     print("\n🎭 Option 3: Use Enhanced Framework")
     print("""
-    from src.research.profit_labeling import create_enhanced_labeler, EnhancementLevel
+    from research.profit_labeling import create_enhanced_labeler, EnhancementLevel
     
     # Enhanced labeler includes bonus/penalty optimization
     enhanced_labeler = create_enhanced_labeler(EnhancementLevel.FULLY_OPTIMIZED)
@@ -310,7 +310,7 @@ def demonstrate_parameter_sensitivity_analysis():
     print("Testing sensitivity of key parameters...")
     
     try:
-        from src.research.profit_labeling import BonusPenaltyOptimizer, BonusPenaltyOptimizationConfig
+        from research.profit_labeling import BonusPenaltyOptimizer, BonusPenaltyOptimizationConfig
         
         # Test different risk penalty multipliers
         risk_multipliers = [10, 30, 50, 100]

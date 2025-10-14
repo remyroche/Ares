@@ -42,7 +42,7 @@ def test_basic_imports():
     print("🔍 Testing imports...")
     
     try:
-        from src.research.profit_labeling import (
+        from research.profit_labeling import (
             # Enhanced components
             EnhancedMultiHorizonProfitLabeler,
             EnhancementLevel,
@@ -67,7 +67,7 @@ def test_enhanced_labeler():
     print("\n🤖 Testing Enhanced Labeler...")
     
     try:
-        from src.research.profit_labeling import create_enhanced_labeler, EnhancementLevel
+        from research.profit_labeling import create_enhanced_labeler, EnhancementLevel
         
         # Generate test data
         market_data = generate_test_data(300)
@@ -132,7 +132,7 @@ def test_individual_components():
     
     # Test 1: ML Quality Assessment
     try:
-        from src.research.profit_labeling import assess_label_quality_ml
+        from research.profit_labeling import assess_label_quality_ml
         from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
         
         # Generate base labels first
@@ -148,7 +148,7 @@ def test_individual_components():
     
     # Test 2: Adaptive Configuration
     try:
-        from src.research.profit_labeling import get_regime_adaptive_config
+        from research.profit_labeling import get_regime_adaptive_config
         
         adaptive_result = get_regime_adaptive_config(market_data)
         print(f"   ✅ Adaptive Config: Regime {adaptive_result.regime.value}, confidence {adaptive_result.regime_confidence:.3f}")
@@ -158,7 +158,7 @@ def test_individual_components():
     
     # Test 3: Feature Engineering
     try:
-        from src.research.profit_labeling import engineer_contextual_features
+        from research.profit_labeling import engineer_contextual_features
         
         feature_result = engineer_contextual_features(market_data)
         print(f"   ✅ Feature Engineering: {len(feature_result.feature_names)} features generated")
@@ -168,7 +168,7 @@ def test_individual_components():
     
     # Test 4: Real-time Monitoring
     try:
-        from src.research.profit_labeling import create_real_time_monitor
+        from research.profit_labeling import create_real_time_monitor
         
         monitor = create_real_time_monitor()
         
@@ -191,7 +191,7 @@ def test_convenience_functions():
     market_data = generate_test_data(200)
     
     try:
-        from src.research.profit_labeling import generate_fully_enhanced_labels
+        from research.profit_labeling import generate_fully_enhanced_labels
         
         # Test convenience function for full enhancement
         result = generate_fully_enhanced_labels(market_data)

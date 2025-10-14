@@ -3890,18 +3890,19 @@ class UnifiedDataDrivenPipeline:
     
     def _update_cache_statistics(self) -> None:
         """Update advanced cache statistics."""
-        if hasattr(self, 'cache_metrics'):
-            total_operations = self.cache_metrics['hits'] + self.cache_metrics['misses']
-            if total_operations > 0:
-                self.cache_metrics['cache_hit_rate'] = self.cache_metrics['hits'] / total_operations
-            
-            # Calculate cache efficiency
-            if self.cache_metrics['writes'] > 0:
-                self.cache_metrics['cache_efficiency'] = (
-                    self.cache_metrics['hits'] / self.cache_metrics['writes']
-                )
-            else:
-                self.cache_metrics['cache_efficiency'] = 0.0
+        try:
+            if hasattr(self, 'cache_metrics'):
+                total_operations = self.cache_metrics['hits'] + self.cache_metrics['misses']
+                if total_operations > 0:
+                    self.cache_metrics['cache_hit_rate'] = self.cache_metrics['hits'] / total_operations
+                
+                # Calculate cache efficiency
+                if self.cache_metrics['writes'] > 0:
+                    self.cache_metrics['cache_efficiency'] = (
+                        self.cache_metrics['hits'] / self.cache_metrics['writes']
+                    )
+                else:
+                    self.cache_metrics['cache_efficiency'] = 0.0
         except Exception as e:
             tprint_debug(f"Cache storage failed: {e}")
     

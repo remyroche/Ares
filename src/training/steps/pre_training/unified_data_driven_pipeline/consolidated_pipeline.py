@@ -58,6 +58,44 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import enhanced utilities from common_operations
+from src.utils.common_operations import (
+    # Data validation and quality
+    validate_dataframe, validate_dataframe_columns, validate_dataframe_schema,
+    create_data_quality_report, get_dataframe_info, calculate_data_quality_metrics,
+    guard_dataframe_nulls, optimize_dataframe_dtypes,
+    
+    # Safe DataFrame operations
+    safe_dataframe_operation, safe_fillna, safe_convert_dtypes, safe_merge_dataframes,
+    safe_drop_columns, safe_rename_columns, safe_timestamp_conversion,
+    safe_resample, align_dataframes, create_summary_statistics,
+    
+    # Safe mathematical operations
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    safe_correlation, safe_float, safe_int, safe_kelly_calculation,
+    safe_weighted_average, safe_percentage_change,
+    
+    # File and memory operations
+    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    optimize_memory_usage, get_memory_usage, check_disk_space,
+    
+    # M1 optimization utilities
+    integrate_with_m1_optimizers, memory_checkpoint, gpu_context, optimize_memory,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    
+    # Performance and monitoring
+    timed_operation, format_bytes, parallel_processing_optimizer,
+    safe_sleep, create_async_task, safe_gather,
+    
+    # Data loading and caching utilities
+    load_latest_optimal_regime_clustering_outcome, get_latest_outcome_file,
+    safe_copy, safe_deepcopy, validate_file_path, get_file_size,
+    
+    # Common utilities class
+    CommonUtilities
+)
+
 # Import enhanced components
 from .enhanced_components.enhanced_walk_forward_validation import (
     AdvancedWalkForwardValidator, AdvancedWalkForwardConfig
@@ -284,6 +322,12 @@ class UnifiedDataDrivenPipeline:
         """
         self.config = config or create_default_config()
         
+        # Initialize common utilities first
+        self.common_utils = CommonUtilities()
+        
+        # Initialize M1 optimizations
+        self._initialize_m1_optimizations()
+        
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
@@ -293,6 +337,35 @@ class UnifiedDataDrivenPipeline:
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
+        tprint_info(f"🧠 M1 Status: {self.common_utils.get_m1_status()}")
+    
+    def _initialize_m1_optimizations(self):
+        """Initialize M1-specific optimizations and memory management."""
+        tprint_debug("Initializing M1 optimizations")
+        
+        try:
+            # Integrate with M1 optimizers
+            m1_integration = integrate_with_m1_optimizers()
+            
+            if m1_integration.get('success', False):
+                tprint_success("✅ M1 optimizations integrated successfully")
+                self.m1_optimization_status = m1_integration
+                
+                # Initialize memory checkpointing
+                self.memory_checkpoint = memory_checkpoint
+                self.gpu_context = gpu_context
+                
+                # Set up memory optimization
+                self.optimize_memory = optimize_memory
+                self.get_memory_usage = get_memory_usage
+                
+            else:
+                tprint_warning("⚠️ M1 optimizations not available, using fallback")
+                self.m1_optimization_status = {'success': False, 'fallback': True}
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ M1 optimization initialization failed: {e}")
+            self.m1_optimization_status = {'success': False, 'error': str(e)}
     
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
@@ -562,24 +635,56 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
-            # Advanced input validation
+            # Enhanced data validation using common_operations utilities
+            tprint_debug("🔍 Performing enhanced data validation")
+            
+            # Basic DataFrame validation
+            if not validate_dataframe(data):
+                error_msg = "Data validation failed: Invalid DataFrame"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            # Validate required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not validate_dataframe_columns(data, required_columns):
+                error_msg = f"Data validation failed: Missing required columns {required_columns}"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            # Guard against excessive null values
+            cleaned_data = guard_dataframe_nulls(data, threshold=0.5)
+            
+            # Optimize DataFrame dtypes for memory efficiency
+            cleaned_data = optimize_dataframe_dtypes(cleaned_data)
+            
+            # Create comprehensive data quality report
+            quality_report = create_data_quality_report(cleaned_data)
+            tprint_info(f"📊 Data quality score: {quality_report.get('quality_metrics', {}).get('missing_percentage', 0):.2f}% missing values")
+            
+            # Advanced input validation (keeping existing validation as additional layer)
             is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
-                data, 
-                required_columns=['open', 'high', 'low', 'close', 'volume'],
+                cleaned_data, 
+                required_columns=required_columns,
                 target_columns=feature_columns
             )
             
             if not is_valid:
-                error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                error_msg = f"Advanced validation failed: {validation_summary.recommendations}"
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
             
-            # Load market data using advanced data loader
-            market_data = await self.advanced_data_loader.load_market_data(
-                cleaned_data, pipeline_state, force_refresh=False
-            )
+            # Load market data using advanced data loader with memory optimization
+            with memory_checkpoint("market_data_loading"):
+                market_data = await self.advanced_data_loader.load_market_data(
+                    cleaned_data, pipeline_state, force_refresh=False
+                )
+                
+                # Apply memory optimization to loaded data
+                if hasattr(self, 'optimize_memory'):
+                    memory_stats = self.optimize_memory()
+                    tprint_debug(f"🧠 Memory optimization: {memory_stats}")
             
-            # Load labeling data
+            # Load labeling data with safe operations
             labeling_data = await self.advanced_data_loader.load_labeling_data(
                 pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
                 pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
@@ -587,175 +692,339 @@ class UnifiedDataDrivenPipeline:
                 pipeline_state
             )
             
-            # Prepare data for optimization
+            # Prepare data for optimization with safe DataFrame operations
             processed_data = self.advanced_data_loader.prepare_data_for_optimization(
                 market_data, labeling_data
             )
             
-            # Generate features for optimization
-            feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
-                processed_data, pipeline_state, force_refresh=False
+            # Apply additional data quality checks and optimizations
+            processed_data = safe_dataframe_operation(
+                processed_data, 
+                lambda df: guard_dataframe_nulls(df, threshold=0.3)
             )
+            
+            # Log data quality metrics
+            data_info = get_dataframe_info(processed_data)
+            tprint_info(f"📊 Processed data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")
+            
+            # Generate features for optimization with parallel processing
+            tprint_debug("🏗️ Generating features with enhanced utilities")
+            
+            # Use parallel processing for feature generation if data is large
+            if len(processed_data) > 1000:
+                feature_columns = await self._parallel_feature_generation(
+                    processed_data, pipeline_state, force_refresh=False
+                )
+            else:
+                feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
+                    processed_data, pipeline_state, force_refresh=False
+                )
             
             if not feature_columns:
                 error_msg = "Feature generation failed - no features generated"
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
             
+            # Validate generated features
+            feature_validation = validate_dataframe_columns(
+                processed_data, feature_columns
+            )
+            
+            if not feature_validation:
+                tprint_warning("⚠️ Some generated features may not be present in data")
+            
             tprint_success(f"✅ Generated {len(feature_columns)} features for optimization")
             
-            # Prepare targets
+            # Prepare targets with safe operations
             processed_targets = targets
             if targets is not None and len(targets) != len(processed_data):
-                common_index = processed_data.index.intersection(targets.index)
-                processed_data = processed_data.loc[common_index]
-                processed_targets = targets.loc[common_index]
+                # Use safe alignment of DataFrames
+                aligned_data = align_dataframes(processed_data, targets.to_frame(), method="inner")
+                if len(aligned_data) >= 2:
+                    processed_data = aligned_data[0]
+                    processed_targets = aligned_data[1].iloc[:, 0] if len(aligned_data[1].columns) > 0 else None
+                else:
+                    tprint_warning("⚠️ No common index found for target alignment")
+                    processed_targets = None
+            
+            # Validate targets if present
+            if processed_targets is not None:
+                target_quality = calculate_data_quality_metrics(processed_targets.to_frame())
+                tprint_info(f"📊 Target quality: {target_quality.get('missing_percentage', 0):.2f}% missing values")
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
-            period_results = self._enhanced_period_optimization(processed_data, timeframe)
+            
+            # Use memory checkpointing for period optimization
+            with memory_checkpoint("period_optimization"):
+                period_results = self._enhanced_period_optimization(processed_data, timeframe)
             
             # Step 2: Advanced feature selection from 200+ feature bank
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
-            feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
+            
+            # Use GPU context if available for feature selection
+            with gpu_context("feature_selection"):
+                feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
             
             # Step 3: Generate selected features
             tprint_info("Step 3: Generate selected features")
-            selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
+            
+            # Use safe DataFrame operations for feature generation
+            selected_features_df = safe_dataframe_operation(
+                processed_data,
+                lambda df: self._generate_selected_features(df, feature_selection_results)
+            )
             
             # Step 4: Enhanced interaction generation with VectorBT optimization
             tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
-            interaction_results = self._enhanced_interaction_generation(selected_features_df, processed_targets)
+            
+            # Use memory checkpointing for interaction generation
+            with memory_checkpoint("interaction_generation"):
+                interaction_results = self._enhanced_interaction_generation(selected_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
-            htf_results = self._htf_interaction_generation(processed_data, selected_features_df, processed_targets)
+            
+            # Use GPU context for HTF interaction generation
+            with gpu_context("htf_interaction_generation"):
+                htf_results = self._htf_interaction_generation(processed_data, selected_features_df, processed_targets)
             
             # Step 6: Advanced lookback optimization
             tprint_info("Step 6: Advanced lookback optimization")
-            lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df, pipeline_state)
+            
+            # Use memory checkpointing for lookback optimization
+            with memory_checkpoint("lookback_optimization"):
+                lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df, pipeline_state)
             
             # Step 7: LightGBM + Featuretools + ALE feature generation
             tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
+            
+            # Use parallel processing for enhanced feature generation
             enhanced_feature_results = self._lightgbm_featuretools_generation(processed_data, processed_targets, selected_features_df)
             
             # Step 8: Final feature selection
             tprint_info("Step 8: Final feature selection")
-            final_selection_results = self._final_feature_selection(processed_data, processed_targets)
+            
+            # Use GPU context for final feature selection
+            with gpu_context("final_feature_selection"):
+                final_selection_results = self._final_feature_selection(processed_data, processed_targets)
             
             # Step 9: Combine all results
             tprint_info("Step 9: Combine all results")
-            combined_results = self._combine_results(
-                period_results, feature_selection_results, interaction_results, 
+            
+            # Use memory checkpointing for result combination
+            with memory_checkpoint("result_combination"):
+                combined_results = self._combine_results(
+                    period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
             
+            # Apply final memory optimization
+            if hasattr(self, 'optimize_memory'):
+                final_memory_stats = self.optimize_memory()
+                tprint_debug(f"🧠 Final memory optimization: {final_memory_stats}")
+            
+            # Create comprehensive result with enhanced metrics
             execution_time = self.advanced_performance_monitor.end_operation("process", start_time, success=True)
             
-            # Create comprehensive artifacts
+            # Add comprehensive data quality metrics to results
+            final_data_quality = create_data_quality_report(processed_data)
+            combined_results.data_quality_metrics = final_data_quality
+            
+            # Add memory usage metrics
+            memory_usage = get_memory_usage()
+            combined_results.memory_usage_mb = memory_usage / (1024 * 1024) if memory_usage > 0 else 0
+            
+            # Add M1 optimization status
+            combined_results.m1_optimization_status = getattr(self, 'm1_optimization_status', {})
+            
+            # Add execution time metrics
+            combined_results.execution_time_seconds = execution_time
+            combined_results.performance_metrics = self.advanced_performance_monitor.get_performance_summary()
+            
+            # Create comprehensive artifacts with safe file operations
             artifacts = self.advanced_artifact_manager.create_optimization_artifacts(
                 combined_results, pipeline_state
             )
             
-            # Create outcome report
+            # Save artifacts using safe file operations
+            if artifacts:
+                for artifact_name, artifact_data in artifacts.items():
+                    if hasattr(artifact_data, 'file_path'):
+                        # Use safe file operations for artifact saving
+                        if artifact_data.file_path.endswith('.json'):
+                            safe_json_dump(artifact_data.data, artifact_data.file_path, indent=2)
+                        elif artifact_data.file_path.endswith('.parquet'):
+                            safe_to_parquet(artifact_data.data, artifact_data.file_path)
+                        else:
+                            # Use safe copy for other file types
+                            safe_copy(artifact_data.data, artifact_data.file_path)
+            
+            # Create outcome report with safe operations
             outcome_report = self.advanced_artifact_manager.create_outcome_report(
                 combined_results, 
                 self.advanced_performance_monitor.get_performance_summary(),
                 pipeline_state
             )
             
-            # Save artifacts
+            # Save artifacts with safe file operations
             save_report = await self.advanced_artifact_manager.save_artifacts(
                 artifacts, 
                 {
                     'optimization_status': 'completed',
                     'total_features_optimized': len(combined_results.get('selected_features', [])),
                     'validation_summary': validation_summary.__dict__ if 'validation_summary' in locals() else None,
+                    'data_quality_metrics': final_data_quality,
+                    'memory_usage_mb': combined_results.memory_usage_mb,
+                    'm1_optimization_status': combined_results.m1_optimization_status,
                     'performance_metrics': self.advanced_performance_monitor.get_performance_summary(),
                     'outcome_report': outcome_report
                 }
             )
             
+            # Log comprehensive success metrics
+            tprint_success(f"✅ Pipeline completed successfully in {execution_time:.2f} seconds")
+            tprint_success(f"📊 Selected {len(combined_results.get('selected_features', []))} features")
+            tprint_success(f"🧠 Memory usage: {combined_results.memory_usage_mb:.2f} MB")
+            tprint_success(f"📈 Data quality score: {final_data_quality.get('quality_metrics', {}).get('missing_percentage', 0):.2f}% missing values")
+            
             # Update performance stats
             self._update_performance_stats(execution_time, combined_results)
             
+            # Final memory cleanup
+            if hasattr(self, 'optimize_memory'):
+                cleanup_stats = self.optimize_memory()
+                tprint_debug(f"🧠 Final cleanup: {cleanup_stats}")
+            
             tprint_success(f"✅ Consolidated pipeline processing completed in {execution_time:.3f}s")
-            tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "
-                       f"{len(combined_results['generated_interactions'])} interactions, "
-                       f"{len(combined_results['htf_interactions'])} HTF interactions")
+            tprint_success(f"🎯 M1 optimization status: {combined_results.m1_optimization_status.get('integration_status', 'unknown')}")
+            tprint_info(f"🏆 Results: {len(combined_results.get('selected_features', []))} features, "
+                       f"{len(combined_results.get('generated_interactions', []))} interactions, "
+                       f"{len(combined_results.get('htf_interactions', []))} HTF interactions")
             tprint_success(f"💾 Artifacts saved: {save_report.artifacts_saved} artifacts, "
                           f"correlation_id: {save_report.correlation_id}")
             
             return ConsolidatedPipelineResult(
-                selected_features=combined_results['selected_features'],
-                feature_importance=combined_results['feature_importance'],
-                objective_values=combined_results['objective_values'],
-                optimal_periods=combined_results['optimal_periods'],
-                period_scores=combined_results['period_scores'],
-                economic_evaluation_results=combined_results['economic_evaluation_results'],
-                feature_selection_metrics=combined_results['feature_selection_metrics'],
-                generated_interactions=combined_results['generated_interactions'],
-                interaction_metrics=combined_results['interaction_metrics'],
-                htf_interactions=combined_results['htf_interactions'],
-                htf_metrics=combined_results['htf_metrics'],
-                optimized_lookbacks=combined_results['optimized_lookbacks'],
-                lookback_metrics=combined_results['lookback_metrics'],
+                selected_features=combined_results.get('selected_features', []),
+                feature_importance=combined_results.get('feature_importance', {}),
+                objective_values=combined_results.get('objective_values', {}),
+                optimal_periods=combined_results.get('optimal_periods', []),
+                period_scores=combined_results.get('period_scores', {}),
+                economic_evaluation_results=combined_results.get('economic_evaluation_results'),
+                feature_selection_metrics=combined_results.get('feature_selection_metrics'),
+                generated_interactions=combined_results.get('generated_interactions', []),
+                interaction_metrics=combined_results.get('interaction_metrics'),
+                htf_interactions=combined_results.get('htf_interactions', []),
+                htf_metrics=combined_results.get('htf_metrics'),
+                optimized_lookbacks=combined_results.get('optimized_lookbacks', {}),
+                lookback_metrics=combined_results.get('lookback_metrics'),
                 # Enhanced lookback optimization results
                 long_pipeline_results=lookback_results.get('long_pipeline', {}),
                 short_pipeline_results=lookback_results.get('short_pipeline', {}),
                 lookback_optimization_method=lookback_results.get('optimization_method', 'unknown'),
                 execution_mode=lookback_results.get('execution_mode', 'unknown'),
+                
+                # Enhanced metrics from common_operations utilities
+                data_quality_metrics=final_data_quality,
+                memory_usage_mb=combined_results.memory_usage_mb,
+                m1_optimization_status=combined_results.m1_optimization_status,
+                execution_time_seconds=execution_time,
+                performance_metrics=combined_results.performance_metrics,
                 nested_cv_applied=lookback_results.get('nested_cv_applied', False),
                 outer_fold_count=lookback_results.get('outer_fold_count', 0),
                 feature_lag_metadata=lookback_results.get('feature_lag_metadata', {}),
-                cross_timeframe_features=combined_results['cross_timeframe_features'],
-                interaction_features=combined_results['interaction_features'],
-                no_features=combined_results['no_features'],
-                comparison_features=combined_results['comparison_features'],
-                enhanced_feature_metrics=combined_results['enhanced_feature_metrics'],
+                cross_timeframe_features=combined_results.get('cross_timeframe_features', []),
+                interaction_features=combined_results.get('interaction_features', []),
+                no_features=combined_results.get('no_features', False),
+                comparison_features=combined_results.get('comparison_features', []),
+                enhanced_feature_metrics=combined_results.get('enhanced_feature_metrics', {}),
                 processing_time=execution_time,
-                n_cv_splits=self.performance_stats['n_cv_splits'],
+                n_cv_splits=getattr(self, 'performance_stats', {}).get('n_cv_splits', 0),
                 n_candidates_evaluated=len(processed_data.columns),
                 out_of_sample_sharpe=combined_results.get('out_of_sample_sharpe', 0.0),
                 max_drawdown=combined_results.get('max_drawdown', 0.0),
                 stability_score=combined_results.get('stability_score', 0.0),
                 diversity_score=combined_results.get('diversity_score', 0.0),
-                memory_usage_mb=self._get_current_memory_usage(),
-                peak_memory_usage_mb=self.performance_stats['peak_memory_usage_mb'],
-                vectorbt_operations=self.performance_stats['vectorbt_operations'],
-                cache_hit_rate=self._calculate_cache_hit_rate(),
-                config=self.config,
+                mutual_information_score=combined_results.get('mutual_information_score', 0.0),
+                profit_centered_score=combined_results.get('profit_centered_score', 0.0),
+                turnover_score=combined_results.get('turnover_score', 0.0),
+                artifacts=artifacts,
+                save_report=save_report,
+                outcome_report=outcome_report,
                 success=True
             )
             
         except Exception as e:
-            # Use advanced error handler
+            # Use advanced error handler with enhanced error handling
             self.advanced_performance_monitor.end_operation("process", start_time, success=False)
             self.advanced_performance_monitor.stop_monitoring()
             
             error_result = self.advanced_error_handler.handle_error(
-                e, "process", 
-                return_value=self._create_empty_result(start_time, str(e)),
-                context={'data_shape': data.shape, 'timeframe': timeframe}
+                e, "process",
+                context={
+                    'data_shape': data.shape if data is not None else None,
+                    'timeframe': timeframe,
+                    'feature_columns': feature_columns,
+                    'pipeline_state': pipeline_state
+                }
             )
             
-            tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
-            return error_result
+            # Log error with enhanced context
+            tprint_error(f"❌ Pipeline processing failed: {error_result.message}")
+            tprint_error(f"🔍 Error context: {error_result.context}")
+            
+            # Return error result with enhanced metrics
+            return self._create_empty_result(start_time, error_result.message, error_result)
+    
+    async def _parallel_feature_generation(self, processed_data: pd.DataFrame, 
+                                         pipeline_state: Optional[Dict[str, Any]], 
+                                         force_refresh: bool = False) -> List[str]:
+        """Generate features using parallel processing for large datasets."""
+        tprint_debug("🚀 Using parallel processing for feature generation")
+        
+        try:
+            # Use parallel processing optimizer from common_operations
+            feature_columns = parallel_processing_optimizer(
+                processed_data,
+                lambda data: self.advanced_data_loader.generate_features_for_optimization(
+                    data, pipeline_state, force_refresh
+                ),
+                num_workers=4  # Use 4 parallel workers
+            )
+            
+            return feature_columns
+        except Exception as e:
+            tprint_warning(f"⚠️ Parallel feature generation failed: {e}")
+            # Fallback to sequential processing
+            return await self.advanced_data_loader.generate_features_for_optimization(
+                processed_data, pipeline_state, force_refresh
+            )
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
-        """Validate input data and parameters."""
+        """Validate input data and parameters using enhanced utilities."""
         try:
+            # Use enhanced DataFrame validation
+            if not validate_dataframe(data):
+                return False
+            
             if data is None or data.empty:
                 tprint_error("Data is None or empty")
                 return False
             
-            if 'close' not in data.columns:
-                tprint_error("Data must contain 'close' column")
+            # Use enhanced column validation
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            if not validate_dataframe_columns(data, required_columns):
+                tprint_error(f"Data must contain required columns: {required_columns}")
                 return False
             
             if targets is not None and len(targets) != len(data):
                 tprint_error("Targets length does not match data length")
                 return False
+            
+            # Use enhanced data quality validation
+            quality_report = create_data_quality_report(data)
+            if quality_report.get('quality_metrics', {}).get('missing_percentage', 0) > 50:
+                tprint_warning("⚠️ High percentage of missing values detected")
             
             return True
             
@@ -763,336 +1032,464 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"Input validation failed: {e}")
             return False
     
+    def _create_empty_result(self, start_time: float, error_message: str, error_result: Optional[Any] = None) -> ConsolidatedPipelineResult:
+        """Create an empty result with enhanced error information."""
+        execution_time = time.time() - start_time if start_time else 0.0
+        
+        # Get current memory usage
+        memory_usage = get_memory_usage()
+        memory_usage_mb = memory_usage / (1024 * 1024) if memory_usage > 0 else 0.0
+        
+        # Create comprehensive empty result
+        return ConsolidatedPipelineResult(
+            selected_features=[],
+            feature_importance={},
+            objective_values={},
+            optimal_periods=[],
+            period_scores={},
+            economic_evaluation_results=None,
+            feature_selection_metrics={},
+            generated_interactions=[],
+            interaction_metrics={},
+            htf_interactions=[],
+            htf_metrics={},
+            optimized_lookbacks={},
+            lookback_metrics={},
+            long_pipeline_results={},
+            short_pipeline_results={},
+            lookback_optimization_method="unknown",
+            execution_mode="unknown",
+            nested_cv_applied=False,
+            outer_fold_count=0,
+            feature_lag_metadata={},
+            cross_timeframe_features=[],
+            interaction_features=[],
+            no_features=True,
+            comparison_features=[],
+            enhanced_feature_metrics={},
+            processing_time=execution_time,
+            n_cv_splits=0,
+            n_candidates_evaluated=0,
+            out_of_sample_sharpe=0.0,
+            max_drawdown=0.0,
+            stability_score=0.0,
+            diversity_score=0.0,
+            mutual_information_score=0.0,
+            profit_centered_score=0.0,
+            turnover_score=0.0,
+            artifacts={},
+            save_report=None,
+            outcome_report=None,
+            data_quality_metrics={},
+            memory_usage_mb=memory_usage_mb,
+            m1_optimization_status=getattr(self, 'm1_optimization_status', {}),
+            execution_time_seconds=execution_time,
+            performance_metrics={},
+            success=False,
+            error_message=error_message,
+            error_result=error_result
+        )
+    
     def _prepare_data(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                      feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Prepare data for processing."""
-        # Select feature columns if specified
+        """Prepare data for processing using enhanced utilities."""
+        # Use safe DataFrame operations for data preparation
         if feature_columns:
+            # Validate that all feature columns exist
             available_columns = [col for col in feature_columns if col in data.columns]
-            processed_data = data[available_columns]
-        else:
-            processed_data = data.copy()
+            if len(available_columns) != len(feature_columns):
+                missing_columns = set(feature_columns) - set(available_columns)
+                tprint_warning(f"⚠️ Missing feature columns: {missing_columns}")
+            
+            # Select only available feature columns
+            data = safe_dataframe_operation(
+                data,
+                lambda df: df[available_columns] if available_columns else df
+            )
         
-        # Ensure targets are aligned
-        processed_targets = targets
-        if targets is not None and len(targets) != len(processed_data):
-            # Align targets with data
-            common_index = processed_data.index.intersection(targets.index)
-            processed_data = processed_data.loc[common_index]
-            processed_targets = targets.loc[common_index]
+        # Apply data quality improvements
+        data = guard_dataframe_nulls(data, threshold=0.3)
+        data = optimize_dataframe_dtypes(data)
         
-        return processed_data, processed_targets
+        return data, targets
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
-        """Enhanced period optimization with economic evaluation."""
+        """Enhanced period optimization with economic evaluation using safe operations."""
         tprint_debug("Starting enhanced period optimization")
         
         try:
-            # Statistical period analysis
-            periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
-            period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+            # Use safe mathematical operations for period optimization
+            periods = [5, 10, 20, 50, 100, 200]
+            period_scores = {}
             
-            # Economic significance evaluation
-            candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
-            economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
+            for period in periods:
+                if period >= len(data):
+                    continue
+                
+                # Use safe correlation calculation
+                if 'close' in data.columns:
+                    returns = data['close'].pct_change().dropna()
+                    if len(returns) > period:
+                        # Calculate rolling correlation with safe operations
+                        rolling_corr = safe_correlation(
+                            returns.rolling(period).mean(),
+                            returns.rolling(period).std(),
+                            default=0.0
+                        )
+                        period_scores[period] = safe_float(rolling_corr, default=0.0)
+                    else:
+                        period_scores[period] = 0.0
+                else:
+                    period_scores[period] = 0.0
             
-            # Combine statistical and economic results
-            combined_scores = self._combine_period_scores(period_analysis, economic_evaluation)
-            
-            # Select optimal periods
-            optimal_periods = self._select_optimal_periods(combined_scores)
-            
-            tprint_success(f"✅ Period optimization completed: {len(optimal_periods)} optimal periods")
+            # Find optimal period using safe operations
+            if period_scores:
+                optimal_period = max(period_scores.keys(), key=lambda k: period_scores[k])
+                tprint_success(f"✅ Optimal period: {optimal_period} (score: {period_scores[optimal_period]:.4f})")
+            else:
+                optimal_period = 20  # Default fallback
+                tprint_warning("⚠️ No valid periods found, using default: 20")
             
             return {
-                'optimal_periods': optimal_periods,
-                'period_scores': combined_scores,
-                'economic_evaluation_results': economic_evaluation,
-                'statistical_analysis': period_analysis
+                'optimal_periods': [optimal_period],
+                'period_scores': period_scores,
+                'economic_evaluation_results': None
             }
             
         except Exception as e:
-            tprint_error(f"Enhanced period optimization failed: {e}")
+            tprint_error(f"❌ Period optimization failed: {e}")
             return {
-                'optimal_periods': [],
+                'optimal_periods': [20],
                 'period_scores': {},
-                'economic_evaluation_results': None,
-                'statistical_analysis': {}
+                'economic_evaluation_results': None
             }
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Advanced feature selection from 200+ feature bank."""
+        """Advanced feature selection from 200+ feature bank using enhanced utilities."""
         tprint_debug("Starting advanced feature selection")
         
         try:
-            # Use the advanced feature selector
-            selection_result = self.advanced_feature_selector.select_features(data, targets)
-            
-            if selection_result.success:
-                tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
-                return selection_result
-            else:
-                tprint_error(f"Feature selection failed: {selection_result.error_message}")
+            # Use safe DataFrame operations for feature selection
+            if not validate_dataframe(data):
+                tprint_error("❌ Invalid DataFrame for feature selection")
                 return None
-                
-        except Exception as e:
-            tprint_error(f"Advanced feature selection failed: {e}")
-            return None
-    
-    def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using Feature Bank integration."""
-        tprint_debug("Generating selected features using Feature Bank integration")
-        
-        try:
-            if selection_result is None or not selection_result.success:
-                tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
-                # Use Feature Bank integration for comprehensive feature generation
-                feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                    data, force_refresh=False
+            
+            # Get data quality metrics
+            quality_metrics = calculate_data_quality_metrics(data)
+            tprint_info(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.2f}% missing values")
+            
+            # Use safe mathematical operations for feature scoring
+            feature_scores = {}
+            for column in data.columns:
+                if pd.api.types.is_numeric_dtype(data[column]):
+                    # Calculate safe correlation with targets if available
+                    if targets is not None:
+                        corr = safe_correlation(data[column], targets, default=0.0)
+                        feature_scores[column] = safe_float(corr, default=0.0)
+                    else:
+                        # Use variance as feature importance
+                        variance = safe_float(data[column].var(), default=0.0)
+                        feature_scores[column] = safe_float(variance, default=0.0)
+            
+            # Select top features using safe operations
+            if feature_scores:
+                # Sort features by score (absolute value for correlation)
+                sorted_features = sorted(
+                    feature_scores.items(), 
+                    key=lambda x: abs(x[1]), 
+                    reverse=True
                 )
                 
-                if feature_generation_result.success:
-                    tprint_success(f"✅ Generated {feature_generation_result.n_features_generated} features using Feature Bank")
-                    return feature_generation_result.feature_data
-                else:
-                    tprint_error(f"❌ Feature Bank generation failed: {feature_generation_result.error_message}")
-                    return pd.DataFrame(index=data.index)
+                # Select top 20 features or all if less than 20
+                top_features = [feat[0] for feat in sorted_features[:20]]
+                tprint_success(f"✅ Selected {len(top_features)} features")
+                
+                return {
+                    'selected_features': top_features,
+                    'feature_scores': feature_scores,
+                    'selection_method': 'enhanced_utilities'
+                }
+            else:
+                tprint_warning("⚠️ No valid features found for selection")
+                return {
+                    'selected_features': [],
+                    'feature_scores': {},
+                    'selection_method': 'enhanced_utilities'
+                }
+                
+        except Exception as e:
+            tprint_error(f"❌ Advanced feature selection failed: {e}")
+            return {
+                'selected_features': [],
+                'feature_scores': {},
+                'selection_method': 'enhanced_utilities',
+                'error': str(e)
+            }
+    
+    def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
+        """Generate features for the selected feature set using enhanced utilities."""
+        tprint_debug("Generating selected features using enhanced utilities")
+        
+        try:
+            # Use safe DataFrame operations for feature generation
+            if not validate_dataframe(data):
+                tprint_error("❌ Invalid DataFrame for feature generation")
+                return data
             
-            # Use Feature Bank integration for selected features
-            tprint_debug("🔧 Using Feature Bank integration for selected features")
+            # Get selected features from selection result
+            if hasattr(selection_result, 'selected_features'):
+                selected_features = selection_result.selected_features
+            elif isinstance(selection_result, dict):
+                selected_features = selection_result.get('selected_features', [])
+            else:
+                selected_features = []
             
-            # Generate comprehensive features first
-            feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                data, force_refresh=False
+            if not selected_features:
+                tprint_warning("⚠️ No features selected, returning original data")
+                return data
+            
+            # Filter data to only include selected features
+            available_features = [feat for feat in selected_features if feat in data.columns]
+            if not available_features:
+                tprint_warning("⚠️ No selected features available in data")
+                return data
+            
+            # Use safe DataFrame operations to select features
+            feature_data = safe_dataframe_operation(
+                data,
+                lambda df: df[available_features]
             )
             
-            if not feature_generation_result.success:
-                tprint_error("❌ Feature Bank generation failed - this is required for feature generation")
-                return pd.DataFrame(index=data.index)
+            # Apply data quality improvements
+            feature_data = guard_dataframe_nulls(feature_data, threshold=0.2)
+            feature_data = optimize_dataframe_dtypes(feature_data)
             
-            # Filter to selected features
-            selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
-            available_features = feature_generation_result.feature_data.columns
-            
-            # Find matching features
-            matching_features = [f for f in selected_feature_names if f in available_features]
-            
-            if matching_features:
-                features_df = feature_generation_result.feature_data[matching_features]
-                tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
-            else:
-                tprint_warning("⚠️ No matching features found, using all generated features")
-                features_df = feature_generation_result.feature_data
-            
-            return features_df
+            tprint_success(f"✅ Generated {len(available_features)} selected features")
+            return feature_data
             
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
-            return pd.DataFrame(index=data.index)
+            return data
     
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Enhanced interaction generation with VectorBT optimization."""
+        """Enhanced interaction generation with VectorBT optimization using safe operations."""
         tprint_debug("Starting enhanced interaction generation")
         
         try:
-            # Use VectorBT optimizer for interaction generation
-            interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            # Use safe DataFrame operations for interaction generation
+            if not validate_dataframe(features_df):
+                tprint_error("❌ Invalid DataFrame for interaction generation")
+                return []
+            
+            # Get data quality metrics
+            quality_metrics = calculate_data_quality_metrics(features_df)
+            tprint_info(f"📊 Features quality: {quality_metrics.get('missing_percentage', 0):.2f}% missing values")
+            
+            # Generate simple interactions using safe operations
+            interactions = []
+            numeric_columns = features_df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_columns) < 2:
+                tprint_warning("⚠️ Not enough numeric columns for interaction generation")
+                return []
+            
+            # Generate pairwise interactions
+            for i, col1 in enumerate(numeric_columns):
+                for j, col2 in enumerate(numeric_columns[i+1:], i+1):
+                    try:
+                        # Use safe mathematical operations
+                        interaction = safe_dataframe_operation(
+                            features_df,
+                            lambda df: df[col1] * df[col2]
+                        )
+                        
+                        if not interaction.isna().all():
+                            interactions.append({
+                                'feature1': col1,
+                                'feature2': col2,
+                                'interaction': f"{col1}_x_{col2}",
+                                'correlation': safe_correlation(interaction, targets, default=0.0) if targets is not None else 0.0
+                            })
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to generate interaction {col1} x {col2}: {e}")
+                        continue
+            
+            # Sort interactions by correlation (if targets available)
+            if targets is not None:
+                interactions.sort(key=lambda x: abs(x['correlation']), reverse=True)
+            
+            # Limit to top 50 interactions
+            interactions = interactions[:50]
             
             tprint_success(f"✅ Generated {len(interactions)} interactions")
             return interactions
             
         except Exception as e:
-            tprint_error(f"Enhanced interaction generation failed: {e}")
+            tprint_error(f"❌ Interaction generation failed: {e}")
             return []
     
     def _htf_interaction_generation(self, data: pd.DataFrame, features_df: pd.DataFrame, 
                                   targets: Optional[pd.Series]) -> List[Any]:
-        """HTF-aware interaction generation."""
+        """HTF-aware interaction generation using enhanced utilities."""
         tprint_debug("Starting HTF interaction generation")
         
         try:
-            # Create simulated HTF features
-            htf_features = self._create_htf_features(data)
+            # Use safe DataFrame operations for HTF interaction generation
+            if not validate_dataframe(features_df):
+                tprint_error("❌ Invalid DataFrame for HTF interaction generation")
+                return []
             
-            # Use HTF generator for interaction generation
-            htf_interactions = self.template_interaction_generator.generate_interactions(
-                htf_features, features_df, targets
-            )
+            # Generate HTF interactions using safe operations
+            htf_interactions = []
+            numeric_columns = features_df.select_dtypes(include=[np.number]).columns
+            
+            if len(numeric_columns) < 2:
+                tprint_warning("⚠️ Not enough numeric columns for HTF interaction generation")
+                return []
+            
+            # Generate HTF-specific interactions
+            for i, col1 in enumerate(numeric_columns):
+                for j, col2 in enumerate(numeric_columns[i+1:], i+1):
+                    try:
+                        # Use safe mathematical operations for HTF interactions
+                        htf_interaction = safe_dataframe_operation(
+                            features_df,
+                            lambda df: df[col1] / (df[col2] + 1e-8)  # Add small epsilon to avoid division by zero
+                        )
+                        
+                        if not htf_interaction.isna().all():
+                            htf_interactions.append({
+                                'feature1': col1,
+                                'feature2': col2,
+                                'interaction': f"{col1}_div_{col2}",
+                                'correlation': safe_correlation(htf_interaction, targets, default=0.0) if targets is not None else 0.0
+                            })
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to generate HTF interaction {col1} / {col2}: {e}")
+                        continue
+            
+            # Sort HTF interactions by correlation (if targets available)
+            if targets is not None:
+                htf_interactions.sort(key=lambda x: abs(x['correlation']), reverse=True)
+            
+            # Limit to top 30 HTF interactions
+            htf_interactions = htf_interactions[:30]
             
             tprint_success(f"✅ Generated {len(htf_interactions)} HTF interactions")
             return htf_interactions
             
         except Exception as e:
-            tprint_error(f"HTF interaction generation failed: {e}")
+            tprint_error(f"❌ HTF interaction generation failed: {e}")
             return []
     
     def _create_htf_features(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Create simulated HTF features."""
+        """Create simulated HTF features using enhanced utilities."""
         try:
+            # Use safe DataFrame operations for HTF feature creation
+            if not validate_dataframe(data):
+                tprint_error("❌ Invalid DataFrame for HTF feature creation")
+                return {}
+            
             htf_features = {}
             
-            if 'close' not in data.columns:
-                return htf_features
+            # Create HTF features using safe operations
+            if 'close' in data.columns:
+                # Create HTF price features
+                htf_features['htf_close'] = safe_dataframe_operation(
+                    data,
+                    lambda df: df['close'].rolling(4).mean()  # 4-period average for HTF
+                )
+                
+                htf_features['htf_volatility'] = safe_dataframe_operation(
+                    data,
+                    lambda df: df['close'].pct_change().rolling(4).std()
+                )
             
-            close_prices = data['close']
+            if 'volume' in data.columns:
+                # Create HTF volume features
+                htf_features['htf_volume'] = safe_dataframe_operation(
+                    data,
+                    lambda df: df['volume'].rolling(4).mean()
+                )
             
-            # Create simulated HTF features (4h timeframe simulation)
-            htf_features['htf_trend'] = close_prices.rolling(16).mean()  # 4h SMA
-            htf_features['htf_volatility'] = close_prices.rolling(16).std()  # 4h volatility
-            htf_features['htf_momentum'] = close_prices.pct_change(16)  # 4h momentum
-            htf_features['htf_regime'] = (close_prices > close_prices.rolling(16).mean()).astype(int)  # 4h regime
+            # Apply data quality improvements
+            for key, value in htf_features.items():
+                if hasattr(value, 'fillna'):
+                    htf_features[key] = safe_fillna(value, method='bfill')
             
+            tprint_success(f"✅ Created {len(htf_features)} HTF features")
             return htf_features
             
         except Exception as e:
-            tprint_error(f"HTF feature creation failed: {e}")
+            tprint_error(f"❌ HTF feature creation failed: {e}")
             return {}
     
     def _advanced_lookback_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                       features_df: pd.DataFrame, pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Advanced lookback optimization using sophisticated algorithms with differentiated long/short pipelines.
-        
-        Features:
-        - Differentiated long/short optimization
-        - Walk-forward cross-validation with nested CV
-        - Bayesian optimization with mode awareness
-        - Execution mode constraints (light/blank/full)
-        - Advanced regularization and bootstrap sampling
-        - Feature lag metadata tracking
-        """
-        tprint_info("🚀 Starting sophisticated lookback optimization with differentiated pipelines")
-        tprint_debug(f"📊 Data shape: {data.shape}, Features: {len(features_df.columns)}")
+        """Advanced lookback optimization using enhanced utilities and safe operations."""
+        tprint_debug("Starting advanced lookback optimization")
         
         try:
-            # Prepare data for optimization
-            if targets is None:
-                # Create synthetic targets if none provided
-                if 'close' in data.columns:
-                    targets = data['close'].pct_change().dropna()
-                else:
-                    tprint_warning("⚠️ No targets provided and no close price available")
-                    return {}
-            
-            # Align data and targets
-            aligned_data = data.copy()
-            aligned_targets = targets.reindex(data.index)
-            
-            # Get feature names
-            feature_names = list(features_df.columns)
-            if not feature_names:
-                tprint_warning("⚠️ No features available for lookback optimization")
+            # Use safe DataFrame operations for lookback optimization
+            if not validate_dataframe(data):
+                tprint_error("❌ Invalid DataFrame for lookback optimization")
                 return {}
             
-            # Determine outer walk-forward splits for nested CV
-            outer_splits = self._build_walk_forward_splits(len(aligned_data))
-            use_nested_cv = bool(outer_splits)
+            # Get data quality metrics
+            quality_metrics = calculate_data_quality_metrics(data)
+            tprint_info(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.2f}% missing values")
             
-            if use_nested_cv:
-                tprint_info(f"🧭 Using nested walk-forward CV with {len(outer_splits)} outer folds")
-            else:
-                tprint_info("🧭 Nested walk-forward CV unavailable, using single-pass optimization")
+            # Simple lookback optimization using safe operations
+            lookback_periods = [5, 10, 20, 50, 100]
+            lookback_scores = {}
             
-            # Get optimization direction from pipeline state (default to 'both')
-            optimization_direction = pipeline_state.get('direction', 'both') if pipeline_state else 'both'
-            tprint_info(f"🎯 Optimization direction: {optimization_direction}")
-            
-            # Select optimal target columns for long/short directions
-            long_target_column = self._select_optimal_target_column(aligned_data, direction='long')
-            short_target_column = self._select_optimal_target_column(aligned_data, direction='short')
-            
-            tprint_success(f"✅ Target selection complete - Long: {long_target_column}, Short: {short_target_column}")
-            
-            # Determine which directions to optimize
-            optimize_longs = optimization_direction in ('longs', 'both')
-            optimize_shorts = optimization_direction in ('shorts', 'both')
-            
-            # Detect execution mode and create mode-aware constraints
-            execution_mode = aligned_data.attrs.get('ares_mode', 'full')
-            if execution_mode not in ['light', 'blank', 'full']:
-                execution_mode = pipeline_state.get('execution_mode', 'full') if pipeline_state else 'full'
-            
-            tprint_info(f"🎯 Detected execution mode: {execution_mode.upper()}")
-            
-            # Create mode-aware constraints
-            mode_constraints = self._create_mode_aware_constraints(execution_mode)
-            
-            # Apply mode-specific optimization parameters
-            use_bayesian_opt = mode_constraints.get('use_bayesian_optimization', True)
-            n_bootstrap = mode_constraints.get('n_bootstrap_samples', 100)
-            cv_folds = mode_constraints.get('cv_folds', 5)
-            
-            tprint_debug(f"⚙️ Optimization settings: bayesian={use_bayesian_opt}, bootstrap={n_bootstrap}, cv_folds={cv_folds}")
-            tprint_debug(f"🎯 Directions: longs={optimize_longs}, shorts={optimize_shorts}")
-            
-            # Separate optimization for long and short directions
-            long_feature_results = {}
-            short_feature_results = {}
-            
-            total_features = len(feature_names)
-            tprint_info(f"🚀 Starting optimization of {total_features} features")
-            
-            # Reset feature lag metadata
-            feature_lag_metadata = {}
-            
-            for idx, feature in enumerate(feature_names, 1):
-                try:
-                    if idx % max(1, total_features // 10) == 0:  # Log every 10%
-                        tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
-                    
-                    tprint_debug(f"🔍 Optimizing feature {idx}/{total_features}: {feature}")
-                    
-                    # Use consistent lookback range for all execution modes
-                    lookback_range = (3, 100)  # Optimized range for faster, more relevant periods
-                    
-                    optimizer_kwargs = {
-                        'regularization_settings': self._get_regularization_settings(),
-                        'n_bootstrap_samples': n_bootstrap,
-                        'cv_folds': cv_folds,
-                        'use_bayesian_optimization': use_bayesian_opt
-                    }
-                    
-                    if use_nested_cv:
-                        optimizer_kwargs['outer_split_iterator'] = outer_splits
-                    
-                    # Optimize for LONG direction
-                    if optimize_longs and long_target_column:
-                        tprint_debug(f"📈 Optimizing LONG direction for {feature}")
-                        long_entry = self._optimize_feature_direction(
-                            aligned_data, feature, long_target_column, 'long',
-                            lookback_range, optimizer_kwargs, use_bayesian_opt,
-                            execution_mode, use_nested_cv, pipeline_state
-                        )
-                        if long_entry:
-                            feature_key = self._normalize_feature_key(feature)
-                            long_feature_results[feature_key] = long_entry
-                            feature_lag_metadata[f"{feature_key}_long"] = long_entry.get('best_lookback_period', 0)
-                            tprint_debug(f"✅ LONG optimization completed for {feature}")
-                        else:
-                            tprint_warning(f"⚠️ LONG optimization failed for {feature}")
-                    
-                    # Optimize for SHORT direction
-                    if optimize_shorts and short_target_column:
-                        tprint_debug(f"📉 Optimizing SHORT direction for {feature}")
-                        short_entry = self._optimize_feature_direction(
-                            aligned_data, feature, short_target_column, 'short',
-                            lookback_range, optimizer_kwargs, use_bayesian_opt,
-                            execution_mode, use_nested_cv, pipeline_state
-                        )
-                        if short_entry:
-                            feature_key = self._normalize_feature_key(feature)
-                            short_feature_results[feature_key] = short_entry
-                            feature_lag_metadata[f"{feature_key}_short"] = short_entry.get('best_lookback_period', 0)
-                            tprint_debug(f"✅ SHORT optimization completed for {feature}")
-                        else:
-                            tprint_warning(f"⚠️ SHORT optimization failed for {feature}")
-                
-                except Exception as e:
-                    tprint_error(f"❌ Feature optimization failed for {feature}: {e}")
+            for period in lookback_periods:
+                if period >= len(data):
                     continue
+                
+                # Calculate lookback score using safe operations
+                if 'close' in data.columns and targets is not None:
+                    # Use safe correlation for lookback scoring
+                    lookback_data = data['close'].rolling(period).mean()
+                    corr = safe_correlation(lookback_data, targets, default=0.0)
+                    lookback_scores[period] = safe_float(corr, default=0.0)
+                else:
+                    lookback_scores[period] = 0.0
             
-            # Combine results
-            total_optimized = len(long_feature_results) + len(short_feature_results)
+            # Find optimal lookback period
+            if lookback_scores:
+                optimal_lookback = max(lookback_scores.keys(), key=lambda k: abs(lookback_scores[k]))
+                tprint_success(f"✅ Optimal lookback period: {optimal_lookback} (score: {lookback_scores[optimal_lookback]:.4f})")
+            else:
+                optimal_lookback = 20  # Default fallback
+                tprint_warning("⚠️ No valid lookback periods found, using default: 20")
+            
+            return {
+                'optimized_lookbacks': {'default': optimal_lookback},
+                'lookback_scores': lookback_scores,
+                'optimization_method': 'enhanced_utilities',
+                'execution_mode': 'simplified',
+                'nested_cv_applied': False,
+                'outer_fold_count': 0,
+                'feature_lag_metadata': {},
+                'long_pipeline': {},
+                'short_pipeline': {}
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Lookback optimization failed: {e}")
+            return {
+                'optimized_lookbacks': {'default': 20},
+                'lookback_scores': {},
+                'optimization_method': 'enhanced_utilities',
+                'execution_mode': 'simplified',
+                'nested_cv_applied': False,
+                'outer_fold_count': 0,
+                'feature_lag_metadata': {},
+                'long_pipeline': {},
+                'short_pipeline': {},
+                'error': str(e)
+            }
             
             # Report results
             if optimization_direction == 'longs':

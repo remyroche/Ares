@@ -72,12 +72,15 @@ class FeatureGenerationConfig:
     enable_interaction_features: bool = True
     enable_multiple_creation_methods: bool = True
     enable_no_features: bool = True
+    enable_feature_comparisons: bool = True
     max_cross_timeframe_features: int = 20
     max_interaction_features: int = 30
     max_no_features: int = 15
+    max_comparison_features: int = 20
     cross_timeframe_periods: List[int] = None
     interaction_orders: List[int] = None
     creation_methods: List[str] = None
+    base_timeframe_minutes: int = 15  # Default 15-minute timeframe
     enable_vectorbt: bool = True
     enable_parallel: bool = True
     memory_efficient: bool = True
@@ -85,7 +88,9 @@ class FeatureGenerationConfig:
     
     def __post_init__(self):
         if self.cross_timeframe_periods is None:
-            self.cross_timeframe_periods = [5, 10, 15, 30, 60, 120, 240]  # minutes
+            # Generate periods up to 600 minutes, respecting base timeframe
+            base_periods = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 40, 60, 80, 120, 160, 240, 320, 480, 600]
+            self.cross_timeframe_periods = [p * self.base_timeframe_minutes for p in base_periods]
         if self.interaction_orders is None:
             self.interaction_orders = [2, 3]  # 2-way and 3-way interactions
         if self.creation_methods is None:
@@ -96,18 +101,23 @@ class FeatureGenerationConfig:
 class GeneratedFeature:
     """Generated feature with metadata."""
     name: str
-    feature_type: str  # 'cross_timeframe', 'interaction', 'no_feature'
+    feature_type: str  # 'cross_timeframe', 'interaction', 'no_feature', 'comparison'
     formula: str
     parent_features: List[str]
     feature_series: pd.Series
     utility_score: float
     lookback_period: Optional[int] = None
     creation_method: Optional[str] = None
+    base_timeframe_minutes: Optional[int] = None
+    source_features: Optional[List[Dict[str, Any]]] = None  # For interaction features
+    comparison_type: Optional[str] = None  # 'base', 'vwap', 'volatility_adjusted', 'zscore_volume'
     metadata: Dict[str, Any] = None
     
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+        if self.source_features is None:
+            self.source_features = []
 
 
 @dataclass
@@ -116,6 +126,7 @@ class FeatureGenerationResult:
     cross_timeframe_features: List[GeneratedFeature]
     interaction_features: List[GeneratedFeature]
     no_features: List[GeneratedFeature]
+    comparison_features: List[GeneratedFeature]
     all_features: List[GeneratedFeature]
     generation_time: float
     success: bool
@@ -146,6 +157,7 @@ class EnhancedFeatureGenerator:
             'cross_timeframe_features_generated': 0,
             'interaction_features_generated': 0,
             'no_features_generated': 0,
+            'comparison_features_generated': 0,
             'vectorbt_operations': 0
         }
         
@@ -178,6 +190,7 @@ class EnhancedFeatureGenerator:
             cross_timeframe_features = []
             interaction_features = []
             no_features = []
+            comparison_features = []
             
             # Generate cross-timeframe features
             if self.config.enable_cross_timeframe:
@@ -197,8 +210,14 @@ class EnhancedFeatureGenerator:
                 no_features = self._generate_no_features(data, targets)
                 tprint_success(f"✅ Generated {len(no_features)} no features")
             
+            # Generate comparison features
+            if self.config.enable_feature_comparisons:
+                tprint_info("Step 4: Generating comparison features")
+                comparison_features = self._generate_comparison_features(data, targets)
+                tprint_success(f"✅ Generated {len(comparison_features)} comparison features")
+            
             # Combine all features
-            all_features = cross_timeframe_features + interaction_features + no_features
+            all_features = cross_timeframe_features + interaction_features + no_features + comparison_features
             
             execution_time = time.time() - start_time
             
@@ -209,7 +228,8 @@ class EnhancedFeatureGenerator:
                 'total_execution_time': execution_time,
                 'cross_timeframe_features_generated': len(cross_timeframe_features),
                 'interaction_features_generated': len(interaction_features),
-                'no_features_generated': len(no_features)
+                'no_features_generated': len(no_features),
+                'comparison_features_generated': len(comparison_features)
             })
             
             tprint_success(f"✅ Enhanced feature generation completed in {execution_time:.3f}s")
@@ -219,6 +239,7 @@ class EnhancedFeatureGenerator:
                 cross_timeframe_features=cross_timeframe_features,
                 interaction_features=interaction_features,
                 no_features=no_features,
+                comparison_features=comparison_features,
                 all_features=all_features,
                 generation_time=execution_time,
                 success=True
@@ -230,6 +251,7 @@ class EnhancedFeatureGenerator:
                 cross_timeframe_features=[],
                 interaction_features=[],
                 no_features=[],
+                comparison_features=[],
                 all_features=[],
                 generation_time=time.time() - start_time,
                 success=False,
@@ -325,9 +347,12 @@ class EnhancedFeatureGenerator:
             for feature in features:
                 feature.utility_score = self._calculate_utility_score(feature.feature_series, targets)
                 feature.lookback_period = period
+                feature.base_timeframe_minutes = self.config.base_timeframe_minutes
                 feature.metadata.update({
                     'timeframe_period': period,
-                    'feature_category': 'cross_timeframe'
+                    'feature_category': 'cross_timeframe',
+                    'base_timeframe_minutes': self.config.base_timeframe_minutes,
+                    'period_in_base_units': period // self.config.base_timeframe_minutes
                 })
             
             return features
@@ -737,14 +762,19 @@ class EnhancedFeatureGenerator:
                         parent_features=[feat1, feat2],
                         feature_series=interaction_series,
                         utility_score=0.0,
-                        creation_method=method
+                        creation_method=method,
+                        source_features=[
+                            {'name': feat1, 'lookback_period': None, 'feature_type': 'base'},
+                            {'name': feat2, 'lookback_period': None, 'feature_type': 'base'}
+                        ]
                     )
                     
                     # Calculate utility score
                     feature.utility_score = self._calculate_utility_score(interaction_series, targets)
                     feature.metadata.update({
                         'interaction_order': 2,
-                        'feature_category': 'interaction'
+                        'feature_category': 'interaction',
+                        'base_timeframe_minutes': self.config.base_timeframe_minutes
                     })
                     
                     features.append(feature)
@@ -798,14 +828,20 @@ class EnhancedFeatureGenerator:
                         parent_features=[feat1, feat2, feat3],
                         feature_series=interaction_series,
                         utility_score=0.0,
-                        creation_method=method
+                        creation_method=method,
+                        source_features=[
+                            {'name': feat1, 'lookback_period': None, 'feature_type': 'base'},
+                            {'name': feat2, 'lookback_period': None, 'feature_type': 'base'},
+                            {'name': feat3, 'lookback_period': None, 'feature_type': 'base'}
+                        ]
                     )
                     
                     # Calculate utility score
                     feature.utility_score = self._calculate_utility_score(interaction_series, targets)
                     feature.metadata.update({
                         'interaction_order': 3,
-                        'feature_category': 'interaction'
+                        'feature_category': 'interaction',
+                        'base_timeframe_minutes': self.config.base_timeframe_minutes
                     })
                     
                     features.append(feature)
@@ -1055,6 +1091,163 @@ class EnhancedFeatureGenerator:
             tprint_debug(f"Error calculating utility score: {e}")
             return 0.0
     
+    def _generate_comparison_features(
+        self, 
+        data: pd.DataFrame, 
+        targets: Optional[pd.Series] = None
+    ) -> List[GeneratedFeature]:
+        """Generate comparison features between base, VWAP-based, volatility-adjusted, and z-score volume adjusted features."""
+        features = []
+        
+        try:
+            # Ensure we have OHLCV data
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            available_cols = [col for col in required_cols if col in data.columns]
+            if not available_cols:
+                return features
+            
+            # Generate comparison features for different periods
+            periods = [5, 10, 15, 30, 60, 120, 240]  # minutes
+            
+            for period in periods:
+                # Skip if period is too large for data
+                if period >= len(data) // 4:
+                    continue
+                
+                # Generate different types of comparison features
+                period_features = self._generate_period_comparison_features(
+                    data, period, available_cols, targets
+                )
+                features.extend(period_features)
+            
+            # Limit to max features
+            if len(features) > self.config.max_comparison_features:
+                # Sort by utility score and take top features
+                features.sort(key=lambda x: x.utility_score, reverse=True)
+                features = features[:self.config.max_comparison_features]
+            
+            return features
+            
+        except Exception as e:
+            tprint_error(f"❌ Comparison feature generation failed: {e}")
+            return []
+    
+    def _generate_period_comparison_features(
+        self, 
+        data: pd.DataFrame, 
+        period: int, 
+        available_cols: List[str],
+        targets: Optional[pd.Series] = None
+    ) -> List[GeneratedFeature]:
+        """Generate comparison features for a specific period."""
+        features = []
+        
+        try:
+            if 'close' in available_cols and 'volume' in available_cols:
+                close = data['close']
+                volume = data['volume']
+                
+                # Base features
+                base_sma = close.rolling(period).mean()
+                base_vol = close.rolling(period).std()
+                
+                # VWAP-based features
+                vwap = (close * volume).rolling(period).sum() / volume.rolling(period).sum()
+                vwap_sma = vwap.rolling(period).mean()
+                vwap_vol = vwap.rolling(period).std()
+                
+                # Volatility-adjusted features
+                vol_adjusted_close = close / (base_vol + 1e-8)
+                vol_adjusted_sma = vol_adjusted_close.rolling(period).mean()
+                vol_adjusted_vol = vol_adjusted_close.rolling(period).std()
+                
+                # Z-score volume adjusted features
+                volume_zscore = (volume - volume.rolling(period).mean()) / (volume.rolling(period).std() + 1e-8)
+                zscore_vol_adjusted_close = close * volume_zscore
+                zscore_vol_adjusted_sma = zscore_vol_adjusted_close.rolling(period).mean()
+                zscore_vol_adjusted_vol = zscore_vol_adjusted_close.rolling(period).std()
+                
+                # Generate comparison features
+                comparison_types = [
+                    ('base', base_sma, base_vol),
+                    ('vwap', vwap_sma, vwap_vol),
+                    ('volatility_adjusted', vol_adjusted_sma, vol_adjusted_vol),
+                    ('zscore_volume', zscore_vol_adjusted_sma, zscore_vol_adjusted_vol)
+                ]
+                
+                # Compare each type with others
+                for i, (type1, sma1, vol1) in enumerate(comparison_types):
+                    for j, (type2, sma2, vol2) in enumerate(comparison_types[i+1:], i+1):
+                        # SMA comparison
+                        sma_ratio = sma1 / (sma2 + 1e-8)
+                        features.append(GeneratedFeature(
+                            name=f"sma_ratio_{type1}_vs_{type2}_{period}",
+                            feature_type="comparison",
+                            formula=f"sma_{type1}({period}) / sma_{type2}({period})",
+                            parent_features=["close", "volume"],
+                            feature_series=sma_ratio,
+                            utility_score=0.0,
+                            lookback_period=period,
+                            base_timeframe_minutes=self.config.base_timeframe_minutes,
+                            comparison_type=f"{type1}_vs_{type2}",
+                            metadata={
+                                'feature_category': 'comparison',
+                                'comparison_types': [type1, type2],
+                                'base_timeframe_minutes': self.config.base_timeframe_minutes,
+                                'period_in_base_units': period // self.config.base_timeframe_minutes
+                            }
+                        ))
+                        
+                        # Volatility comparison
+                        vol_ratio = vol1 / (vol2 + 1e-8)
+                        features.append(GeneratedFeature(
+                            name=f"vol_ratio_{type1}_vs_{type2}_{period}",
+                            feature_type="comparison",
+                            formula=f"vol_{type1}({period}) / vol_{type2}({period})",
+                            parent_features=["close", "volume"],
+                            feature_series=vol_ratio,
+                            utility_score=0.0,
+                            lookback_period=period,
+                            base_timeframe_minutes=self.config.base_timeframe_minutes,
+                            comparison_type=f"{type1}_vs_{type2}",
+                            metadata={
+                                'feature_category': 'comparison',
+                                'comparison_types': [type1, type2],
+                                'base_timeframe_minutes': self.config.base_timeframe_minutes,
+                                'period_in_base_units': period // self.config.base_timeframe_minutes
+                            }
+                        ))
+                        
+                        # Divergence features
+                        sma_divergence = sma1 - sma2
+                        features.append(GeneratedFeature(
+                            name=f"sma_divergence_{type1}_vs_{type2}_{period}",
+                            feature_type="comparison",
+                            formula=f"sma_{type1}({period}) - sma_{type2}({period})",
+                            parent_features=["close", "volume"],
+                            feature_series=sma_divergence,
+                            utility_score=0.0,
+                            lookback_period=period,
+                            base_timeframe_minutes=self.config.base_timeframe_minutes,
+                            comparison_type=f"{type1}_vs_{type2}",
+                            metadata={
+                                'feature_category': 'comparison',
+                                'comparison_types': [type1, type2],
+                                'base_timeframe_minutes': self.config.base_timeframe_minutes,
+                                'period_in_base_units': period // self.config.base_timeframe_minutes
+                            }
+                        ))
+                
+                # Calculate utility scores for all features
+                for feature in features:
+                    feature.utility_score = self._calculate_utility_score(feature.feature_series, targets)
+            
+            return features
+            
+        except Exception as e:
+            tprint_debug(f"Error generating period {period} comparison features: {e}")
+            return []
+    
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
@@ -1069,6 +1262,7 @@ class EnhancedFeatureGenerator:
             'cross_timeframe_features_generated': 0,
             'interaction_features_generated': 0,
             'no_features_generated': 0,
+            'comparison_features_generated': 0,
             'vectorbt_operations': 0
         }
 

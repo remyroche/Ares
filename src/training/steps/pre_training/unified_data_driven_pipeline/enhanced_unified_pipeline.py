@@ -143,6 +143,7 @@ class EnhancedFeaturePipelineResult:
     cross_timeframe_features: List[Any]  # GeneratedFeature objects
     interaction_features: List[Any]  # GeneratedFeature objects
     no_features: List[Any]  # GeneratedFeature objects
+    comparison_features: List[Any]  # GeneratedFeature objects
     enhanced_feature_metrics: Dict[str, Any]
     
     # Overall metrics
@@ -303,9 +304,12 @@ class EnhancedUnifiedDataDrivenPipeline:
             enable_interaction_features=True,
             enable_multiple_creation_methods=True,
             enable_no_features=True,
+            enable_feature_comparisons=True,
             max_cross_timeframe_features=20,
             max_interaction_features=30,
             max_no_features=15,
+            max_comparison_features=20,
+            base_timeframe_minutes=15,  # Default 15-minute timeframe
             enable_vectorbt=True,
             enable_parallel=True,
             memory_efficient=True,
@@ -487,7 +491,8 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'lookback_optimizations': len(lookback_results),
                 'enhanced_feature_generations': len(enhanced_feature_results.get('cross_timeframe_features', [])) + 
                                               len(enhanced_feature_results.get('interaction_features', [])) + 
-                                              len(enhanced_feature_results.get('no_features', []))
+                                              len(enhanced_feature_results.get('no_features', [])) +
+                                              len(enhanced_feature_results.get('comparison_features', []))
             })
             
             tprint_success(f"✅ Enhanced pipeline processing completed in {execution_time:.3f}s")
@@ -496,7 +501,8 @@ class EnhancedUnifiedDataDrivenPipeline:
                        f"{len(combined_results['htf_interactions'])} HTF interactions, "
                        f"{len(combined_results['cross_timeframe_features'])} cross-timeframe, "
                        f"{len(combined_results['interaction_features'])} interaction features, "
-                       f"{len(combined_results['no_features'])} no features")
+                       f"{len(combined_results['no_features'])} no features, "
+                       f"{len(combined_results['comparison_features'])} comparison features")
             
             return EnhancedFeaturePipelineResult(
                 optimal_periods=combined_results['optimal_periods'],
@@ -513,6 +519,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                 cross_timeframe_features=combined_results['cross_timeframe_features'],
                 interaction_features=combined_results['interaction_features'],
                 no_features=combined_results['no_features'],
+                comparison_features=combined_results['comparison_features'],
                 enhanced_feature_metrics=combined_results['enhanced_feature_metrics'],
                 total_processing_time=execution_time,
                 vectorbt_operations=self.performance_stats['vectorbt_operations'],
@@ -853,11 +860,13 @@ class EnhancedUnifiedDataDrivenPipeline:
                     'cross_timeframe_features': feature_result.cross_timeframe_features,
                     'interaction_features': feature_result.interaction_features,
                     'no_features': feature_result.no_features,
+                    'comparison_features': feature_result.comparison_features,
                     'enhanced_feature_metrics': {
                         'total_features': len(feature_result.all_features),
                         'cross_timeframe_count': len(feature_result.cross_timeframe_features),
                         'interaction_count': len(feature_result.interaction_features),
                         'no_features_count': len(feature_result.no_features),
+                        'comparison_count': len(feature_result.comparison_features),
                         'generation_time': feature_result.generation_time
                     }
                 }
@@ -867,6 +876,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                     'cross_timeframe_features': [],
                     'interaction_features': [],
                     'no_features': [],
+                    'comparison_features': [],
                     'enhanced_feature_metrics': {}
                 }
                 
@@ -876,6 +886,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'cross_timeframe_features': [],
                 'interaction_features': [],
                 'no_features': [],
+                'comparison_features': [],
                 'enhanced_feature_metrics': {}
             }
     
@@ -899,6 +910,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'cross_timeframe_features': enhanced_feature_results.get('cross_timeframe_features', []),
                 'interaction_features': enhanced_feature_results.get('interaction_features', []),
                 'no_features': enhanced_feature_results.get('no_features', []),
+                'comparison_features': enhanced_feature_results.get('comparison_features', []),
                 'enhanced_feature_metrics': enhanced_feature_results.get('enhanced_feature_metrics', {})
             }
             
@@ -919,6 +931,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'cross_timeframe_features': [],
                 'interaction_features': [],
                 'no_features': [],
+                'comparison_features': [],
                 'enhanced_feature_metrics': {}
             }
     
@@ -972,6 +985,7 @@ class EnhancedUnifiedDataDrivenPipeline:
             cross_timeframe_features=[],
             interaction_features=[],
             no_features=[],
+            comparison_features=[],
             enhanced_feature_metrics={},
             total_processing_time=time.time() - start_time,
             vectorbt_operations=0,

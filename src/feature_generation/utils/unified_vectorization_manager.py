@@ -13,6 +13,9 @@ Key Features:
 - Performance monitoring and statistics
 - GPU acceleration support
 - Parallel processing capabilities
+- Adaptive chunking and memory management
+- Advanced multi-level caching strategies
+- Mac M1 GPU optimization with Metal Performance Shaders
 """
 
 import numpy as np
@@ -23,6 +26,14 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 import warnings
+import threading
+from collections import deque
+import hashlib
+import pickle
+import os
+from pathlib import Path
+import gc
+import psutil
 
 # Enhanced logging with tprint
 try:
@@ -84,6 +95,21 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# M1 GPU optimization imports
+try:
+    import torch
+    TORCH_AVAILABLE = True
+    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        M1_GPU_AVAILABLE = True
+        tprint_info("🍎 Mac M1 GPU (Metal Performance Shaders) detected")
+    else:
+        M1_GPU_AVAILABLE = False
+        tprint_info("🍎 Mac M1 detected but MPS not available")
+except ImportError:
+    TORCH_AVAILABLE = False
+    M1_GPU_AVAILABLE = False
+    tprint_warning("⚠️ PyTorch not available for M1 GPU optimization")
+
 # Import our optimization modules
 try:
     from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
@@ -143,7 +169,7 @@ class VectorizationValidationError(Exception):
 
 @dataclass
 class VectorizationConfig:
-    """Configuration for unified vectorization."""
+    """Enhanced configuration for unified vectorization with advanced features."""
     # VectorBT settings
     enable_vectorbt: bool = True
     enable_gpu: bool = False
@@ -153,6 +179,20 @@ class VectorizationConfig:
     memory_efficient: bool = True
     max_memory_gb: float = 8.0
     chunk_size: int = 1000
+    adaptive_chunking: bool = True
+    memory_pooling: bool = True
+    memory_pressure_threshold: float = 0.8
+    
+    # Caching settings
+    enable_caching: bool = True
+    l1_cache_size: int = 1000
+    l2_cache_size: int = 10000
+    l2_cache_dir: str = "./cache"
+    cache_ttl: float = 3600.0
+    cache_compression: bool = True
+    
+    # M1 GPU settings
+    enable_m1_gpu: bool = True
     
     # Performance monitoring
     enable_monitoring: bool = True
@@ -174,6 +214,10 @@ class VectorizationConfig:
         if self.enable_gpu and not CUPY_AVAILABLE:
             self.enable_gpu = False
             logger.warning("GPU acceleration requested but CuPy not available")
+        
+        if self.enable_m1_gpu and not M1_GPU_AVAILABLE:
+            self.enable_m1_gpu = False
+            logger.warning("M1 GPU acceleration requested but not available")
 
 
 class UnifiedVectorizationManager:
@@ -209,19 +253,44 @@ class UnifiedVectorizationManager:
         self._validate_config(self.config)
         
         # Initialize components with error handling
-        tprint_info("🔧 Initializing vectorization components")
+        tprint_info("🔧 Initializing enhanced vectorization components")
         try:
+            # Import enhanced classes from vectorbt_rolling_optimizer
+            from .vectorbt_rolling_optimizer import MemoryConfig, CacheConfig
+            
+            # Create enhanced configurations
+            memory_config = MemoryConfig(
+                max_memory_gb=self.config.max_memory_gb,
+                memory_pressure_threshold=self.config.memory_pressure_threshold,
+                adaptive_chunking=self.config.adaptive_chunking,
+                memory_pooling=self.config.memory_pooling,
+                memory_monitoring=self.config.enable_monitoring
+            )
+            
+            cache_config = CacheConfig(
+                l1_cache_size=self.config.l1_cache_size,
+                l2_cache_size=self.config.l2_cache_size,
+                l2_cache_dir=self.config.l2_cache_dir,
+                cache_ttl=self.config.cache_ttl,
+                cache_compression=self.config.cache_compression
+            )
+            
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=self.config.enable_gpu,
                 enable_parallel=self.config.enable_parallel,
                 memory_efficient=self.config.memory_efficient,
                 chunk_size=self.config.chunk_size,
                 fast_fail=self.fast_fail,
-                enable_logging=self.enable_logging
+                enable_logging=self.enable_logging,
+                memory_config=memory_config,
+                cache_config=cache_config,
+                enable_m1_gpu=self.config.enable_m1_gpu,
+                enable_adaptive_chunking=self.config.adaptive_chunking,
+                enable_advanced_caching=self.config.enable_caching
             )
-            tprint_success("✅ Rolling optimizer initialized")
+            tprint_success("✅ Enhanced rolling optimizer initialized")
         except Exception as e:
-            error_msg = f"Failed to initialize rolling optimizer: {e}"
+            error_msg = f"Failed to initialize enhanced rolling optimizer: {e}"
             tprint_error(f"❌ {error_msg}")
             if self.fast_fail:
                 raise UnifiedVectorizationError(error_msg, operation="initialization", original_error=e)
@@ -261,10 +330,13 @@ class UnifiedVectorizationManager:
             'vectorbt_operations': 0,
             'pandas_fallbacks': 0,
             'gpu_operations': 0,
+            'm1_gpu_operations': 0,
             'batch_operations': 0,
             'rolling_operations': 0,
             'scaling_operations': 0,
             'memory_optimizations': 0,
+            'adaptive_chunk_operations': 0,
+            'cache_operations': 0,
             'total_time': 0.0,
             'memory_savings': 0.0,
             'cache_hits': 0,

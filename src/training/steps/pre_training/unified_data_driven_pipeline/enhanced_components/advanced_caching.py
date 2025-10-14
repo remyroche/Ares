@@ -176,7 +176,7 @@ class AdvancedCacheManager:
     
     def get(self, key: str, level: Optional[CacheLevel] = None) -> Optional[Any]:
         """
-        Get data from cache.
+        Get data from cache with parquet cache support.
         
         Args:
             key: Cache key
@@ -189,6 +189,13 @@ class AdvancedCacheManager:
             # Check specific level
             if level:
                 return self._get_from_level(key, level)
+            
+            # First check parquet cache for DataFrames
+            parquet_data = self._load_from_parquet_cache(key)
+            if parquet_data is not None:
+                # Promote to memory cache
+                self._set_to_level(key, parquet_data, CacheLevel.MEMORY)
+                return parquet_data
             
             # Check all levels in order of preference
             for cache_level in [CacheLevel.MEMORY, CacheLevel.DISK, CacheLevel.PERSISTENT]:
@@ -210,7 +217,7 @@ class AdvancedCacheManager:
     
     def set(self, key: str, data: Any, ttl: Optional[int] = None, level: CacheLevel = CacheLevel.MEMORY):
         """
-        Set data in cache.
+        Set data in cache with intelligent parquet caching for large DataFrames.
         
         Args:
             key: Cache key
@@ -220,6 +227,14 @@ class AdvancedCacheManager:
         """
         try:
             ttl = ttl or self.config.cache_ttl_seconds
+            
+            # Calculate data size
+            size_bytes = self._calculate_size(data)
+            
+            # Check if we should use parquet caching for large DataFrames
+            if self._should_use_parquet_cache(data, size_bytes):
+                tprint_debug(f"📊 Using parquet caching for large DataFrame: {key}")
+                return self._cache_as_parquet(key, data, ttl)
             
             # Check cache size limits
             if self._should_evict(level):
@@ -373,7 +388,7 @@ class AdvancedCacheManager:
             tprint_debug(f"Error saving to disk cache: {e}")
     
     def _get_from_persistent(self, key: str) -> Optional[Any]:
-        """Get data from persistent cache."""
+        """Get data from persistent cache with enhanced error handling."""
         try:
             if not CACHING_AVAILABLE or not self.universal_serializer:
                 return None
@@ -382,25 +397,30 @@ class AdvancedCacheManager:
             data = self.universal_serializer.load(key)
             if data is not None:
                 self.cache_stats['total_hits'] += 1
+                tprint_debug(f"✅ Cache hit for key: {key}")
             
             return data
             
         except Exception as e:
-            tprint_debug(f"Error loading from persistent cache: {e}")
+            tprint_warning(f"⚠️ Error loading from persistent cache: {e}")
             return None
     
     def _set_to_persistent(self, key: str, data: Any, ttl: int):
-        """Set data to persistent cache."""
+        """Set data to persistent cache with enhanced error handling."""
         try:
             if not CACHING_AVAILABLE or not self.universal_serializer:
                 return
             
             # Use universal serializer for persistent cache
-            self.universal_serializer.save(key, data)
-            self.cache_stats['persistent_entries'] += 1
+            success = self.universal_serializer.save(key, data)
+            if success:
+                self.cache_stats['persistent_entries'] += 1
+                tprint_debug(f"✅ Saved to persistent cache: {key}")
+            else:
+                tprint_warning(f"⚠️ Failed to save to persistent cache: {key}")
             
         except Exception as e:
-            tprint_debug(f"Error saving to persistent cache: {e}")
+            tprint_warning(f"⚠️ Error saving to persistent cache: {e}")
     
     def _calculate_size(self, data: Any) -> int:
         """Calculate size of data in bytes."""
@@ -415,6 +435,92 @@ class AdvancedCacheManager:
                 return len(str(data).encode('utf-8'))
         except:
             return 0
+
+    def _should_use_parquet_cache(self, data: Any, size_bytes: int) -> bool:
+        """Determine if data should be cached as parquet for better compression."""
+        return (
+            isinstance(data, pd.DataFrame) and 
+            size_bytes > 1024 * 1024 and  # > 1MB
+            len(data) > 1000 and  # > 1000 rows
+            'timestamp' in data.columns  # Has timestamp column (typical for market data)
+        )
+
+    def _cache_as_parquet(self, key: str, data: pd.DataFrame, ttl: int) -> bool:
+        """Cache DataFrame as parquet file for better compression."""
+        try:
+            import os
+            from pathlib import Path
+            
+            # Create parquet cache directory
+            parquet_cache_dir = Path(self.config.cache_directory) / "parquet_cache"
+            parquet_cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create parquet file path
+            parquet_file = parquet_cache_dir / f"{key}.parquet"
+            
+            # Save as parquet with compression
+            data.to_parquet(
+                parquet_file, 
+                compression='zstd', 
+                compression_level=3,
+                index=False
+            )
+            
+            # Store metadata
+            metadata = {
+                'key': key,
+                'timestamp': time.time(),
+                'ttl': ttl,
+                'file_path': str(parquet_file),
+                'rows': len(data),
+                'columns': len(data.columns),
+                'size_bytes': parquet_file.stat().st_size
+            }
+            
+            metadata_file = parquet_cache_dir / f"{key}.metadata.json"
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            tprint_debug(f"✅ Cached DataFrame as parquet: {key} ({len(data)} rows)")
+            return True
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to cache as parquet: {e}")
+            return False
+
+    def _load_from_parquet_cache(self, key: str) -> Optional[pd.DataFrame]:
+        """Load DataFrame from parquet cache."""
+        try:
+            import os
+            from pathlib import Path
+            
+            parquet_cache_dir = Path(self.config.cache_directory) / "parquet_cache"
+            metadata_file = parquet_cache_dir / f"{key}.metadata.json"
+            parquet_file = parquet_cache_dir / f"{key}.parquet"
+            
+            if not metadata_file.exists() or not parquet_file.exists():
+                return None
+            
+            # Load metadata
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            # Check TTL
+            if time.time() - metadata['timestamp'] > metadata['ttl']:
+                # Remove expired files
+                parquet_file.unlink()
+                metadata_file.unlink()
+                return None
+            
+            # Load parquet file
+            data = pd.read_parquet(parquet_file)
+            
+            tprint_debug(f"✅ Loaded DataFrame from parquet cache: {key}")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load from parquet cache: {e}")
+            return None
     
     def _should_evict(self, level: CacheLevel) -> bool:
         """Check if cache should evict entries."""

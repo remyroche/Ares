@@ -14,6 +14,7 @@ from pathlib import Path
 # Import utility modules
 from src.utils.common_utilities import CommonUtilities
 from src.utils.serialization_utils import UniversalSerializer
+from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
 
 try:
     from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
@@ -54,11 +55,25 @@ class AdvancedDataLoader:
     similar to FeatureLookbackOptimizationComponent.
     """
 
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, config: Optional[Dict[str, Any]] = None):
         """Initialize the advanced data loader."""
         self.logger = logger or logging.getLogger(__name__)
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
+        self.config = config or {}
+
+        # Initialize KlinesParquetManager for efficient klines data storage
+        klines_config = self.config.get('klines_storage', {})
+        storage_config = StorageConfig(
+            base_dir=klines_config.get('base_dir', 'historical_data'),
+            compression=klines_config.get('compression', 'zstd'),
+            compression_level=klines_config.get('compression_level', 3),
+            enable_metadata=klines_config.get('enable_metadata', True),
+            enable_validation=klines_config.get('enable_validation', True),
+            max_file_size_mb=klines_config.get('max_file_size_mb', 100)
+        )
+        self.klines_manager = KlinesParquetManager(storage_config)
+        tprint_success("✅ KlinesParquetManager initialized")
 
         # Initialize feature cache if available
         if FEATURE_CACHE_AVAILABLE:
@@ -534,4 +549,189 @@ class AdvancedDataLoader:
             'load_times': [],
             'save_times': []
         }
+
+    async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str, 
+                               interval: str, batch_id: Optional[str] = None,
+                               metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Store klines data using KlinesParquetManager for efficient storage.
+        
+        Args:
+            data: Klines DataFrame with OHLCV data
+            symbol: Trading symbol (e.g., "ETHUSDT")
+            exchange: Exchange name (e.g., "binance")
+            interval: Data interval (e.g., "1m")
+            batch_id: Optional batch identifier
+            metadata: Additional metadata to store
+            
+        Returns:
+            True if storage was successful, False otherwise
+        """
+        try:
+            tprint_debug(f"📦 Storing klines data for {symbol} on {exchange} ({interval})")
+            
+            # Validate data format
+            if not self._validate_klines_data(data):
+                tprint_error("❌ Invalid klines data format")
+                return False
+            
+            # Store using KlinesParquetManager
+            success = self.klines_manager.store_klines(
+                data, symbol, exchange, interval, batch_id, metadata
+            )
+            
+            if success:
+                self.stats['klines_stores'] += 1
+                tprint_success(f"✅ Stored {len(data)} klines records for {symbol}")
+            else:
+                self.stats['errors'] += 1
+                tprint_error(f"❌ Failed to store klines data for {symbol}")
+            
+            return success
+            
+        except Exception as e:
+            self.stats['errors'] += 1
+            tprint_error(f"❌ Error storing klines data: {e}")
+            return False
+
+    async def load_klines_data(self, symbol: str, exchange: str, interval: str,
+                              start_time: Optional[datetime] = None,
+                              end_time: Optional[datetime] = None,
+                              batch_id: Optional[str] = None) -> pd.DataFrame:
+        """
+        Load klines data using KlinesParquetManager.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            start_time: Optional start time filter
+            end_time: Optional end time filter
+            batch_id: Optional specific batch to load
+            
+        Returns:
+            DataFrame containing klines data
+        """
+        try:
+            tprint_debug(f"📥 Loading klines data for {symbol} on {exchange} ({interval})")
+            
+            # Load using KlinesParquetManager
+            data = self.klines_manager.load_klines(
+                symbol, exchange, interval, start_time, end_time, batch_id
+            )
+            
+            if not data.empty:
+                self.stats['klines_loads'] += 1
+                tprint_success(f"✅ Loaded {len(data)} klines records for {symbol}")
+            else:
+                tprint_warning(f"⚠️ No klines data found for {symbol}")
+            
+            return data
+            
+        except Exception as e:
+            self.stats['errors'] += 1
+            tprint_error(f"❌ Error loading klines data: {e}")
+            return pd.DataFrame()
+
+    def _validate_klines_data(self, data: pd.DataFrame) -> bool:
+        """Validate klines data format."""
+        required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        
+        if data is None or data.empty:
+            return False
+        
+        # Check for required columns
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            tprint_error(f"❌ Missing required columns: {missing_columns}")
+            return False
+        
+        # Check for valid OHLCV data
+        ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in ohlcv_columns:
+            if not pd.api.types.is_numeric_dtype(data[col]):
+                tprint_error(f"❌ Column {col} is not numeric")
+                return False
+            
+            if data[col].isnull().any():
+                tprint_warning(f"⚠️ Column {col} contains null values")
+        
+        # Check OHLC relationships
+        if not (data['high'] >= data['low']).all():
+            tprint_error("❌ High prices must be >= low prices")
+            return False
+        
+        if not (data['high'] >= data['open']).all():
+            tprint_error("❌ High prices must be >= open prices")
+            return False
+        
+        if not (data['high'] >= data['close']).all():
+            tprint_error("❌ High prices must be >= close prices")
+            return False
+        
+        if not (data['low'] <= data['open']).all():
+            tprint_error("❌ Low prices must be <= open prices")
+            return False
+        
+        if not (data['low'] <= data['close']).all():
+            tprint_error("❌ Low prices must be <= close prices")
+            return False
+        
+        return True
+
+    def get_klines_storage_stats(self) -> Dict[str, Any]:
+        """Get klines storage statistics."""
+        try:
+            return self.klines_manager.get_storage_stats()
+        except Exception as e:
+            tprint_error(f"❌ Error getting storage stats: {e}")
+            return {"error": str(e)}
+
+    def list_available_klines_data(self) -> List[Dict[str, Any]]:
+        """List all available klines data."""
+        try:
+            return self.klines_manager.list_available_data()
+        except Exception as e:
+            tprint_error(f"❌ Error listing available data: {e}")
+            return []
+
+    async def update_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str,
+                                interval: str, append_mode: bool = True) -> bool:
+        """
+        Update existing klines data.
+        
+        Args:
+            data: New klines data
+            symbol: Trading symbol
+            exchange: Exchange name
+            interval: Data interval
+            append_mode: If True, append to existing data; if False, replace
+            
+        Returns:
+            True if update was successful, False otherwise
+        """
+        try:
+            tprint_debug(f"🔄 Updating klines data for {symbol} on {exchange} ({interval})")
+            
+            # Validate data format
+            if not self._validate_klines_data(data):
+                tprint_error("❌ Invalid klines data format")
+                return False
+            
+            # Update using KlinesParquetManager
+            success = self.klines_manager.update_klines(
+                data, symbol, exchange, interval, append_mode
+            )
+            
+            if success:
+                tprint_success(f"✅ Updated klines data for {symbol}")
+            else:
+                tprint_error(f"❌ Failed to update klines data for {symbol}")
+            
+            return success
+            
+        except Exception as e:
+            self.stats['errors'] += 1
+            tprint_error(f"❌ Error updating klines data: {e}")
+            return False
         tprint_success("✅ Cache metrics reset")

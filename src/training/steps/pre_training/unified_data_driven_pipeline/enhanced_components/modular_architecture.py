@@ -410,16 +410,22 @@ class HardwareAccelerator:
             import cupy
             hardware['cuda_available'] = True
             hardware['gpu_available'] = True
-        except ImportError:
-            pass
+            tprint_debug("✅ CuPy detected - CUDA support available")
+        except ImportError as e:
+            tprint_debug(f"ℹ️ CuPy not available: {str(e)}")
+            hardware['cuda_available'] = False
         
         # Check for other GPU libraries
         try:
             import torch
             if torch.cuda.is_available():
                 hardware['gpu_available'] = True
-        except ImportError:
-            pass
+                tprint_debug("✅ PyTorch with CUDA detected - GPU support available")
+            else:
+                tprint_debug("ℹ️ PyTorch available but CUDA not available")
+        except ImportError as e:
+            tprint_debug(f"ℹ️ PyTorch not available: {str(e)}")
+            hardware['gpu_available'] = False
         
         return hardware
     

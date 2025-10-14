@@ -1244,8 +1244,17 @@ class HTFInteractionGenerator:
                 return combination['data'][0] * combination['data'][1]
             elif len(combination['data']) >= 1:
                 return combination['data'][0]
-        except:
-            pass
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in fallback interaction calculation: {str(e)}")
+            tprint_debug(f"🔍 Template: {template.name}, Combination: {combination.get('name', 'unknown')}")
+            # Log the error for debugging
+            safe_log_metric("interaction_fallback_error", 1)
+            safe_log_params({
+                "template_name": template.name,
+                "combination_name": combination.get('name', 'unknown'),
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            })
         return None
     
     def _calculate_htf_interaction_fallback(self, template: InteractionTemplate,
@@ -1257,8 +1266,17 @@ class HTFInteractionGenerator:
                 return combination['data'][0] * combination['data'][1]
             elif len(combination['data']) >= 1:
                 return combination['data'][0]
-        except:
-            pass
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in HTF fallback interaction calculation: {str(e)}")
+            tprint_debug(f"🔍 Template: {template.name}, Combination: {combination.get('name', 'unknown')}")
+            # Log the error for debugging
+            safe_log_metric("htf_interaction_fallback_error", 1)
+            safe_log_params({
+                "template_name": template.name,
+                "combination_name": combination.get('name', 'unknown'),
+                "error_type": type(e).__name__,
+                "error_message": str(e)
+            })
         return None
     
     def get_performance_stats(self) -> Dict[str, Any]:

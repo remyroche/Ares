@@ -26,6 +26,27 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
+# Import features_common configuration utilities
+try:
+    from src.features_common import (
+        OptimizationConfig, get_optimization_config,
+        VectorBTConfig as FeaturesCommonVectorBTConfig, get_vectorbt_config,
+        UnifiedConfig, get_unified_config,
+        validate_configuration, check_system_health
+    )
+    FEATURES_COMMON_CONFIG_AVAILABLE = True
+except ImportError:
+    FEATURES_COMMON_CONFIG_AVAILABLE = False
+
+# Import feature_generation configuration utilities
+try:
+    from src.feature_generation.utils import (
+        UtilityConfig, FeatureOptimizationConfig
+    )
+    FEATURE_GENERATION_CONFIG_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_CONFIG_AVAILABLE = False
+
 
 class OptimizationStrategy(Enum):
     """Optimization strategies for different operations."""

@@ -41,6 +41,35 @@ except ImportError:
     FEATURE_BANK_AVAILABLE = False
     FeatureBank = None
 
+# Import enhanced feature generation utilities
+try:
+    from src.feature_generation.utils import (
+        EnhancedFeatureEngineering, FeatureGenerationOptimizer,
+        FeatureOptimizationConfig, CrossTimeframeAnalysisPipeline,
+        FractionalDifferentiationPipeline, EnhancedMatrixOperations,
+        validate_feature_quality, validate_features_dataframe,
+        feature_validation_decorator
+    )
+    ENHANCED_FEATURE_GENERATION_AVAILABLE = True
+except ImportError:
+    ENHANCED_FEATURE_GENERATION_AVAILABLE = False
+
+# Import features_common utilities
+try:
+    from src.features_common import (
+        OptimizationMixin, PerformanceMixin, VectorBTMixin,
+        ValidationMixin, CachingMixin, MonitoringMixin,
+        ScalerFactory, create_optimized_scaler, create_batch_scaler,
+        UnifiedVectorBTManager, get_unified_vectorbt_manager,
+        VectorBTOptimizationEngine, get_optimization_engine,
+        GPUAccelerator, get_gpu_accelerator,
+        VectorBTPerformanceMonitor, get_performance_monitor,
+        validate_input_data, safe_execute, get_logger, log_operation
+    )
+    FEATURES_COMMON_AVAILABLE = True
+except ImportError:
+    FEATURES_COMMON_AVAILABLE = False
+
 # Import multi-horizon profit labeler
 try:
     from ...multi_horizon_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
@@ -125,6 +154,7 @@ class FeatureBankIntegration:
         
         # Initialize components
         self._initialize_components()
+        self._initialize_enhanced_utilities()
         
         # Performance tracking
         self.performance_stats = {
@@ -185,6 +215,62 @@ class FeatureBankIntegration:
             self.vectorized_core = None
             self.batch_processor = None
             tprint_warning("⚠️ Matrix operations not available")
+    
+    def _initialize_enhanced_utilities(self):
+        """Initialize enhanced utilities from feature_generation and features_common."""
+        tprint_debug("Initializing enhanced utilities")
+        
+        # Initialize enhanced feature generation utilities
+        if ENHANCED_FEATURE_GENERATION_AVAILABLE:
+            try:
+                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                self.feature_optimizer = FeatureGenerationOptimizer()
+                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                tprint_success("✅ Enhanced feature generation utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Enhanced feature generation utilities initialization failed: {e}")
+                self.enhanced_feature_engineering = None
+                self.feature_optimizer = None
+                self.cross_timeframe_pipeline = None
+                self.fractional_diff_pipeline = None
+                self.enhanced_matrix_ops = None
+        else:
+            self.enhanced_feature_engineering = None
+            self.feature_optimizer = None
+            self.cross_timeframe_pipeline = None
+            self.fractional_diff_pipeline = None
+            self.enhanced_matrix_ops = None
+        
+        # Initialize features common utilities
+        if FEATURES_COMMON_AVAILABLE:
+            try:
+                self.unified_vectorbt_manager = get_unified_vectorbt_manager()
+                self.vectorbt_optimization_engine = get_optimization_engine()
+                self.gpu_accelerator = get_gpu_accelerator()
+                self.vectorbt_performance_monitor = get_performance_monitor()
+                self.scaler_factory = ScalerFactory()
+                self.optimized_scaler = create_optimized_scaler()
+                self.batch_scaler = create_batch_scaler()
+                tprint_success("✅ Features common utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Features common utilities initialization failed: {e}")
+                self.unified_vectorbt_manager = None
+                self.vectorbt_optimization_engine = None
+                self.gpu_accelerator = None
+                self.vectorbt_performance_monitor = None
+                self.scaler_factory = None
+                self.optimized_scaler = None
+                self.batch_scaler = None
+        else:
+            self.unified_vectorbt_manager = None
+            self.vectorbt_optimization_engine = None
+            self.gpu_accelerator = None
+            self.vectorbt_performance_monitor = None
+            self.scaler_factory = None
+            self.optimized_scaler = None
+            self.batch_scaler = None
     
     def generate_features_for_optimization(
         self,
@@ -295,8 +381,42 @@ class FeatureBankIntegration:
         data: pd.DataFrame,
         pipeline_state: Optional[Dict[str, Any]]
     ) -> Optional[pd.DataFrame]:
-        """Generate features using the Feature Bank system."""
+        """Generate features using enhanced utilities and Feature Bank system."""
         try:
+            # First, try enhanced feature engineering if available
+            if ENHANCED_FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
+                tprint_debug("🔧 Using enhanced feature engineering")
+                try:
+                    enhanced_features = self.enhanced_feature_engineering.generate_features(data)
+                    if enhanced_features is not None and not enhanced_features.empty:
+                        tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                        
+                        # Apply feature validation if available
+                        if ENHANCED_FEATURE_GENERATION_AVAILABLE:
+                            try:
+                                validated_features = validate_features_dataframe(enhanced_features)
+                                if validated_features is not None:
+                                    enhanced_features = validated_features
+                                    tprint_success("✅ Features validated successfully")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Feature validation failed: {e}")
+                        
+                        return enhanced_features
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
+            
+            # Try cross-timeframe analysis if available
+            if ENHANCED_FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
+                tprint_debug("🔧 Using cross-timeframe analysis")
+                try:
+                    cross_timeframe_features = self.cross_timeframe_pipeline.generate_features(data)
+                    if cross_timeframe_features is not None and not cross_timeframe_features.empty:
+                        tprint_success(f"✅ Generated {len(cross_timeframe_features.columns)} features using cross-timeframe analysis")
+                        return cross_timeframe_features
+                except Exception as e:
+                    tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
+            
+            # Fallback to Feature Bank system
             if not FEATURE_BANK_AVAILABLE or not self.feature_bank:
                 tprint_error("❌ Feature Bank not available - this is required for feature generation")
                 return None
@@ -317,15 +437,31 @@ class FeatureBankIntegration:
             # Align with original data index
             feature_data = feature_data.reindex(data.index)
             
-            # Apply memory optimization if enabled
-            if self.config.enable_memory_optimization and MATRIX_OPS_AVAILABLE:
+            # Apply enhanced matrix operations if available
+            if ENHANCED_FEATURE_GENERATION_AVAILABLE and self.enhanced_matrix_ops:
+                try:
+                    feature_data = self.enhanced_matrix_ops.optimize_dataframe(feature_data)
+                    tprint_success("✅ Applied enhanced matrix operations")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced matrix operations failed: {e}")
+            elif self.config.enable_memory_optimization and MATRIX_OPS_AVAILABLE:
                 feature_data = optimize_dataframe(feature_data)
+            
+            # Apply feature validation if available
+            if ENHANCED_FEATURE_GENERATION_AVAILABLE:
+                try:
+                    validated_features = validate_features_dataframe(feature_data)
+                    if validated_features is not None:
+                        feature_data = validated_features
+                        tprint_success("✅ Features validated successfully")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Feature validation failed: {e}")
             
             tprint_success(f"✅ Generated {len(feature_data.columns)} features using Feature Bank")
             return feature_data
             
         except Exception as e:
-            tprint_error(f"❌ Feature Bank generation failed: {e}")
+            tprint_error(f"❌ Feature generation failed: {e}")
             return None
     
     

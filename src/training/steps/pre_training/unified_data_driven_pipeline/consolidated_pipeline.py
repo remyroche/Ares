@@ -59,6 +59,48 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import feature_generation utilities
+try:
+    from src.feature_generation.utils import (
+        Step06UtilityContainer, UtilityConfig, get_utility_container,
+        EnhancedFeatureEngineering, FeatureGenerationOptimizer,
+        FeatureOptimizationConfig, CrossTimeframeAnalysisPipeline,
+        FractionalDifferentiationPipeline, EnhancedMatrixOperations,
+        validate_feature_quality, validate_features_dataframe,
+        feature_validation_decorator
+    )
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError as e:
+    FEATURE_GENERATION_AVAILABLE = False
+    tprint_warning(f"⚠️ Feature generation utilities not available: {e}")
+
+# Import features_common utilities
+try:
+    from src.features_common import (
+        OptimizationConfig, get_optimization_config,
+        VectorBTConfig as FeaturesCommonVectorBTConfig, get_vectorbt_config,
+        UnifiedConfig, get_unified_config,
+        OptimizationMixin, PerformanceMixin, VectorBTMixin,
+        ValidationMixin, CachingMixin, MonitoringMixin,
+        ScalerFactory, create_optimized_scaler, create_batch_scaler,
+        OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+        RegistryFactory, create_registry, create_feature_registry,
+        UnifiedFactory, create_optimized_component,
+        UnifiedVectorBTManager, get_unified_vectorbt_manager,
+        VectorBTOptimizationEngine, get_optimization_engine,
+        GPUAccelerator, get_gpu_accelerator,
+        VectorBTPerformanceMonitor, get_performance_monitor,
+        FeaturesCommonError, ValidationError, OptimizationError,
+        VectorBTError, ConfigurationError, SilentFailureError,
+        ensure_no_silent_failures, validate_input_data, safe_execute,
+        validate_configuration, check_system_health, report_silent_failures,
+        get_logger, log_operation
+    )
+    FEATURES_COMMON_AVAILABLE = True
+except ImportError as e:
+    FEATURES_COMMON_AVAILABLE = False
+    tprint_warning(f"⚠️ Features common utilities not available: {e}")
+
 # Import enhanced components
 from .enhanced_components.enhanced_walk_forward_validation import (
     AdvancedWalkForwardValidator, AdvancedWalkForwardConfig
@@ -320,6 +362,9 @@ class UnifiedDataDrivenPipeline:
         """
         self.config = config or create_default_config()
         
+        # Initialize utility systems first
+        self._initialize_utility_systems()
+        
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
@@ -329,6 +374,109 @@ class UnifiedDataDrivenPipeline:
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
+        if FEATURE_GENERATION_AVAILABLE:
+            tprint_success("✅ Feature generation utilities integrated")
+        if FEATURES_COMMON_AVAILABLE:
+            tprint_success("✅ Features common utilities integrated")
+    
+    def _initialize_utility_systems(self):
+        """Initialize utility systems from feature_generation and features_common."""
+        tprint_debug("Initializing utility systems")
+        
+        # Initialize feature generation utilities
+        if FEATURE_GENERATION_AVAILABLE:
+            try:
+                # Initialize utility container
+                self.utility_container = get_utility_container()
+                self.utility_config = UtilityConfig()
+                
+                # Initialize enhanced feature engineering
+                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                
+                # Initialize feature optimization
+                self.feature_optimizer = FeatureGenerationOptimizer()
+                self.feature_optimization_config = FeatureOptimizationConfig()
+                
+                # Initialize cross-timeframe analysis
+                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                
+                # Initialize fractional differentiation
+                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                
+                # Initialize matrix operations
+                self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                
+                tprint_success("✅ Feature generation utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Feature generation utilities initialization failed: {e}")
+                self.utility_container = None
+                self.enhanced_feature_engineering = None
+                self.feature_optimizer = None
+                self.cross_timeframe_pipeline = None
+                self.fractional_diff_pipeline = None
+                self.enhanced_matrix_ops = None
+        else:
+            self.utility_container = None
+            self.enhanced_feature_engineering = None
+            self.feature_optimizer = None
+            self.cross_timeframe_pipeline = None
+            self.fractional_diff_pipeline = None
+            self.enhanced_matrix_ops = None
+        
+        # Initialize features common utilities
+        if FEATURES_COMMON_AVAILABLE:
+            try:
+                # Initialize unified configuration
+                self.unified_config = get_unified_config()
+                self.optimization_config = get_optimization_config()
+                self.vectorbt_config = get_vectorbt_config()
+                
+                # Initialize unified VectorBT manager
+                self.unified_vectorbt_manager = get_unified_vectorbt_manager()
+                self.vectorbt_optimization_engine = get_optimization_engine()
+                self.gpu_accelerator = get_gpu_accelerator()
+                self.vectorbt_performance_monitor = get_performance_monitor()
+                
+                # Initialize factories
+                self.scaler_factory = ScalerFactory()
+                self.optimizer_factory = OptimizerFactory()
+                self.registry_factory = RegistryFactory()
+                self.unified_factory = UnifiedFactory()
+                
+                # Initialize enhanced scalers
+                self.optimized_scaler = create_optimized_scaler()
+                self.batch_scaler = create_batch_scaler()
+                
+                tprint_success("✅ Features common utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Features common utilities initialization failed: {e}")
+                self.unified_config = None
+                self.optimization_config = None
+                self.vectorbt_config = None
+                self.unified_vectorbt_manager = None
+                self.vectorbt_optimization_engine = None
+                self.gpu_accelerator = None
+                self.vectorbt_performance_monitor = None
+                self.scaler_factory = None
+                self.optimizer_factory = None
+                self.registry_factory = None
+                self.unified_factory = None
+                self.optimized_scaler = None
+                self.batch_scaler = None
+        else:
+            self.unified_config = None
+            self.optimization_config = None
+            self.vectorbt_config = None
+            self.unified_vectorbt_manager = None
+            self.vectorbt_optimization_engine = None
+            self.gpu_accelerator = None
+            self.vectorbt_performance_monitor = None
+            self.scaler_factory = None
+            self.optimizer_factory = None
+            self.registry_factory = None
+            self.unified_factory = None
+            self.optimized_scaler = None
+            self.batch_scaler = None
     
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
@@ -1221,10 +1369,33 @@ class UnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using Feature Bank integration."""
-        tprint_debug("Generating selected features using Feature Bank integration")
+        """Generate features for the selected feature set using enhanced utilities."""
+        tprint_debug("Generating selected features using enhanced utilities")
         
         try:
+            # First, try to use enhanced feature engineering if available
+            if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
+                tprint_debug("🔧 Using enhanced feature engineering")
+                try:
+                    enhanced_features = self.enhanced_feature_engineering.generate_features(data)
+                    if enhanced_features is not None and not enhanced_features.empty:
+                        tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                        
+                        # Apply feature validation if available
+                        if FEATURE_GENERATION_AVAILABLE:
+                            try:
+                                validated_features = validate_features_dataframe(enhanced_features)
+                                if validated_features is not None:
+                                    enhanced_features = validated_features
+                                    tprint_success("✅ Features validated successfully")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Feature validation failed: {e}")
+                        
+                        return enhanced_features
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
+            
+            # Fallback to Feature Bank integration
             if selection_result is None or not selection_result.success:
                 tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
                 # Use Feature Bank integration for comprehensive feature generation
@@ -1278,6 +1449,54 @@ class UnifiedDataDrivenPipeline:
         try:
             interactions = []
             
+            # Try to use unified VectorBT manager if available
+            if FEATURES_COMMON_AVAILABLE and self.unified_vectorbt_manager:
+                tprint_debug("🔧 Using unified VectorBT manager for interaction generation")
+                try:
+                    # Use the unified VectorBT manager for optimized interaction generation
+                    vectorbt_interactions = self.unified_vectorbt_manager.generate_interactions(
+                        features_df, targets
+                    )
+                    if vectorbt_interactions:
+                        interactions.extend(vectorbt_interactions)
+                        tprint_success(f"✅ Generated {len(vectorbt_interactions)} interactions using unified VectorBT manager")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Unified VectorBT manager failed: {e}")
+            
+            # Try to use cross-timeframe analysis if available
+            if FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
+                tprint_debug("🔧 Using cross-timeframe analysis for interaction generation")
+                try:
+                    cross_timeframe_interactions = self.cross_timeframe_pipeline.generate_interactions(
+                        features_df, targets
+                    )
+                    if cross_timeframe_interactions:
+                        interactions.extend(cross_timeframe_interactions)
+                        tprint_success(f"✅ Generated {len(cross_timeframe_interactions)} cross-timeframe interactions")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
+            
+            # Fallback to original VectorBT optimizer
+            if not interactions:
+                tprint_debug("🔧 Using fallback VectorBT optimizer for interaction generation")
+                interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            
+            # Apply feature validation if available
+            if FEATURE_GENERATION_AVAILABLE and interactions:
+                try:
+                    validated_interactions = []
+                    for interaction in interactions:
+                        if hasattr(interaction, 'feature_data') and interaction.feature_data is not None:
+                            validated_data = validate_features_dataframe(interaction.feature_data)
+                            if validated_data is not None:
+                                interaction.feature_data = validated_data
+                                validated_interactions.append(interaction)
+                        else:
+                            validated_interactions.append(interaction)
+                    interactions = validated_interactions
+                    tprint_success("✅ Interactions validated successfully")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Interaction validation failed: {e}")
             # Use feature engineering roadmap interactions if available
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
                 tprint_info("🎯 Using feature engineering roadmap interactions")

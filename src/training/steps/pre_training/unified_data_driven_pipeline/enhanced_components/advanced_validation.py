@@ -11,9 +11,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Import utility modules
-from src.utils.common_operations import validate_dataframe_columns, safe_dataframe_operation
-from src.utils.common_utilities import CommonUtilities
-from src.utils.math_validation import validate_finite, validate_positive
+from src.utils.common_utilities import (
+    CommonUtilities, safe_dataframe_operation, validate_dataframe_columns,
+    analyze_nan_values_detailed, format_nan_analysis_report, 
+    calculate_data_quality_metrics, create_data_quality_report,
+    safe_convert_dtypes, safe_merge_dataframes, safe_drop_columns,
+    safe_rename_columns, get_dataframe_info, safe_filter_dataframe
+)
 from src.utils.serialization_utils import UniversalSerializer
 
 try:
@@ -197,7 +201,7 @@ class AdvancedInputValidator:
                      lookback_range: Optional[Tuple[int, int]] = None,
                      target_columns: Optional[List[str]] = None) -> Tuple[bool, ValidationSummary, pd.DataFrame]:
         """
-        Validate data comprehensively.
+        Validate data comprehensively using enhanced utilities.
         
         Args:
             data: DataFrame to validate
@@ -208,7 +212,7 @@ class AdvancedInputValidator:
         Returns:
             Tuple of (is_valid, validation_summary, cleaned_data)
         """
-        tprint_debug("🔍 Starting comprehensive data validation")
+        tprint_debug("🔍 Starting comprehensive data validation with enhanced utilities")
         
         if data is None or not isinstance(data, pd.DataFrame):
             return False, self._create_failed_summary("Data is None or not a DataFrame"), pd.DataFrame()
@@ -220,13 +224,24 @@ class AdvancedInputValidator:
         cleaned_data = data.copy()
         validation_results = []
         
-        # Apply validation rules
+        # Enhanced data quality analysis using utilities
+        tprint_debug("📊 Performing comprehensive data quality analysis")
+        nan_analysis = analyze_nan_values_detailed(cleaned_data)
+        quality_metrics = calculate_data_quality_metrics(cleaned_data)
+        quality_report = create_data_quality_report(cleaned_data)
+        
+        # Log detailed analysis
+        tprint_debug(format_nan_analysis_report(nan_analysis, "  "))
+        
+        # Apply validation rules with enhanced utilities
         for rule in self.validation_rules:
             try:
                 result = self._apply_validation_rule(rule, cleaned_data, {
                     'required_columns': required_columns,
                     'lookback_range': lookback_range,
-                    'target_columns': target_columns
+                    'target_columns': target_columns,
+                    'nan_analysis': nan_analysis,
+                    'quality_metrics': quality_metrics
                 })
                 validation_results.append(result)
                 
@@ -250,14 +265,16 @@ class AdvancedInputValidator:
                     message=f"Validation rule failed: {str(e)}"
                 ))
         
-        # Create validation summary
+        # Create validation summary with enhanced metrics
         summary = self._create_validation_summary(validation_results)
+        summary.quality_score = quality_metrics.get('quality_score', summary.quality_score)
         
         # Determine overall validity
         is_valid = summary.overall_status in [ValidationStatus.PASSED, ValidationStatus.WARNING]
         
         if is_valid:
             tprint_success(f"✅ Data validation passed (quality score: {summary.quality_score:.2f})")
+            tprint_success(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.1f}% missing, {quality_metrics.get('duplicate_percentage', 0):.1f}% duplicates")
         else:
             tprint_error(f"❌ Data validation failed: {summary.recommendations}")
         
@@ -299,14 +316,17 @@ class AdvancedInputValidator:
         return True, "DataFrame is not empty", {"rows": len(data), "columns": len(data.columns)}
 
     def _validate_required_columns(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-        """Validate that required columns are present."""
+        """Validate that required columns are present using utility function."""
         required_columns = context.get('required_columns', ['open', 'high', 'low', 'close', 'volume'])
-        missing_columns = [col for col in required_columns if col not in data.columns]
         
-        if missing_columns:
+        # Use utility function for validation
+        is_valid = validate_dataframe_columns(data, required_columns)
+        
+        if is_valid:
+            return True, "All required columns present", {"required_columns": required_columns}
+        else:
+            missing_columns = [col for col in required_columns if col not in data.columns]
             return False, f"Missing required columns: {missing_columns}", {"missing_columns": missing_columns}
-        
-        return True, "All required columns present", {"required_columns": required_columns}
 
     def _validate_data_types(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate data types are appropriate."""
@@ -325,13 +345,17 @@ class AdvancedInputValidator:
         return True, "All data types are valid", {"data_types": {col: str(dtype) for col, dtype in data.dtypes.items()}}
 
     def _validate_no_infinite_values(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-        """Validate no infinite values."""
+        """Validate no infinite values using math validation utilities."""
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         infinite_cols = []
         
         for col in numeric_cols:
-            if np.isinf(data[col]).any():
-                infinite_cols.append(col)
+            try:
+                # Use math validation to check for infinite values
+                validate_finite(data[col], f"column_{col}")
+            except ValueError as e:
+                if "non-finite values" in str(e):
+                    infinite_cols.append(col)
         
         if infinite_cols:
             return False, f"Infinite values found in columns: {infinite_cols}", {"infinite_columns": infinite_cols}

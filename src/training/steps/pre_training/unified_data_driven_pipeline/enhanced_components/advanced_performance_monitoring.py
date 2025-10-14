@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 # Import utility modules
-from src.utils.common_utilities import CommonUtilities
+from src.utils.common_utilities import (
+    CommonUtilities, safe_dataframe_operation, validate_dataframe_columns,
+    analyze_nan_values_detailed, calculate_data_quality_metrics,
+    create_data_quality_report, get_dataframe_info, create_summary_statistics
+)
 from src.utils.serialization_utils import UniversalSerializer
 
 try:
@@ -158,6 +162,64 @@ class AdvancedPerformanceMonitor:
             self.initial_memory_mb = 0.0
 
         tprint_success(f"✅ AdvancedPerformanceMonitor initialized for {self.component_name}")
+
+    def monitor_data_quality(self, data: pd.DataFrame, operation_name: str = "data_quality_check") -> Dict[str, Any]:
+        """
+        Monitor data quality using enhanced utilities.
+        
+        Args:
+            data: DataFrame to analyze
+            operation_name: Name of the operation for tracking
+            
+        Returns:
+            Dictionary with data quality metrics
+        """
+        start_time = time.time()
+        
+        try:
+            # Use utility functions for comprehensive analysis
+            nan_analysis = analyze_nan_values_detailed(data)
+            quality_metrics = calculate_data_quality_metrics(data)
+            quality_report = create_data_quality_report(data)
+            dataframe_info = get_dataframe_info(data)
+            summary_stats = create_summary_statistics(data)
+            
+            # Record metrics
+            self.record_metric(
+                MetricType.QUALITY,
+                quality_metrics.get('missing_percentage', 0),
+                unit="percentage",
+                metadata={
+                    'operation': operation_name,
+                    'data_shape': data.shape,
+                    'quality_score': quality_metrics.get('quality_score', 0)
+                }
+            )
+            
+            # Create comprehensive quality report
+            quality_summary = {
+                'operation_name': operation_name,
+                'timestamp': datetime.now().isoformat(),
+                'data_shape': data.shape,
+                'nan_analysis': nan_analysis,
+                'quality_metrics': quality_metrics,
+                'dataframe_info': dataframe_info,
+                'summary_statistics': summary_stats,
+                'analysis_time': time.time() - start_time
+            }
+            
+            tprint_performance(f"📊 Data quality analysis completed for {operation_name}: {quality_metrics.get('missing_percentage', 0):.1f}% missing")
+            
+            return quality_summary
+            
+        except Exception as e:
+            tprint_error(f"❌ Data quality monitoring failed for {operation_name}: {e}")
+            return {
+                'operation_name': operation_name,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat(),
+                'analysis_time': time.time() - start_time
+            }
 
     def start_operation(self, operation_name: str) -> float:
         """

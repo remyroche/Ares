@@ -13,7 +13,12 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 
 # Import utility modules
-from src.utils.common_utilities import CommonUtilities
+from src.utils.common_utilities import (
+    CommonUtilities, safe_dataframe_operation, validate_dataframe_columns,
+    analyze_nan_values_detailed, calculate_data_quality_metrics,
+    create_data_quality_report, get_dataframe_info, create_summary_statistics,
+    safe_convert_dtypes, safe_merge_dataframes, safe_drop_columns
+)
 from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
 
 try:
@@ -93,6 +98,96 @@ class AdvancedArtifactManager:
         self.save_history: List[ArtifactSaveReport] = []
 
         tprint_success(f"✅ AdvancedArtifactManager initialized with base directory: {self.base_dir}")
+
+    def analyze_artifact_quality(self, artifact_data: Any, artifact_name: str) -> Dict[str, Any]:
+        """
+        Analyze data quality of an artifact using enhanced utilities.
+        
+        Args:
+            artifact_data: The artifact data to analyze
+            artifact_name: Name of the artifact
+            
+        Returns:
+            Dictionary with quality analysis results
+        """
+        tprint_debug(f"🔍 Analyzing quality of artifact: {artifact_name}")
+        
+        try:
+            quality_analysis = {
+                'artifact_name': artifact_name,
+                'timestamp': datetime.now().isoformat(),
+                'artifact_type': type(artifact_data).__name__,
+                'analysis_results': {}
+            }
+            
+            # Analyze DataFrame artifacts
+            if isinstance(artifact_data, pd.DataFrame):
+                tprint_debug(f"📊 Analyzing DataFrame artifact: {artifact_name}")
+                
+                # Validate columns
+                required_columns = ['close'] if 'close' in artifact_data.columns else []
+                column_validation = validate_dataframe_columns(artifact_data, required_columns)
+                
+                # Comprehensive data quality analysis
+                nan_analysis = analyze_nan_values_detailed(artifact_data)
+                quality_metrics = calculate_data_quality_metrics(artifact_data)
+                quality_report = create_data_quality_report(artifact_data)
+                dataframe_info = get_dataframe_info(artifact_data)
+                summary_stats = create_summary_statistics(artifact_data)
+                
+                quality_analysis['analysis_results'] = {
+                    'column_validation': column_validation,
+                    'nan_analysis': nan_analysis,
+                    'quality_metrics': quality_metrics,
+                    'quality_report': quality_report,
+                    'dataframe_info': dataframe_info,
+                    'summary_statistics': summary_stats
+                }
+                
+                tprint_success(f"✅ DataFrame analysis completed: {quality_metrics.get('missing_percentage', 0):.1f}% missing")
+                
+            elif isinstance(artifact_data, np.ndarray):
+                tprint_debug(f"🔢 Analyzing NumPy array artifact: {artifact_name}")
+                
+                # Convert to DataFrame for analysis
+                if artifact_data.ndim == 2:
+                    df_for_analysis = pd.DataFrame(artifact_data)
+                    nan_analysis = analyze_nan_values_detailed(df_for_analysis)
+                    quality_metrics = calculate_data_quality_metrics(df_for_analysis)
+                    
+                    quality_analysis['analysis_results'] = {
+                        'array_shape': artifact_data.shape,
+                        'array_dtype': str(artifact_data.dtype),
+                        'nan_analysis': nan_analysis,
+                        'quality_metrics': quality_metrics
+                    }
+                    
+                    tprint_success(f"✅ Array analysis completed: shape {artifact_data.shape}")
+                else:
+                    quality_analysis['analysis_results'] = {
+                        'array_shape': artifact_data.shape,
+                        'array_dtype': str(artifact_data.dtype),
+                        'note': '1D array - limited analysis available'
+                    }
+                    
+            else:
+                # Basic analysis for other types
+                quality_analysis['analysis_results'] = {
+                    'type': type(artifact_data).__name__,
+                    'size_bytes': self.common_utils.get_file_size(str(artifact_data)) if hasattr(artifact_data, '__len__') else 0,
+                    'note': 'Limited analysis available for this data type'
+                }
+            
+            return quality_analysis
+            
+        except Exception as e:
+            tprint_error(f"❌ Quality analysis failed for {artifact_name}: {e}")
+            return {
+                'artifact_name': artifact_name,
+                'timestamp': datetime.now().isoformat(),
+                'error': str(e),
+                'analysis_results': {}
+            }
 
     async def save_artifacts(self, artifacts: Dict[str, Any], 
                            metadata: Optional[Dict[str, Any]] = None) -> ArtifactSaveReport:

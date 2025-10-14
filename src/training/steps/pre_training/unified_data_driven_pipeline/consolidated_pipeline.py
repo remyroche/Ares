@@ -53,6 +53,16 @@ from .core.vectorbt_optimizer import (
     VectorBTOptimizer, VectorBTConfig, 
     create_vectorbt_optimizer
 )
+
+# Import enhanced vectorization utilities
+from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+    VectorBTRollingOptimizer, 
+    get_vectorbt_rolling_optimizer
+)
+from src.feature_generation.utils.unified_vectorization_manager import (
+    UnifiedVectorizationManager,
+    VectorizationConfig
+)
 from .core.template_interaction_generator import (
     TemplateInteractionGenerator, TemplateConfig, 
     create_template_interaction_generator
@@ -349,6 +359,29 @@ class UnifiedDataDrivenPipeline:
             max_workers=4
         )
         self.vectorbt_optimizer = create_vectorbt_optimizer(vectorbt_config)
+        
+        # Enhanced VectorBT Rolling Optimizer
+        self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+            enable_vectorbt=VECTORBT_AVAILABLE,
+            enable_gpu=False,
+            enable_parallel=True,
+            memory_efficient=True,
+            batch_size=1000,
+            max_workers=4
+        )
+        
+        # Unified Vectorization Manager
+        vectorization_config = VectorizationConfig(
+            enable_vectorbt=VECTORBT_AVAILABLE,
+            enable_gpu=False,
+            enable_parallel=True,
+            memory_efficient=True,
+            batch_size=1000,
+            max_workers=4,
+            enable_rolling_optimization=True,
+            enable_batch_processing=True
+        )
+        self.unified_vectorization_manager = UnifiedVectorizationManager(vectorization_config)
         
         # Template interaction generator
         template_config = TemplateConfig(
@@ -840,49 +873,44 @@ class UnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using Feature Bank integration."""
-        tprint_debug("Generating selected features using Feature Bank integration")
+        """Generate features for the selected feature set using enhanced vectorization utilities."""
+        tprint_debug("Generating selected features using enhanced vectorization utilities")
         
         try:
             if selection_result is None or not selection_result.success:
-                tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
-                # Use Feature Bank integration for comprehensive feature generation
-                feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                    data, force_refresh=False
-                )
+                tprint_warning("⚠️ No valid selection result, using enhanced vectorization for comprehensive feature generation")
+                # Use enhanced vectorization for comprehensive feature generation
+                features_df = self._generate_enhanced_features(data)
                 
-                if feature_generation_result.success:
-                    tprint_success(f"✅ Generated {feature_generation_result.n_features_generated} features using Feature Bank")
-                    return feature_generation_result.feature_data
+                if not features_df.empty:
+                    tprint_success(f"✅ Generated {len(features_df.columns)} features using enhanced vectorization")
+                    return features_df
                 else:
-                    tprint_error(f"❌ Feature Bank generation failed: {feature_generation_result.error_message}")
+                    tprint_error("❌ Enhanced feature generation failed")
                     return pd.DataFrame(index=data.index)
             
-            # Use Feature Bank integration for selected features
-            tprint_debug("🔧 Using Feature Bank integration for selected features")
+            # Use enhanced vectorization for selected features
+            tprint_debug("🔧 Using enhanced vectorization for selected features")
             
-            # Generate comprehensive features first
-            feature_generation_result = self.feature_bank_integration.generate_features_for_optimization(
-                data, force_refresh=False
-            )
+            # Generate comprehensive features first using enhanced vectorization
+            features_df = self._generate_enhanced_features(data)
             
-            if not feature_generation_result.success:
-                tprint_error("❌ Feature Bank generation failed - this is required for feature generation")
+            if features_df.empty:
+                tprint_error("❌ Enhanced feature generation failed - this is required for feature generation")
                 return pd.DataFrame(index=data.index)
             
             # Filter to selected features
             selected_feature_names = [fs.feature_name for fs in selection_result.selected_features]
-            available_features = feature_generation_result.feature_data.columns
+            available_features = features_df.columns
             
             # Find matching features
             matching_features = [f for f in selected_feature_names if f in available_features]
             
             if matching_features:
-                features_df = feature_generation_result.feature_data[matching_features]
-                tprint_success(f"✅ Generated {len(features_df.columns)} selected features using Feature Bank")
+                features_df = features_df[matching_features]
+                tprint_success(f"✅ Generated {len(features_df.columns)} selected features using enhanced vectorization")
             else:
                 tprint_warning("⚠️ No matching features found, using all generated features")
-                features_df = feature_generation_result.feature_data
             
             return features_df
             
@@ -890,15 +918,213 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Feature generation failed: {e}")
             return pd.DataFrame(index=data.index)
     
-    def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Enhanced interaction generation with VectorBT optimization."""
-        tprint_debug("Starting enhanced interaction generation")
+    def _generate_enhanced_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate features using enhanced vectorization utilities."""
+        tprint_debug("Generating features using enhanced vectorization utilities")
         
         try:
-            # Use VectorBT optimizer for interaction generation
-            interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            features_dict = {}
             
-            tprint_success(f"✅ Generated {len(interactions)} interactions")
+            # Ensure we have OHLCV data
+            if not all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']):
+                tprint_error("❌ Missing required OHLCV columns")
+                return pd.DataFrame(index=data.index)
+            
+            # Use Unified Vectorization Manager for comprehensive feature generation
+            with self.unified_vectorization_manager.batch_processing_context() as batch_processor:
+                # Price-based features using VectorBT rolling operations
+                close_prices = data['close']
+                high_prices = data['high']
+                low_prices = data['low']
+                volume = data['volume']
+                
+                # Rolling statistics with VectorBT optimization
+                windows = [5, 10, 20, 50, 100]
+                for window in windows:
+                    if len(data) >= window:
+                        # Rolling mean
+                        features_dict[f'close_ma_{window}'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                            close_prices, window=window
+                        ).result_data
+                        
+                        # Rolling standard deviation
+                        features_dict[f'close_std_{window}'] = self.vectorbt_rolling_optimizer.rolling_std(
+                            close_prices, window=window
+                        ).result_data
+                        
+                        # Rolling min/max
+                        features_dict[f'close_min_{window}'] = self.vectorbt_rolling_optimizer.rolling_min(
+                            close_prices, window=window
+                        ).result_data
+                        
+                        features_dict[f'close_max_{window}'] = self.vectorbt_rolling_optimizer.rolling_max(
+                            close_prices, window=window
+                        ).result_data
+                        
+                        # Volume features
+                        features_dict[f'volume_ma_{window}'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                            volume, window=window
+                        ).result_data
+                        
+                        # Price range features
+                        price_range = high_prices - low_prices
+                        features_dict[f'range_ma_{window}'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                            price_range, window=window
+                        ).result_data
+                
+                # Technical indicators using VectorBT operations
+                # RSI calculation
+                if len(data) >= 14:
+                    delta = close_prices.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rs = gain / loss
+                    features_dict['rsi_14'] = 100 - (100 / (1 + rs))
+                
+                # Bollinger Bands
+                if len(data) >= 20:
+                    bb_middle = self.vectorbt_rolling_optimizer.rolling_mean(close_prices, window=20).result_data
+                    bb_std = self.vectorbt_rolling_optimizer.rolling_std(close_prices, window=20).result_data
+                    features_dict['bb_upper'] = bb_middle + (bb_std * 2)
+                    features_dict['bb_lower'] = bb_middle - (bb_std * 2)
+                    features_dict['bb_width'] = features_dict['bb_upper'] - features_dict['bb_lower']
+                    features_dict['bb_position'] = (close_prices - features_dict['bb_lower']) / features_dict['bb_width']
+                
+                # MACD
+                if len(data) >= 26:
+                    ema_12 = close_prices.ewm(span=12).mean()
+                    ema_26 = close_prices.ewm(span=26).mean()
+                    features_dict['macd'] = ema_12 - ema_26
+                    features_dict['macd_signal'] = features_dict['macd'].ewm(span=9).mean()
+                    features_dict['macd_histogram'] = features_dict['macd'] - features_dict['macd_signal']
+                
+                # Price momentum features
+                for period in [1, 5, 10, 20]:
+                    if len(data) > period:
+                        features_dict[f'price_change_{period}'] = close_prices.pct_change(period)
+                        features_dict[f'volume_change_{period}'] = volume.pct_change(period)
+                
+                # Volatility features
+                for window in [10, 20, 50]:
+                    if len(data) >= window:
+                        returns = close_prices.pct_change()
+                        features_dict[f'volatility_{window}'] = returns.rolling(window=window).std()
+                        features_dict[f'volatility_annualized_{window}'] = features_dict[f'volatility_{window}'] * np.sqrt(252)
+            
+            # Convert to DataFrame
+            features_df = pd.DataFrame(features_dict, index=data.index)
+            
+            # Remove any infinite or NaN values
+            features_df = features_df.replace([np.inf, -np.inf], np.nan)
+            features_df = features_df.fillna(method='ffill').fillna(method='bfill')
+            
+            tprint_success(f"✅ Generated {len(features_df.columns)} enhanced features using vectorization utilities")
+            return features_df
+            
+        except Exception as e:
+            tprint_error(f"❌ Enhanced feature generation failed: {e}")
+            return pd.DataFrame(index=data.index)
+    
+    def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Enhanced interaction generation with VectorBT optimization and unified vectorization."""
+        tprint_debug("Starting enhanced interaction generation with unified vectorization")
+        
+        try:
+            # Use Unified Vectorization Manager for interaction generation
+            interactions = []
+            
+            # Generate feature interactions using vectorized operations
+            with self.unified_vectorization_manager.batch_processing_context() as batch_processor:
+                # Price-based interactions
+                if 'close' in features_df.columns:
+                    close_col = features_df['close']
+                    
+                    # Price momentum interactions
+                    for col in features_df.columns:
+                        if col != 'close' and not col.startswith('close_'):
+                            # Price vs other features
+                            interaction_name = f"close_vs_{col}"
+                            interactions.append({
+                                'name': interaction_name,
+                                'data': close_col * features_df[col],
+                                'type': 'multiplicative',
+                                'features': ['close', col]
+                            })
+                            
+                            # Price ratio interactions
+                            if features_df[col].min() > 0:  # Avoid division by zero
+                                ratio_name = f"close_ratio_{col}"
+                                interactions.append({
+                                    'name': ratio_name,
+                                    'data': close_col / features_df[col],
+                                    'type': 'ratio',
+                                    'features': ['close', col]
+                                })
+                
+                # Rolling correlation interactions
+                numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) >= 2:
+                    for i, col1 in enumerate(numeric_cols[:5]):  # Limit to first 5 for performance
+                        for col2 in numeric_cols[i+1:6]:  # Limit to next 5
+                            # Rolling correlation
+                            corr_name = f"corr_{col1}_{col2}"
+                            rolling_corr = self.vectorbt_rolling_optimizer.rolling_corr(
+                                features_df[col1], features_df[col2], window=20
+                            ).result_data
+                            
+                            interactions.append({
+                                'name': corr_name,
+                                'data': rolling_corr,
+                                'type': 'correlation',
+                                'features': [col1, col2],
+                                'window': 20
+                            })
+                
+                # Volatility interactions
+                volatility_cols = [col for col in features_df.columns if 'volatility' in col or 'std' in col]
+                if volatility_cols:
+                    for vol_col in volatility_cols[:3]:  # Limit to first 3 volatility features
+                        for price_col in [col for col in features_df.columns if 'close' in col or 'price' in col][:3]:
+                            # Volatility-adjusted price
+                            interaction_name = f"vol_adj_{price_col}_{vol_col}"
+                            if features_df[vol_col].min() > 0:
+                                interactions.append({
+                                    'name': interaction_name,
+                                    'data': features_df[price_col] / features_df[vol_col],
+                                    'type': 'volatility_adjusted',
+                                    'features': [price_col, vol_col]
+                                })
+                
+                # Technical indicator interactions
+                ma_cols = [col for col in features_df.columns if 'ma_' in col or 'sma' in col]
+                if len(ma_cols) >= 2:
+                    for i, ma1 in enumerate(ma_cols[:3]):
+                        for ma2 in ma_cols[i+1:4]:
+                            # MA crossover signals
+                            crossover_name = f"crossover_{ma1}_{ma2}"
+                            interactions.append({
+                                'name': crossover_name,
+                                'data': features_df[ma1] - features_df[ma2],
+                                'type': 'crossover',
+                                'features': [ma1, ma2]
+                            })
+                            
+                            # MA ratio
+                            if features_df[ma2].min() > 0:
+                                ratio_name = f"ma_ratio_{ma1}_{ma2}"
+                                interactions.append({
+                                    'name': ratio_name,
+                                    'data': features_df[ma1] / features_df[ma2],
+                                    'type': 'ma_ratio',
+                                    'features': [ma1, ma2]
+                                })
+            
+            # Use VectorBT optimizer for additional interaction generation
+            vectorbt_interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            if vectorbt_interactions:
+                interactions.extend(vectorbt_interactions)
+            
+            tprint_success(f"✅ Generated {len(interactions)} enhanced interactions using unified vectorization")
             return interactions
             
         except Exception as e:
@@ -907,27 +1133,150 @@ class UnifiedDataDrivenPipeline:
     
     def _htf_interaction_generation(self, data: pd.DataFrame, features_df: pd.DataFrame, 
                                   targets: Optional[pd.Series]) -> List[Any]:
-        """HTF-aware interaction generation."""
-        tprint_debug("Starting HTF interaction generation")
+        """HTF-aware interaction generation with enhanced vectorization."""
+        tprint_debug("Starting HTF interaction generation with enhanced vectorization")
         
         try:
-            # Create simulated HTF features
-            htf_features = self._create_htf_features(data)
+            # Create simulated HTF features using enhanced vectorization
+            htf_features = self._create_enhanced_htf_features(data)
             
             # Use HTF generator for interaction generation
             htf_interactions = self.template_interaction_generator.generate_interactions(
                 htf_features, features_df, targets
             )
             
-            tprint_success(f"✅ Generated {len(htf_interactions)} HTF interactions")
-            return htf_interactions
+            # Generate additional HTF interactions using vectorized operations
+            additional_htf_interactions = []
+            
+            with self.unified_vectorization_manager.batch_processing_context() as batch_processor:
+                # HTF vs LTF interactions
+                for htf_key, htf_data in htf_features.items():
+                    if isinstance(htf_data, pd.Series):
+                        # Find matching LTF features
+                        ltf_matches = [col for col in features_df.columns if htf_key.split('_')[0] in col]
+                        
+                        for ltf_col in ltf_matches[:3]:  # Limit to first 3 matches
+                            # HTF-LTF ratio
+                            ratio_name = f"htf_ltf_ratio_{htf_key}_{ltf_col}"
+                            if features_df[ltf_col].min() > 0:
+                                additional_htf_interactions.append({
+                                    'name': ratio_name,
+                                    'data': htf_data / features_df[ltf_col],
+                                    'type': 'htf_ltf_ratio',
+                                    'features': [htf_key, ltf_col]
+                                })
+                            
+                            # HTF-LTF difference
+                            diff_name = f"htf_ltf_diff_{htf_key}_{ltf_col}"
+                            additional_htf_interactions.append({
+                                'name': diff_name,
+                                'data': htf_data - features_df[ltf_col],
+                                'type': 'htf_ltf_diff',
+                                'features': [htf_key, ltf_col]
+                            })
+                
+                # HTF momentum interactions
+                htf_trend_cols = [k for k, v in htf_features.items() if 'trend' in k and isinstance(v, pd.Series)]
+                if htf_trend_cols:
+                    for trend_col in htf_trend_cols:
+                        # HTF trend vs price momentum
+                        for momentum_col in [col for col in features_df.columns if 'change' in col or 'momentum' in col][:3]:
+                            interaction_name = f"htf_trend_momentum_{trend_col}_{momentum_col}"
+                            additional_htf_interactions.append({
+                                'name': interaction_name,
+                                'data': htf_features[trend_col] * features_df[momentum_col],
+                                'type': 'htf_trend_momentum',
+                                'features': [trend_col, momentum_col]
+                            })
+            
+            # Combine all HTF interactions
+            all_htf_interactions = htf_interactions + additional_htf_interactions
+            
+            tprint_success(f"✅ Generated {len(all_htf_interactions)} HTF interactions with enhanced vectorization")
+            return all_htf_interactions
             
         except Exception as e:
             tprint_error(f"HTF interaction generation failed: {e}")
             return []
     
+    def _create_enhanced_htf_features(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Create enhanced HTF features using vectorization utilities."""
+        try:
+            htf_features = {}
+            
+            if 'close' not in data.columns:
+                return htf_features
+            
+            close_prices = data['close']
+            high_prices = data['high']
+            low_prices = data['low']
+            volume = data['volume']
+            
+            # Use VectorBT rolling optimizer for HTF features
+            with self.unified_vectorization_manager.batch_processing_context() as batch_processor:
+                # HTF trend features (4h timeframe simulation)
+                htf_features['htf_trend'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                    close_prices, window=16
+                ).result_data
+                
+                htf_features['htf_trend_ema'] = close_prices.ewm(span=16).mean()
+                
+                # HTF volatility features
+                htf_features['htf_volatility'] = self.vectorbt_rolling_optimizer.rolling_std(
+                    close_prices, window=16
+                ).result_data
+                
+                htf_features['htf_volatility_ema'] = close_prices.pct_change().ewm(span=16).std()
+                
+                # HTF volume features
+                htf_features['htf_volume_ma'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                    volume, window=16
+                ).result_data
+                
+                # HTF price range features
+                price_range = high_prices - low_prices
+                htf_features['htf_range_ma'] = self.vectorbt_rolling_optimizer.rolling_mean(
+                    price_range, window=16
+                ).result_data
+                
+                # HTF momentum features
+                htf_features['htf_momentum'] = close_prices.pct_change(16)
+                htf_features['htf_momentum_ema'] = close_prices.pct_change().ewm(span=16).mean()
+                
+                # HTF technical indicators
+                # HTF RSI
+                if len(data) >= 32:  # 2x the window for HTF
+                    delta = close_prices.diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=32).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=32).mean()
+                    rs = gain / loss
+                    htf_features['htf_rsi'] = 100 - (100 / (1 + rs))
+                
+                # HTF Bollinger Bands
+                if len(data) >= 32:
+                    bb_middle = self.vectorbt_rolling_optimizer.rolling_mean(close_prices, window=32).result_data
+                    bb_std = self.vectorbt_rolling_optimizer.rolling_std(close_prices, window=32).result_data
+                    htf_features['htf_bb_upper'] = bb_middle + (bb_std * 2)
+                    htf_features['htf_bb_lower'] = bb_middle - (bb_std * 2)
+                    htf_features['htf_bb_width'] = htf_features['htf_bb_upper'] - htf_features['htf_bb_lower']
+                    htf_features['htf_bb_position'] = (close_prices - htf_features['htf_bb_lower']) / htf_features['htf_bb_width']
+                
+                # HTF MACD
+                if len(data) >= 64:  # 4x the window for HTF
+                    ema_24 = close_prices.ewm(span=24).mean()
+                    ema_48 = close_prices.ewm(span=48).mean()
+                    htf_features['htf_macd'] = ema_24 - ema_48
+                    htf_features['htf_macd_signal'] = htf_features['htf_macd'].ewm(span=18).mean()
+                    htf_features['htf_macd_histogram'] = htf_features['htf_macd'] - htf_features['htf_macd_signal']
+            
+            return htf_features
+            
+        except Exception as e:
+            tprint_error(f"Enhanced HTF feature creation failed: {e}")
+            return {}
+    
     def _create_htf_features(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Create simulated HTF features."""
+        """Create simulated HTF features (legacy method for compatibility)."""
         try:
             htf_features = {}
             
@@ -1035,15 +1384,17 @@ class UnifiedDataDrivenPipeline:
             # Reset feature lag metadata
             feature_lag_metadata = {}
             
-            for idx, feature in enumerate(feature_names, 1):
-                try:
-                    if idx % max(1, total_features // 10) == 0:  # Log every 10%
-                        tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
-                    
-                    tprint_debug(f"🔍 Optimizing feature {idx}/{total_features}: {feature}")
-                    
-                    # Use consistent lookback range for all execution modes
-                    lookback_range = (3, 100)  # Optimized range for faster, more relevant periods
+            # Use Unified Vectorization Manager for batch processing
+            with self.unified_vectorization_manager.batch_processing_context() as batch_processor:
+                for idx, feature in enumerate(feature_names, 1):
+                    try:
+                        if idx % max(1, total_features // 10) == 0:  # Log every 10%
+                            tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
+                        
+                        tprint_debug(f"🔍 Optimizing feature {idx}/{total_features}: {feature}")
+                        
+                        # Use consistent lookback range for all execution modes
+                        lookback_range = (3, 100)  # Optimized range for faster, more relevant periods
                     
                     optimizer_kwargs = {
                         'regularization_settings': self._get_regularization_settings(),

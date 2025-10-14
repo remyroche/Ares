@@ -161,7 +161,7 @@ def example_blank_intensity():
 
 
 def example_light_intensity():
-    """Light intensity pipeline example (10%)."""
+    """Light intensity pipeline example (10% - same structure, minimal parameters)."""
     print("\n" + "="*60)
     print("LIGHT INTENSITY PIPELINE EXAMPLE (10%)")
     print("="*60)
@@ -171,6 +171,7 @@ def example_light_intensity():
     
     # Create light intensity pipeline
     print("\n3. Using light intensity pipeline...")
+    print("   Same pipeline structure as full/blank, but with minimal parameters for fast processing")
     pipeline = create_light_pipeline()
     
     # Process data
@@ -181,6 +182,16 @@ def example_light_intensity():
     print(f"- Processing time: {result.total_processing_time:.2f}s")
     print(f"- Memory usage: {result.memory_usage:.2f} MB")
     print(f"- Quality score: {result.quality_score:.3f}")
+    
+    # Show that all stages are still present
+    if result.validation_result:
+        print(f"- Validation quality: {result.validation_result.quality_score:.3f}")
+    if result.generation_result:
+        print(f"- Generation quality: {result.generation_result.quality_score:.3f}")
+    if result.selection_result:
+        print(f"- Selection quality: {result.selection_result.quality_score:.3f}")
+    if result.optimization_result:
+        print(f"- Optimization quality: {result.optimization_result.quality_score:.3f}")
     
     # Cleanup
     pipeline.cleanup()

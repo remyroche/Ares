@@ -9,8 +9,8 @@ This document describes the major refactoring improvements made to the Unified D
 Created three intensity-based configuration presets to simplify usage:
 
 - **Full (100% intensity)**: Complete pipeline with all features enabled
-- **Blank (25% intensity)**: Reduced pipeline with lower iterations and fewer features
-- **Light (10% intensity)**: Minimal pipeline with essential features only
+- **Blank (25% intensity)**: Same pipeline structure with lower iterations and fewer features
+- **Light (10% intensity)**: Same pipeline structure with minimal parameters for fast processing
 
 **Files Added:**
 - `core/simplified_config.py` - Simplified configuration system
@@ -22,9 +22,17 @@ from src.training.steps.pre_training.unified_data_driven_pipeline import (
 )
 
 # Create pipelines with different intensities
-full_pipeline = create_full_pipeline()
-blank_pipeline = create_blank_pipeline()  # 25% intensity
-light_pipeline = create_light_pipeline()  # 10% intensity
+full_pipeline = create_full_pipeline()    # 100% intensity
+blank_pipeline = create_blank_pipeline()  # 25% intensity - same structure
+light_pipeline = create_light_pipeline()  # 10% intensity - same structure
+```
+
+**Ares Launcher Integration:**
+```bash
+# Command line usage with ares_launcher
+ares_launcher --intensity full --output-dir results/full/
+ares_launcher --intensity blank --max-features 30 --output-dir results/blank/
+ares_launcher --intensity light --log-level DEBUG --output-dir results/light/
 ```
 
 ### 2. **Modular Pipeline Stages** ✅
@@ -80,6 +88,36 @@ Created comprehensive examples demonstrating the new features:
 - Error handling demonstrations
 - Performance comparisons
 - Result saving examples
+
+### 6. **Ares Launcher Integration** ✅
+
+Created command-line integration for ares_launcher:
+
+- **Command Line Interface**: Full CLI with argument parsing
+- **Intensity Configuration**: Set intensity via `--intensity` parameter
+- **Custom Overrides**: Override specific parameters via command line
+- **Output Management**: Configure output directory and result saving
+- **Logging Control**: Set log levels via command line
+
+**Files Added:**
+- `ares_launcher_integration.py` - Integration module
+- `ares_launcher_cli.py` - Command-line interface script
+- `examples/ares_launcher_example.py` - Usage examples
+
+**Command Line Usage:**
+```bash
+# Basic usage
+ares_launcher --intensity full --output-dir results/full/
+ares_launcher --intensity blank --output-dir results/blank/
+ares_launcher --intensity light --output-dir results/light/
+
+# Custom configuration
+ares_launcher --intensity blank --max-features 30 --max-period 50
+ares_launcher --intensity light --cv-splits 3 --computation-time 300
+
+# Advanced usage
+ares_launcher --intensity full --enable-gpu --log-level DEBUG --output-dir results/
+```
 
 ## Migration Guide
 

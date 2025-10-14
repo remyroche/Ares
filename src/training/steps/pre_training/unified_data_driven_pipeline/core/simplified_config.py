@@ -99,54 +99,55 @@ class SimplifiedConfig:
         self.config.performance.log_level = 'WARNING'  # Less verbose logging
     
     def _apply_light_config(self) -> None:
-        """Apply light intensity configuration (10% - essential features only)."""
+        """Apply light intensity configuration (10% - same pipeline structure, minimal parameters)."""
         self.config = create_default_config()
         
-        # Minimal period optimization
-        self.config.period_optimization.max_period = 21  # 1 month only
-        self.config.period_optimization.period_step = 5  # Large steps
-        self.config.period_optimization.max_computation_time = 120.0  # 2 minutes
-        self.config.period_optimization.enable_parallel = False  # Disable parallel processing
+        # Light period optimization - same structure, reduced parameters
+        self.config.period_optimization.max_period = 21  # 1 month instead of 1 year
+        self.config.period_optimization.period_step = 3  # Larger steps
+        self.config.period_optimization.max_computation_time = 120.0  # 2 minutes instead of 10
+        self.config.period_optimization.enable_parallel = True  # Keep parallel processing
         
-        # Minimal lookback optimization
-        self.config.lookback_optimization.max_lookback = 20  # Very limited
-        self.config.lookback_optimization.step_size = 5  # Large steps
-        self.config.lookback_optimization.bayesian_trials = 10  # Minimal trials
-        self.config.lookback_optimization.enable_bayesian_optimization = False  # Disable
+        # Light lookback optimization - same structure, reduced parameters
+        self.config.lookback_optimization.max_lookback = 20  # Reduced from 100
+        self.config.lookback_optimization.step_size = 5  # Larger steps
+        self.config.lookback_optimization.bayesian_trials = 10  # Reduced from 50
+        self.config.lookback_optimization.enable_bayesian_optimization = True  # Keep enabled
         self.config.lookback_optimization.max_computation_time = 120.0  # 2 minutes
         
-        # Minimal interaction generation
-        self.config.interaction_generation.max_interactions = 20  # Very limited
-        self.config.interaction_generation.enable_htf_interactions = False  # Disable HTF
-        self.config.interaction_generation.batch_size = 200  # Small batches
+        # Light interaction generation - same structure, reduced parameters
+        self.config.interaction_generation.max_interactions = 20  # Reduced from 100
+        self.config.interaction_generation.enable_htf_interactions = True  # Keep enabled
+        self.config.interaction_generation.htf_interaction_ratio = 0.1  # Reduced HTF ratio
+        self.config.interaction_generation.batch_size = 200  # Smaller batches
         
-        # Minimal feature selection
-        self.config.feature_selection.multi_objective.max_features = 10  # Very limited
-        self.config.feature_selection.multi_objective.min_features = 2  # Minimal
-        self.config.feature_selection.multi_objective.max_generations = 20  # Minimal
-        self.config.feature_selection.multi_objective.population_size = 10  # Minimal
-        self.config.feature_selection.cv_config.n_splits = 2  # Minimal CV
-        self.config.feature_selection.cv_config.test_size = 0.4  # Large test set
+        # Light feature selection - same structure, reduced parameters
+        self.config.feature_selection.multi_objective.max_features = 10  # Reduced from 50
+        self.config.feature_selection.multi_objective.min_features = 2  # Reduced from 5
+        self.config.feature_selection.multi_objective.max_generations = 20  # Reduced from 100
+        self.config.feature_selection.multi_objective.population_size = 10  # Reduced from 50
+        self.config.feature_selection.cv_config.n_splits = 2  # Reduced from 5
+        self.config.feature_selection.cv_config.test_size = 0.4  # Larger test set
         self.config.feature_selection.max_computation_time = 120.0  # 2 minutes
         
-        # Minimal vectorization
-        self.config.vectorization.chunk_size = 200  # Small chunks
-        self.config.vectorization.cache_size = 200  # Small cache
-        self.config.vectorization.enable_gpu = False  # Disable GPU
-        self.config.vectorization.enable_parallel = False  # Disable parallel
+        # Light vectorization - same structure, reduced parameters
+        self.config.vectorization.chunk_size = 200  # Smaller chunks
+        self.config.vectorization.cache_size = 200  # Smaller cache
+        self.config.vectorization.enable_gpu = False  # Disable GPU for simplicity
+        self.config.vectorization.enable_parallel = True  # Keep parallel processing
         
-        # Minimal performance monitoring
-        self.config.performance.enable_performance_tracking = False  # Disable tracking
-        self.config.performance.enable_memory_monitoring = False  # Disable monitoring
+        # Light performance monitoring - same structure, reduced verbosity
+        self.config.performance.enable_performance_tracking = True  # Keep enabled
+        self.config.performance.enable_memory_monitoring = True  # Keep enabled
         self.config.performance.enable_profiling = False  # Disable profiling
-        self.config.performance.log_level = 'ERROR'  # Minimal logging
+        self.config.performance.log_level = 'WARNING'  # Less verbose logging
         
-        # Disable advanced features
-        self.config.enable_nested_cv = False
-        self.config.enable_direction_optimization = False
-        self.config.enable_bayesian_optimization = False
-        self.config.enable_advanced_caching = False
-        self.config.enable_regularization = False
+        # Keep all advanced features enabled but with reduced parameters
+        self.config.enable_nested_cv = True
+        self.config.enable_direction_optimization = True
+        self.config.enable_bayesian_optimization = True
+        self.config.enable_advanced_caching = True
+        self.config.enable_regularization = True
     
     def _apply_custom_overrides(self) -> None:
         """Apply custom configuration overrides."""
@@ -182,8 +183,8 @@ class SimplifiedConfig:
         """Get a description of the current intensity level."""
         descriptions = {
             PipelineIntensity.FULL: "Full pipeline with all features enabled (100% intensity)",
-            PipelineIntensity.BLANK: "Reduced pipeline with 25% intensity - same pipeline but lower iterations and fewer features",
-            PipelineIntensity.LIGHT: "Minimal pipeline with 10% intensity - essential features only"
+            PipelineIntensity.BLANK: "Reduced pipeline with 25% intensity - same pipeline structure but lower iterations and fewer features",
+            PipelineIntensity.LIGHT: "Light pipeline with 10% intensity - same pipeline structure but minimal parameters for fast processing"
         }
         return descriptions[self.intensity]
 
@@ -243,6 +244,6 @@ def list_available_intensities() -> Dict[str, str]:
     """List available intensity levels with descriptions."""
     return {
         'full': 'Full pipeline with all features enabled (100% intensity)',
-        'blank': 'Reduced pipeline with 25% intensity - same pipeline but lower iterations and fewer features',
-        'light': 'Minimal pipeline with 10% intensity - essential features only'
+        'blank': 'Reduced pipeline with 25% intensity - same pipeline structure but lower iterations and fewer features',
+        'light': 'Light pipeline with 10% intensity - same pipeline structure but minimal parameters for fast processing'
     }

@@ -56,6 +56,13 @@ from .core.simplified_config import (
     PipelineIntensity
 )
 
+# Import ares_launcher integration
+from .ares_launcher_integration import (
+    AresLauncherIntegration,
+    AresLauncherConfig,
+    create_ares_launcher_integration
+)
+
 from .time_series_cv import (
     PurgedEmbargoedWalkForwardCV,
     PurgedEmbargoedConfig,
@@ -111,6 +118,11 @@ __all__ = [
     'create_config_by_intensity',
     'list_available_intensities',
     'PipelineIntensity',
+    
+    # Ares launcher integration
+    'AresLauncherIntegration',
+    'AresLauncherConfig',
+    'create_ares_launcher_integration',
     
     # Time series CV
     'PurgedEmbargoedWalkForwardCV',

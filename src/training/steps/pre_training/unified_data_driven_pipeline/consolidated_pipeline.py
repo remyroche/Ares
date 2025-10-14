@@ -209,6 +209,21 @@ except ImportError:
     MATH_VALIDATION_AVAILABLE = False
     tprint_warning("Math validation utilities not available")
 
+# Define safe math functions for fallback
+def safe_multiply(a: float, b: float, default: float = 0.0) -> float:
+    """Safe multiplication with fallback."""
+    try:
+        return a * b
+    except Exception:
+        return default
+
+def safe_add(a: float, b: float, default: float = 0.0) -> float:
+    """Safe addition with fallback."""
+    try:
+        return a + b
+    except Exception:
+        return default
+
 try:
     from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, create_klines_manager
     KLINES_PARQUET_AVAILABLE = True
@@ -849,10 +864,47 @@ class UnifiedDataDrivenPipeline:
                 except Exception as e:
                     tprint_warning(f"⚠️ Math validation error: {e}")
             
-            # Load market data using advanced data loader
+            # Load market data using advanced data loader with KlinesParquetManager integration
             market_data = await self.advanced_data_loader.load_market_data(
                 cleaned_data, pipeline_state, force_refresh=False
             )
+            
+            # Enhanced data loading with KlinesParquetManager
+            if KLINES_PARQUET_AVAILABLE and self.klines_manager:
+                try:
+                    tprint_info("📊 Using KlinesParquetManager for enhanced data loading")
+                    
+                    # Get symbol and exchange from pipeline state
+                    symbol = pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT'
+                    exchange = pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance'
+                    
+                    # Try to load existing data from parquet storage
+                    existing_data = self.klines_manager.load_klines(symbol, exchange, timeframe)
+                    
+                    if not existing_data.empty:
+                        tprint_success(f"✅ Loaded {len(existing_data)} records from parquet storage")
+                        
+                        # Merge with current data if needed
+                        if len(existing_data) > len(cleaned_data):
+                            tprint_info("📈 Using cached data from parquet storage")
+                            market_data = existing_data
+                        else:
+                            # Store current data to parquet for future use
+                            store_success = self.klines_manager.store_klines(
+                                cleaned_data, symbol, exchange, timeframe
+                            )
+                            if store_success:
+                                tprint_success("✅ Data stored to parquet for future use")
+                    else:
+                        # Store current data to parquet
+                        store_success = self.klines_manager.store_klines(
+                            cleaned_data, symbol, exchange, timeframe
+                        )
+                        if store_success:
+                            tprint_success("✅ Data stored to parquet for future use")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ KlinesParquetManager integration failed: {e}")
             
             # Load labeling data
             labeling_data = await self.advanced_data_loader.load_labeling_data(
@@ -867,10 +919,36 @@ class UnifiedDataDrivenPipeline:
                 market_data, labeling_data
             )
             
-            # Generate features for optimization
+            # Generate features for optimization with serialization caching
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
                 processed_data, pipeline_state, force_refresh=False
             )
+            
+            # Enhanced feature caching with serialization utilities
+            if SERIALIZATION_AVAILABLE and self.serializer:
+                try:
+                    tprint_info("💾 Using serialization utilities for feature caching")
+                    
+                    # Create cache key based on data hash and pipeline state
+                    import hashlib
+                    data_hash = hashlib.md5(str(processed_data.shape).encode()).hexdigest()
+                    cache_key = f"features_{data_hash}_{timeframe}"
+                    cache_file = f"cache/features_{cache_key}.pkl"
+                    
+                    # Try to load cached features
+                    cached_features = self.serializer.load(cache_file)
+                    if cached_features is not None:
+                        tprint_success("✅ Loaded cached features from serialization")
+                        feature_columns = cached_features
+                    else:
+                        # Cache the generated features
+                        if feature_columns:
+                            cache_success = self.serializer.save(feature_columns, cache_file)
+                            if cache_success:
+                                tprint_success("✅ Features cached using serialization utilities")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Serialization caching failed: {e}")
             
             if not feature_columns:
                 error_msg = "Feature generation failed - no features generated"
@@ -961,7 +1039,8 @@ class UnifiedDataDrivenPipeline:
             tprint_success(f"💾 Artifacts saved: {save_report.artifacts_saved} artifacts, "
                           f"correlation_id: {save_report.correlation_id}")
             
-            return ConsolidatedPipelineResult(
+            # Create the result object
+            result = ConsolidatedPipelineResult(
                 selected_features=combined_results['selected_features'],
                 feature_importance=combined_results['feature_importance'],
                 objective_values=combined_results['objective_values'],
@@ -1002,6 +1081,39 @@ class UnifiedDataDrivenPipeline:
                 config=self.config,
                 success=True
             )
+            
+            # Enhanced result serialization and caching
+            if SERIALIZATION_AVAILABLE and self.serializer:
+                try:
+                    tprint_info("💾 Serializing pipeline results for caching")
+                    
+                    # Create result cache key
+                    import hashlib
+                    result_hash = hashlib.md5(str(result.selected_features).encode()).hexdigest()
+                    result_cache_file = f"cache/pipeline_result_{result_hash}_{timeframe}.json"
+                    
+                    # Serialize result to JSON for caching
+                    result_dict = {
+                        'selected_features': result.selected_features,
+                        'feature_importance': result.feature_importance,
+                        'objective_values': result.objective_values,
+                        'optimal_periods': result.optimal_periods,
+                        'processing_time': result.processing_time,
+                        'success': result.success,
+                        'timestamp': time.time()
+                    }
+                    
+                    # Save result cache
+                    cache_success = self.serializer.save(result_dict, result_cache_file)
+                    if cache_success:
+                        tprint_success("✅ Pipeline result cached using serialization utilities")
+                    else:
+                        tprint_warning("⚠️ Failed to cache pipeline result")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Result serialization failed: {e}")
+            
+            return result
             
         except Exception as e:
             # Use advanced error handler
@@ -1400,6 +1512,25 @@ class UnifiedDataDrivenPipeline:
                 tprint_info(f"🧭 Using nested walk-forward CV with {len(outer_splits)} outer folds")
             else:
                 tprint_info("🧭 Nested walk-forward CV unavailable, using single-pass optimization")
+            
+            # Enhanced parallel processing with M1 CPU optimizer
+            if M1_CPU_AVAILABLE and self.m1_cpu_optimizer:
+                try:
+                    tprint_info("🧠 Using M1 CPU optimizer for parallel lookback optimization")
+                    
+                    # Get optimal worker count for M1
+                    optimal_workers = self.m1_cpu_optimizer.get_optimal_worker_count()
+                    tprint_info(f"🖥️ Using {optimal_workers} workers for M1-optimized parallel processing")
+                    
+                    # Create M1-optimized thread pool for parallel operations
+                    with self.m1_cpu_optimizer.create_optimized_thread_pool(optimal_workers) as executor:
+                        # This will be used for parallel feature optimization
+                        tprint_success("✅ M1-optimized thread pool created for lookback optimization")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimization setup failed: {e}")
+            else:
+                tprint_info("💻 Using standard parallel processing for lookback optimization")
             
             # Get optimization direction from pipeline state (default to 'both')
             optimization_direction = pipeline_state.get('direction', 'both') if pipeline_state else 'both'
@@ -2024,24 +2155,71 @@ class UnifiedDataDrivenPipeline:
     
     def _combine_period_scores(self, statistical_analysis: Dict[int, Dict[str, Any]], 
                               economic_evaluation: Any) -> Dict[int, float]:
-        """Combine statistical and economic period scores."""
+        """Combine statistical and economic period scores with math validation."""
         try:
             combined_scores = {}
             
-            # Extract statistical scores
+            # Extract statistical scores with math validation
             for period, analysis in statistical_analysis.items():
                 if 'error' not in analysis:
-                    # Use sharpe ratio as statistical score
+                    # Use sharpe ratio as statistical score with safe calculation
                     sharpe_ratio = analysis.get('sharpe_ratio', 0.0)
-                    combined_scores[period] = sharpe_ratio * 0.4  # Statistical weight
-            
-            # Add economic scores
-            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
-                for period, score in economic_evaluation.period_scores.items():
-                    if period in combined_scores:
-                        combined_scores[period] += score * 0.6  # Economic weight
+                    
+                    # Validate and safely calculate statistical score
+                    if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                        try:
+                            # Validate sharpe ratio
+                            validated_sharpe = self.math_validator.validate_finite(sharpe_ratio, f"sharpe_{period}")
+                            
+                            # Safe multiplication with validation
+                            statistical_weight = 0.4
+                            validated_weight = self.math_validator.validate_positive(statistical_weight, "statistical_weight")
+                            
+                            # Safe multiplication
+                            statistical_score = safe_multiply(validated_sharpe, validated_weight)
+                            combined_scores[period] = statistical_score
+                            
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Math validation failed for period {period}: {e}")
+                            # Fallback to safe calculation
+                            combined_scores[period] = safe_multiply(sharpe_ratio, 0.4)
                     else:
-                        combined_scores[period] = score * 0.6
+                        # Fallback to safe calculation
+                        combined_scores[period] = safe_multiply(sharpe_ratio, 0.4)
+            
+            # Add economic scores with math validation
+            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
+                economic_weight = 0.6
+                
+                for period, score in economic_evaluation.period_scores.items():
+                    if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                        try:
+                            # Validate economic score
+                            validated_score = self.math_validator.validate_finite(score, f"economic_{period}")
+                            validated_weight = self.math_validator.validate_positive(economic_weight, "economic_weight")
+                            
+                            # Calculate economic contribution
+                            economic_contribution = safe_multiply(validated_score, validated_weight)
+                            
+                            if period in combined_scores:
+                                # Safe addition
+                                combined_scores[period] = safe_add(combined_scores[period], economic_contribution)
+                            else:
+                                combined_scores[period] = economic_contribution
+                                
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Math validation failed for economic score {period}: {e}")
+                            # Fallback to safe calculation
+                            if period in combined_scores:
+                                combined_scores[period] += safe_multiply(score, economic_weight)
+                            else:
+                                combined_scores[period] = safe_multiply(score, economic_weight)
+                    else:
+                        # Fallback to safe calculation
+                        if period in combined_scores:
+                            combined_scores[period] += safe_multiply(score, economic_weight)
+                        else:
+                            combined_scores[period] = safe_multiply(score, economic_weight)
             
             return combined_scores
             

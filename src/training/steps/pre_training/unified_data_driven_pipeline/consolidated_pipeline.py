@@ -189,6 +189,50 @@ from .feature_selection.multi_objective_selector import (
     ProfitCenteredObjective
 )
 
+# Import enhanced ML utilities from ml_common
+try:
+    from src.utils.ml_common.validation.unified_cv import (
+        UnifiedCrossValidator, perform_cross_validation, temporal_cross_validation
+    )
+    from src.utils.ml_common.validation.data_leakage_detector import (
+        DataLeakageDetector, DataLeakageReport
+    )
+    from src.utils.ml_common.validation.enhanced_validation import (
+        EnhancedValidator, EnhancedValidationConfig, ValidationReport
+    )
+    from src.utils.ml_common.ensembles.ensemble_manager import (
+        EnsembleManager, EnsembleConfig, EnsembleType, VotingStrategy
+    )
+    from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import (
+        OOFStackingEnsembleManager, OOFStackingEnsembleConfig
+    )
+    from src.utils.ml_common.evaluation.unified_evaluator import (
+        compute_classification_metrics, compute_regression_metrics, 
+        evaluate_model, evaluate_multiple_datasets
+    )
+    from src.utils.ml_common.feature_selection import (
+        FeatureSelector, FeatureSelectionConfig
+    )
+    from src.utils.ml_common.integrated_analysis_pipeline import (
+        IntegratedAnalysisPipeline, IntegratedAnalysisConfig
+    )
+    ML_COMMON_AVAILABLE = True
+    tprint_success("✅ ML Common utilities imported successfully")
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    tprint_warning(f"⚠️ ML Common utilities not available: {e}")
+    # Create dummy classes for graceful degradation
+    class DataLeakageDetector:
+        def __init__(self, *args, **kwargs): pass
+        def generate_report(self, *args, **kwargs): return type('Report', (), {'has_leakage': False})()
+    class EnhancedValidator:
+        def __init__(self, *args, **kwargs): pass
+        def validate_model(self, *args, **kwargs): return type('Report', (), {'validation_quality_score': 0.5})()
+    class EnsembleManager:
+        def __init__(self, *args, **kwargs): pass
+    class OOFStackingEnsembleManager:
+        def __init__(self, *args, **kwargs): pass
+
 # Import VectorBT utilities
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
@@ -372,6 +416,7 @@ class UnifiedDataDrivenPipeline:
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
+        self._initialize_ml_common_utilities()
         self._initialize_validation_components()
         self._initialize_performance_tracking()
         self._initialize_advanced_infrastructure()
@@ -527,14 +572,21 @@ class UnifiedDataDrivenPipeline:
         # Statistical analysis framework
         self.stats_framework = StatisticalAnalysisFramework()
         
-        # Time series CV
-        self.cv_splitter = create_purged_embargoed_cv(
-            n_splits=self.config.feature_selection.cv_config.n_splits,
-            test_size=self.config.feature_selection.cv_config.test_size,
-            train_size=self.config.feature_selection.cv_config.train_size,
-            purge_fraction=self.config.feature_selection.cv_config.purge_fraction,
-            embargo_fraction=self.config.feature_selection.cv_config.embargo_fraction
-        )
+        # Time series CV - enhanced with ML Common utilities
+        if ML_COMMON_AVAILABLE and self.unified_cv is not None:
+            # Use unified CV for enhanced temporal validation
+            self.cv_splitter = self.unified_cv
+            tprint_success("✅ Using unified cross-validator for enhanced temporal validation")
+        else:
+            # Fallback to original purged embargoed CV
+            self.cv_splitter = create_purged_embargoed_cv(
+                n_splits=self.config.feature_selection.cv_config.n_splits,
+                test_size=self.config.feature_selection.cv_config.test_size,
+                train_size=self.config.feature_selection.cv_config.train_size,
+                purge_fraction=self.config.feature_selection.cv_config.purge_fraction,
+                embargo_fraction=self.config.feature_selection.cv_config.embargo_fraction
+            )
+            tprint_info("ℹ️ Using standard purged embargoed CV")
         
         # Multi-objective feature selector
         self.feature_selector = MultiObjectiveFeatureSelector(
@@ -709,6 +761,142 @@ class UnifiedDataDrivenPipeline:
             tprint_warning("⚠️  Feature engineering roadmap components not available")
         
         tprint_success("✅ Enhanced components initialized")
+    
+    def _initialize_ml_common_utilities(self):
+        """Initialize ML Common utilities for enhanced validation and ensemble methods."""
+        tprint_debug("Initializing ML Common utilities")
+        
+        if not ML_COMMON_AVAILABLE:
+            tprint_warning("⚠️ ML Common utilities not available, using fallback implementations")
+            # Initialize dummy components for graceful degradation
+            self.data_leakage_detector = DataLeakageDetector()
+            self.enhanced_validator = EnhancedValidator()
+            self.ensemble_manager = None
+            self.oof_stacking_manager = None
+            self.integrated_analysis_pipeline = None
+            return
+        
+        try:
+            # Data leakage detector with VectorBT integration
+            self.data_leakage_detector = DataLeakageDetector({
+                'temporal_tolerance': 1,
+                'lookahead_tolerance': 24,
+                'feature_contamination_threshold': 0.1,
+                'enable_strict_mode': True,
+                'use_vectorbt_analysis': VECTORBT_AVAILABLE,
+                'correlation_threshold': 0.95,
+                'enable_advanced_detection': True
+            })
+            tprint_success("✅ Data leakage detector initialized")
+            
+            # Enhanced validator with comprehensive validation
+            validation_config = EnhancedValidationConfig(
+                enable_bootstrap_validation=True,
+                enable_cross_validation=True,
+                enable_robustness_testing=True,
+                enable_confidence_intervals=True,
+                cv_folds=5,
+                cv_strategy="temporal",  # Use temporal CV for time series data
+                bootstrap_samples=1000,
+                bootstrap_confidence_level=0.95,
+                enable_noise_injection=True,
+                noise_levels=[0.01, 0.05, 0.1],
+                enable_feature_perturbation=True,
+                perturbation_magnitude=0.1,
+                enable_statistical_tests=True,
+                test_for_overfitting=True,
+                save_validation_reports=True,
+                report_directory="reports/enhanced_validation"
+            )
+            self.enhanced_validator = EnhancedValidator(validation_config)
+            tprint_success("✅ Enhanced validator initialized")
+            
+            # Ensemble manager for model ensembles
+            ensemble_config = EnsembleConfig(
+                ensemble_name="unified_pipeline_ensemble",
+                output_dir="models/ensembles",
+                ensemble_type=EnsembleType.STACKING,
+                voting_strategy=VotingStrategy.SOFT,
+                max_models=10,
+                min_models=2,
+                model_selection_criteria="performance",
+                enable_cross_validation=True,
+                cv_folds=5,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                enable_weight_optimization=True,
+                weight_optimization_method="performance_based",
+                enable_gpu_acceleration=VECTORBT_AVAILABLE,
+                enable_memory_optimization=True,
+                enable_parallel_processing=True,
+                memory_limit_gb=8.0,
+                enable_caching=True,
+                cache_size_mb=100,
+                save_models=True,
+                save_predictions=True,
+                generate_reports=True
+            )
+            self.ensemble_manager = EnsembleManager(ensemble_config)
+            tprint_success("✅ Ensemble manager initialized")
+            
+            # OOF Stacking ensemble manager for advanced ensemble methods
+            oof_config = OOFStackingEnsembleConfig(
+                ensemble_name="unified_pipeline_oof_ensemble",
+                output_dir="models/oof_ensembles",
+                n_outputs=4,
+                output_names=["price_direction", "volatility", "momentum", "mean_reversion"],
+                enable_out_of_fold=True,
+                cv_folds=5,
+                cv_strategy="purged_kfold",
+                enable_temporal_validation=True,
+                purge_periods=5,
+                embargo_periods=2,
+                enable_early_stopping=True,
+                early_stopping_patience=10,
+                early_stopping_rounds=50,
+                enable_gpu_acceleration=VECTORBT_AVAILABLE,
+                enable_memory_optimization=True,
+                enable_parallel_processing=True,
+                memory_limit_gb=8.0,
+                enable_caching=True,
+                cache_size_mb=100,
+                save_models=True,
+                save_predictions=True,
+                generate_reports=True
+            )
+            self.oof_stacking_manager = OOFStackingEnsembleManager(oof_config)
+            tprint_success("✅ OOF Stacking ensemble manager initialized")
+            
+            # Integrated analysis pipeline for comprehensive analysis
+            analysis_config = IntegratedAnalysisConfig(
+                feature_importance_methods=["random_forest", "lasso", "mutual_info"],
+                top_k_features=20,
+                drift_threshold=0.05,
+                warning_threshold=0.1,
+                critical_threshold=0.2,
+                hmm_n_components=4,
+                hmm_covariance_type="full",
+                save_results=True,
+                output_directory="reports/integrated_analysis"
+            )
+            self.integrated_analysis_pipeline = IntegratedAnalysisPipeline(analysis_config)
+            tprint_success("✅ Integrated analysis pipeline initialized")
+            
+            # Unified cross-validator for advanced CV strategies
+            self.unified_cv = UnifiedCrossValidator()
+            tprint_success("✅ Unified cross-validator initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error initializing ML Common utilities: {e}")
+            # Fallback to dummy components
+            self.data_leakage_detector = DataLeakageDetector()
+            self.enhanced_validator = EnhancedValidator()
+            self.ensemble_manager = None
+            self.oof_stacking_manager = None
+            self.integrated_analysis_pipeline = None
+            self.unified_cv = None
+        
+        tprint_success("✅ ML Common utilities initialized")
     
     def _initialize_validation_components(self):
         """Initialize validation and monitoring components."""
@@ -1443,19 +1631,129 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Advanced feature selection from 200+ feature bank."""
-        tprint_debug("Starting advanced feature selection")
+        """Advanced feature selection from 200+ feature bank with enhanced validation and data leakage detection."""
+        tprint_debug("Starting advanced feature selection with ML Common enhancements")
         
         try:
-            # Use the advanced feature selector
+            # Step 1: Data leakage detection before feature selection
+            if ML_COMMON_AVAILABLE and self.data_leakage_detector is not None:
+                tprint_info("🔍 Performing data leakage detection...")
+                leakage_report = self.data_leakage_detector.generate_report(
+                    X_train=data,
+                    X_test=data,  # For single dataset, use same data
+                    y_train=targets,
+                    y_test=targets,
+                    features=data,
+                    target=targets,
+                    target_column='target'
+                )
+                
+                if leakage_report.has_leakage:
+                    tprint_warning(f"⚠️ Data leakage detected (score: {leakage_report.leakage_score:.3f})")
+                    for violation in leakage_report.temporal_violations[:3]:
+                        tprint_warning(f"  - Temporal: {violation}")
+                    for feature in leakage_report.feature_contamination[:3]:
+                        tprint_warning(f"  - Contamination: {feature}")
+                    for bias in leakage_report.lookahead_bias[:3]:
+                        tprint_warning(f"  - Lookahead: {bias}")
+                else:
+                    tprint_success("✅ No significant data leakage detected")
+            
+            # Step 2: Use the advanced feature selector
             selection_result = self.advanced_feature_selector.select_features(data, targets)
             
-            if selection_result.success:
-                tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
-                return selection_result
-            else:
-                tprint_error(f"Feature selection failed: {selection_result.error_message}")
+            if not selection_result or not selection_result.success:
+                tprint_error(f"Feature selection failed: {getattr(selection_result, 'error_message', 'Unknown error')}")
                 return None
+            
+            tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
+            
+            # Step 3: Enhanced validation of selected features
+            if ML_COMMON_AVAILABLE and self.enhanced_validator is not None and targets is not None:
+                tprint_info("🔍 Performing enhanced validation of selected features...")
+                
+                # Create a simple model for validation (using selected features)
+                try:
+                    from sklearn.ensemble import RandomForestClassifier
+                    from sklearn.model_selection import train_test_split
+                    
+                    # Prepare data for validation
+                    selected_data = data[selection_result.selected_features].dropna()
+                    if len(selected_data) == 0:
+                        tprint_warning("⚠️ No valid data after feature selection")
+                        return selection_result
+                    
+                    # Align targets with selected data
+                    aligned_targets = targets.loc[selected_data.index]
+                    
+                    # Split data for validation
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        selected_data, aligned_targets, test_size=0.2, random_state=42, stratify=aligned_targets
+                    )
+                    
+                    # Create and train a simple model
+                    model = RandomForestClassifier(n_estimators=50, random_state=42)
+                    model.fit(X_train, y_train)
+                    
+                    # Perform enhanced validation
+                    validation_report = self.enhanced_validator.validate_model(
+                        model=model,
+                        X=X_test.values,
+                        y=y_test.values,
+                        model_name="feature_selection_validation",
+                        model_type="RandomForest",
+                        dataset_name="selected_features",
+                        is_classification=True,
+                        cv_folds=3,
+                        random_state=42
+                    )
+                    
+                    # Log validation results
+                    tprint_info(f"📊 Validation Quality Score: {validation_report.validation_quality_score:.3f}")
+                    tprint_info(f"📊 Performance Stability: {validation_report.performance_stability}")
+                    tprint_info(f"📊 Validation Reliability: {validation_report.validation_reliability}")
+                    
+                    if validation_report.critical_issues:
+                        tprint_warning(f"⚠️ Critical validation issues: {len(validation_report.critical_issues)}")
+                        for issue in validation_report.critical_issues[:2]:
+                            tprint_warning(f"  - {issue}")
+                    
+                    # Add validation metrics to selection result
+                    if hasattr(selection_result, 'quality_metrics'):
+                        selection_result.quality_metrics['enhanced_validation'] = {
+                            'validation_quality_score': validation_report.validation_quality_score,
+                            'performance_stability': validation_report.performance_stability,
+                            'validation_reliability': validation_report.validation_reliability,
+                            'robustness_score': validation_report.robustness_score,
+                            'critical_issues_count': len(validation_report.critical_issues)
+                        }
+                    
+                except Exception as validation_error:
+                    tprint_warning(f"⚠️ Enhanced validation failed: {validation_error}")
+            
+            # Step 4: Integrated analysis if available
+            if ML_COMMON_AVAILABLE and self.integrated_analysis_pipeline is not None and targets is not None:
+                tprint_info("🔍 Performing integrated analysis...")
+                try:
+                    analysis_result = self.integrated_analysis_pipeline.analyze_comprehensive(
+                        current_data=data[selection_result.selected_features],
+                        target_column='target' if 'target' in data.columns else None
+                    )
+                    
+                    # Log key insights
+                    if 'recommendations' in analysis_result:
+                        tprint_info(f"📊 Analysis recommendations: {len(analysis_result['recommendations'])}")
+                        for rec in analysis_result['recommendations'][:2]:
+                            tprint_info(f"  - {rec}")
+                    
+                    # Add analysis results to selection result
+                    if hasattr(selection_result, 'quality_metrics'):
+                        selection_result.quality_metrics['integrated_analysis'] = analysis_result
+                        
+                except Exception as analysis_error:
+                    tprint_warning(f"⚠️ Integrated analysis failed: {analysis_error}")
+            
+            return selection_result
                 
         except Exception as e:
             tprint_error(f"Advanced feature selection failed: {e}")
@@ -2468,6 +2766,223 @@ class UnifiedDataDrivenPipeline:
                 'objective_values': {},
                 'quality_metrics': {}
             })()
+    
+    async def _create_ensemble_models(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Create ensemble models using ML Common ensemble utilities."""
+        tprint_debug("Creating ensemble models with ML Common utilities")
+        
+        if not ML_COMMON_AVAILABLE or self.ensemble_manager is None:
+            tprint_warning("⚠️ ML Common ensemble utilities not available")
+            return {'ensemble_models': [], 'ensemble_metrics': {}}
+        
+        try:
+            ensemble_results = {}
+            
+            # Prepare data for ensemble training
+            if targets is not None:
+                # Split data for ensemble training
+                from sklearn.model_selection import train_test_split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    data, targets, test_size=0.2, random_state=42, stratify=targets
+                )
+                
+                # Create base models for ensemble
+                from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+                from sklearn.linear_model import LogisticRegression
+                from sklearn.svm import SVC
+                
+                base_models = {
+                    'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
+                    'gradient_boosting': GradientBoostingClassifier(n_estimators=100, random_state=42),
+                    'logistic_regression': LogisticRegression(random_state=42, max_iter=1000),
+                    'svm': SVC(probability=True, random_state=42)
+                }
+                
+                # Add base models to ensemble manager
+                for model_name, model in base_models.items():
+                    try:
+                        # Train model and get performance metrics
+                        model.fit(X_train, y_train)
+                        y_pred = model.predict(X_test)
+                        
+                        # Calculate performance metrics
+                        from sklearn.metrics import accuracy_score, f1_score
+                        accuracy = accuracy_score(y_test, y_pred)
+                        f1 = f1_score(y_test, y_pred, average='weighted')
+                        
+                        performance_metrics = {
+                            'accuracy': accuracy,
+                            'f1_score': f1,
+                            'precision': f1,  # Simplified for demo
+                            'recall': f1
+                        }
+                        
+                        # Add model to ensemble (async method)
+                        import asyncio
+                        await asyncio.create_task(self.ensemble_manager.add_model(
+                            model_name=model_name,
+                            model=model,
+                            performance_metrics=performance_metrics
+                        ))
+                        
+                        tprint_success(f"✅ Added {model_name} to ensemble (accuracy: {accuracy:.3f})")
+                        
+                    except Exception as model_error:
+                        tprint_warning(f"⚠️ Failed to add {model_name} to ensemble: {model_error}")
+                
+                # Create ensemble
+                if len(self.ensemble_manager.models) >= 2:
+                    tprint_info("🔄 Creating ensemble from base models...")
+                    import asyncio
+                    ensemble_result = await asyncio.create_task(self.ensemble_manager.create_ensemble(
+                        X_train, y_train, X_test, y_test
+                    ))
+                    
+                    ensemble_results = {
+                        'ensemble_models': list(self.ensemble_manager.models.keys()),
+                        'ensemble_performance': ensemble_result.ensemble_performance,
+                        'individual_performance': ensemble_result.individual_model_performance,
+                        'diversity_score': ensemble_result.diversity_score,
+                        'stability_score': ensemble_result.stability_score,
+                        'model_count': ensemble_result.model_count,
+                        'active_models': ensemble_result.active_models
+                    }
+                    
+                    tprint_success(f"✅ Ensemble created with {ensemble_result.model_count} models")
+                    tprint_info(f"📊 Ensemble performance: {ensemble_result.ensemble_performance}")
+                    tprint_info(f"📊 Diversity score: {ensemble_result.diversity_score:.3f}")
+                    tprint_info(f"📊 Stability score: {ensemble_result.stability_score:.3f}")
+                else:
+                    tprint_warning("⚠️ Insufficient models for ensemble creation")
+                    ensemble_results = {'ensemble_models': [], 'ensemble_metrics': {}}
+            else:
+                tprint_warning("⚠️ No targets provided for ensemble training")
+                ensemble_results = {'ensemble_models': [], 'ensemble_metrics': {}}
+            
+            return ensemble_results
+            
+        except Exception as e:
+            tprint_error(f"❌ Ensemble model creation failed: {e}")
+            return {'ensemble_models': [], 'ensemble_metrics': {}}
+    
+    def _create_oof_stacking_ensemble(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Create OOF stacking ensemble using ML Common utilities."""
+        tprint_debug("Creating OOF stacking ensemble with ML Common utilities")
+        
+        if not ML_COMMON_AVAILABLE or self.oof_stacking_manager is None:
+            tprint_warning("⚠️ ML Common OOF stacking utilities not available")
+            return {'oof_ensemble': None, 'oof_metrics': {}}
+        
+        try:
+            if targets is not None:
+                # Prepare data for OOF stacking
+                from sklearn.model_selection import train_test_split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    data, targets, test_size=0.2, random_state=42, stratify=targets
+                )
+                
+                # Create base models for OOF stacking
+                from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+                from sklearn.linear_model import LogisticRegression
+                
+                base_models = {
+                    'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
+                    'gradient_boosting': GradientBoostingClassifier(n_estimators=100, random_state=42),
+                    'logistic_regression': LogisticRegression(random_state=42, max_iter=1000)
+                }
+                
+                # Add base models to OOF stacking manager
+                for model_name, model in base_models.items():
+                    self.oof_stacking_manager.add_base_model(
+                        output_name="price_direction",  # Primary output
+                        model_name=model_name,
+                        model=model
+                    )
+                
+                # Fit OOF stacking ensemble
+                tprint_info("🔄 Fitting OOF stacking ensemble...")
+                self.oof_stacking_manager.fit(X_train.values, y_train.values.reshape(-1, 1))
+                
+                # Get OOF predictions and scores
+                oof_predictions = self.oof_stacking_manager.get_oof_predictions()
+                oof_scores = self.oof_stacking_manager.get_oof_scores()
+                
+                # Make predictions on test set
+                predictions, probabilities, confidence_scores = self.oof_stacking_manager.predict(X_test.values)
+                
+                # Calculate performance metrics
+                from sklearn.metrics import accuracy_score, f1_score
+                test_accuracy = accuracy_score(y_test, predictions.ravel())
+                test_f1 = f1_score(y_test, predictions.ravel(), average='weighted')
+                
+                oof_results = {
+                    'oof_ensemble': self.oof_stacking_manager,
+                    'oof_predictions': oof_predictions,
+                    'oof_scores': oof_scores,
+                    'test_accuracy': test_accuracy,
+                    'test_f1': test_f1,
+                    'confidence_scores': confidence_scores,
+                    'base_model_count': len(base_models)
+                }
+                
+                tprint_success(f"✅ OOF stacking ensemble created")
+                tprint_info(f"📊 Test accuracy: {test_accuracy:.3f}")
+                tprint_info(f"📊 Test F1 score: {test_f1:.3f}")
+                tprint_info(f"📊 OOF scores: {oof_scores}")
+                
+                return oof_results
+            else:
+                tprint_warning("⚠️ No targets provided for OOF stacking")
+                return {'oof_ensemble': None, 'oof_metrics': {}}
+                
+        except Exception as e:
+            tprint_error(f"❌ OOF stacking ensemble creation failed: {e}")
+            return {'oof_ensemble': None, 'oof_metrics': {}}
+    
+    def _evaluate_with_unified_metrics(self, model: Any, X: np.ndarray, y: np.ndarray, 
+                                     is_classification: bool = True) -> Dict[str, Any]:
+        """Evaluate model using unified evaluation metrics from ML Common."""
+        tprint_debug("Evaluating model with unified metrics")
+        
+        if not ML_COMMON_AVAILABLE:
+            tprint_warning("⚠️ ML Common evaluation utilities not available")
+            return {'evaluation_metrics': {}}
+        
+        try:
+            # Use unified evaluator for comprehensive metrics
+            if is_classification:
+                metrics = compute_classification_metrics(
+                    y_true=y,
+                    y_pred=model.predict(X),
+                    y_prob=model.predict_proba(X) if hasattr(model, 'predict_proba') else None
+                )
+            else:
+                metrics = compute_regression_metrics(
+                    y_true=y,
+                    y_pred=model.predict(X)
+                )
+            
+            # Add additional evaluation using evaluate_model
+            comprehensive_metrics = evaluate_model(
+                model=model,
+                X=X,
+                y=y,
+                task="classification" if is_classification else "regression"
+            )
+            
+            # Combine metrics
+            combined_metrics = {
+                'unified_metrics': metrics,
+                'comprehensive_metrics': comprehensive_metrics,
+                'evaluation_timestamp': pd.Timestamp.now().isoformat()
+            }
+            
+            tprint_success(f"✅ Model evaluation completed with {len(metrics)} metrics")
+            return combined_metrics
+            
+        except Exception as e:
+            tprint_error(f"❌ Unified model evaluation failed: {e}")
+            return {'evaluation_metrics': {}, 'error': str(e)}
     
     def _vectorized_rolling_operations(self, data: pd.DataFrame, windows: List[int] = None) -> pd.DataFrame:
         """

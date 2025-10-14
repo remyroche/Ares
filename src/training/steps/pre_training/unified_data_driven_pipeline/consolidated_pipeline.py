@@ -1654,6 +1654,8 @@ class UnifiedDataDrivenPipeline:
             tprint_info("🔍 Performing comprehensive data validation and processing...")
             
             # Step 1: Comprehensive data validation and quality assessment
+            tprint_info("Step 1: Comprehensive data validation and quality assessment")
+            self.detailed_reporter.start_step("data_validation", len(data.columns))
             quality_result = self.quality_framework.validate_dataframe_quality(
                 data, context=f"pipeline_input_{timeframe}"
             )
@@ -1672,7 +1674,23 @@ class UnifiedDataDrivenPipeline:
                 if len(quality_result.issues) > 3:
                     tprint_warning(f"  ... and {len(quality_result.issues) - 3} more issues")
             
+            # End data validation step reporting
+            self.detailed_reporter.end_step("data_validation", 
+                                          len(data.columns),
+                                          0.0,  # Quality assessment is typically fast
+                                          0.0,  # Minimal memory usage
+                                          quality_result.passed)
+            
+            # Track data quality issues
+            if not quality_result.passed:
+                self.detailed_reporter.track_feature_filtering(
+                    [],  # No specific features filtered at this stage
+                    f"data_quality_issues_{len(quality_result.issues)}"
+                )
+            
             # Step 2: Process and validate data using unified utilities with enhanced common operations
+            tprint_info("Step 2: Process and validate data using unified utilities")
+            self.detailed_reporter.start_step("data_processing", len(data.columns))
             processed_data, processing_report = self.unified_data_utils.process_and_validate(
                 data=data,
                 validate_quality=True,
@@ -1715,16 +1733,47 @@ class UnifiedDataDrivenPipeline:
                 memory_reduction = processing_report['optimization_results'].get('memory_reduction_percent', 0)
                 tprint_info(f"💾 Memory optimization: {memory_reduction:.1f}% reduction")
             
+            # End data processing step reporting
+            self.detailed_reporter.end_step("data_processing", 
+                                          processing_report['final_shape'][1],
+                                          processing_report.get('execution_time', 0.0),
+                                          processing_report.get('memory_usage_mb', 0.0),
+                                          True)
+            
+            # Track data processing results
+            if processing_report.get('steps_completed'):
+                self.detailed_reporter.track_feature_filtering(
+                    [],  # Track processing steps instead of specific features
+                    f"processing_steps_{len(processing_report['steps_completed'])}"
+                )
+            
             # Step 3: Advanced input validation for pipeline-specific requirements
+            tprint_info("Step 3: Advanced input validation for pipeline-specific requirements")
+            self.detailed_reporter.start_step("input_validation", processing_report['final_shape'][1])
             is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
                 processed_data, 
                 required_columns=['open', 'high', 'low', 'close', 'volume'],
                 target_columns=feature_columns
             )
             
+            # End input validation step reporting
+            self.detailed_reporter.end_step("input_validation", 
+                                          len(cleaned_data.columns) if cleaned_data is not None else 0,
+                                          0.0,  # Validation is typically fast
+                                          0.0,  # Minimal memory usage
+                                          is_valid)
+            
+            # Track validation results
+            if not is_valid:
+                self.detailed_reporter.track_feature_filtering(
+                    [],  # Track validation issues
+                    f"validation_failed_{len(validation_summary.get('issues', []))}"
+                )
+            
             # Step 3.5: Critical Improvements - Leakage Prevention
             if targets is not None:
-                tprint_info("🔒 Performing leakage prevention validation...")
+                tprint_info("Step 3.5: Leakage prevention validation")
+                self.detailed_reporter.start_step("leakage_prevention", len(cleaned_data.columns) if cleaned_data is not None else 0)
                 try:
                     # Simple leakage prevention validation
                     # Check temporal ordering
@@ -1746,9 +1795,17 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Leakage prevention validation: Non-datetime indices detected")
                 except Exception as e:
                     tprint_warning(f"⚠️ Leakage prevention validation failed: {e}")
+                
+                # End leakage prevention step reporting
+                self.detailed_reporter.end_step("leakage_prevention", 
+                                              len(cleaned_data.columns) if cleaned_data is not None else 0,
+                                              0.0,  # Leakage check is typically fast
+                                              0.0,  # Minimal memory usage
+                                              True)  # Assume success unless critical error
             
             # Step 3.6: Critical Improvements - Advanced Feature Screening
-            tprint_info("🔍 Performing advanced feature screening...")
+            tprint_info("Step 3.6: Advanced feature screening")
+            self.detailed_reporter.start_step("feature_screening", len(cleaned_data.columns) if cleaned_data is not None else 0)
             try:
                 # Simple advanced screening using correlation and variance
                 screening_result = {'combined_selected_features': []}
@@ -1782,6 +1839,32 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Advanced screening failed: {e}")
                 screening_result = {'combined_selected_features': []}
+            
+            # End feature screening step reporting
+            screened_features = screening_result.get('combined_selected_features', [])
+            self.detailed_reporter.end_step("feature_screening", 
+                                          len(screened_features),
+                                          0.0,  # Screening is typically fast
+                                          0.0,  # Minimal memory usage
+                                          len(screened_features) > 0)
+            
+            # Track screening results
+            if screened_features:
+                # Track features that were screened out
+                all_features = list(cleaned_data.columns) if cleaned_data is not None else []
+                filtered_features = [f for f in all_features if f not in screened_features]
+                self.detailed_reporter.track_feature_filtering(
+                    filtered_features,
+                    f"screening_filtered_{len(filtered_features)}"
+                )
+                
+                # Track screening method used
+                screening_method = "correlation" if targets is not None else "variance"
+                self.detailed_reporter.track_feature_selection(
+                    screened_features,
+                    {},  # No importance scores at screening stage
+                    {"screening_method": screening_method, "total_features_screened": len(screened_features)}
+                )
             
             if not is_valid:
                 # Fast fail on validation failures

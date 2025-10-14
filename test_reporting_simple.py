@@ -95,8 +95,14 @@ def test_reporting_integration():
             "end_step",
             "track_feature_selection",
             "track_feature_creation",
+            "track_feature_filtering",
             "generate_detailed_report",
-            "save_report"
+            "save_report",
+            "data_validation",
+            "data_processing",
+            "input_validation",
+            "leakage_prevention",
+            "feature_screening"
         ]
         
         all_found = True

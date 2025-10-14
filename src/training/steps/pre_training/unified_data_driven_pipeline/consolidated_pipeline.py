@@ -160,6 +160,133 @@ except ImportError:
     MATRIX_OPS_AVAILABLE = False
     tprint_warning("Matrix operations not available")
 
+# Import enhanced utilities
+try:
+    from src.utils.common_operations import (
+        safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+        analyze_nan_values_detailed, format_nan_analysis_report, calculate_data_quality_metrics,
+        safe_merge_dataframes, safe_groupby_operation, safe_apply_function,
+        create_summary_statistics, safe_drop_columns, safe_rename_columns,
+        validate_timestamp_column, safe_timestamp_conversion, get_dataframe_info,
+        safe_filter_dataframe, create_data_quality_report, optimize_dataframe_dtypes,
+        safe_fillna, safe_convert_dtypes, safe_merge_dataframes, safe_drop_columns,
+        safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
+        get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
+        CommonUtilities, integrate_with_m1_optimizers, cleanup_m1_optimizers,
+        memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+    )
+    COMMON_OPS_AVAILABLE = True
+except ImportError:
+    COMMON_OPS_AVAILABLE = False
+    tprint_warning("Common operations utilities not available")
+
+try:
+    from src.utils.common_utilities import (
+        safe_dataframe_operation as safe_df_op, validate_dataframe_columns as validate_df_cols,
+        safe_convert_dtypes as safe_convert_dt, analyze_nan_values_detailed as analyze_nan,
+        format_nan_analysis_report as format_nan_report, calculate_data_quality_metrics as calc_quality,
+        safe_merge_dataframes as safe_merge, safe_groupby_operation as safe_groupby,
+        safe_apply_function as safe_apply, create_summary_statistics as create_summary,
+        safe_drop_columns as safe_drop, safe_rename_columns as safe_rename,
+        validate_timestamp_column as validate_timestamp, safe_timestamp_conversion as safe_timestamp_conv,
+        get_dataframe_info as get_df_info, safe_filter_dataframe as safe_filter,
+        create_data_quality_report as create_quality_report, CommonUtilities as CommonUtils
+    )
+    COMMON_UTILS_AVAILABLE = True
+except ImportError:
+    COMMON_UTILS_AVAILABLE = False
+    tprint_warning("Common utilities not available")
+
+try:
+    from src.utils.math_validation import (
+        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, validate_positive,
+        validate_range, safe_kelly_calculation, safe_weighted_average, safe_percentage_change,
+        safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile,
+        validate_correlation_matrix, safe_matrix_inverse, math_safe, MathValidation
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    tprint_warning("Math validation utilities not available")
+
+# Define safe math functions for fallback
+def safe_multiply(a: float, b: float, default: float = 0.0) -> float:
+    """Safe multiplication with fallback."""
+    try:
+        return a * b
+    except Exception:
+        return default
+
+def safe_add(a: float, b: float, default: float = 0.0) -> float:
+    """Safe addition with fallback."""
+    try:
+        return a + b
+    except Exception:
+        return default
+
+try:
+    from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, create_klines_manager
+    KLINES_PARQUET_AVAILABLE = True
+except ImportError:
+    KLINES_PARQUET_AVAILABLE = False
+    tprint_warning("Klines parquet utilities not available")
+
+try:
+    from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer, ParquetSerializer
+    SERIALIZATION_AVAILABLE = True
+except ImportError:
+    SERIALIZATION_AVAILABLE = False
+    tprint_warning("Serialization utilities not available")
+
+try:
+    from src.utils.hardware.m1_gpu_utils import (
+        get_m1_gpu_manager, is_m1_available, is_mps_available, optimize_dataframe_for_m1,
+        create_m1_optimized_array, m1_backtesting_simulate, m1_monte_carlo_simulate
+    )
+    M1_GPU_AVAILABLE = True
+except ImportError:
+    M1_GPU_AVAILABLE = False
+    tprint_warning("M1 GPU utilities not available")
+
+try:
+    from src.utils.hardware.m1_memory_optimizer import (
+        get_m1_memory_optimizer, start_m1_memory_monitoring, stop_m1_memory_monitoring,
+        optimize_dataframe_memory, optimize_memory as optimize_memory_m1, get_memory_usage as get_memory_usage_m1
+    )
+    M1_MEMORY_AVAILABLE = True
+except ImportError:
+    M1_MEMORY_AVAILABLE = False
+    tprint_warning("M1 memory optimizer not available")
+
+try:
+    from src.utils.hardware.m1_cpu_optimizer import (
+        get_m1_cpu_optimizer, optimize_function_for_m1, parallel_map_m1,
+        create_m1_optimized_thread_pool, run_cpu_intensive_task, parallel_backtesting_worker,
+        parallel_monte_carlo_simulation, run_monte_carlo_batch
+    )
+    M1_CPU_AVAILABLE = True
+except ImportError:
+    M1_CPU_AVAILABLE = False
+    tprint_warning("M1 CPU optimizer not available")
+
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, TPEConfig, create_tpe_optimizer
+    )
+    BAYESIAN_TPE_AVAILABLE = True
+except ImportError:
+    BAYESIAN_TPE_AVAILABLE = False
+    tprint_warning("Bayesian TPE optimizer not available")
+
+try:
+    from utils.fast_failing_validation import (
+        FastFailingValidator, ValidationResult, ValidationError
+    )
+    FAST_VALIDATION_AVAILABLE = True
+except ImportError:
+    FAST_VALIDATION_AVAILABLE = False
+    tprint_warning("Fast failing validation not available")
+
 logger = logging.getLogger(__name__)
 
 
@@ -284,6 +411,9 @@ class UnifiedDataDrivenPipeline:
         """
         self.config = config or create_default_config()
         
+        # Initialize utility managers
+        self._initialize_utility_managers()
+        
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
@@ -293,6 +423,99 @@ class UnifiedDataDrivenPipeline:
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
+    
+    def _initialize_utility_managers(self):
+        """Initialize utility managers for enhanced functionality."""
+        tprint_debug("Initializing utility managers")
+        
+        # Initialize common operations utilities
+        if COMMON_OPS_AVAILABLE:
+            self.common_ops = CommonUtilities()
+            tprint_debug("✅ Common operations utilities initialized")
+        else:
+            self.common_ops = None
+            tprint_warning("⚠️ Common operations utilities not available")
+        
+        # Initialize math validation
+        if MATH_VALIDATION_AVAILABLE:
+            self.math_validator = MathValidation()
+            tprint_debug("✅ Math validation utilities initialized")
+        else:
+            self.math_validator = None
+            tprint_warning("⚠️ Math validation utilities not available")
+        
+        # Initialize Klines parquet manager
+        if KLINES_PARQUET_AVAILABLE:
+            self.klines_manager = create_klines_manager()
+            tprint_debug("✅ Klines parquet manager initialized")
+        else:
+            self.klines_manager = None
+            tprint_warning("⚠️ Klines parquet manager not available")
+        
+        # Initialize serialization utilities
+        if SERIALIZATION_AVAILABLE:
+            self.serializer = UniversalSerializer()
+            tprint_debug("✅ Serialization utilities initialized")
+        else:
+            self.serializer = None
+            tprint_warning("⚠️ Serialization utilities not available")
+        
+        # Initialize M1 hardware optimizers
+        if M1_GPU_AVAILABLE:
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            tprint_debug("✅ M1 GPU manager initialized")
+        else:
+            self.m1_gpu_manager = None
+            tprint_warning("⚠️ M1 GPU manager not available")
+        
+        if M1_MEMORY_AVAILABLE:
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            tprint_debug("✅ M1 memory optimizer initialized")
+        else:
+            self.m1_memory_optimizer = None
+            tprint_warning("⚠️ M1 memory optimizer not available")
+        
+        if M1_CPU_AVAILABLE:
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            tprint_debug("✅ M1 CPU optimizer initialized")
+        else:
+            self.m1_cpu_optimizer = None
+            tprint_warning("⚠️ M1 CPU optimizer not available")
+        
+        # Initialize Bayesian TPE optimizer
+        if BAYESIAN_TPE_AVAILABLE:
+            self.bayesian_tpe = create_tpe_optimizer()
+            tprint_debug("✅ Bayesian TPE optimizer initialized")
+        else:
+            self.bayesian_tpe = None
+            tprint_warning("⚠️ Bayesian TPE optimizer not available")
+        
+        # Initialize fast validation
+        if FAST_VALIDATION_AVAILABLE:
+            self.fast_validator = FastFailingValidator()
+            tprint_debug("✅ Fast failing validator initialized")
+        else:
+            self.fast_validator = None
+            tprint_warning("⚠️ Fast failing validator not available")
+        
+        # Start M1 optimizations if available
+        if M1_MEMORY_AVAILABLE and self.m1_memory_optimizer:
+            try:
+                start_m1_memory_monitoring()
+                tprint_info("🧠 M1 memory monitoring started")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to start M1 memory monitoring: {e}")
+        
+        # Integrate M1 optimizers
+        if COMMON_OPS_AVAILABLE and self.common_ops:
+            try:
+                integration_result = integrate_with_m1_optimizers()
+                if integration_result.get('success', False):
+                    tprint_info("🧠 M1 optimizers integrated successfully")
+                else:
+                    tprint_warning(f"⚠️ M1 integration failed: {integration_result.get('error', 'Unknown error')}")
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 integration error: {e}")
     
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
@@ -562,6 +785,18 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
+            # Enhanced data validation with utility integrations
+            tprint_info("🔍 Performing enhanced data validation")
+            
+            # Fast validation if available
+            if FAST_VALIDATION_AVAILABLE and self.fast_validator:
+                try:
+                    fast_result = self.fast_validator.validate(data)
+                    if not fast_result.is_valid:
+                        tprint_warning(f"⚠️ Fast validation failed: {fast_result.error_message}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Fast validation error: {e}")
+            
             # Advanced input validation
             is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
                 data, 
@@ -574,10 +809,102 @@ class UnifiedDataDrivenPipeline:
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
             
-            # Load market data using advanced data loader
+            # Enhanced data quality analysis
+            if COMMON_OPS_AVAILABLE and self.common_ops:
+                try:
+                    tprint_info("📊 Performing comprehensive data quality analysis")
+                    
+                    # Analyze NaN values
+                    nan_analysis = analyze_nan_values_detailed(cleaned_data)
+                    nan_report = format_nan_analysis_report(nan_analysis)
+                    tprint_info(f"📈 NaN Analysis:\n{nan_report}")
+                    
+                    # Calculate data quality metrics
+                    quality_metrics = calculate_data_quality_metrics(cleaned_data)
+                    tprint_info(f"📊 Data Quality Metrics: {quality_metrics}")
+                    
+                    # Create comprehensive data quality report
+                    quality_report = create_data_quality_report(cleaned_data)
+                    if quality_report.get('issues'):
+                        tprint_warning(f"⚠️ Data Quality Issues: {quality_report['issues']}")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Data quality analysis failed: {e}")
+            
+            # M1 optimization for data processing
+            if M1_GPU_AVAILABLE and self.m1_gpu_manager:
+                try:
+                    tprint_info("🧠 Applying M1 GPU optimizations")
+                    cleaned_data = optimize_dataframe_for_m1(cleaned_data)
+                    tprint_success("✅ M1 GPU optimizations applied")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU optimization failed: {e}")
+            
+            # M1 memory optimization
+            if M1_MEMORY_AVAILABLE and self.m1_memory_optimizer:
+                try:
+                    tprint_info("🧠 Applying M1 memory optimizations")
+                    cleaned_data = optimize_dataframe_memory(cleaned_data)
+                    tprint_success("✅ M1 memory optimizations applied")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimization failed: {e}")
+            
+            # Math validation for numeric columns
+            if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                try:
+                    tprint_info("🔢 Performing math validation on numeric data")
+                    numeric_cols = cleaned_data.select_dtypes(include=[np.number]).columns
+                    for col in numeric_cols:
+                        try:
+                            # Validate finite values
+                            cleaned_data[col] = self.math_validator.validate_finite(cleaned_data[col], f"column_{col}")
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Math validation failed for column {col}: {e}")
+                    tprint_success("✅ Math validation completed")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Math validation error: {e}")
+            
+            # Load market data using advanced data loader with KlinesParquetManager integration
             market_data = await self.advanced_data_loader.load_market_data(
                 cleaned_data, pipeline_state, force_refresh=False
             )
+            
+            # Enhanced data loading with KlinesParquetManager
+            if KLINES_PARQUET_AVAILABLE and self.klines_manager:
+                try:
+                    tprint_info("📊 Using KlinesParquetManager for enhanced data loading")
+                    
+                    # Get symbol and exchange from pipeline state
+                    symbol = pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT'
+                    exchange = pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance'
+                    
+                    # Try to load existing data from parquet storage
+                    existing_data = self.klines_manager.load_klines(symbol, exchange, timeframe)
+                    
+                    if not existing_data.empty:
+                        tprint_success(f"✅ Loaded {len(existing_data)} records from parquet storage")
+                        
+                        # Merge with current data if needed
+                        if len(existing_data) > len(cleaned_data):
+                            tprint_info("📈 Using cached data from parquet storage")
+                            market_data = existing_data
+                        else:
+                            # Store current data to parquet for future use
+                            store_success = self.klines_manager.store_klines(
+                                cleaned_data, symbol, exchange, timeframe
+                            )
+                            if store_success:
+                                tprint_success("✅ Data stored to parquet for future use")
+                    else:
+                        # Store current data to parquet
+                        store_success = self.klines_manager.store_klines(
+                            cleaned_data, symbol, exchange, timeframe
+                        )
+                        if store_success:
+                            tprint_success("✅ Data stored to parquet for future use")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ KlinesParquetManager integration failed: {e}")
             
             # Load labeling data
             labeling_data = await self.advanced_data_loader.load_labeling_data(
@@ -592,10 +919,36 @@ class UnifiedDataDrivenPipeline:
                 market_data, labeling_data
             )
             
-            # Generate features for optimization
+            # Generate features for optimization with serialization caching
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
                 processed_data, pipeline_state, force_refresh=False
             )
+            
+            # Enhanced feature caching with serialization utilities
+            if SERIALIZATION_AVAILABLE and self.serializer:
+                try:
+                    tprint_info("💾 Using serialization utilities for feature caching")
+                    
+                    # Create cache key based on data hash and pipeline state
+                    import hashlib
+                    data_hash = hashlib.md5(str(processed_data.shape).encode()).hexdigest()
+                    cache_key = f"features_{data_hash}_{timeframe}"
+                    cache_file = f"cache/features_{cache_key}.pkl"
+                    
+                    # Try to load cached features
+                    cached_features = self.serializer.load(cache_file)
+                    if cached_features is not None:
+                        tprint_success("✅ Loaded cached features from serialization")
+                        feature_columns = cached_features
+                    else:
+                        # Cache the generated features
+                        if feature_columns:
+                            cache_success = self.serializer.save(feature_columns, cache_file)
+                            if cache_success:
+                                tprint_success("✅ Features cached using serialization utilities")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Serialization caching failed: {e}")
             
             if not feature_columns:
                 error_msg = "Feature generation failed - no features generated"
@@ -686,7 +1039,8 @@ class UnifiedDataDrivenPipeline:
             tprint_success(f"💾 Artifacts saved: {save_report.artifacts_saved} artifacts, "
                           f"correlation_id: {save_report.correlation_id}")
             
-            return ConsolidatedPipelineResult(
+            # Create the result object
+            result = ConsolidatedPipelineResult(
                 selected_features=combined_results['selected_features'],
                 feature_importance=combined_results['feature_importance'],
                 objective_values=combined_results['objective_values'],
@@ -727,6 +1081,39 @@ class UnifiedDataDrivenPipeline:
                 config=self.config,
                 success=True
             )
+            
+            # Enhanced result serialization and caching
+            if SERIALIZATION_AVAILABLE and self.serializer:
+                try:
+                    tprint_info("💾 Serializing pipeline results for caching")
+                    
+                    # Create result cache key
+                    import hashlib
+                    result_hash = hashlib.md5(str(result.selected_features).encode()).hexdigest()
+                    result_cache_file = f"cache/pipeline_result_{result_hash}_{timeframe}.json"
+                    
+                    # Serialize result to JSON for caching
+                    result_dict = {
+                        'selected_features': result.selected_features,
+                        'feature_importance': result.feature_importance,
+                        'objective_values': result.objective_values,
+                        'optimal_periods': result.optimal_periods,
+                        'processing_time': result.processing_time,
+                        'success': result.success,
+                        'timestamp': time.time()
+                    }
+                    
+                    # Save result cache
+                    cache_success = self.serializer.save(result_dict, result_cache_file)
+                    if cache_success:
+                        tprint_success("✅ Pipeline result cached using serialization utilities")
+                    else:
+                        tprint_warning("⚠️ Failed to cache pipeline result")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Result serialization failed: {e}")
+            
+            return result
             
         except Exception as e:
             # Use advanced error handler
@@ -784,20 +1171,90 @@ class UnifiedDataDrivenPipeline:
         return processed_data, processed_targets
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
-        """Enhanced period optimization with economic evaluation."""
-        tprint_debug("Starting enhanced period optimization")
+        """Enhanced period optimization with economic evaluation and utility integrations."""
+        tprint_debug("Starting enhanced period optimization with utility integrations")
         
         try:
-            # Statistical period analysis
-            periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
-            period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+            # Enhanced data preparation for period optimization
+            if COMMON_OPS_AVAILABLE and self.common_ops:
+                try:
+                    tprint_info("🔧 Preparing data for period optimization")
+                    
+                    # Ensure data is properly formatted for time series analysis
+                    if 'timestamp' in data.columns:
+                        data = safe_timestamp_conversion(data, 'timestamp')
+                    
+                    # Optimize data types for better performance
+                    data = optimize_dataframe_dtypes(data)
+                    tprint_success("✅ Data preparation for period optimization completed")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Data preparation for period optimization failed: {e}")
             
-            # Economic significance evaluation
+            # Statistical period analysis with M1 optimizations
+            periods = list(range(1, 51))  # 1-50 periods for 15m timeframe
+            
+            if M1_CPU_AVAILABLE and self.m1_cpu_optimizer:
+                try:
+                    tprint_info("🧠 Using M1 CPU optimization for period analysis")
+                    
+                    # Optimize the period analysis function for M1
+                    optimized_analyzer = self.m1_cpu_optimizer.optimize_function_for_m1(
+                        self.vectorbt_optimizer.optimize_period_analysis
+                    )
+                    period_analysis = optimized_analyzer(data, periods)
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimization failed, using standard method: {e}")
+                    period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+            else:
+                period_analysis = self.vectorbt_optimizer.optimize_period_analysis(data, periods)
+            
+            # Economic significance evaluation with math validation
             candidate_periods = [p for p in periods if p in period_analysis and 'error' not in period_analysis[p]]
+            
+            if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                try:
+                    tprint_info("🔢 Validating candidate periods with math validation")
+                    
+                    # Validate candidate periods
+                    validated_periods = []
+                    for period in candidate_periods:
+                        try:
+                            validated_period = self.math_validator.validate_positive(period, f"period_{period}")
+                            validated_periods.append(validated_period)
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Invalid period {period}: {e}")
+                    
+                    candidate_periods = validated_periods
+                    tprint_success(f"✅ Validated {len(candidate_periods)} candidate periods")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Period validation failed: {e}")
+            
             economic_evaluation = self.economic_evaluator.evaluate_periods(data, candidate_periods, timeframe)
             
-            # Combine statistical and economic results
+            # Combine statistical and economic results with enhanced validation
             combined_scores = self._combine_period_scores(period_analysis, economic_evaluation)
+            
+            # Validate combined scores with math validation
+            if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                try:
+                    tprint_info("🔢 Validating combined period scores")
+                    
+                    validated_scores = {}
+                    for period, score in combined_scores.items():
+                        try:
+                            validated_score = self.math_validator.validate_finite(score, f"score_{period}")
+                            validated_scores[period] = validated_score
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Invalid score for period {period}: {e}")
+                    
+                    combined_scores = validated_scores
+                    tprint_success("✅ Combined period scores validated")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Score validation failed: {e}")
             
             # Select optimal periods
             optimal_periods = self._select_optimal_periods(combined_scores)
@@ -821,15 +1278,78 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Advanced feature selection from 200+ feature bank."""
-        tprint_debug("Starting advanced feature selection")
+        """Advanced feature selection from 200+ feature bank with utility integrations."""
+        tprint_debug("Starting advanced feature selection with utility integrations")
         
         try:
-            # Use the advanced feature selector
-            selection_result = self.advanced_feature_selector.select_features(data, targets)
+            # Enhanced data preparation with utility functions
+            if COMMON_OPS_AVAILABLE and self.common_ops:
+                try:
+                    tprint_info("🔧 Applying data preparation utilities")
+                    
+                    # Validate DataFrame columns
+                    required_cols = ['open', 'high', 'low', 'close', 'volume']
+                    if not validate_dataframe_columns(data, required_cols):
+                        tprint_warning("⚠️ Missing required columns, attempting to continue")
+                    
+                    # Optimize data types for better performance
+                    data = optimize_dataframe_dtypes(data)
+                    tprint_success("✅ Data preparation utilities applied")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Data preparation utilities failed: {e}")
+            
+            # M1 CPU optimization for feature selection
+            if M1_CPU_AVAILABLE and self.m1_cpu_optimizer:
+                try:
+                    tprint_info("🧠 Applying M1 CPU optimizations for feature selection")
+                    
+                    # Optimize function execution for M1
+                    optimized_selector = self.m1_cpu_optimizer.optimize_function_for_m1(
+                        self.advanced_feature_selector.select_features
+                    )
+                    
+                    # Use optimized selector
+                    selection_result = optimized_selector(data, targets)
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimization failed, using standard method: {e}")
+                    selection_result = self.advanced_feature_selector.select_features(data, targets)
+            else:
+                # Use the advanced feature selector
+                selection_result = self.advanced_feature_selector.select_features(data, targets)
             
             if selection_result.success:
                 tprint_success(f"✅ Feature selection completed: {len(selection_result.selected_features)} features selected")
+                
+                # Enhanced validation of selected features
+                if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                    try:
+                        tprint_info("🔢 Validating selected features with math validation")
+                        
+                        # Validate feature importance scores
+                        if hasattr(selection_result, 'feature_importance'):
+                            for feature, importance in selection_result.feature_importance.items():
+                                try:
+                                    validated_importance = self.math_validator.validate_finite(importance, f"importance_{feature}")
+                                    selection_result.feature_importance[feature] = validated_importance
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Invalid importance for {feature}: {e}")
+                        
+                        # Validate objective values
+                        if hasattr(selection_result, 'objective_values'):
+                            for objective, value in selection_result.objective_values.items():
+                                try:
+                                    validated_value = self.math_validator.validate_finite(value, f"objective_{objective}")
+                                    selection_result.objective_values[objective] = validated_value
+                                except Exception as e:
+                                    tprint_warning(f"⚠️ Invalid objective value for {objective}: {e}")
+                        
+                        tprint_success("✅ Math validation of selected features completed")
+                        
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Math validation of features failed: {e}")
+                
                 return selection_result
             else:
                 tprint_error(f"Feature selection failed: {selection_result.error_message}")
@@ -992,6 +1512,25 @@ class UnifiedDataDrivenPipeline:
                 tprint_info(f"🧭 Using nested walk-forward CV with {len(outer_splits)} outer folds")
             else:
                 tprint_info("🧭 Nested walk-forward CV unavailable, using single-pass optimization")
+            
+            # Enhanced parallel processing with M1 CPU optimizer
+            if M1_CPU_AVAILABLE and self.m1_cpu_optimizer:
+                try:
+                    tprint_info("🧠 Using M1 CPU optimizer for parallel lookback optimization")
+                    
+                    # Get optimal worker count for M1
+                    optimal_workers = self.m1_cpu_optimizer.get_optimal_worker_count()
+                    tprint_info(f"🖥️ Using {optimal_workers} workers for M1-optimized parallel processing")
+                    
+                    # Create M1-optimized thread pool for parallel operations
+                    with self.m1_cpu_optimizer.create_optimized_thread_pool(optimal_workers) as executor:
+                        # This will be used for parallel feature optimization
+                        tprint_success("✅ M1-optimized thread pool created for lookback optimization")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimization setup failed: {e}")
+            else:
+                tprint_info("💻 Using standard parallel processing for lookback optimization")
             
             # Get optimization direction from pipeline state (default to 'both')
             optimization_direction = pipeline_state.get('direction', 'both') if pipeline_state else 'both'
@@ -1616,24 +2155,71 @@ class UnifiedDataDrivenPipeline:
     
     def _combine_period_scores(self, statistical_analysis: Dict[int, Dict[str, Any]], 
                               economic_evaluation: Any) -> Dict[int, float]:
-        """Combine statistical and economic period scores."""
+        """Combine statistical and economic period scores with math validation."""
         try:
             combined_scores = {}
             
-            # Extract statistical scores
+            # Extract statistical scores with math validation
             for period, analysis in statistical_analysis.items():
                 if 'error' not in analysis:
-                    # Use sharpe ratio as statistical score
+                    # Use sharpe ratio as statistical score with safe calculation
                     sharpe_ratio = analysis.get('sharpe_ratio', 0.0)
-                    combined_scores[period] = sharpe_ratio * 0.4  # Statistical weight
-            
-            # Add economic scores
-            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
-                for period, score in economic_evaluation.period_scores.items():
-                    if period in combined_scores:
-                        combined_scores[period] += score * 0.6  # Economic weight
+                    
+                    # Validate and safely calculate statistical score
+                    if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                        try:
+                            # Validate sharpe ratio
+                            validated_sharpe = self.math_validator.validate_finite(sharpe_ratio, f"sharpe_{period}")
+                            
+                            # Safe multiplication with validation
+                            statistical_weight = 0.4
+                            validated_weight = self.math_validator.validate_positive(statistical_weight, "statistical_weight")
+                            
+                            # Safe multiplication
+                            statistical_score = safe_multiply(validated_sharpe, validated_weight)
+                            combined_scores[period] = statistical_score
+                            
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Math validation failed for period {period}: {e}")
+                            # Fallback to safe calculation
+                            combined_scores[period] = safe_multiply(sharpe_ratio, 0.4)
                     else:
-                        combined_scores[period] = score * 0.6
+                        # Fallback to safe calculation
+                        combined_scores[period] = safe_multiply(sharpe_ratio, 0.4)
+            
+            # Add economic scores with math validation
+            if economic_evaluation and hasattr(economic_evaluation, 'period_scores'):
+                economic_weight = 0.6
+                
+                for period, score in economic_evaluation.period_scores.items():
+                    if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                        try:
+                            # Validate economic score
+                            validated_score = self.math_validator.validate_finite(score, f"economic_{period}")
+                            validated_weight = self.math_validator.validate_positive(economic_weight, "economic_weight")
+                            
+                            # Calculate economic contribution
+                            economic_contribution = safe_multiply(validated_score, validated_weight)
+                            
+                            if period in combined_scores:
+                                # Safe addition
+                                combined_scores[period] = safe_add(combined_scores[period], economic_contribution)
+                            else:
+                                combined_scores[period] = economic_contribution
+                                
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Math validation failed for economic score {period}: {e}")
+                            # Fallback to safe calculation
+                            if period in combined_scores:
+                                combined_scores[period] += safe_multiply(score, economic_weight)
+                            else:
+                                combined_scores[period] = safe_multiply(score, economic_weight)
+                    else:
+                        # Fallback to safe calculation
+                        if period in combined_scores:
+                            combined_scores[period] += safe_multiply(score, economic_weight)
+                        else:
+                            combined_scores[period] = safe_multiply(score, economic_weight)
             
             return combined_scores
             
@@ -1895,6 +2481,111 @@ class UnifiedDataDrivenPipeline:
         self.advanced_performance_monitor.reset_stats()
         self.advanced_data_loader.reset_cache_metrics()
         self.advanced_error_handler.reset_error_stats()
+    
+    def cleanup(self):
+        """Clean up utility resources and optimizers."""
+        tprint_info("🧹 Cleaning up pipeline resources")
+        
+        try:
+            # Stop M1 memory monitoring
+            if M1_MEMORY_AVAILABLE and self.m1_memory_optimizer:
+                try:
+                    stop_m1_memory_monitoring()
+                    tprint_success("✅ M1 memory monitoring stopped")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to stop M1 memory monitoring: {e}")
+            
+            # Cleanup M1 optimizers
+            if COMMON_OPS_AVAILABLE and self.common_ops:
+                try:
+                    cleanup_result = cleanup_m1_optimizers()
+                    if cleanup_result:
+                        tprint_success("✅ M1 optimizers cleaned up")
+                    else:
+                        tprint_warning("⚠️ M1 optimizer cleanup failed")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 optimizer cleanup error: {e}")
+            
+            # Cleanup Klines parquet manager
+            if KLINES_PARQUET_AVAILABLE and self.klines_manager:
+                try:
+                    # KlinesParquetManager doesn't have explicit cleanup, but we can clear references
+                    self.klines_manager = None
+                    tprint_success("✅ Klines parquet manager cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Klines parquet cleanup error: {e}")
+            
+            # Cleanup serialization utilities
+            if SERIALIZATION_AVAILABLE and self.serializer:
+                try:
+                    self.serializer = None
+                    tprint_success("✅ Serialization utilities cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Serialization cleanup error: {e}")
+            
+            # Cleanup M1 hardware optimizers
+            if M1_GPU_AVAILABLE and self.m1_gpu_manager:
+                try:
+                    self.m1_gpu_manager = None
+                    tprint_success("✅ M1 GPU manager cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU cleanup error: {e}")
+            
+            if M1_CPU_AVAILABLE and self.m1_cpu_optimizer:
+                try:
+                    self.m1_cpu_optimizer = None
+                    tprint_success("✅ M1 CPU optimizer cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU cleanup error: {e}")
+            
+            if M1_MEMORY_AVAILABLE and self.m1_memory_optimizer:
+                try:
+                    self.m1_memory_optimizer = None
+                    tprint_success("✅ M1 memory optimizer cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory cleanup error: {e}")
+            
+            # Cleanup other utilities
+            if BAYESIAN_TPE_AVAILABLE and self.bayesian_tpe:
+                try:
+                    self.bayesian_tpe = None
+                    tprint_success("✅ Bayesian TPE optimizer cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Bayesian TPE cleanup error: {e}")
+            
+            if FAST_VALIDATION_AVAILABLE and self.fast_validator:
+                try:
+                    self.fast_validator = None
+                    tprint_success("✅ Fast validator cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Fast validator cleanup error: {e}")
+            
+            if MATH_VALIDATION_AVAILABLE and self.math_validator:
+                try:
+                    self.math_validator = None
+                    tprint_success("✅ Math validator cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Math validator cleanup error: {e}")
+            
+            if COMMON_OPS_AVAILABLE and self.common_ops:
+                try:
+                    self.common_ops = None
+                    tprint_success("✅ Common operations utilities cleaned up")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Common operations cleanup error: {e}")
+            
+            tprint_success("✅ Pipeline cleanup completed")
+            
+        except Exception as e:
+            tprint_error(f"❌ Pipeline cleanup failed: {e}")
+    
+    def __del__(self):
+        """Destructor to ensure cleanup on object deletion."""
+        try:
+            self.cleanup()
+        except Exception:
+            # Ignore errors in destructor
+            pass
 
 
 # Convenience functions

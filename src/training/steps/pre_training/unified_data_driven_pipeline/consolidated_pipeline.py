@@ -112,6 +112,13 @@ from .enhanced_components.advanced_artifact_management import (
     AdvancedArtifactManager, ArtifactMetadata, ArtifactSaveReport
 )
 
+# Import unified data utilities
+from src.utils.data import UnifiedDataUtils, unified_data_utils
+from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds
+from src.utils.data.quality.data_cleaning import DataCleaner
+from src.utils.data.validation.validators import CrossStepValidator
+
 # Import existing components
 from .time_series_cv import PurgedEmbargoedWalkForwardCV, create_purged_embargoed_cv
 from .statistical_analysis import StatisticalAnalysisFramework
@@ -534,6 +541,30 @@ class UnifiedDataDrivenPipeline:
             config=GPUConfig()
         )
         
+        # Unified data utilities
+        self.unified_data_utils = UnifiedDataUtils(
+            quality_thresholds=QualityThresholds(
+                max_nan_ratio=0.05,  # Allow 5% NaN for calculated features
+                max_infinite_count=0,
+                min_unique_values=2,
+                max_constant_ratio=0.95,
+                max_gap_hours=48,
+                price_tolerance=0.001,
+                volume_tolerance=0.001,
+                max_correlation_threshold=0.95,
+                min_feature_count=40
+            ),
+            enable_streaming=True,
+            chunk_size=10000,
+            memory_threshold=0.8
+        )
+        
+        # Individual data utilities for specific operations
+        self.data_processor = DataProcessor()
+        self.data_cleaner = DataCleaner()
+        self.quality_framework = DataQualityFramework()
+        self.cross_step_validator = CrossStepValidator()
+        
         tprint_success("✅ Validation components initialized")
     
     def _initialize_advanced_infrastructure(self):
@@ -610,22 +641,78 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
         
         try:
-            # Advanced input validation
+            # Enhanced data processing and validation using unified utilities
+            tprint_info("🔍 Performing comprehensive data validation and processing...")
+            
+            # Step 1: Comprehensive data validation and quality assessment
+            quality_result = self.quality_framework.validate_dataframe_quality(
+                data, context=f"pipeline_input_{timeframe}"
+            )
+            
+            if not quality_result.passed:
+                tprint_warning(f"⚠️ Data quality issues detected: {len(quality_result.issues)} issues")
+                for issue in quality_result.issues[:3]:  # Show first 3 issues
+                    tprint_warning(f"  - {issue}")
+                if len(quality_result.issues) > 3:
+                    tprint_warning(f"  ... and {len(quality_result.issues) - 3} more issues")
+            
+            # Step 2: Process and validate data using unified utilities
+            processed_data, processing_report = self.unified_data_utils.process_and_validate(
+                data=data,
+                validate_quality=True,
+                clean_missing_values=True,
+                detect_outliers=True,
+                optimize_dtypes=True,
+                regularize_timestamps=True,
+                context=f"pipeline_processing_{timeframe}",
+                symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                timeframe=timeframe
+            )
+            
+            # Log processing results
+            tprint_success(f"✅ Data processing completed: {processing_report['final_shape']} shape")
+            tprint_info(f"📊 Processing steps: {', '.join(processing_report['steps_completed'])}")
+            if processing_report.get('optimization_results'):
+                memory_reduction = processing_report['optimization_results'].get('memory_reduction_percent', 0)
+                tprint_info(f"💾 Memory optimization: {memory_reduction:.1f}% reduction")
+            
+            # Step 3: Advanced input validation for pipeline-specific requirements
             is_valid, validation_summary, cleaned_data = self.advanced_validator.validate_data(
-                data, 
+                processed_data, 
                 required_columns=['open', 'high', 'low', 'close', 'volume'],
                 target_columns=feature_columns
             )
             
             if not is_valid:
-                error_msg = f"Data validation failed: {validation_summary.recommendations}"
+                error_msg = f"Advanced validation failed: {validation_summary.recommendations}"
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
+            
+            # Use the processed data from unified utilities
+            cleaned_data = processed_data
             
             # Load market data using advanced data loader
             market_data = await self.advanced_data_loader.load_market_data(
                 cleaned_data, pipeline_state, force_refresh=False
             )
+            
+            # Apply additional data processing to market data
+            if market_data is not None and not market_data.empty:
+                tprint_info("🔧 Applying additional data processing to market data...")
+                market_data, market_processing_report = self.unified_data_utils.process_and_validate(
+                    data=market_data,
+                    validate_quality=True,
+                    clean_missing_values=True,
+                    detect_outliers=False,  # Don't remove outliers from market data
+                    optimize_dtypes=True,
+                    regularize_timestamps=True,
+                    context=f"market_data_{timeframe}",
+                    symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                    exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                    timeframe=timeframe
+                )
+                tprint_success(f"✅ Market data processing: {market_processing_report['final_shape']} shape")
             
             # Load labeling data
             labeling_data = await self.advanced_data_loader.load_labeling_data(
@@ -635,10 +722,41 @@ class UnifiedDataDrivenPipeline:
                 pipeline_state
             )
             
+            # Apply data processing to labeling data
+            if labeling_data is not None and not labeling_data.empty:
+                tprint_info("🔧 Applying data processing to labeling data...")
+                labeling_data, labeling_processing_report = self.unified_data_utils.process_and_validate(
+                    data=labeling_data,
+                    validate_quality=True,
+                    clean_missing_values=True,
+                    detect_outliers=False,  # Don't remove outliers from labels
+                    optimize_dtypes=True,
+                    regularize_timestamps=True,
+                    context=f"labeling_data_{timeframe}",
+                    symbol=pipeline_state.get('symbol', 'ETHUSDT') if pipeline_state else 'ETHUSDT',
+                    exchange=pipeline_state.get('exchange', 'binance') if pipeline_state else 'binance',
+                    timeframe=timeframe
+                )
+                tprint_success(f"✅ Labeling data processing: {labeling_processing_report['final_shape']} shape")
+            
             # Prepare data for optimization
             processed_data = self.advanced_data_loader.prepare_data_for_optimization(
                 market_data, labeling_data
             )
+            
+            # Final data quality check before feature generation
+            if processed_data is not None and not processed_data.empty:
+                tprint_info("🔍 Performing final data quality check...")
+                final_quality_result = self.quality_framework.validate_dataframe_quality(
+                    processed_data, context=f"pre_feature_generation_{timeframe}"
+                )
+                
+                if not final_quality_result.passed:
+                    tprint_warning(f"⚠️ Final quality check issues: {len(final_quality_result.issues)} issues")
+                    for issue in final_quality_result.issues[:2]:  # Show first 2 issues
+                        tprint_warning(f"  - {issue}")
+                
+                tprint_info(f"📊 Final data quality score: {final_quality_result.quality_score:.1f}/100")
             
             # Generate features for optimization
             feature_columns = await self.advanced_data_loader.generate_features_for_optimization(
@@ -661,7 +779,24 @@ class UnifiedDataDrivenPipeline:
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
+            
+            # Monitor data quality before period optimization
+            period_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                processed_data, f"pre_period_optimization_{timeframe}"
+            )
+            
             period_results = self._enhanced_period_optimization(processed_data, timeframe)
+            
+            # Cross-step validation: Input -> Period Optimization
+            validation_result_1 = self.cross_step_validator.validate_step_transition(
+                from_step="input_data",
+                to_step="period_optimization",
+                input_data=processed_data,
+                output_data=processed_data,  # Period optimization doesn't change data
+                step_metadata={"timeframe": timeframe, "period_results": period_results}
+            )
+            if not validation_result_1.get('valid', True):
+                tprint_warning(f"⚠️ Cross-step validation warning: {validation_result_1.get('message', 'Unknown issue')}")
             
             # Step 2: Advanced feature selection from 200+ feature bank
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
@@ -681,6 +816,51 @@ class UnifiedDataDrivenPipeline:
             # Step 3.5: Apply statistical transforms using feature engineering roadmap
             tprint_info("Step 3.5: Apply statistical transforms")
             transformed_features_df = self._apply_statistical_transforms(selected_features_df)
+            # Monitor data quality after feature generation
+            if not selected_features_df.empty:
+                feature_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                    selected_features_df, f"post_feature_generation_{timeframe}"
+                )
+            
+            # Cross-step validation: Feature Selection -> Feature Generation
+            validation_result_2 = self.cross_step_validator.validate_step_transition(
+                from_step="feature_selection",
+                to_step="feature_generation",
+                input_data=processed_data,
+                output_data=selected_features_df,
+                step_metadata={"selected_features": len(feature_selection_results.get('selected_features', [])), "generated_features": len(selected_features_df.columns)}
+            )
+            if not validation_result_2.get('valid', True):
+                tprint_warning(f"⚠️ Cross-step validation warning: {validation_result_2.get('message', 'Unknown issue')}")
+            
+            # Apply data quality check to generated features
+            if not selected_features_df.empty:
+                tprint_info("🔍 Validating generated features quality...")
+                features_quality_result = self.quality_framework.validate_dataframe_quality(
+                    selected_features_df, context=f"generated_features_{timeframe}"
+                )
+                tprint_info(f"📊 Generated features quality score: {features_quality_result.quality_score:.1f}/100")
+                
+                # Apply memory optimization to generated features
+                tprint_info("💾 Applying memory optimization to generated features...")
+                selected_features_df, memory_optimization_report = self.unified_data_utils.optimize_data(
+                    data=selected_features_df,
+                    stage='intermediate',
+                    preserve_categorical=True
+                )
+                memory_reduction = memory_optimization_report.get('memory_reduction_percent', 0)
+                tprint_success(f"✅ Memory optimization: {memory_reduction:.1f}% reduction")
+                
+                # Check if we need streaming for large datasets
+                data_size_mb = selected_features_df.memory_usage(deep=True).sum() / 1024 / 1024
+                if data_size_mb > 100:  # If larger than 100MB, consider streaming
+                    tprint_info(f"📊 Large dataset detected ({data_size_mb:.1f}MB), enabling streaming optimizations...")
+                    # Apply streaming optimizations for large datasets
+                    selected_features_df = self.unified_data_utils.process_large_dataset(
+                        data=selected_features_df,
+                        processing_func=lambda x: x,  # Identity function for now
+                        combine_results=True
+                    )
             
             # Step 4: Enhanced interaction generation with VectorBT optimization
             tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
@@ -708,6 +888,19 @@ class UnifiedDataDrivenPipeline:
                 period_results, feature_selection_results, interaction_results, 
                 htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
+            
+            # Final comprehensive quality monitoring
+            tprint_info("🔍 Performing final comprehensive quality monitoring...")
+            final_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
+                processed_data, f"final_pipeline_output_{timeframe}"
+            )
+            
+            # Add quality monitoring data to combined results
+            combined_results['quality_monitoring'] = {
+                'period_optimization': period_quality_monitoring if 'period_quality_monitoring' in locals() else None,
+                'feature_generation': feature_quality_monitoring if 'feature_quality_monitoring' in locals() else None,
+                'final_output': final_quality_monitoring
+            }
             
             execution_time = self.advanced_performance_monitor.end_operation("process", start_time, success=True)
             
@@ -795,14 +988,111 @@ class UnifiedDataDrivenPipeline:
             self.advanced_performance_monitor.end_operation("process", start_time, success=False)
             self.advanced_performance_monitor.stop_monitoring()
             
+            # Enhanced error handling with data quality recovery
+            tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
+            
+            # Try to recover data quality if possible
+            try:
+                tprint_info("🔧 Attempting data quality recovery...")
+                if 'data' in locals() and data is not None and not data.empty:
+                    # Apply basic data cleaning as recovery attempt
+                    recovered_data, recovery_report = self.unified_data_utils.clean_data(
+                        data=data,
+                        detect_outliers=False,  # Don't remove outliers during recovery
+                        outlier_method='zscore',
+                        outlier_threshold=3.0
+                    )
+                    
+                    if recovery_report.get('success', False):
+                        tprint_success(f"✅ Data quality recovery successful: {recovery_report['final_shape']} shape")
+                        # Log recovery details
+                        if recovery_report.get('outliers_detected', 0) > 0:
+                            tprint_info(f"📊 Recovery: {recovery_report['outliers_detected']} outliers detected")
+                    else:
+                        tprint_warning("⚠️ Data quality recovery failed")
+                        
+            except Exception as recovery_error:
+                tprint_warning(f"⚠️ Data quality recovery failed: {recovery_error}")
+            
+            # Create enhanced error context with data quality information
+            error_context = {
+                'data_shape': data.shape if 'data' in locals() and data is not None else 'unknown',
+                'timeframe': timeframe,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'recovery_attempted': True
+            }
+            
+            # Add data quality metrics to error context if available
+            try:
+                if 'data' in locals() and data is not None and not data.empty:
+                    quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+                    error_context['data_quality_metrics'] = quality_metrics
+            except Exception:
+                pass  # Don't fail on quality metrics calculation
+            
             error_result = self.advanced_error_handler.handle_error(
                 e, "process", 
                 return_value=self._create_empty_result(start_time, str(e)),
-                context={'data_shape': data.shape, 'timeframe': timeframe}
+                context=error_context
             )
             
-            tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
             return error_result
+    
+    def _monitor_data_quality_throughout_pipeline(self, data: pd.DataFrame, context: str) -> Dict[str, Any]:
+        """
+        Monitor data quality throughout the pipeline using unified data utilities.
+        
+        Args:
+            data: DataFrame to monitor
+            context: Context string for logging
+            
+        Returns:
+            Dictionary with quality monitoring results
+        """
+        try:
+            # Get comprehensive quality metrics
+            quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
+            
+            # Get quality validation result
+            quality_result = self.quality_framework.validate_dataframe_quality(data, context)
+            
+            # Get processing summary from unified utilities
+            processing_summary = self.unified_data_utils.get_processing_summary()
+            
+            monitoring_result = {
+                'context': context,
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'data_shape': data.shape,
+                'quality_metrics': quality_metrics,
+                'quality_result': quality_result.get_summary(),
+                'processing_capabilities': processing_summary,
+                'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
+                'overall_quality_score': quality_result.quality_score,
+                'issues_count': len(quality_result.issues),
+                'warnings_count': len(quality_result.warnings)
+            }
+            
+            # Log quality status
+            if quality_result.quality_score >= 90:
+                tprint_success(f"✅ {context}: Excellent data quality ({quality_result.quality_score:.1f}/100)")
+            elif quality_result.quality_score >= 70:
+                tprint_info(f"ℹ️ {context}: Good data quality ({quality_result.quality_score:.1f}/100)")
+            elif quality_result.quality_score >= 50:
+                tprint_warning(f"⚠️ {context}: Moderate data quality ({quality_result.quality_score:.1f}/100)")
+            else:
+                tprint_error(f"❌ {context}: Poor data quality ({quality_result.quality_score:.1f}/100)")
+            
+            return monitoring_result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data quality monitoring failed for {context}: {e}")
+            return {
+                'context': context,
+                'timestamp': pd.Timestamp.now().isoformat(),
+                'error': str(e),
+                'data_shape': data.shape if data is not None else 'unknown'
+            }
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
@@ -2085,6 +2375,23 @@ class UnifiedDataDrivenPipeline:
         stats['advanced_artifact_manager'] = {
             'artifact_registry_size': len(self.advanced_artifact_manager.get_artifact_registry()),
             'save_history_size': len(self.advanced_artifact_manager.get_save_history())
+        }
+        
+        # Add unified data utilities stats
+        stats['unified_data_utils'] = self.unified_data_utils.get_processing_summary()
+        stats['data_processor'] = {
+            'optimization_capabilities': list(self.data_processor.get_optimal_dtypes_for_features().keys()),
+            'memory_optimization_enabled': True,
+            'timestamp_regularization_enabled': True
+        }
+        stats['quality_framework'] = {
+            'validation_rules': list(self.quality_framework.validation_rules.keys()),
+            'quality_policies': self.quality_framework.quality_policies,
+            'duplicate_analyzer_available': hasattr(self.quality_framework, 'duplicate_analyzer') and self.quality_framework.duplicate_analyzer is not None
+        }
+        stats['cross_step_validator'] = {
+            'validation_enabled': True,
+            'step_transition_tracking': True
         }
         
         return stats

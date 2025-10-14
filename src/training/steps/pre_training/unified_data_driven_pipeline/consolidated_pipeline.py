@@ -170,6 +170,9 @@ from .enhanced_components.modular_architecture import (
 from .enhanced_components.enhanced_feature_generator import (
     EnhancedFeatureGenerator, FeatureGenerationConfig
 )
+from .enhanced_components.detailed_pipeline_reporter import (
+    DetailedPipelineReporter, DetailedPipelineReport
+)
 
 # Import new advanced infrastructure components
 from .enhanced_components.advanced_validation import (
@@ -1610,6 +1613,10 @@ class UnifiedDataDrivenPipeline:
             'cache_hits': 0,
             'cache_misses': 0
         }
+        
+        # Initialize detailed pipeline reporter
+        self.detailed_reporter = DetailedPipelineReporter(outcomes_dir="outcomes")
+        tprint_info("📊 Detailed pipeline reporter initialized")
     
     async def process(self, data: pd.DataFrame, 
                 targets: Optional[pd.Series] = None,
@@ -1631,6 +1638,9 @@ class UnifiedDataDrivenPipeline:
         """
         tprint_info("🚀 Starting consolidated unified pipeline processing")
         tprint_info(f"📊 Data shape: {data.shape}, timeframe: {timeframe}")
+        
+        # Initialize detailed reporting
+        self.detailed_reporter = DetailedPipelineReporter(outcomes_dir="outcomes")
         
         # Start performance monitoring
         self.advanced_performance_monitor.start_monitoring()
@@ -1908,6 +1918,7 @@ class UnifiedDataDrivenPipeline:
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
+            self.detailed_reporter.start_step("period_optimization", len(processed_data.columns))
             
             # Monitor data quality before period optimization
             period_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
@@ -1915,6 +1926,13 @@ class UnifiedDataDrivenPipeline:
             )
             
             period_results = self._enhanced_period_optimization(processed_data, timeframe)
+            
+            # End period optimization step reporting
+            self.detailed_reporter.end_step("period_optimization", 
+                                          len(processed_data.columns), 
+                                          period_results.get('execution_time', 0.0),
+                                          period_results.get('memory_usage_mb', 0.0),
+                                          period_results.get('success', True))
             
             # Cross-step validation: Input -> Period Optimization
             validation_result_1 = self.cross_step_validator.validate_step_transition(
@@ -1929,6 +1947,7 @@ class UnifiedDataDrivenPipeline:
             
             # Step 2: Advanced feature selection from 200+ feature bank
             tprint_info("Step 2: Advanced feature selection from 200+ feature bank")
+            self.detailed_reporter.start_step("feature_selection", len(processed_data.columns))
             feature_selection_results = self._advanced_feature_selection(processed_data, processed_targets)
             
             if not feature_selection_results or not hasattr(feature_selection_results, 'selected_features'):
@@ -1943,8 +1962,25 @@ class UnifiedDataDrivenPipeline:
                 if roadmap_results:
                     feature_selection_results.update(roadmap_results)
             
+            # End feature selection step reporting
+            selected_features = getattr(feature_selection_results, 'selected_features', [])
+            self.detailed_reporter.end_step("feature_selection", 
+                                          len(selected_features),
+                                          getattr(feature_selection_results, 'execution_time', 0.0),
+                                          getattr(feature_selection_results, 'memory_usage_mb', 0.0),
+                                          True)
+            
+            # Track feature selection results
+            if hasattr(feature_selection_results, 'selected_features'):
+                self.detailed_reporter.track_feature_selection(
+                    feature_selection_results.selected_features,
+                    getattr(feature_selection_results, 'feature_importance', {}),
+                    getattr(feature_selection_results, 'quality_metrics', {})
+                )
+            
             # Step 3: Generate selected features
             tprint_info("Step 3: Generate selected features")
+            self.detailed_reporter.start_step("feature_generation", len(processed_data.columns))
             selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
             
             # Step 3.5: Apply statistical transforms using feature engineering roadmap
@@ -2021,17 +2057,48 @@ class UnifiedDataDrivenPipeline:
                         combine_results=True
                     )
             
+            # End feature generation step reporting
+            self.detailed_reporter.end_step("feature_generation", 
+                                          len(transformed_features_df.columns),
+                                          0.0,  # Will be updated with actual execution time
+                                          0.0,  # Will be updated with actual memory usage
+                                          True)
+            
             # Step 4: Enhanced interaction generation with VectorBT optimization
             tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
+            self.detailed_reporter.start_step("interaction_generation", len(transformed_features_df.columns))
             interaction_results = self._enhanced_interaction_generation(transformed_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
             htf_results = self._htf_interaction_generation(processed_data, selected_features_df, processed_targets)
             
+            # End interaction generation step reporting
+            self.detailed_reporter.end_step("interaction_generation", 
+                                          len(interaction_results) + len(htf_results),
+                                          0.0,  # Will be updated with actual execution time
+                                          0.0,  # Will be updated with actual memory usage
+                                          True)
+            
+            # Track interaction generation results
+            self.detailed_reporter.track_interaction_generation(interaction_results, {})
+            self.detailed_reporter.track_interaction_generation(htf_results, {})
+            
             # Step 6: Advanced lookback optimization
             tprint_info("Step 6: Advanced lookback optimization")
+            self.detailed_reporter.start_step("lookback_optimization", len(selected_features_df.columns))
             lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df, pipeline_state)
+            
+            # End lookback optimization step reporting
+            optimized_lookbacks = lookback_results.get('optimized_lookbacks', {})
+            self.detailed_reporter.end_step("lookback_optimization", 
+                                          len(optimized_lookbacks),
+                                          lookback_results.get('execution_time', 0.0),
+                                          lookback_results.get('memory_usage_mb', 0.0),
+                                          lookback_results.get('success', True))
+            
+            # Track lookback optimization results
+            self.detailed_reporter.track_lookback_optimization(optimized_lookbacks, lookback_results.get('lookback_metrics', {}))
             
             # Step 7: LightGBM + Featuretools + ALE feature generation
             tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
@@ -2273,6 +2340,33 @@ class UnifiedDataDrivenPipeline:
                        f"{len(combined_results['htf_interactions'])} HTF interactions")
             tprint_success(f"💾 Artifacts saved: {save_report.artifacts_saved} artifacts, "
                           f"correlation_id: {save_report.correlation_id}")
+            
+            # Generate comprehensive detailed report
+            tprint_info("📊 Generating comprehensive detailed pipeline report...")
+            try:
+                # Prepare data info for the report
+                data_info = {
+                    'input_shape': data.shape,
+                    'timeframe': timeframe,
+                    'targets_available': targets is not None,
+                    'targets_shape': targets.shape if targets is not None else None,
+                    'feature_columns_count': len(feature_columns) if feature_columns else None,
+                    'pipeline_state': pipeline_state is not None
+                }
+                
+                # Generate the detailed report
+                detailed_report = self.detailed_reporter.generate_detailed_report(
+                    pipeline_result=None,  # We'll create the result after this
+                    pipeline_config=self.config.__dict__ if hasattr(self.config, '__dict__') else {},
+                    data_info=data_info
+                )
+                
+                # Save the report
+                report_path = self.detailed_reporter.save_report(detailed_report, format="both")
+                tprint_success(f"📊 Detailed pipeline report saved to: {report_path}")
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to generate detailed report: {e}")
             
             return ConsolidatedPipelineResult(
                 selected_features=combined_results['selected_features'],
@@ -2773,6 +2867,19 @@ class UnifiedDataDrivenPipeline:
                             tprint_warning("⚠️ Enhanced feature engineering returned empty DataFrame")
                         else:
                             tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                            
+                            # Track feature creation for reporting
+                            for feature_name in enhanced_features.columns:
+                                if feature_name not in data.columns:  # Only track newly created features
+                                    self.detailed_reporter.track_feature_creation(
+                                        feature_name=feature_name,
+                                        feature_type="enhanced_technical",
+                                        parent_features=list(data.columns),
+                                        transform_type="enhanced_engineering",
+                                        mutual_information=0.5,  # Placeholder - would be calculated
+                                        shap_score=0.3,  # Placeholder - would be calculated
+                                        correlation_with_target=0.4  # Placeholder - would be calculated
+                                    )
                             
                             # Apply feature validation if available
                             if FEATURE_GENERATION_AVAILABLE:

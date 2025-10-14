@@ -1010,128 +1010,128 @@ class UnifiedDataDrivenPipeline:
                     
                     # Initialize feature optimization
                     tprint_debug("🔧 Creating feature optimizer")
-                self.feature_optimizer = FeatureGenerationOptimizer()
-                self.feature_optimization_config = FeatureOptimizationConfig()
-                tprint_success("✅ Feature optimizer initialized")
-                
-                # Initialize cross-timeframe analysis
-                tprint_debug("🔧 Creating cross-timeframe pipeline")
-                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
-                tprint_success("✅ Cross-timeframe pipeline initialized")
-                
-                # Initialize fractional differentiation
-                tprint_debug("🔧 Creating fractional differentiation pipeline")
-                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
-                tprint_success("✅ Fractional differentiation pipeline initialized")
-                
-                # Initialize matrix operations
-                tprint_debug("🔧 Creating enhanced matrix operations")
-                self.enhanced_matrix_ops = EnhancedMatrixOperations()
-                tprint_success("✅ Enhanced matrix operations initialized")
-                
-                tprint_success("✅ All feature generation utilities initialized successfully")
-            except Exception as e:
-                tprint_error(f"❌ Failed to initialize feature generation utilities: {e}")
-                tprint_error(f"❌ Feature generation error details: {type(e).__name__}: {str(e)}")
-                raise RuntimeError(f"Failed to initialize feature generation utilities: {e}") from e
-        else:
-            tprint_warning("⚠️ Feature generation utilities not available - setting to None")
-            self.utility_container = None
-            self.enhanced_feature_engineering = None
-            self.feature_optimizer = None
-            self.cross_timeframe_pipeline = None
-            self.fractional_diff_pipeline = None
-            self.enhanced_matrix_ops = None
-        
-        # Initialize VectorBT utilities
-        if VECTORBT_UTILITIES_AVAILABLE:
-            try:
-                tprint_debug("🔧 Initializing VectorBT utilities")
-                
-                # Initialize VectorBT Rolling Optimizer
-                tprint_debug("🔧 Creating VectorBT rolling optimizer")
-                gpu_enabled = self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False
-                tprint_debug(f"🔧 GPU enabled: {gpu_enabled}")
-                
-                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
-                    enable_gpu=gpu_enabled,
-                    enable_parallel=True,
-                    memory_efficient=True,
-                    chunk_size=1000,
-                    fast_fail=True,
-                    enable_logging=True
-                )
-                tprint_success("✅ VectorBT rolling optimizer initialized")
-                
-                # Initialize Unified Vectorization Manager
-                tprint_debug("🔧 Creating unified vectorization manager")
-                vectorization_config = VectorizationConfig(
-                    enable_gpu=gpu_enabled,
-                    enable_parallel=True,
-                    memory_efficient=True,
-                    batch_size=1000,
-                    chunk_size=1000,
-                    max_memory_gb=8.0,
-                    enable_monitoring=True
-                )
-                self.unified_vectorization_manager = UnifiedVectorizationManager(
-                    config=vectorization_config,
-                    fast_fail=True,
-                    enable_logging=True
-                )
-                tprint_success("✅ Unified vectorization manager initialized")
-                
-                tprint_success("✅ All VectorBT utilities initialized successfully")
-            except Exception as e:
-                tprint_error(f"❌ Failed to initialize VectorBT utilities: {e}")
-                tprint_error(f"❌ VectorBT error details: {type(e).__name__}: {str(e)}")
-                raise RuntimeError(f"Failed to initialize VectorBT utilities: {e}") from e
-        else:
-            tprint_warning("⚠️ VectorBT utilities not available - setting to None")
-            self.vectorbt_rolling_optimizer = None
-            self.unified_vectorization_manager = None
-
-        # Initialize features common utilities
-        if FEATURES_COMMON_AVAILABLE:
-            try:
-                # Initialize unified configuration
-                self.unified_config = get_unified_config()
-                self.optimization_config = get_optimization_config()
-                self.vectorbt_config = get_vectorbt_config()
-                
-                # Initialize unified VectorBT manager
-                self.unified_vectorbt_manager = get_unified_vectorbt_manager()
-                self.vectorbt_optimization_engine = get_optimization_engine()
-                self.gpu_accelerator = get_gpu_accelerator()
-                self.vectorbt_performance_monitor = get_performance_monitor()
-                
-                # Initialize factories
-                self.scaler_factory = ScalerFactory()
-                self.optimizer_factory = OptimizerFactory()
-                self.registry_factory = RegistryFactory()
-                self.unified_factory = UnifiedFactory()
-                
-                # Initialize enhanced scalers
-                self.optimized_scaler = create_optimized_scaler()
-                self.batch_scaler = create_batch_scaler()
-                
-                tprint_success("✅ Features common utilities initialized")
-            except Exception as e:
-                raise RuntimeError(f"Failed to initialize features common utilities: {e}") from e
-        else:
-            self.unified_config = None
-            self.optimization_config = None
-            self.vectorbt_config = None
-            self.unified_vectorbt_manager = None
-            self.vectorbt_optimization_engine = None
-            self.gpu_accelerator = None
-            self.vectorbt_performance_monitor = None
-            self.scaler_factory = None
-            self.optimizer_factory = None
-            self.registry_factory = None
-            self.unified_factory = None
-            self.optimized_scaler = None
-            self.batch_scaler = None
+                    self.feature_optimizer = FeatureGenerationOptimizer()
+                    self.feature_optimization_config = FeatureOptimizationConfig()
+                    tprint_success("✅ Feature optimizer initialized")
+                    
+                    # Initialize cross-timeframe analysis
+                    tprint_debug("🔧 Creating cross-timeframe pipeline")
+                    self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                    tprint_success("✅ Cross-timeframe pipeline initialized")
+                    
+                    # Initialize fractional differentiation
+                    tprint_debug("🔧 Creating fractional differentiation pipeline")
+                    self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                    tprint_success("✅ Fractional differentiation pipeline initialized")
+                    
+                    # Initialize matrix operations
+                    tprint_debug("🔧 Creating enhanced matrix operations")
+                    self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                    tprint_success("✅ Enhanced matrix operations initialized")
+                    
+                    tprint_success("✅ All feature generation utilities initialized successfully")
+                except Exception as e:
+                    tprint_error(f"❌ Failed to initialize feature generation utilities: {e}")
+                    tprint_error(f"❌ Feature generation error details: {type(e).__name__}: {str(e)}")
+                    raise RuntimeError(f"Failed to initialize feature generation utilities: {e}") from e
+            else:
+                tprint_warning("⚠️ Feature generation utilities not available - setting to None")
+                self.utility_container = None
+                self.enhanced_feature_engineering = None
+                self.feature_optimizer = None
+                self.cross_timeframe_pipeline = None
+                self.fractional_diff_pipeline = None
+                self.enhanced_matrix_ops = None
+            
+            # Initialize VectorBT utilities
+            if VECTORBT_UTILITIES_AVAILABLE:
+                try:
+                    tprint_debug("🔧 Initializing VectorBT utilities")
+                    
+                    # Initialize VectorBT Rolling Optimizer
+                    tprint_debug("🔧 Creating VectorBT rolling optimizer")
+                    gpu_enabled = self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False
+                    tprint_debug(f"🔧 GPU enabled: {gpu_enabled}")
+                    
+                    self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                        enable_gpu=gpu_enabled,
+                        enable_parallel=True,
+                        memory_efficient=True,
+                        chunk_size=1000,
+                        fast_fail=True,
+                        enable_logging=True
+                    )
+                    tprint_success("✅ VectorBT rolling optimizer initialized")
+                    
+                    # Initialize Unified Vectorization Manager
+                    tprint_debug("🔧 Creating unified vectorization manager")
+                    vectorization_config = VectorizationConfig(
+                        enable_gpu=gpu_enabled,
+                        enable_parallel=True,
+                        memory_efficient=True,
+                        batch_size=1000,
+                        chunk_size=1000,
+                        max_memory_gb=8.0,
+                        enable_monitoring=True
+                    )
+                    self.unified_vectorization_manager = UnifiedVectorizationManager(
+                        config=vectorization_config,
+                        fast_fail=True,
+                        enable_logging=True
+                    )
+                    tprint_success("✅ Unified vectorization manager initialized")
+                    
+                    tprint_success("✅ All VectorBT utilities initialized successfully")
+                except Exception as e:
+                    tprint_error(f"❌ Failed to initialize VectorBT utilities: {e}")
+                    tprint_error(f"❌ VectorBT error details: {type(e).__name__}: {str(e)}")
+                    raise RuntimeError(f"Failed to initialize VectorBT utilities: {e}") from e
+            else:
+                tprint_warning("⚠️ VectorBT utilities not available - setting to None")
+                self.vectorbt_rolling_optimizer = None
+                self.unified_vectorization_manager = None
+            
+            # Initialize features common utilities
+            if FEATURES_COMMON_AVAILABLE:
+                try:
+                    # Initialize unified configuration
+                    self.unified_config = get_unified_config()
+                    self.optimization_config = get_optimization_config()
+                    self.vectorbt_config = get_vectorbt_config()
+                    
+                    # Initialize unified VectorBT manager
+                    self.unified_vectorbt_manager = get_unified_vectorbt_manager()
+                    self.vectorbt_optimization_engine = get_optimization_engine()
+                    self.gpu_accelerator = get_gpu_accelerator()
+                    self.vectorbt_performance_monitor = get_performance_monitor()
+                    
+                    # Initialize factories
+                    self.scaler_factory = ScalerFactory()
+                    self.optimizer_factory = OptimizerFactory()
+                    self.registry_factory = RegistryFactory()
+                    self.unified_factory = UnifiedFactory()
+                    
+                    # Initialize enhanced scalers
+                    self.optimized_scaler = create_optimized_scaler()
+                    self.batch_scaler = create_batch_scaler()
+                    
+                    tprint_success("✅ Features common utilities initialized")
+                except Exception as e:
+                    raise RuntimeError(f"Failed to initialize features common utilities: {e}") from e
+            else:
+                self.unified_config = None
+                self.optimization_config = None
+                self.vectorbt_config = None
+                self.unified_vectorbt_manager = None
+                self.vectorbt_optimization_engine = None
+                self.gpu_accelerator = None
+                self.vectorbt_performance_monitor = None
+                self.scaler_factory = None
+                self.optimizer_factory = None
+                self.registry_factory = None
+                self.unified_factory = None
+                self.optimized_scaler = None
+                self.batch_scaler = None
         
         except Exception as e:
             tprint_error(f"❌ Critical error in utility systems initialization: {e}")
@@ -2436,23 +2436,51 @@ class UnifiedDataDrivenPipeline:
             raise RuntimeError(f"Data quality monitoring failed for {context}: {e}") from e
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
-        """Validate input data and parameters."""
+        """Validate input data and parameters with comprehensive checks."""
         try:
-            if data is None or data.empty:
-                tprint_error("Data is None or empty")
-                return False
+            # Check data existence and type
+            if data is None:
+                raise ValueError("Data cannot be None")
             
-            if 'close' not in data.columns:
-                tprint_error("Data must contain 'close' column")
-                return False
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
             
-            if targets is not None and len(targets) != len(data):
-                tprint_error("Targets length does not match data length")
-                return False
+            if data.empty:
+                raise ValueError("Data cannot be empty")
             
+            # Check required columns
+            required_columns = ['close']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                raise ValueError(f"Data must contain required columns: {missing_columns}")
+            
+            # Check data quality
+            if data['close'].isna().all():
+                raise ValueError("Close prices cannot be all NaN")
+            
+            if (data['close'] <= 0).any():
+                raise ValueError("Close prices must be positive")
+            
+            # Check targets if provided
+            if targets is not None:
+                if not isinstance(targets, pd.Series):
+                    raise ValueError(f"Targets must be a pandas Series, got {type(targets)}")
+                
+                if len(targets) != len(data):
+                    raise ValueError(f"Targets length ({len(targets)}) does not match data length ({len(data)})")
+                
+                if targets.isna().all():
+                    raise ValueError("Targets cannot be all NaN")
+            
+            # Check for reasonable data size
+            if len(data) < 10:
+                raise ValueError(f"Data must have at least 10 rows, got {len(data)}")
+            
+            tprint_success("✅ Input validation passed")
             return True
             
         except Exception as e:
+            tprint_error(f"❌ Input validation failed: {e}")
             raise ValueError(f"Input validation failed: {e}") from e
     
     def _prepare_data(self, data: pd.DataFrame, targets: Optional[pd.Series], 
@@ -2783,7 +2811,7 @@ class UnifiedDataDrivenPipeline:
                             return enhanced_features
                     except Exception as e:
                         tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
-                        tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                        tprint_warning(f"⚠️ Falling back to Feature Bank integration")
                 
                 # Fallback to Feature Bank integration
                 if selection_result is None or not getattr(selection_result, 'success', False):
@@ -2948,7 +2976,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Unified VectorBT manager returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Unified VectorBT manager failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Falling back to standard VectorBT optimizer")
             
             # Try to use cross-timeframe analysis if available
             if FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
@@ -2964,7 +2992,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Cross-timeframe analysis returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without cross-timeframe analysis")
             
             # Use feature engineering roadmap interactions if available
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
@@ -3010,7 +3038,7 @@ class UnifiedDataDrivenPipeline:
                             tprint_warning("⚠️ Roadmap engine returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Feature engineering roadmap interactions failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without roadmap interactions")
             
             # Fallback to original VectorBT optimizer if no interactions generated
             if not interactions:
@@ -3029,7 +3057,7 @@ class UnifiedDataDrivenPipeline:
                         tprint_warning("⚠️ Fallback VectorBT optimizer returned no interactions")
                 except Exception as e:
                     tprint_warning(f"⚠️ Fallback VectorBT optimizer failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ No interactions generated - this may affect model performance")
             
             # Apply feature validation if available
             if FEATURE_GENERATION_AVAILABLE and interactions:
@@ -3063,7 +3091,7 @@ class UnifiedDataDrivenPipeline:
                         
                 except Exception as e:
                     tprint_warning(f"⚠️ Interaction validation failed: {e}")
-                    tprint_debug(f"⚠️ Error details: {type(e).__name__}: {str(e)}")
+                    tprint_warning(f"⚠️ Continuing without validation - features may have quality issues")
             
             # Log final interaction summary
             tprint_info(f"📋 Interaction generation summary:")
@@ -3714,8 +3742,8 @@ class UnifiedDataDrivenPipeline:
                             best_lookback = lookback
                             
                 except Exception as e:
-                    tprint_debug(f"⚠️ Lookback {lookback} failed: {e}")
-                    continue
+                    tprint_error(f"❌ Lookback {lookback} optimization failed: {e}")
+                    raise RuntimeError(f"Lookback optimization failed for period {lookback}: {e}") from e
             
             if best_score > -np.inf:
                 return {

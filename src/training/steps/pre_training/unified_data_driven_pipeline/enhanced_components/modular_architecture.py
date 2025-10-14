@@ -1,8 +1,7 @@
 """
-Modular Architecture for UnifiedDataDrivenPipeline
+Enhanced Modular Architecture for UnifiedDataDrivenPipeline
 
-This module provides a modular architecture system inspired by FeatureLookbackOptimizationComponent,
-with separate modules for:
+This module provides an enhanced modular architecture system with:
 - Input validation with multiple validation levels
 - Standardized error handling with error categorization
 - Performance monitoring with detailed metrics
@@ -59,715 +58,440 @@ class ErrorSeverity(Enum):
 class ErrorCategory(Enum):
     """Error categories."""
     VALIDATION = "validation"
-    COMPUTATION = "computation"
+    PROCESSING = "processing"
+    PERFORMANCE = "performance"
     MEMORY = "memory"
-    IO = "io"
-    NETWORK = "network"
-    SYSTEM = "system"
-    UNKNOWN = "unknown"
-
-
-class MetricType(Enum):
-    """Metric types for performance monitoring."""
-    COUNTER = "counter"
-    GAUGE = "gauge"
-    HISTOGRAM = "histogram"
-    TIMER = "timer"
-
-
-class MetricLevel(Enum):
-    """Metric levels for performance monitoring."""
-    DEBUG = "debug"
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
+    CONFIGURATION = "configuration"
+    EXTERNAL = "external"
 
 
 @dataclass
-class ValidationSummary:
-    """Summary of validation results."""
+class ValidationResult:
+    """Result from input validation."""
     is_valid: bool
     validation_level: ValidationLevel
     errors: List[str]
     warnings: List[str]
-    recommendations: List[str]
-    validation_time: float
-    n_checks_performed: int
+    metadata: Dict[str, Any]
 
 
 @dataclass
 class ErrorInfo:
     """Information about an error."""
     error_id: str
-    category: ErrorCategory
     severity: ErrorSeverity
+    category: ErrorCategory
     message: str
     component: str
     timestamp: float
+    stack_trace: str
     context: Dict[str, Any]
-    stack_trace: Optional[str] = None
 
 
 @dataclass
 class PerformanceMetric:
     """Performance metric data."""
-    name: str
+    metric_type: str
     value: float
-    metric_type: MetricType
-    level: MetricLevel
+    unit: str
     timestamp: float
     component: str
     metadata: Dict[str, Any]
 
 
 class InputValidator:
-    """Advanced input validator with multiple validation levels."""
+    """Enhanced input validation component."""
     
     def __init__(self, logger: Optional[logging.Logger] = None):
-        """Initialize the input validator."""
         self.logger = logger or logging.getLogger(__name__)
-        self.validation_stats = {
-            'total_validations': 0,
-            'successful_validations': 0,
-            'failed_validations': 0,
-            'validation_time': 0.0
+        self.validation_rules = self._initialize_validation_rules()
+    
+    def _initialize_validation_rules(self) -> Dict[str, Dict[str, Any]]:
+        """Initialize validation rules for different data types."""
+        return {
+            'dataframe': {
+                'required_columns': ['close'],
+                'min_rows': 10,
+                'max_nan_ratio': 0.5,
+                'numeric_columns_only': True
+            },
+            'series': {
+                'min_length': 10,
+                'max_nan_ratio': 0.5,
+                'numeric_only': True
+            },
+            'periods': {
+                'min_value': 1,
+                'max_value': 1000,
+                'integer_only': True
+            }
         }
     
-    def validate_data(
-        self,
-        data: Any,
-        required_columns: List[str],
-        validation_level: ValidationLevel = ValidationLevel.STANDARD
-    ) -> Tuple[bool, ValidationSummary, Any]:
-        """
-        Validate input data with specified validation level.
-        
-        Args:
-            data: Input data to validate
-            required_columns: List of required column names
-            validation_level: Level of validation to perform
-            
-        Returns:
-            Tuple of (is_valid, validation_summary, cleaned_data)
-        """
-        start_time = time.time()
-        
-        try:
-            self.validation_stats['total_validations'] += 1
-            
-            # Basic validation
-            if not self._basic_validation(data, required_columns):
-                return False, self._create_validation_summary(
-                    False, validation_level, ["Basic validation failed"], [], [], 
-                    time.time() - start_time, 1
-                ), None
-            
-            # Level-specific validation
-            if validation_level == ValidationLevel.BASIC:
-                return True, self._create_validation_summary(
-                    True, validation_level, [], [], [], 
-                    time.time() - start_time, 1
-                ), data
-            
-            # Standard validation
-            errors, warnings, recommendations = self._standard_validation(data, required_columns)
-            if validation_level == ValidationLevel.STANDARD:
-                is_valid = len(errors) == 0
-                return is_valid, self._create_validation_summary(
-                    is_valid, validation_level, errors, warnings, recommendations,
-                    time.time() - start_time, 2
-                ), data
-            
-            # Strict validation
-            errors, warnings, recommendations = self._strict_validation(data, required_columns)
-            if validation_level == ValidationLevel.STRICT:
-                is_valid = len(errors) == 0
-                return is_valid, self._create_validation_summary(
-                    is_valid, validation_level, errors, warnings, recommendations,
-                    time.time() - start_time, 3
-                ), data
-            
-            # Exhaustive validation
-            errors, warnings, recommendations = self._exhaustive_validation(data, required_columns)
-            is_valid = len(errors) == 0
-            
-            validation_time = time.time() - start_time
-            self.validation_stats['validation_time'] += validation_time
-            
-            if is_valid:
-                self.validation_stats['successful_validations'] += 1
-            else:
-                self.validation_stats['failed_validations'] += 1
-            
-            return is_valid, self._create_validation_summary(
-                is_valid, validation_level, errors, warnings, recommendations,
-                validation_time, 4
-            ), data
-            
-        except Exception as e:
-            self.logger.error(f"Validation failed: {e}")
-            return False, self._create_validation_summary(
-                False, validation_level, [f"Validation error: {e}"], [], [],
-                time.time() - start_time, 0
-            ), None
-    
-    def _basic_validation(self, data: Any, required_columns: List[str]) -> bool:
-        """Perform basic validation."""
-        try:
-            if data is None:
-                return False
-            
-            if not hasattr(data, 'columns'):
-                return False
-            
-            if not hasattr(data, 'shape'):
-                return False
-            
-            if data.empty:
-                return False
-            
-            return True
-        except:
-            return False
-    
-    def _standard_validation(
-        self, 
-        data: pd.DataFrame, 
-        required_columns: List[str]
-    ) -> Tuple[List[str], List[str], List[str]]:
-        """Perform standard validation."""
+    def validate_dataframe(self, 
+                          data: pd.DataFrame, 
+                          level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
+        """Validate a DataFrame with enhanced checks."""
         errors = []
         warnings = []
-        recommendations = []
         
         try:
+            # Basic validation
+            if not isinstance(data, pd.DataFrame):
+                errors.append("Data must be a pandas DataFrame")
+                return ValidationResult(False, level, errors, warnings, {})
+            
+            if data.empty:
+                errors.append("DataFrame cannot be empty")
+                return ValidationResult(False, level, errors, warnings, {})
+            
             # Check required columns
+            required_columns = self.validation_rules['dataframe']['required_columns']
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 errors.append(f"Missing required columns: {missing_columns}")
             
-            # Check data types
-            for col in required_columns:
-                if col in data.columns:
-                    if not pd.api.types.is_numeric_dtype(data[col]):
-                        warnings.append(f"Column {col} is not numeric")
-                        recommendations.append(f"Consider converting {col} to numeric")
+            # Check minimum rows
+            min_rows = self.validation_rules['dataframe']['min_rows']
+            if len(data) < min_rows:
+                errors.append(f"DataFrame must have at least {min_rows} rows")
             
-            # Check for excessive missing values
-            missing_ratio = data.isnull().sum().sum() / (data.shape[0] * data.shape[1])
-            if missing_ratio > 0.5:
-                warnings.append(f"High missing value ratio: {missing_ratio:.2%}")
-                recommendations.append("Consider data imputation or removal of rows/columns")
+            # Check for excessive NaN values
+            max_nan_ratio = self.validation_rules['dataframe']['max_nan_ratio']
+            for col in data.columns:
+                nan_pct = data[col].isna().sum() / len(data) * 100
+                if nan_pct > max_nan_ratio * 100:
+                    warnings.append(f"Column {col} has {nan_pct:.2f}% NaN values")
             
-            # Check data size
-            if data.shape[0] < 10:
-                warnings.append("Very small dataset")
-                recommendations.append("Consider using more data for reliable results")
+            # Check numeric columns
+            if self.validation_rules['dataframe']['numeric_columns_only']:
+                non_numeric_cols = [col for col in data.columns 
+                                  if not pd.api.types.is_numeric_dtype(data[col])]
+                if non_numeric_cols:
+                    warnings.append(f"Non-numeric columns found: {non_numeric_cols}")
             
-        except Exception as e:
-            errors.append(f"Standard validation error: {e}")
-        
-        return errors, warnings, recommendations
-    
-    def _strict_validation(
-        self, 
-        data: pd.DataFrame, 
-        required_columns: List[str]
-    ) -> Tuple[List[str], List[str], List[str]]:
-        """Perform strict validation."""
-        errors, warnings, recommendations = self._standard_validation(data, required_columns)
-        
-        try:
-            # Check for infinite values
-            inf_count = np.isinf(data.select_dtypes(include=[np.number])).sum().sum()
-            if inf_count > 0:
-                errors.append(f"Found {inf_count} infinite values")
-                recommendations.append("Remove or replace infinite values")
+            # Additional validation based on level
+            if level in [ValidationLevel.STRICT, ValidationLevel.EXHAUSTIVE]:
+                self._validate_dataframe_strict(data, errors, warnings)
             
-            # Check for extreme outliers
-            for col in data.select_dtypes(include=[np.number]).columns:
-                if col in required_columns:
-                    q99 = data[col].quantile(0.99)
-                    q01 = data[col].quantile(0.01)
-                    iqr = q99 - q01
-                    outliers = ((data[col] > q99 + 3 * iqr) | (data[col] < q01 - 3 * iqr)).sum()
-                    if outliers > len(data) * 0.05:  # More than 5% outliers
-                        warnings.append(f"Column {col} has {outliers} extreme outliers")
-                        recommendations.append(f"Consider outlier treatment for {col}")
+            is_valid = len(errors) == 0
             
-            # Check for constant columns
-            constant_columns = data.columns[data.nunique() <= 1]
-            if len(constant_columns) > 0:
-                warnings.append(f"Constant columns found: {constant_columns.tolist()}")
-                recommendations.append("Remove constant columns")
+            return ValidationResult(
+                is_valid=is_valid,
+                validation_level=level,
+                errors=errors,
+                warnings=warnings,
+                metadata={
+                    'shape': data.shape,
+                    'columns': list(data.columns),
+                    'dtypes': data.dtypes.to_dict()
+                }
+            )
             
         except Exception as e:
-            errors.append(f"Strict validation error: {e}")
-        
-        return errors, warnings, recommendations
+            return ValidationResult(
+                is_valid=False,
+                validation_level=level,
+                errors=[f"Validation error: {str(e)}"],
+                warnings=warnings,
+                metadata={}
+            )
     
-    def _exhaustive_validation(
-        self, 
-        data: pd.DataFrame, 
-        required_columns: List[str]
-    ) -> Tuple[List[str], List[str], List[str]]:
-        """Perform exhaustive validation."""
-        errors, warnings, recommendations = self._strict_validation(data, required_columns)
+    def _validate_dataframe_strict(self, data: pd.DataFrame, errors: List[str], warnings: List[str]):
+        """Additional strict validation for DataFrame."""
+        # Check for constant columns
+        constant_cols = [col for col in data.columns if data[col].nunique() <= 1]
+        if constant_cols:
+            warnings.append(f"Constant columns found: {constant_cols}")
         
-        try:
-            # Check for duplicate rows
-            duplicate_rows = data.duplicated().sum()
-            if duplicate_rows > 0:
-                warnings.append(f"Found {duplicate_rows} duplicate rows")
-                recommendations.append("Consider removing duplicate rows")
-            
-            # Check for perfect correlations
-            numeric_cols = data.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) > 1:
-                corr_matrix = data[numeric_cols].corr()
-                perfect_corr_pairs = []
-                for i in range(len(corr_matrix.columns)):
-                    for j in range(i+1, len(corr_matrix.columns)):
-                        if abs(corr_matrix.iloc[i, j]) > 0.99:
-                            perfect_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
-                
-                if perfect_corr_pairs:
-                    warnings.append(f"Perfect correlations found: {perfect_corr_pairs}")
-                    recommendations.append("Consider removing highly correlated features")
-            
-            # Check memory usage
-            memory_usage = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
-            if memory_usage > 1000:  # More than 1GB
-                warnings.append(f"High memory usage: {memory_usage:.1f} MB")
-                recommendations.append("Consider data optimization or chunking")
-            
-        except Exception as e:
-            errors.append(f"Exhaustive validation error: {e}")
-        
-        return errors, warnings, recommendations
-    
-    def _create_validation_summary(
-        self,
-        is_valid: bool,
-        validation_level: ValidationLevel,
-        errors: List[str],
-        warnings: List[str],
-        recommendations: List[str],
-        validation_time: float,
-        n_checks: int
-    ) -> ValidationSummary:
-        """Create validation summary."""
-        return ValidationSummary(
-            is_valid=is_valid,
-            validation_level=validation_level,
-            errors=errors,
-            warnings=warnings,
-            recommendations=recommendations,
-            validation_time=validation_time,
-            n_checks_performed=n_checks
-        )
-    
-    def get_validation_stats(self) -> Dict[str, Any]:
-        """Get validation statistics."""
-        return self.validation_stats.copy()
+        # Check for infinite values
+        inf_cols = []
+        for col in data.columns:
+            if pd.api.types.is_numeric_dtype(data[col]):
+                if np.isinf(data[col]).any():
+                    inf_cols.append(col)
+        if inf_cols:
+            warnings.append(f"Columns with infinite values: {inf_cols}")
 
 
-class StandardizedErrorHandler:
-    """Standardized error handler with error categorization and severity levels."""
+class ErrorHandler:
+    """Enhanced error handling component."""
     
-    def __init__(self, logger: Optional[logging.Logger] = None, component_name: str = "Unknown"):
-        """Initialize the error handler."""
-        self.logger = logger or logging.getLogger(__name__)
+    def __init__(self, component_name: str, logger: Optional[logging.Logger] = None):
         self.component_name = component_name
-        self.error_stats = {
-            'total_errors': 0,
-            'errors_by_category': {category.value: 0 for category in ErrorCategory},
-            'errors_by_severity': {severity.value: 0 for severity in ErrorSeverity},
-            'recent_errors': []
-        }
+        self.logger = logger or logging.getLogger(__name__)
+        self.error_history = []
+        self.error_counts = {}
     
-    def handle_error(
-        self,
-        error: Exception,
-        category: ErrorCategory = ErrorCategory.UNKNOWN,
-        severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        context: Optional[Dict[str, Any]] = None
-    ) -> ErrorInfo:
-        """
-        Handle an error with standardized categorization.
+    def handle_error(self, 
+                    error: Exception, 
+                    context: Dict[str, Any] = None,
+                    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+                    category: ErrorCategory = ErrorCategory.PROCESSING) -> ErrorInfo:
+        """Handle an error and return error information."""
+        error_id = f"{self.component_name}_{int(time.time() * 1000)}"
         
-        Args:
-            error: The exception that occurred
-            category: Error category
-            severity: Error severity level
-            context: Additional context information
-            
-        Returns:
-            ErrorInfo object with error details
-        """
-        try:
-            error_id = f"{self.component_name}_{int(time.time() * 1000)}"
-            timestamp = time.time()
-            
-            # Create error info
-            error_info = ErrorInfo(
-                error_id=error_id,
-                category=category,
-                severity=severity,
-                message=str(error),
-                component=self.component_name,
-                timestamp=timestamp,
-                context=context or {},
-                stack_trace=self._get_stack_trace(error)
-            )
-            
-            # Update statistics
-            self.error_stats['total_errors'] += 1
-            self.error_stats['errors_by_category'][category.value] += 1
-            self.error_stats['errors_by_severity'][severity.value] += 1
-            
-            # Add to recent errors (keep last 100)
-            self.error_stats['recent_errors'].append(error_info)
-            if len(self.error_stats['recent_errors']) > 100:
-                self.error_stats['recent_errors'] = self.error_stats['recent_errors'][-100:]
-            
-            # Log based on severity
-            if severity == ErrorSeverity.CRITICAL:
-                self.logger.critical(f"CRITICAL ERROR [{error_id}]: {error}")
-            elif severity == ErrorSeverity.HIGH:
-                self.logger.error(f"HIGH ERROR [{error_id}]: {error}")
-            elif severity == ErrorSeverity.MEDIUM:
-                self.logger.warning(f"MEDIUM ERROR [{error_id}]: {error}")
-            else:
-                self.logger.info(f"LOW ERROR [{error_id}]: {error}")
-            
-            return error_info
-            
-        except Exception as e:
-            self.logger.error(f"Error handling failed: {e}")
-            return ErrorInfo(
-                error_id="error_handler_failed",
-                category=ErrorCategory.SYSTEM,
-                severity=ErrorSeverity.CRITICAL,
-                message=f"Error handler failed: {e}",
-                component=self.component_name,
-                timestamp=time.time(),
-                context={}
-            )
+        error_info = ErrorInfo(
+            error_id=error_id,
+            severity=severity,
+            category=category,
+            message=str(error),
+            component=self.component_name,
+            timestamp=time.time(),
+            stack_trace=str(error),
+            context=context or {}
+        )
+        
+        # Log error
+        self.logger.error(f"Error {error_id}: {error_info.message}")
+        if severity in [ErrorSeverity.HIGH, ErrorSeverity.CRITICAL]:
+            self.logger.error(f"Stack trace: {error_info.stack_trace}")
+        
+        # Track error
+        self.error_history.append(error_info)
+        error_key = f"{category.value}_{severity.value}"
+        self.error_counts[error_key] = self.error_counts.get(error_key, 0) + 1
+        
+        return error_info
     
-    def _get_stack_trace(self, error: Exception) -> str:
-        """Get stack trace for an error."""
-        try:
-            import traceback
-            return traceback.format_exc()
-        except:
-            return str(error)
-    
-    def get_error_stats(self) -> Dict[str, Any]:
-        """Get error statistics."""
-        return self.error_stats.copy()
-    
-    def get_recent_errors(self, limit: int = 10) -> List[ErrorInfo]:
-        """Get recent errors."""
-        return self.error_stats['recent_errors'][-limit:]
+    def get_error_summary(self) -> Dict[str, Any]:
+        """Get summary of errors."""
+        return {
+            'total_errors': len(self.error_history),
+            'error_counts': self.error_counts.copy(),
+            'recent_errors': self.error_history[-10:] if self.error_history else [],
+            'critical_errors': [e for e in self.error_history if e.severity == ErrorSeverity.CRITICAL]
+        }
 
 
 class PerformanceMonitor:
-    """Performance monitor with detailed metrics and event tracking."""
+    """Enhanced performance monitoring component."""
     
-    def __init__(self, component_name: str = "Unknown"):
-        """Initialize the performance monitor."""
+    def __init__(self, component_name: str, logger: Optional[logging.Logger] = None):
         self.component_name = component_name
+        self.logger = logger or logging.getLogger(__name__)
         self.metrics = []
-        self.operation_times = {}
-        self.performance_stats = {
-            'total_operations': 0,
-            'total_execution_time': 0.0,
-            'memory_usage_mb': 0.0,
-            'peak_memory_usage_mb': 0.0,
-            'cpu_usage_percent': 0.0,
-            'cache_hits': 0,
-            'cache_misses': 0
-        }
+        self.start_times = {}
     
     def start_operation(self, operation_name: str) -> float:
-        """Start timing an operation."""
+        """Start monitoring an operation."""
         start_time = time.time()
-        self.operation_times[operation_name] = start_time
+        self.start_times[operation_name] = start_time
         return start_time
     
     def end_operation(self, operation_name: str) -> float:
-        """End timing an operation and record the metric."""
-        if operation_name not in self.operation_times:
+        """End monitoring an operation and record the metric."""
+        if operation_name not in self.start_times:
             return 0.0
         
         end_time = time.time()
-        duration = end_time - self.operation_times[operation_name]
+        duration = end_time - self.start_times[operation_name]
         
-        # Record metric
-        self.record_metric(
-            name=f"{operation_name}_duration",
+        metric = PerformanceMetric(
+            metric_type="execution_time",
             value=duration,
-            metric_type=MetricType.TIMER,
-            level=MetricLevel.INFO
+            unit="seconds",
+            timestamp=end_time,
+            component=self.component_name,
+            metadata={'operation': operation_name}
         )
         
-        # Update stats
-        self.performance_stats['total_operations'] += 1
-        self.performance_stats['total_execution_time'] += duration
+        self.metrics.append(metric)
+        del self.start_times[operation_name]
         
-        del self.operation_times[operation_name]
         return duration
     
-    def record_metric(
-        self,
-        name: str,
-        value: float,
-        metric_type: MetricType = MetricType.GAUGE,
-        level: MetricLevel = MetricLevel.INFO,
-        metadata: Optional[Dict[str, Any]] = None
-    ):
+    def record_metric(self, 
+                     metric_type: str, 
+                     value: float, 
+                     unit: str = "",
+                     metadata: Dict[str, Any] = None):
         """Record a performance metric."""
         metric = PerformanceMetric(
-            name=name,
-            value=value,
             metric_type=metric_type,
-            level=level,
+            value=value,
+            unit=unit,
             timestamp=time.time(),
             component=self.component_name,
             metadata=metadata or {}
         )
         
         self.metrics.append(metric)
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary."""
+        if not self.metrics:
+            return {}
         
-        # Keep only last 1000 metrics
-        if len(self.metrics) > 1000:
-            self.metrics = self.metrics[-1000:]
-    
-    def record_memory_usage(self):
-        """Record current memory usage."""
-        try:
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            
-            self.record_metric(
-                name="memory_usage_mb",
-                value=memory_mb,
-                metric_type=MetricType.GAUGE,
-                level=MetricLevel.INFO
-            )
-            
-            self.performance_stats['memory_usage_mb'] = memory_mb
-            self.performance_stats['peak_memory_usage_mb'] = max(
-                self.performance_stats['peak_memory_usage_mb'], memory_mb
-            )
-            
-        except Exception as e:
-            tprint_debug(f"Memory monitoring failed: {e}")
-    
-    def record_cpu_usage(self):
-        """Record current CPU usage."""
-        try:
-            cpu_percent = psutil.cpu_percent()
-            
-            self.record_metric(
-                name="cpu_usage_percent",
-                value=cpu_percent,
-                metric_type=MetricType.GAUGE,
-                level=MetricLevel.INFO
-            )
-            
-            self.performance_stats['cpu_usage_percent'] = cpu_percent
-            
-        except Exception as e:
-            tprint_debug(f"CPU monitoring failed: {e}")
-    
-    def record_cache_event(self, event_type: str, cache_key: str):
-        """Record cache event."""
-        if event_type == "hit":
-            self.performance_stats['cache_hits'] += 1
-        elif event_type == "miss":
-            self.performance_stats['cache_misses'] += 1
+        # Group metrics by type
+        metrics_by_type = {}
+        for metric in self.metrics:
+            metric_type = metric.metric_type
+            if metric_type not in metrics_by_type:
+                metrics_by_type[metric_type] = []
+            metrics_by_type[metric_type].append(metric.value)
         
-        self.record_metric(
-            name=f"cache_{event_type}",
-            value=1.0,
-            metric_type=MetricType.COUNTER,
-            level=MetricLevel.DEBUG,
-            metadata={"cache_key": cache_key}
-        )
-    
-    def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance statistics."""
-        stats = self.performance_stats.copy()
+        # Calculate statistics
+        summary = {}
+        for metric_type, values in metrics_by_type.items():
+            summary[metric_type] = {
+                'count': len(values),
+                'mean': np.mean(values),
+                'min': np.min(values),
+                'max': np.max(values),
+                'std': np.std(values)
+            }
         
-        # Add calculated metrics
-        if self.performance_stats['total_operations'] > 0:
-            stats['average_operation_time'] = (
-                self.performance_stats['total_execution_time'] / 
-                self.performance_stats['total_operations']
-            )
-        
-        if self.performance_stats['cache_hits'] + self.performance_stats['cache_misses'] > 0:
-            stats['cache_hit_rate'] = (
-                self.performance_stats['cache_hits'] / 
-                (self.performance_stats['cache_hits'] + self.performance_stats['cache_misses'])
-            )
-        
-        return stats
-    
-    def get_metrics_by_type(self, metric_type: MetricType) -> List[PerformanceMetric]:
-        """Get metrics by type."""
-        return [m for m in self.metrics if m.metric_type == metric_type]
-    
-    def get_recent_metrics(self, limit: int = 100) -> List[PerformanceMetric]:
-        """Get recent metrics."""
-        return self.metrics[-limit:]
-    
-    def reset_stats(self):
-        """Reset performance statistics."""
-        self.performance_stats = {
-            'total_operations': 0,
-            'total_execution_time': 0.0,
-            'memory_usage_mb': 0.0,
-            'peak_memory_usage_mb': 0.0,
-            'cpu_usage_percent': 0.0,
-            'cache_hits': 0,
-            'cache_misses': 0
-        }
-        self.metrics = []
-        self.operation_times = {}
+        return summary
 
 
 class MemoryManager:
-    """Memory management and optimization utilities."""
+    """Enhanced memory management component."""
     
-    def __init__(self):
-        """Initialize the memory manager."""
-        self.memory_stats = {
-            'total_allocations': 0,
-            'total_deallocations': 0,
-            'peak_memory_usage': 0.0,
-            'current_memory_usage': 0.0
-        }
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.memory_history = []
     
-    def get_memory_usage(self) -> float:
-        """Get current memory usage in MB."""
+    def get_memory_usage(self) -> Dict[str, float]:
+        """Get current memory usage."""
         try:
             process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            self.memory_stats['current_memory_usage'] = memory_mb
-            self.memory_stats['peak_memory_usage'] = max(
-                self.memory_stats['peak_memory_usage'], memory_mb
-            )
-            return memory_mb
-        except:
-            return 0.0
+            memory_info = process.memory_info()
+            
+            return {
+                'rss': memory_info.rss / (1024 * 1024),  # MB
+                'vms': memory_info.vms / (1024 * 1024),  # MB
+                'percent': process.memory_percent()
+            }
+        except Exception as e:
+            tprint_debug(f"Memory monitoring failed: {e}")
+            return {'rss': 0.0, 'vms': 0.0, 'percent': 0.0}
     
-    def optimize_memory(self):
+    def optimize_memory(self) -> Dict[str, Any]:
         """Optimize memory usage."""
         try:
             # Force garbage collection
-            collected = gc.collect()
-            self.memory_stats['total_deallocations'] += collected
+            gc.collect()
             
-            # Get memory usage after optimization
-            current_usage = self.get_memory_usage()
+            # Get memory before and after
+            before = self.get_memory_usage()
             
-            tprint_debug(f"🧠 Memory optimization: collected {collected} objects, current usage: {current_usage:.1f} MB")
+            # Additional optimization could be added here
             
+            after = self.get_memory_usage()
+            
+            return {
+                'before': before,
+                'after': after,
+                'freed': before['rss'] - after['rss']
+            }
         except Exception as e:
             tprint_debug(f"Memory optimization failed: {e}")
-    
-    def get_memory_pressure(self) -> str:
-        """Get memory pressure level."""
-        try:
-            memory_usage = self.get_memory_usage()
-            
-            if memory_usage < 100:
-                return "low"
-            elif memory_usage < 500:
-                return "medium"
-            elif memory_usage < 1000:
-                return "high"
-            else:
-                return "critical"
-        except:
-            return "unknown"
-    
-    def get_memory_stats(self) -> Dict[str, Any]:
-        """Get memory statistics."""
-        return self.memory_stats.copy()
+            return {'error': str(e)}
 
 
 class HardwareAccelerator:
     """Hardware acceleration detection and management."""
     
-    def __init__(self):
-        """Initialize the hardware accelerator."""
-        self.acceleration_info = self._detect_acceleration()
+    def __init__(self, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.hardware_info = self._detect_hardware()
     
-    def _detect_acceleration(self) -> Dict[str, Any]:
+    def _detect_hardware(self) -> Dict[str, Any]:
         """Detect available hardware acceleration."""
-        info = {
+        hardware = {
+            'cpu_count': psutil.cpu_count(),
+            'memory_total': psutil.virtual_memory().total / (1024**3),  # GB
             'gpu_available': False,
-            'm1_available': False,
-            'vectorization_available': False,
-            'parallel_processing_available': False
+            'cuda_available': False
         }
         
+        # Check for CUDA availability
         try:
-            # Check for GPU
-            try:
-                import torch
-                info['gpu_available'] = torch.cuda.is_available()
-            except ImportError:
-                pass
-            
-            # Check for M1 acceleration
-            try:
-                import platform
-                if platform.processor() == 'arm':
-                    info['m1_available'] = True
-            except:
-                pass
-            
-            # Check for vectorization
-            try:
-                import numpy as np
-                info['vectorization_available'] = hasattr(np, 'vectorize')
-            except:
-                pass
-            
-            # Check for parallel processing
-            try:
-                import multiprocessing
-                info['parallel_processing_available'] = multiprocessing.cpu_count() > 1
-            except:
-                pass
-            
-        except Exception as e:
-            tprint_debug(f"Hardware detection failed: {e}")
+            import cupy
+            hardware['cuda_available'] = True
+            hardware['gpu_available'] = True
+        except ImportError:
+            pass
         
-        return info
+        # Check for other GPU libraries
+        try:
+            import torch
+            if torch.cuda.is_available():
+                hardware['gpu_available'] = True
+        except ImportError:
+            pass
+        
+        return hardware
     
-    def is_accelerated(self) -> bool:
-        """Check if any acceleration is available."""
-        return any(self.acceleration_info.values())
-    
-    def get_acceleration_info(self) -> Dict[str, Any]:
-        """Get acceleration information."""
-        return self.acceleration_info.copy()
+    def get_hardware_info(self) -> Dict[str, Any]:
+        """Get hardware information."""
+        return self.hardware_info.copy()
 
 
-def create_modular_architecture(component_name: str = "UnifiedPipeline") -> Tuple[InputValidator, StandardizedErrorHandler, PerformanceMonitor, MemoryManager, HardwareAccelerator]:
-    """Create modular architecture components."""
-    logger = logging.getLogger(component_name)
+class ModularArchitecture:
+    """Enhanced modular architecture coordinator."""
     
-    validator = InputValidator(logger)
-    error_handler = StandardizedErrorHandler(logger, component_name)
-    performance_monitor = PerformanceMonitor(component_name)
-    memory_manager = MemoryManager()
-    hardware_accelerator = HardwareAccelerator()
+    def __init__(self, component_name: str, logger: Optional[logging.Logger] = None):
+        self.component_name = component_name
+        self.logger = logger or logging.getLogger(f"{__name__}.{component_name}")
+        
+        # Initialize modular components
+        self.validator = InputValidator(self.logger)
+        self.error_handler = ErrorHandler(component_name, self.logger)
+        self.performance_monitor = PerformanceMonitor(component_name, self.logger)
+        self.memory_manager = MemoryManager(self.logger)
+        self.hardware_accelerator = HardwareAccelerator(self.logger)
+        
+        tprint_info(f"🏗️ Enhanced modular architecture initialized for {component_name}")
     
-    return validator, error_handler, performance_monitor, memory_manager, hardware_accelerator
+    def validate_inputs(self, data: Union[pd.DataFrame, pd.Series], 
+                       level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationResult:
+        """Validate inputs using the modular validator."""
+        return self.validator.validate_dataframe(data, level)
+    
+    def handle_error(self, error: Exception, **kwargs) -> ErrorInfo:
+        """Handle errors using the modular error handler."""
+        return self.error_handler.handle_error(error, **kwargs)
+    
+    def start_monitoring(self, operation_name: str) -> float:
+        """Start monitoring an operation."""
+        return self.performance_monitor.start_operation(operation_name)
+    
+    def stop_monitoring(self, operation_name: str) -> float:
+        """Stop monitoring an operation."""
+        return self.performance_monitor.end_operation(operation_name)
+    
+    def get_system_summary(self) -> Dict[str, Any]:
+        """Get comprehensive system summary."""
+        return {
+            'component_name': self.component_name,
+            'error_handler_stats': self.error_handler.get_error_summary(),
+            'performance_monitor_stats': self.performance_monitor.get_performance_summary(),
+            'memory_usage': self.memory_manager.get_memory_usage(),
+            'hardware_info': self.hardware_accelerator.get_hardware_info()
+        }
+
+
+# Convenience functions
+def create_modular_architecture(component_name: str, 
+                               logger: Optional[logging.Logger] = None) -> ModularArchitecture:
+    """Create an enhanced modular architecture instance."""
+    return ModularArchitecture(component_name, logger)
+
+
+# Export main classes and functions
+__all__ = [
+    'ModularArchitecture',
+    'InputValidator',
+    'ErrorHandler',
+    'PerformanceMonitor',
+    'MemoryManager',
+    'HardwareAccelerator',
+    'ValidationLevel',
+    'ErrorSeverity',
+    'ErrorCategory',
+    'ValidationResult',
+    'ErrorInfo',
+    'PerformanceMetric',
+    'create_modular_architecture'
+]

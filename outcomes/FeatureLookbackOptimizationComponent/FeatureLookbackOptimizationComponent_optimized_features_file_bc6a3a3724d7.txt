@@ -1,1 +1,0 @@
-artifacts/optimized_features_ETHUSDT_15m_20251009_223120.parquet

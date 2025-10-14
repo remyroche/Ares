@@ -1139,7 +1139,6 @@ class EnhancedOptimizedInteractionOrchestrator:
         
         # Import HTF-aware interaction templates
         try:
-            from ..cross_timeframe_generation.interaction_templates import HTFInteractionTemplates
             from ..cross_timeframe_generation.config import PipelineConfig
             
             # Create HTF interaction templates configuration
@@ -1151,7 +1150,8 @@ class EnhancedOptimizedInteractionOrchestrator:
             )
             
             # Initialize HTF interaction templates
-            htf_templates = HTFInteractionTemplates(htf_config)
+            # HTFInteractionTemplates has been removed
+            htf_templates = None  # HTFInteractionTemplates(htf_config)
             
             # Generate HTF-aware interactions
             tprint_info("🚀 Using HTF-aware interaction templates for cross-timeframe features")

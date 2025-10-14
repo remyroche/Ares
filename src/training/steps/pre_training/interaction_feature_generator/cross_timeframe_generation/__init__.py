@@ -23,7 +23,6 @@ from .scoring_system import AdaptiveScoringSystem
 from .ehu_rih_assignment import EHU_RIH_Assignment
 from .knapsack_selection import KnapsackSelection, CrossTimeframeKnapsackSelectionResult
 from .htf_materialization import HTFMaterialization
-from .interaction_templates import HTFInteractionTemplates
 from .statistical_selection import StatisticalSelection, CrossTimeframeStatisticalSelectionResult
 from .evaluation import WalkForwardEvaluation
 from .monitoring import MonitoringSystem
@@ -39,7 +38,6 @@ __all__ = [
     'KnapsackSelection',
     'CrossTimeframeKnapsackSelectionResult',
     'HTFMaterialization',
-    'HTFInteractionTemplates',
     'StatisticalSelection',
     'CrossTimeframeStatisticalSelectionResult',
     'WalkForwardEvaluation',

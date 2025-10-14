@@ -76,10 +76,33 @@ except ImportError:
     FEATURETOOLS_AVAILABLE = False
     tprint_warning("⚠️ Featuretools not available")
 
-# Import ALE (Accumulated Local Effects)
+# Import ALE (Accumulated Local Effects) - using a simple implementation
 try:
-    from alepython import ale_plot, ale_1d, ale_2d
+    # Simple ALE implementation since alepython is not available
+    def simple_ale_1d(model, X, feature_name, bins=20):
+        """Simple ALE implementation for 1D features."""
+        feature_values = X[feature_name].values
+        bin_edges = np.linspace(feature_values.min(), feature_values.max(), bins + 1)
+        ale_values = []
+        
+        for i in range(bins):
+            bin_start, bin_end = bin_edges[i], bin_edges[i + 1]
+            mask = (feature_values >= bin_start) & (feature_values < bin_end)
+            if mask.sum() > 0:
+                # Simple prediction difference as ALE approximation
+                X_bin = X[mask].copy()
+                X_bin[feature_name] = bin_start
+                pred_start = model.predict(X_bin.values)
+                X_bin[feature_name] = bin_end
+                pred_end = model.predict(X_bin.values)
+                ale_values.append(np.mean(pred_end - pred_start))
+            else:
+                ale_values.append(0.0)
+        
+        return np.array(ale_values)
+    
     ALE_AVAILABLE = True
+    ale_1d = simple_ale_1d
 except ImportError:
     ALE_AVAILABLE = False
     tprint_warning("⚠️ ALE not available, using fallback validation")

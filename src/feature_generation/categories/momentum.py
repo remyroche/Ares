@@ -1399,7 +1399,10 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
         # Acceleration (change in velocity)
         acceleration = velocity.diff(self.config.parameters["period"])
 
-        return accelerationclass VolumeMomentumGenerator(VectorizedFeatureGenerator):
+        return acceleration
+
+
+class VolumeMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for volume-based momentum indicators."""
 
     def __init__(self, period: int = 10):

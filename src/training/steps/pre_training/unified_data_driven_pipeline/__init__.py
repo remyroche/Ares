@@ -56,12 +56,17 @@ from .core.simplified_config import (
     PipelineIntensity
 )
 
-# Import ares_launcher integration
-from .ares_launcher_integration import (
-    AresLauncherIntegration,
-    AresLauncherConfig,
-    create_ares_launcher_integration
+# Import unified pipeline commands
+from .unified_pipeline_commands import (
+    UnifiedPipelineCommandHandler,
+    UnifiedPipelineCommandConfig,
+    create_unified_pipeline_command_handler,
+    handle_unified_pipeline_analyst,
+    handle_unified_pipeline_tactician,
+    handle_unified_pipeline_analyst_short,
+    handle_unified_pipeline_tactician_long
 )
+
 
 from .time_series_cv import (
     PurgedEmbargoedWalkForwardCV,
@@ -119,10 +124,14 @@ __all__ = [
     'list_available_intensities',
     'PipelineIntensity',
     
-    # Ares launcher integration
-    'AresLauncherIntegration',
-    'AresLauncherConfig',
-    'create_ares_launcher_integration',
+    # Unified pipeline commands
+    'UnifiedPipelineCommandHandler',
+    'UnifiedPipelineCommandConfig',
+    'create_unified_pipeline_command_handler',
+    'handle_unified_pipeline_analyst',
+    'handle_unified_pipeline_tactician',
+    'handle_unified_pipeline_analyst_short',
+    'handle_unified_pipeline_tactician_long',
     
     # Time series CV
     'PurgedEmbargoedWalkForwardCV',

@@ -91,33 +91,33 @@ Created comprehensive examples demonstrating the new features:
 
 ### 6. **Ares Launcher Integration** ✅
 
-Created command-line integration for ares_launcher:
+Created integration with existing ares_launcher.py commands:
 
-- **Command Line Interface**: Full CLI with argument parsing
-- **Intensity Configuration**: Set intensity via `--intensity` parameter
-- **Custom Overrides**: Override specific parameters via command line
-- **Output Management**: Configure output directory and result saving
-- **Logging Control**: Set log levels via command line
+- **Existing Commands**: Integrates with `--unified-pipeline-analyst`, `--unified-pipeline-tactician`, etc.
+- **Tactician vs Analyst**: Different labeling approaches for financial data qualification
+- **Intensity Configuration**: Set intensity via command handlers
+- **Command Handlers**: Direct integration with existing ares_launcher structure
 
 **Files Added:**
-- `ares_launcher_integration.py` - Integration module
-- `ares_launcher_cli.py` - Command-line interface script
-- `examples/ares_launcher_example.py` - Usage examples
+- `unified_pipeline_commands.py` - Command handlers for existing ares_launcher commands
+- `examples/ares_launcher_integration_example.py` - Integration examples
 
-**Command Line Usage:**
+**Existing Command Structure:**
 ```bash
-# Basic usage
-ares_launcher --intensity full --output-dir results/full/
-ares_launcher --intensity blank --output-dir results/blank/
-ares_launcher --intensity light --output-dir results/light/
+# Analyst mode (long positions, 15m timeframe)
+python ares_launcher.py --unified-pipeline-analyst --symbol ETHUSDT
 
-# Custom configuration
-ares_launcher --intensity blank --max-features 30 --max-period 50
-ares_launcher --intensity light --cv-splits 3 --computation-time 300
+# Tactician mode (long positions, 15m timeframe)  
+python ares_launcher.py --unified-pipeline-tactician --symbol ETHUSDT
 
-# Advanced usage
-ares_launcher --intensity full --enable-gpu --log-level DEBUG --output-dir results/
+# Specific directions still available
+python ares_launcher.py --unified-pipeline-analyst-short --symbol ETHUSDT
+python ares_launcher.py --unified-pipeline-tactician-long --symbol ETHUSDT
 ```
+
+**Tactician vs Analyst Differences:**
+- **Tactician**: Direction/magnitude based on max favorable/adverse excursion (short-term)
+- **Analyst**: "Should we trade?" based on expected PnL > fees + slippage (long-term)
 
 ## Migration Guide
 

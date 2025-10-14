@@ -482,14 +482,212 @@ def create_fast_config() -> UnifiedPipelineConfig:
 
 def load_config_from_file(config_path: Union[str, Path]) -> UnifiedPipelineConfig:
     """Load configuration from a file."""
-    # This would implement loading from JSON/YAML
-    # For now, return default config
-    tprint_warning("Config loading from file not implemented, using default config")
-    return create_default_config()
+    try:
+        from src.utils.common_operations import safe_json_load, safe_file_exists
+        from src.utils.tprint import tprint_error, tprint_success, tprint_warning
+        
+        config_path = Path(config_path)
+        
+        if not safe_file_exists(config_path):
+            tprint_warning(f"Config file not found: {config_path}, using default config")
+            return create_default_config()
+        
+        # Load JSON configuration
+        config_data = safe_json_load(config_path)
+        if config_data is None:
+            tprint_warning(f"Failed to load config from {config_path}, using default config")
+            return create_default_config()
+        
+        # Convert to UnifiedPipelineConfig
+        config = UnifiedPipelineConfig()
+        
+        # Update configuration with loaded data
+        if 'period_optimization' in config_data:
+            for key, value in config_data['period_optimization'].items():
+                if hasattr(config.period_optimization, key):
+                    setattr(config.period_optimization, key, value)
+        
+        if 'lookback_optimization' in config_data:
+            for key, value in config_data['lookback_optimization'].items():
+                if hasattr(config.lookback_optimization, key):
+                    setattr(config.lookback_optimization, key, value)
+        
+        if 'interaction_generation' in config_data:
+            for key, value in config_data['interaction_generation'].items():
+                if hasattr(config.interaction_generation, key):
+                    setattr(config.interaction_generation, key, value)
+        
+        if 'feature_selection' in config_data:
+            for key, value in config_data['feature_selection'].items():
+                if hasattr(config.feature_selection, key):
+                    setattr(config.feature_selection, key, value)
+        
+        if 'vectorization' in config_data:
+            for key, value in config_data['vectorization'].items():
+                if hasattr(config.vectorization, key):
+                    setattr(config.vectorization, key, value)
+        
+        if 'performance' in config_data:
+            for key, value in config_data['performance'].items():
+                if hasattr(config.performance, key):
+                    setattr(config.performance, key, value)
+        
+        # Update pipeline settings
+        pipeline_settings = ['enable_period_optimization', 'enable_feature_lookback_optimization',
+                           'enable_interaction_generation', 'enable_htf_interactions',
+                           'enable_feature_selection', 'enable_nested_cv', 'enable_direction_optimization',
+                           'enable_bayesian_optimization', 'enable_advanced_caching', 'enable_regularization',
+                           'validate_input_data', 'strict_data_validation', 'save_intermediate_results']
+        
+        for setting in pipeline_settings:
+            if setting in config_data:
+                setattr(config, setting, config_data[setting])
+        
+        if 'output_dir' in config_data:
+            config.output_dir = config_data['output_dir']
+        
+        tprint_success(f"Successfully loaded configuration from {config_path}")
+        return config
+        
+    except Exception as e:
+        tprint_error(f"Error loading config from {config_path}: {e}")
+        tprint_warning("Using default configuration")
+        return create_default_config()
 
 
 def save_config_to_file(config: UnifiedPipelineConfig, config_path: Union[str, Path]) -> None:
     """Save configuration to a file."""
-    # This would implement saving to JSON/YAML
-    tprint_warning("Config saving to file not implemented")
-    pass
+    try:
+        from src.utils.common_operations import safe_json_dump, ensure_directory
+        from src.utils.tprint import tprint_error, tprint_success, tprint_warning
+        import json
+        
+        config_path = Path(config_path)
+        
+        # Ensure directory exists
+        ensure_directory(config_path.parent)
+        
+        # Convert configuration to dictionary
+        config_dict = {
+            'period_optimization': {
+                'min_period': config.period_optimization.min_period,
+                'max_period': config.period_optimization.max_period,
+                'period_step': config.period_optimization.period_step,
+                'optimization_strategy': config.period_optimization.optimization_strategy.value,
+                'enable_parallel': config.period_optimization.enable_parallel,
+                'max_workers': config.period_optimization.max_workers,
+                'min_period_stability': config.period_optimization.min_period_stability,
+                'min_period_significance': config.period_optimization.min_period_significance,
+                'max_period_correlation': config.period_optimization.max_period_correlation,
+                'max_computation_time': config.period_optimization.max_computation_time,
+                'memory_limit_gb': config.period_optimization.memory_limit_gb
+            },
+            'lookback_optimization': {
+                'min_lookback': config.lookback_optimization.min_lookback,
+                'max_lookback': config.lookback_optimization.max_lookback,
+                'step_size': config.lookback_optimization.step_size,
+                'min_samples': config.lookback_optimization.min_samples,
+                'optimization_strategy': config.lookback_optimization.optimization_strategy.value,
+                'enable_bayesian_optimization': config.lookback_optimization.enable_bayesian_optimization,
+                'bayesian_trials': config.lookback_optimization.bayesian_trials,
+                'enable_direction_optimization': config.lookback_optimization.enable_direction_optimization,
+                'optimization_direction': config.lookback_optimization.optimization_direction,
+                'enable_regularization': config.lookback_optimization.enable_regularization,
+                'regularization_strength': config.lookback_optimization.regularization_strength,
+                'labeling_type': config.lookback_optimization.labeling_type,
+                'enable_labeling_optimization': config.lookback_optimization.enable_labeling_optimization,
+                'labeling_quality_threshold': config.lookback_optimization.labeling_quality_threshold,
+                'preferred_min_lookback': config.lookback_optimization.preferred_min_lookback,
+                'preferred_max_lookback': config.lookback_optimization.preferred_max_lookback,
+                'max_computation_time': config.lookback_optimization.max_computation_time,
+                'memory_limit_gb': config.lookback_optimization.memory_limit_gb
+            },
+            'interaction_generation': {
+                'max_interactions': config.interaction_generation.max_interactions,
+                'min_utility_threshold': config.interaction_generation.min_utility_threshold,
+                'max_correlation_threshold': config.interaction_generation.max_correlation_threshold,
+                'min_interaction_significance': config.interaction_generation.min_interaction_significance,
+                'min_interaction_stability': config.interaction_generation.min_interaction_stability,
+                'min_effect_size': config.interaction_generation.min_effect_size,
+                'optimization_strategy': config.interaction_generation.optimization_strategy.value,
+                'enable_batch_processing': config.interaction_generation.enable_batch_processing,
+                'batch_size': config.interaction_generation.batch_size,
+                'enable_htf_interactions': config.interaction_generation.enable_htf_interactions,
+                'htf_interaction_ratio': config.interaction_generation.htf_interaction_ratio
+            },
+            'feature_selection': {
+                'selection_strategy': config.feature_selection.selection_strategy,
+                'multi_objective': {
+                    'objectives': config.feature_selection.multi_objective.objectives,
+                    'stability_method': config.feature_selection.multi_objective.stability_method,
+                    'min_stability_score': config.feature_selection.multi_objective.min_stability_score,
+                    'diversity_method': config.feature_selection.multi_objective.diversity_method,
+                    'max_pairwise_correlation': config.feature_selection.multi_objective.max_pairwise_correlation,
+                    'optimization_algorithm': config.feature_selection.multi_objective.optimization_algorithm,
+                    'max_generations': config.feature_selection.multi_objective.max_generations,
+                    'population_size': config.feature_selection.multi_objective.population_size,
+                    'max_features': config.feature_selection.multi_objective.max_features,
+                    'min_features': config.feature_selection.multi_objective.min_features,
+                    'max_feature_cost': config.feature_selection.multi_objective.max_feature_cost
+                },
+                'primary_objective': config.feature_selection.primary_objective,
+                'secondary_objective': config.feature_selection.secondary_objective,
+                'ensemble_methods': config.feature_selection.ensemble_methods,
+                'ensemble_weights': config.feature_selection.ensemble_weights,
+                'max_computation_time': config.feature_selection.max_computation_time,
+                'memory_limit_gb': config.feature_selection.memory_limit_gb
+            },
+            'vectorization': {
+                'enable_vectorbt': config.vectorization.enable_vectorbt,
+                'vectorbt_strategy': config.vectorization.vectorbt_strategy.value,
+                'enable_gpu': config.vectorization.enable_gpu,
+                'enable_parallel': config.vectorization.enable_parallel,
+                'memory_efficient': config.vectorization.memory_efficient,
+                'max_memory_gb': config.vectorization.max_memory_gb,
+                'chunk_size': config.vectorization.chunk_size,
+                'enable_monitoring': config.vectorization.enable_monitoring,
+                'enable_profiling': config.vectorization.enable_profiling,
+                'enable_caching': config.vectorization.enable_caching,
+                'cache_size': config.vectorization.cache_size
+            },
+            'performance': {
+                'enable_performance_tracking': config.performance.enable_performance_tracking,
+                'enable_memory_monitoring': config.performance.enable_memory_monitoring,
+                'enable_timing': config.performance.enable_timing,
+                'log_level': config.performance.log_level,
+                'log_to_file': config.performance.log_to_file,
+                'log_file_path': config.performance.log_file_path,
+                'enable_profiling': config.performance.enable_profiling,
+                'profile_output_dir': config.performance.profile_output_dir,
+                'enable_auto_optimization': config.performance.enable_auto_optimization,
+                'optimization_threshold': config.performance.optimization_threshold
+            },
+            'pipeline_settings': {
+                'enable_period_optimization': config.enable_period_optimization,
+                'enable_feature_lookback_optimization': config.enable_feature_lookback_optimization,
+                'enable_interaction_generation': config.enable_interaction_generation,
+                'enable_htf_interactions': config.enable_htf_interactions,
+                'enable_feature_selection': config.enable_feature_selection,
+                'enable_nested_cv': config.enable_nested_cv,
+                'enable_direction_optimization': config.enable_direction_optimization,
+                'enable_bayesian_optimization': config.enable_bayesian_optimization,
+                'enable_advanced_caching': config.enable_advanced_caching,
+                'enable_regularization': config.enable_regularization,
+                'validate_input_data': config.validate_input_data,
+                'strict_data_validation': config.strict_data_validation,
+                'save_intermediate_results': config.save_intermediate_results,
+                'output_dir': config.output_dir
+            }
+        }
+        
+        # Save to JSON file
+        success = safe_json_dump(config_dict, config_path, indent=2)
+        
+        if success:
+            tprint_success(f"Successfully saved configuration to {config_path}")
+        else:
+            tprint_warning(f"Failed to save configuration to {config_path}")
+            
+    except Exception as e:
+        tprint_error(f"Error saving config to {config_path}: {e}")
+        raise

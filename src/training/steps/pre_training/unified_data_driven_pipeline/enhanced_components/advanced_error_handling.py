@@ -43,32 +43,175 @@ import pandas as pd
 # Exception classes for fast failing
 class PipelineError(Exception):
     """Base exception for pipeline-related errors."""
-    pass
+    
+    def __init__(self, message: str, operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message)
+        self.message = message
+        self.operation = operation
+        self.context = context or {}
+        self.timestamp = datetime.now().isoformat()
+    
+    def __str__(self):
+        base_msg = f"PipelineError: {self.message}"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_context(self) -> Dict[str, Any]:
+        """Get error context information."""
+        return {
+            'message': self.message,
+            'operation': self.operation,
+            'context': self.context,
+            'timestamp': self.timestamp
+        }
 
 
 class DataValidationError(PipelineError):
     """Exception raised when data validation fails."""
-    pass
+    
+    def __init__(self, message: str, validation_type: str = None, data_info: Dict[str, Any] = None, 
+                 operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message, operation, context)
+        self.validation_type = validation_type
+        self.data_info = data_info or {}
+    
+    def __str__(self):
+        base_msg = f"DataValidationError: {self.message}"
+        if self.validation_type:
+            base_msg += f" (Type: {self.validation_type})"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_validation_details(self) -> Dict[str, Any]:
+        """Get detailed validation information."""
+        details = self.get_context()
+        details.update({
+            'validation_type': self.validation_type,
+            'data_info': self.data_info
+        })
+        return details
 
 
 class FeatureGenerationError(PipelineError):
     """Exception raised when feature generation fails."""
-    pass
+    
+    def __init__(self, message: str, feature_name: str = None, generation_step: str = None,
+                 operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message, operation, context)
+        self.feature_name = feature_name
+        self.generation_step = generation_step
+    
+    def __str__(self):
+        base_msg = f"FeatureGenerationError: {self.message}"
+        if self.feature_name:
+            base_msg += f" (Feature: {self.feature_name})"
+        if self.generation_step:
+            base_msg += f" (Step: {self.generation_step})"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_generation_details(self) -> Dict[str, Any]:
+        """Get detailed feature generation information."""
+        details = self.get_context()
+        details.update({
+            'feature_name': self.feature_name,
+            'generation_step': self.generation_step
+        })
+        return details
 
 
 class OptimizationError(PipelineError):
     """Exception raised when optimization fails."""
-    pass
+    
+    def __init__(self, message: str, optimization_type: str = None, objective: str = None,
+                 iteration: int = None, operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message, operation, context)
+        self.optimization_type = optimization_type
+        self.objective = objective
+        self.iteration = iteration
+    
+    def __str__(self):
+        base_msg = f"OptimizationError: {self.message}"
+        if self.optimization_type:
+            base_msg += f" (Type: {self.optimization_type})"
+        if self.objective:
+            base_msg += f" (Objective: {self.objective})"
+        if self.iteration is not None:
+            base_msg += f" (Iteration: {self.iteration})"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_optimization_details(self) -> Dict[str, Any]:
+        """Get detailed optimization information."""
+        details = self.get_context()
+        details.update({
+            'optimization_type': self.optimization_type,
+            'objective': self.objective,
+            'iteration': self.iteration
+        })
+        return details
 
 
 class CacheError(PipelineError):
     """Exception raised when cache operations fail."""
-    pass
+    
+    def __init__(self, message: str, cache_key: str = None, cache_operation: str = None,
+                 operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message, operation, context)
+        self.cache_key = cache_key
+        self.cache_operation = cache_operation
+    
+    def __str__(self):
+        base_msg = f"CacheError: {self.message}"
+        if self.cache_key:
+            base_msg += f" (Key: {self.cache_key})"
+        if self.cache_operation:
+            base_msg += f" (Operation: {self.cache_operation})"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_cache_details(self) -> Dict[str, Any]:
+        """Get detailed cache information."""
+        details = self.get_context()
+        details.update({
+            'cache_key': self.cache_key,
+            'cache_operation': self.cache_operation
+        })
+        return details
 
 
 class MemoryError(PipelineError):
     """Exception raised when memory operations fail."""
-    pass
+    
+    def __init__(self, message: str, memory_usage: float = None, memory_limit: float = None,
+                 operation: str = None, context: Dict[str, Any] = None):
+        super().__init__(message, operation, context)
+        self.memory_usage = memory_usage
+        self.memory_limit = memory_limit
+    
+    def __str__(self):
+        base_msg = f"MemoryError: {self.message}"
+        if self.memory_usage is not None:
+            base_msg += f" (Usage: {self.memory_usage:.2f} MB)"
+        if self.memory_limit is not None:
+            base_msg += f" (Limit: {self.memory_limit:.2f} MB)"
+        if self.operation:
+            base_msg += f" (Operation: {self.operation})"
+        return base_msg
+    
+    def get_memory_details(self) -> Dict[str, Any]:
+        """Get detailed memory information."""
+        details = self.get_context()
+        details.update({
+            'memory_usage': self.memory_usage,
+            'memory_limit': self.memory_limit
+        })
+        return details
 
 
 class ErrorSeverity(Enum):

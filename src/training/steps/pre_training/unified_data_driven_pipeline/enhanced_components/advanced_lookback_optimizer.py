@@ -36,14 +36,31 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-# Import advanced optimization dependencies
+# Import existing grid utilities and grid+TPE optimizer
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig
-    BAYESIAN_OPTIMIZER_AVAILABLE = True
+    from src.utils.ml_common.optimization.grid_utils import (
+        build_coarse_grid_from_search_space,
+        build_fine_grid_around_best
+    )
+    from src.training.steps.market_analysis.optimized_multi_horizon_optimizer.grid_bayesian_optimizer import (
+        GridBayesianOptimizer
+    )
+    from src.training.steps.market_analysis.optimized_multi_horizon_optimizer.optimization_config import (
+        OptimizationConfig, GridSearchConfig, BayesianTPEConfig, SearchSpace, OptimizationResult as GridOptimizationResult
+    )
+    GRID_UTILS_AVAILABLE = True
+    GRID_BAYESIAN_OPTIMIZER_AVAILABLE = True
 except ImportError:
-    BAYESIAN_OPTIMIZER_AVAILABLE = False
-    BayesianTPEOptimizer = None
+    GRID_UTILS_AVAILABLE = False
+    GRID_BAYESIAN_OPTIMIZER_AVAILABLE = False
+    build_coarse_grid_from_search_space = None
+    build_fine_grid_around_best = None
+    GridBayesianOptimizer = None
     OptimizationConfig = None
+    GridSearchConfig = None
+    BayesianTPEConfig = None
+    SearchSpace = None
+    GridOptimizationResult = None
 
 # Import VectorBT optimizations
 try:
@@ -168,7 +185,8 @@ class AdvancedLookbackOptimizer:
             'failed_optimizations': 0,
             'total_execution_time': 0.0,
             'vectorbt_operations': 0,
-            'bayesian_optimizations': 0,
+            'grid_bayesian_optimizations': 0,
+            'grid_search_optimizations': 0,
             'parallel_operations': 0,
             'cache_hits': 0,
             'cache_misses': 0
@@ -188,13 +206,13 @@ class AdvancedLookbackOptimizer:
             self.vectorbt_optimizer = None
             tprint_warning("⚠️ VectorBT not available, using fallback implementations")
         
-        # Initialize Bayesian optimizer
-        if BAYESIAN_OPTIMIZER_AVAILABLE:
-            self.bayesian_optimizer = BayesianTPEOptimizer()
-            tprint_success("✅ Bayesian TPE optimizer initialized")
+        # Initialize Grid+Bayesian optimizer
+        if GRID_BAYESIAN_OPTIMIZER_AVAILABLE:
+            self.grid_bayesian_optimizer = GridBayesianOptimizer()
+            tprint_success("✅ Grid+Bayesian optimizer initialized")
         else:
-            self.bayesian_optimizer = None
-            tprint_warning("⚠️ Bayesian optimizer not available")
+            self.grid_bayesian_optimizer = None
+            tprint_warning("⚠️ Grid+Bayesian optimizer not available")
         
         # Initialize matrix operations
         if MATRIX_OPS_AVAILABLE:
@@ -489,46 +507,59 @@ class AdvancedLookbackOptimizer:
         regularization_settings: Optional[Dict[str, float]],
         **kwargs
     ) -> OptimizationResult:
-        """Optimize using Bayesian TPE optimization."""
-        if not BAYESIAN_OPTIMIZER_AVAILABLE or not self.bayesian_optimizer:
-            tprint_warning("⚠️ Bayesian optimizer not available, falling back to coarse-to-refine")
+        """Optimize using existing Grid+Bayesian TPE optimizer."""
+        if not GRID_BAYESIAN_OPTIMIZER_AVAILABLE or not self.grid_bayesian_optimizer:
+            tprint_warning("⚠️ Grid+Bayesian optimizer not available, falling back to coarse-to-refine")
             return self._coarse_to_refine_single_pass(
                 data, feature_name, target_column, lookback_range,
                 regularization_settings=regularization_settings, **kwargs
             )
         
-        tprint_debug(f"🧠 Starting Bayesian TPE optimization for {feature_name}")
+        tprint_debug(f"🧠 Starting Grid+Bayesian TPE optimization for {feature_name}")
         
         try:
-            # Configure Bayesian optimization
-            config = OptimizationConfig(
-                n_trials=50,
-                n_startup_trials=10,
-                n_ei_candidates=100,
-                gamma=0.25,
-                prior_weight=1.0
+            # Create search space for the existing optimizer
+            search_space = SearchSpace(
+                parameters={
+                    'lookback': {
+                        'type': 'int',
+                        'low': lookback_range[0],
+                        'high': lookback_range[1]
+                    }
+                }
             )
             
-            # Define search space
-            search_space = {
-                'lookback': (lookback_range[0], lookback_range[1], 'int')
-            }
-            
-            # Objective function
-            def objective(params):
-                lookback = int(params['lookback'])
+            # Create objective function
+            def objective_function(params: Dict[str, Any]) -> float:
+                lookback = params['lookback']
                 score = self._evaluate_lookback_period(
                     data, feature_name, target_column, lookback, regularization_settings
                 )
-                return -score  # Minimize negative score (maximize score)
+                return score  # Maximize score
             
-            # Run optimization
-            best_params = self.bayesian_optimizer.optimize(
-                objective, search_space, config
+            # Configure optimization
+            optimization_config = OptimizationConfig(
+                search_space=search_space,
+                n_trials=50,
+                timeout_seconds=300,
+                enable_early_stopping=True
             )
             
-            best_lookback = int(best_params['lookback'])
-            best_score = -self.bayesian_optimizer.best_value
+            # Run Grid+Bayesian optimization
+            result = self.grid_bayesian_optimizer.optimize(
+                objective_function=objective_function,
+                config=optimization_config
+            )
+            
+            if not result.success:
+                tprint_warning("⚠️ Grid+Bayesian optimization failed, falling back to coarse-to-refine")
+                return self._coarse_to_refine_single_pass(
+                    data, feature_name, target_column, lookback_range,
+                    regularization_settings=regularization_settings, **kwargs
+                )
+            
+            best_lookback = result.best_parameters['lookback']
+            best_score = result.best_score
             
             # Calculate additional metrics
             stability_score = self._calculate_stability_score(data, feature_name, best_lookback)
@@ -539,25 +570,26 @@ class AdvancedLookbackOptimizer:
                 feature_name=feature_name,
                 best_lookback=best_lookback,
                 best_score=best_score,
-                method="bayesian_tpe",
+                method="grid_bayesian_tpe",
                 optimization_time=time.time(),
-                n_trials=config.n_trials,
-                convergence_achieved=True,
+                n_trials=result.n_trials,
+                convergence_achieved=result.convergence_achieved,
                 stability_score=stability_score,
                 sensitivity_score=sensitivity_score,
                 regularization_penalty=regularization_penalty,
                 validation_scores=[],
                 optimization_metadata={
-                    'n_trials': config.n_trials,
-                    'n_startup_trials': config.n_startup_trials,
-                    'gamma': config.gamma
+                    'n_trials': result.n_trials,
+                    'grid_stage_trials': getattr(result, 'grid_stage_trials', 0),
+                    'bayesian_stage_trials': getattr(result, 'bayesian_stage_trials', 0),
+                    'convergence_achieved': result.convergence_achieved
                 },
                 success=True
             )
             
         except Exception as e:
-            tprint_error(f"❌ Bayesian TPE optimization failed for {feature_name}: {e}")
-            return self._create_failed_result(feature_name, "bayesian_tpe", str(e))
+            tprint_error(f"❌ Grid+Bayesian TPE optimization failed for {feature_name}: {e}")
+            return self._create_failed_result(feature_name, "grid_bayesian_tpe", str(e))
     
     def _optimize_grid_search(
         self,
@@ -567,9 +599,73 @@ class AdvancedLookbackOptimizer:
         lookback_range: Tuple[int, int],
         **kwargs
     ) -> OptimizationResult:
-        """Optimize using grid search."""
+        """Optimize using grid search with existing grid utilities."""
         tprint_debug(f"🧠 Starting grid search optimization for {feature_name}")
         
+        try:
+            if not GRID_UTILS_AVAILABLE:
+                tprint_warning("⚠️ Grid utilities not available, using fallback grid search")
+                return self._fallback_grid_search(data, feature_name, target_column, lookback_range)
+            
+            min_lookback, max_lookback = lookback_range
+            
+            # Create search space using existing grid utilities
+            search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': min_lookback,
+                    'high': max_lookback
+                }
+            }
+            
+            # Generate grid points using existing utilities
+            grid_points = min(20, max_lookback - min_lookback + 1)
+            grid_params = build_coarse_grid_from_search_space(search_space, grid_points)
+            
+            if not grid_params:
+                tprint_warning("⚠️ No grid parameters generated, using fallback")
+                return self._fallback_grid_search(data, feature_name, target_column, lookback_range)
+            
+            # Evaluate all grid points
+            scores = {}
+            for params in grid_params:
+                lookback = params['lookback']
+                score = self._evaluate_lookback_period(
+                    data, feature_name, target_column, lookback, None
+                )
+                scores[lookback] = score
+            
+            # Find best
+            best_lookback, best_score = max(scores.items(), key=lambda x: x[1])
+            
+            return OptimizationResult(
+                feature_name=feature_name,
+                best_lookback=best_lookback,
+                best_score=best_score,
+                method="grid_search",
+                optimization_time=time.time(),
+                n_trials=len(grid_params),
+                convergence_achieved=True,
+                stability_score=self._calculate_stability_score(data, feature_name, best_lookback),
+                sensitivity_score=self._calculate_sensitivity_score(data, feature_name, best_lookback),
+                regularization_penalty=0.0,
+                validation_scores=[],
+                optimization_metadata={'grid_points': len(grid_params)},
+                success=True
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Grid search optimization failed for {feature_name}: {e}")
+            return self._create_failed_result(feature_name, "grid_search", str(e))
+    
+    def _fallback_grid_search(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int]
+    ) -> OptimizationResult:
+        """Fallback grid search when grid utilities are not available."""
         try:
             min_lookback, max_lookback = lookback_range
             step_size = self.config.step_size
@@ -592,7 +688,7 @@ class AdvancedLookbackOptimizer:
                 feature_name=feature_name,
                 best_lookback=best_lookback,
                 best_score=best_score,
-                method="grid_search",
+                method="grid_search_fallback",
                 optimization_time=time.time(),
                 n_trials=len(lookback_values),
                 convergence_achieved=True,
@@ -605,8 +701,8 @@ class AdvancedLookbackOptimizer:
             )
             
         except Exception as e:
-            tprint_error(f"❌ Grid search optimization failed for {feature_name}: {e}")
-            return self._create_failed_result(feature_name, "grid_search", str(e))
+            tprint_error(f"❌ Fallback grid search failed for {feature_name}: {e}")
+            return self._create_failed_result(feature_name, "grid_search_fallback", str(e))
     
     def _optimize_random_search(
         self,
@@ -685,16 +781,87 @@ class AdvancedLookbackOptimizer:
             return {}
     
     def _generate_coarse_candidates(self, min_lookback: int, max_lookback: int) -> List[int]:
-        """Generate coarse search candidates."""
-        step_size = max(1, (max_lookback - min_lookback) // 10)
-        return list(range(min_lookback, max_lookback + 1, step_size))
+        """Generate coarse search candidates using existing grid utilities."""
+        if not GRID_UTILS_AVAILABLE:
+            # Fallback to simple step-based generation
+            step_size = max(1, (max_lookback - min_lookback) // 10)
+            return list(range(min_lookback, max_lookback + 1, step_size))
+        
+        try:
+            # Use existing grid utilities for coarse grid generation
+            search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': min_lookback,
+                    'high': max_lookback
+                }
+            }
+            
+            # Generate coarse grid with fewer points
+            grid_points = min(10, max_lookback - min_lookback + 1)
+            grid_params = build_coarse_grid_from_search_space(search_space, grid_points)
+            
+            if grid_params:
+                return [params['lookback'] for params in grid_params]
+            else:
+                # Fallback if grid generation fails
+                step_size = max(1, (max_lookback - min_lookback) // 10)
+                return list(range(min_lookback, max_lookback + 1, step_size))
+                
+        except Exception as e:
+            tprint_debug(f"Grid utilities failed for coarse candidates: {e}")
+            # Fallback to simple step-based generation
+            step_size = max(1, (max_lookback - min_lookback) // 10)
+            return list(range(min_lookback, max_lookback + 1, step_size))
     
     def _generate_refine_candidates(self, center: int, min_lookback: int, max_lookback: int) -> List[int]:
-        """Generate refine search candidates around the best coarse candidate."""
-        refine_range = max(5, (max_lookback - min_lookback) // 20)
-        start = max(min_lookback, center - refine_range)
-        end = min(max_lookback, center + refine_range)
-        return list(range(start, end + 1))
+        """Generate refine search candidates around the best coarse candidate using existing grid utilities."""
+        if not GRID_UTILS_AVAILABLE:
+            # Fallback to simple range-based generation
+            refine_range = max(5, (max_lookback - min_lookback) // 20)
+            start = max(min_lookback, center - refine_range)
+            end = min(max_lookback, center + refine_range)
+            return list(range(start, end + 1))
+        
+        try:
+            # Use existing grid utilities for fine grid generation around best point
+            search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': min_lookback,
+                    'high': max_lookback
+                }
+            }
+            
+            # Generate fine grid around the center point
+            refine_range = max(5, (max_lookback - min_lookback) // 20)
+            start = max(min_lookback, center - refine_range)
+            end = min(max_lookback, center + refine_range)
+            
+            fine_search_space = {
+                'lookback': {
+                    'type': 'int',
+                    'low': start,
+                    'high': end
+                }
+            }
+            
+            grid_points = min(15, end - start + 1)
+            grid_params = build_fine_grid_around_best(fine_search_space, {'lookback': center}, grid_points)
+            
+            if grid_params:
+                return [params['lookback'] for params in grid_params]
+            else:
+                # Fallback if grid generation fails
+                return list(range(start, end + 1))
+                
+        except Exception as e:
+            tprint_debug(f"Grid utilities failed for refine candidates: {e}")
+            # Fallback to simple range-based generation
+            refine_range = max(5, (max_lookback - min_lookback) // 20)
+            start = max(min_lookback, center - refine_range)
+            end = min(max_lookback, center + refine_range)
+            return list(range(start, end + 1))
     
     def _evaluate_candidates_coarse(
         self,
@@ -1006,7 +1173,8 @@ class AdvancedLookbackOptimizer:
             'failed_optimizations': 0,
             'total_execution_time': 0.0,
             'vectorbt_operations': 0,
-            'bayesian_optimizations': 0,
+            'grid_bayesian_optimizations': 0,
+            'grid_search_optimizations': 0,
             'parallel_operations': 0,
             'cache_hits': 0,
             'cache_misses': 0

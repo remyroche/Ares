@@ -10,13 +10,14 @@ This document summarizes the comprehensive integration of all missing functional
 
 **Features Implemented:**
 - **Coarse-to-refine optimization** with nested cross-validation
-- **Bayesian TPE optimization** for advanced hyperparameter tuning
+- **Grid+Bayesian TPE optimization** using existing ml_commons utilities
 - **Parallel batch processing** with ThreadPoolExecutor for multi-core optimization
 - **Multiple optimization methods**: MRMR, grid search, random search, and coarse-to-refine
 - **Bootstrap validation** with configurable sample sizes
 - **Advanced regularization** with horizon penalties and constraints
 - **VectorBT optimizations** for high-performance rolling operations
 - **Memory-efficient operations** with streaming support
+- **Integration with existing grid utilities** and grid+TPE optimizer
 
 **Key Classes:**
 - `AdvancedLookbackOptimizer`: Main optimizer class
@@ -88,10 +89,11 @@ This document summarizes the comprehensive integration of all missing functional
 
 ### 1. **Advanced Optimization Algorithms**
 - Coarse-to-refine optimization with nested CV
-- Bayesian TPE optimization
+- Grid+Bayesian TPE optimization using existing ml_commons utilities
 - Parallel batch processing
 - Multiple optimization methods
 - Bootstrap validation
+- Integration with existing grid utilities and optimizers
 
 ### 2. **Sophisticated Feature Generation**
 - Feature Bank system with comprehensive feature generation (no artificial limits)

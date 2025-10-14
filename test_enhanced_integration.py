@@ -113,6 +113,8 @@ def test_enhanced_pipeline():
         lookback_stats = stats.get('advanced_lookback_optimizer', {})
         print(f"    Total optimizations: {lookback_stats.get('total_optimizations', 0)}")
         print(f"    Successful optimizations: {lookback_stats.get('successful_optimizations', 0)}")
+        print(f"    Grid+Bayesian optimizations: {lookback_stats.get('grid_bayesian_optimizations', 0)}")
+        print(f"    Grid search optimizations: {lookback_stats.get('grid_search_optimizations', 0)}")
         print(f"    Parallel operations: {lookback_stats.get('parallel_operations', 0)}")
         
         # Test feature bank integration

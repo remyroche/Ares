@@ -1,8 +1,5 @@
 """
-DEPRECATED: Consolidated Unified Data-Driven Feature Pipeline
-
-⚠️  WARNING: This module is deprecated and will be removed in v3.0.0
-    Please use the new simplified implementation instead.
+Consolidated Unified Data-Driven Feature Pipeline
 
 This is the single, consolidated implementation that combines all the best features
 from the various pipeline implementations while eliminating redundancy.
@@ -19,7 +16,12 @@ Features integrated:
 - Comprehensive statistical analysis
 - Walk-forward validation with leakage prevention
 
-MIGRATION: Use src.training.steps.pre_training.unified_data_driven_pipeline instead
+IMPROVEMENTS:
+- Eliminated silent failures and stub classes
+- Implemented fast fail patterns
+- Fixed undefined variables
+- Improved error handling
+- Removed duplicate code patterns
 """
 
 import numpy as np
@@ -636,10 +638,7 @@ class ConsolidatedPipelineResult:
 
 class UnifiedDataDrivenPipeline:
     """
-    DEPRECATED: Consolidated Unified Data-Driven Feature Pipeline.
-    
-    ⚠️  WARNING: This class is deprecated and will be removed in v3.0.0
-        Please use the new simplified implementation instead.
+    Consolidated Unified Data-Driven Feature Pipeline.
     
     This is the single, comprehensive implementation that integrates all advanced
     features while eliminating redundancy from multiple implementations.
@@ -656,7 +655,12 @@ class UnifiedDataDrivenPipeline:
     - Comprehensive statistical analysis
     - Walk-forward validation with leakage prevention
     
-    MIGRATION: Use src.training.steps.pre_training.unified_data_driven_pipeline.UnifiedDataDrivenPipeline instead
+    Improvements:
+    - Eliminated silent failures and stub classes
+    - Implemented fast fail patterns
+    - Fixed undefined variables
+    - Improved error handling
+    - Removed duplicate code patterns
     """
     
     def __init__(self, config: Optional[UnifiedPipelineConfig] = None):
@@ -666,15 +670,6 @@ class UnifiedDataDrivenPipeline:
         Args:
             config: Pipeline configuration (uses default if None)
         """
-        import warnings
-        warnings.warn(
-            "UnifiedDataDrivenPipeline from consolidated_pipeline is deprecated. "
-            "Use the new simplified implementation instead. "
-            "This will be removed in v3.0.0",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        
         self.config = config or create_default_config()
         
         # Initialize utility systems first

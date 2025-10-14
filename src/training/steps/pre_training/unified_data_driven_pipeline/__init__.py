@@ -20,8 +20,8 @@ This module has been consolidated to eliminate redundancy and provide a single,
 comprehensive implementation that integrates all advanced features.
 """
 
-# Import the simplified pipeline as the main implementation
-from .simplified_pipeline import (
+# Import the consolidated pipeline as the main implementation
+from .consolidated_pipeline import (
     UnifiedDataDrivenPipeline,
     ConsolidatedPipelineResult,
     create_unified_pipeline,

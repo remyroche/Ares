@@ -64,467 +64,38 @@ try:
 except ImportError as e:
     ML_COMMONS_VALIDATION_AVAILABLE = False
     tprint_warning(f"⚠️ ML Commons validation utilities not available: {e}")
-    # Define fallback classes with proper implementations
+    # Fast-fail implementations - raise exceptions immediately when dependencies are missing
     class UnifiedCrossValidator:
-        """Fallback implementation of UnifiedCrossValidator with basic functionality."""
-        
-        def __init__(self, n_splits: int = 5, test_size: float = 0.2, random_state: int = None, **kwargs):
-            """Initialize the cross validator."""
-            self.n_splits = n_splits
-            self.test_size = test_size
-            self.random_state = random_state
-            self.splits_ = None
-            self.validation_scores_ = []
-            
-            if TPRINT_AVAILABLE:
-                tprint_info(f"UnifiedCrossValidator initialized with {n_splits} splits")
-        
-        def split(self, X, y=None, groups=None):
-            """Generate train/test splits."""
-            from sklearn.model_selection import train_test_split
-            import numpy as np
-            
-            if self.random_state is not None:
-                np.random.seed(self.random_state)
-            
-            self.splits_ = []
-            for i in range(self.n_splits):
-                if groups is not None:
-                    # Group-based splitting
-                    unique_groups = np.unique(groups)
-                    n_groups = len(unique_groups)
-                    test_groups = np.random.choice(unique_groups, 
-                                                 size=int(n_groups * self.test_size), 
-                                                 replace=False)
-                    test_mask = np.isin(groups, test_groups)
-                    train_mask = ~test_mask
-                    
-                    train_idx = np.where(train_mask)[0]
-                    test_idx = np.where(test_mask)[0]
-                else:
-                    # Random splitting
-                    train_idx, test_idx = train_test_split(
-                        range(len(X)), 
-                        test_size=self.test_size, 
-                        random_state=self.random_state + i if self.random_state is not None else None
-                    )
-                
-                self.splits_.append((train_idx, test_idx))
-                yield train_idx, test_idx
-        
-        def get_n_splits(self, X=None, y=None, groups=None):
-            """Get number of splits."""
-            return self.n_splits
-        
-        def cross_val_score(self, estimator, X, y=None, groups=None, scoring=None, cv=None, **kwargs):
-            """Perform cross-validation scoring."""
-            from sklearn.model_selection import cross_val_score as sklearn_cv_score
-            from sklearn.metrics import accuracy_score, mean_squared_error
-            
-            if scoring is None:
-                scoring = 'accuracy' if hasattr(estimator, 'predict') else 'neg_mean_squared_error'
-            
-            if cv is None:
-                cv = self
-            
-            try:
-                scores = sklearn_cv_score(estimator, X, y, groups=groups, scoring=scoring, cv=cv, **kwargs)
-                self.validation_scores_ = scores
-                return scores
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Cross-validation failed: {e}")
-                return np.array([0.0] * self.n_splits)
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
-    def perform_cross_validation(estimator, X, y=None, cv=None, scoring=None, **kwargs):
-        """Perform cross-validation with fallback implementation."""
-        if cv is None:
-            cv = UnifiedCrossValidator()
-        
-        if scoring is None:
-            scoring = 'accuracy' if hasattr(estimator, 'predict') else 'neg_mean_squared_error'
-        
-        try:
-            return cv.cross_val_score(estimator, X, y, scoring=scoring, **kwargs)
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"Cross-validation failed: {e}")
-            return np.array([0.0] * cv.get_n_splits())
+    def perform_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
-    def temporal_cross_validation(X, y=None, n_splits=5, test_size=0.2, **kwargs):
-        """Perform temporal cross-validation with fallback implementation."""
-        from sklearn.model_selection import TimeSeriesSplit
-        
-        try:
-            tscv = TimeSeriesSplit(n_splits=n_splits)
-            splits = []
-            for train_idx, test_idx in tscv.split(X):
-                splits.append((train_idx, test_idx))
-            return splits
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"Temporal cross-validation failed: {e}")
-            return []
+    def temporal_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
-    def analyze_splits(splits, X, y=None, **kwargs):
-        """Analyze cross-validation splits with fallback implementation."""
-        try:
-            analysis = {
-                'n_splits': len(splits),
-                'train_sizes': [len(train_idx) for train_idx, _ in splits],
-                'test_sizes': [len(test_idx) for _, test_idx in splits],
-                'overlap_ratio': 0.0  # Simplified overlap calculation
-            }
-            
-            if y is not None:
-                # Analyze target distribution in splits
-                train_targets = [y[train_idx] for train_idx, _ in splits]
-                test_targets = [y[test_idx] for _, test_idx in splits]
-                
-                analysis['train_target_mean'] = [np.mean(targets) for targets in train_targets]
-                analysis['test_target_mean'] = [np.mean(targets) for targets in test_targets]
-                analysis['target_balance'] = np.std(analysis['train_target_mean'])
-            
-            return analysis
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"Split analysis failed: {e}")
-            return {'n_splits': len(splits), 'error': str(e)}
+    def analyze_splits(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
-    def validate_cv_integrity(splits, X, y=None, **kwargs):
-        """Validate cross-validation integrity with fallback implementation."""
-        try:
-            validation_results = {
-                'is_valid': True,
-                'issues': [],
-                'warnings': []
-            }
-            
-            # Check if all splits have reasonable sizes
-            for i, (train_idx, test_idx) in enumerate(splits):
-                if len(train_idx) < 10:
-                    validation_results['issues'].append(f"Split {i}: train set too small ({len(train_idx)} samples)")
-                    validation_results['is_valid'] = False
-                
-                if len(test_idx) < 5:
-                    validation_results['issues'].append(f"Split {i}: test set too small ({len(test_idx)} samples)")
-                    validation_results['is_valid'] = False
-                
-                # Check for overlap
-                overlap = set(train_idx) & set(test_idx)
-                if overlap:
-                    validation_results['issues'].append(f"Split {i}: data leakage detected ({len(overlap)} overlapping samples)")
-                    validation_results['is_valid'] = False
-            
-            return validation_results
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"CV integrity validation failed: {e}")
-            return {'is_valid': False, 'issues': [str(e)], 'warnings': []}
+    def validate_cv_integrity(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
     class DataLeakageDetector:
-        """Fallback implementation of DataLeakageDetector with basic functionality."""
-        
-        def __init__(self, threshold: float = 0.8, **kwargs):
-            """Initialize the data leakage detector."""
-            self.threshold = threshold
-            self.leakage_scores_ = {}
-            self.detected_leakage_ = []
-            
-            if TPRINT_AVAILABLE:
-                tprint_info(f"DataLeakageDetector initialized with threshold {threshold}")
-        
-        def detect_leakage(self, X, y=None, feature_names=None, **kwargs):
-            """Detect potential data leakage."""
-            try:
-                leakage_results = {
-                    'leakage_detected': False,
-                    'leakage_scores': {},
-                    'suspicious_features': [],
-                    'recommendations': []
-                }
-                
-                if feature_names is None:
-                    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
-                
-                # Check for perfect correlation with target
-                if y is not None:
-                    for i, feature_name in enumerate(feature_names):
-                        try:
-                            corr = np.corrcoef(X[:, i], y)[0, 1]
-                            if not np.isnan(corr) and abs(corr) > self.threshold:
-                                leakage_results['leakage_scores'][feature_name] = abs(corr)
-                                leakage_results['suspicious_features'].append(feature_name)
-                                leakage_results['leakage_detected'] = True
-                        except Exception:
-                            continue
-                
-                # Check for duplicate features
-                for i, feature_name in enumerate(feature_names):
-                    for j, other_name in enumerate(feature_names[i+1:], i+1):
-                        try:
-                            corr = np.corrcoef(X[:, i], X[:, j])[0, 1]
-                            if not np.isnan(corr) and abs(corr) > 0.99:
-                                leakage_results['suspicious_features'].extend([feature_name, other_name])
-                                leakage_results['leakage_detected'] = True
-                        except Exception:
-                            continue
-                
-                self.leakage_scores_ = leakage_results['leakage_scores']
-                self.detected_leakage_ = leakage_results['suspicious_features']
-                
-                return leakage_results
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Data leakage detection failed: {e}")
-                return {'leakage_detected': False, 'error': str(e)}
-        
-        def get_leakage_summary(self):
-            """Get summary of detected leakage."""
-            return {
-                'n_suspicious_features': len(self.detected_leakage_),
-                'leakage_scores': self.leakage_scores_,
-                'suspicious_features': self.detected_leakage_
-            }
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
     class EnhancedValidationFramework:
-        """Fallback implementation of EnhancedValidationFramework with basic functionality."""
-        
-        def __init__(self, validation_methods=None, **kwargs):
-            """Initialize the enhanced validation framework."""
-            self.validation_methods = validation_methods or ['holdout', 'kfold', 'stratified']
-            self.validation_results_ = {}
-            self.best_method_ = None
-            
-            if TPRINT_AVAILABLE:
-                tprint_info(f"EnhancedValidationFramework initialized with methods: {self.validation_methods}")
-        
-        def validate_model(self, estimator, X, y=None, validation_method='holdout', **kwargs):
-            """Validate model using specified method."""
-            try:
-                if validation_method == 'holdout':
-                    return self._holdout_validation(estimator, X, y, **kwargs)
-                elif validation_method == 'kfold':
-                    return self._kfold_validation(estimator, X, y, **kwargs)
-                elif validation_method == 'stratified':
-                    return self._stratified_validation(estimator, X, y, **kwargs)
-                else:
-                    raise ValueError(f"Unknown validation method: {validation_method}")
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Model validation failed: {e}")
-                return {'score': 0.0, 'error': str(e)}
-        
-        def _holdout_validation(self, estimator, X, y, test_size=0.2, random_state=None, **kwargs):
-            """Perform holdout validation."""
-            from sklearn.model_selection import train_test_split
-            from sklearn.metrics import accuracy_score, mean_squared_error
-            
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=random_state
-            )
-            
-            estimator.fit(X_train, y_train)
-            y_pred = estimator.predict(X_test)
-            
-            if hasattr(estimator, 'predict_proba'):
-                score = accuracy_score(y_test, y_pred)
-            else:
-                score = -mean_squared_error(y_test, y_pred)
-            
-            return {'score': score, 'method': 'holdout'}
-        
-        def _kfold_validation(self, estimator, X, y, n_splits=5, **kwargs):
-            """Perform k-fold validation."""
-            from sklearn.model_selection import KFold
-            from sklearn.metrics import accuracy_score, mean_squared_error
-            
-            kf = KFold(n_splits=n_splits, shuffle=True)
-            scores = []
-            
-            for train_idx, test_idx in kf.split(X):
-                X_train, X_test = X[train_idx], X[test_idx]
-                y_train, y_test = y[train_idx], y[test_idx]
-                
-                estimator.fit(X_train, y_train)
-                y_pred = estimator.predict(X_test)
-                
-                if hasattr(estimator, 'predict_proba'):
-                    score = accuracy_score(y_test, y_pred)
-                else:
-                    score = -mean_squared_error(y_test, y_pred)
-                
-                scores.append(score)
-            
-            return {'score': np.mean(scores), 'scores': scores, 'method': 'kfold'}
-        
-        def _stratified_validation(self, estimator, X, y, n_splits=5, **kwargs):
-            """Perform stratified validation."""
-            from sklearn.model_selection import StratifiedKFold
-            from sklearn.metrics import accuracy_score
-            
-            skf = StratifiedKFold(n_splits=n_splits, shuffle=True)
-            scores = []
-            
-            for train_idx, test_idx in skf.split(X, y):
-                X_train, X_test = X[train_idx], X[test_idx]
-                y_train, y_test = y[train_idx], y[test_idx]
-                
-                estimator.fit(X_train, y_train)
-                y_pred = estimator.predict(X_test)
-                score = accuracy_score(y_test, y_pred)
-                scores.append(score)
-            
-            return {'score': np.mean(scores), 'scores': scores, 'method': 'stratified'}
-        
-        def get_validation_summary(self):
-            """Get validation summary."""
-            return {
-                'validation_results': self.validation_results_,
-                'best_method': self.best_method_,
-                'available_methods': self.validation_methods
-            }
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
     class StabilityAnalyzer:
-        """Fallback implementation of StabilityAnalyzer with basic functionality."""
-        
-        def __init__(self, stability_threshold=0.1, **kwargs):
-            """Initialize the stability analyzer."""
-            self.stability_threshold = stability_threshold
-            self.stability_scores_ = {}
-            self.stability_report_ = {}
-            
-            if TPRINT_AVAILABLE:
-                tprint_info(f"StabilityAnalyzer initialized with threshold {stability_threshold}")
-        
-        def analyze_stability(self, X, y=None, feature_names=None, **kwargs):
-            """Analyze stability of features."""
-            try:
-                stability_results = {
-                    'overall_stability': 0.0,
-                    'feature_stability': {},
-                    'unstable_features': [],
-                    'stability_issues': []
-                }
-                
-                if feature_names is None:
-                    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
-                
-                # Calculate stability for each feature
-                for i, feature_name in enumerate(feature_names):
-                    feature_data = X[:, i]
-                    
-                    # Calculate coefficient of variation as stability measure
-                    mean_val = np.mean(feature_data)
-                    std_val = np.std(feature_data)
-                    
-                    if mean_val != 0:
-                        cv = std_val / abs(mean_val)
-                        stability = 1.0 / (1.0 + cv)  # Higher is more stable
-                    else:
-                        stability = 0.0
-                    
-                    stability_results['feature_stability'][feature_name] = stability
-                    
-                    if stability < self.stability_threshold:
-                        stability_results['unstable_features'].append(feature_name)
-                        stability_results['stability_issues'].append(
-                            f"Feature {feature_name} is unstable (stability: {stability:.3f})"
-                        )
-                
-                # Calculate overall stability
-                stability_scores = list(stability_results['feature_stability'].values())
-                stability_results['overall_stability'] = np.mean(stability_scores) if stability_scores else 0.0
-                
-                self.stability_scores_ = stability_results['feature_stability']
-                self.stability_report_ = stability_results
-                
-                return stability_results
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Stability analysis failed: {e}")
-                return {'overall_stability': 0.0, 'error': str(e)}
-        
-        def get_stability_summary(self):
-            """Get stability summary."""
-            return {
-                'stability_scores': self.stability_scores_,
-                'stability_report': self.stability_report_,
-                'threshold': self.stability_threshold
-            }
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
     
     class OverfittingMonitor:
-        """Fallback implementation of OverfittingMonitor with basic functionality."""
-        
-        def __init__(self, overfitting_threshold=0.1, **kwargs):
-            """Initialize the overfitting monitor."""
-            self.overfitting_threshold = overfitting_threshold
-            self.training_scores_ = []
-            self.validation_scores_ = []
-            self.overfitting_detected_ = False
-            
-            if TPRINT_AVAILABLE:
-                tprint_info(f"OverfittingMonitor initialized with threshold {overfitting_threshold}")
-        
-        def monitor_overfitting(self, estimator, X_train, y_train, X_val, y_val, **kwargs):
-            """Monitor for overfitting during training."""
-            try:
-                from sklearn.metrics import accuracy_score, mean_squared_error
-                
-                # Train the model
-                estimator.fit(X_train, y_train)
-                
-                # Calculate training and validation scores
-                y_train_pred = estimator.predict(X_train)
-                y_val_pred = estimator.predict(X_val)
-                
-                if hasattr(estimator, 'predict_proba'):
-                    train_score = accuracy_score(y_train, y_train_pred)
-                    val_score = accuracy_score(y_val, y_val_pred)
-                else:
-                    train_score = -mean_squared_error(y_train, y_train_pred)
-                    val_score = -mean_squared_error(y_val, y_val_pred)
-                
-                self.training_scores_.append(train_score)
-                self.validation_scores_.append(val_score)
-                
-                # Check for overfitting
-                score_gap = train_score - val_score
-                overfitting_detected = score_gap > self.overfitting_threshold
-                
-                if overfitting_detected:
-                    self.overfitting_detected_ = True
-                    if TPRINT_AVAILABLE:
-                        tprint_warning(f"Overfitting detected: train_score={train_score:.3f}, val_score={val_score:.3f}, gap={score_gap:.3f}")
-                
-                return {
-                    'train_score': train_score,
-                    'val_score': val_score,
-                    'score_gap': score_gap,
-                    'overfitting_detected': overfitting_detected,
-                    'overfitting_severity': min(1.0, score_gap / self.overfitting_threshold)
-                }
-            except Exception as e:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"Overfitting monitoring failed: {e}")
-                return {'error': str(e), 'overfitting_detected': False}
-        
-        def get_overfitting_summary(self):
-            """Get overfitting summary."""
-            if not self.training_scores_ or not self.validation_scores_:
-                return {'overfitting_detected': False, 'message': 'No monitoring data available'}
-            
-            avg_train_score = np.mean(self.training_scores_)
-            avg_val_score = np.mean(self.validation_scores_)
-            avg_gap = avg_train_score - avg_val_score
-            
-            return {
-                'overfitting_detected': self.overfitting_detected_,
-                'avg_train_score': avg_train_score,
-                'avg_val_score': avg_val_score,
-                'avg_score_gap': avg_gap,
-                'n_observations': len(self.training_scores_)
-            }
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
 
 logger = logging.getLogger(__name__)
 
@@ -620,15 +191,13 @@ class RelationshipAnalysis:
 class StatisticalTest(ABC):
     """Abstract base class for statistical tests."""
     
-    @abstractmethod
     def test(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """Perform the statistical test."""
-        pass
+        raise NotImplementedError("Subclasses must implement the test method")
     
-    @abstractmethod
     def is_significant(self, result: Dict[str, Any], alpha: float = 0.05) -> bool:
         """Check if the result is statistically significant."""
-        pass
+        raise NotImplementedError("Subclasses must implement the is_significant method")
 
 
 class NormalityTest(StatisticalTest):

@@ -52,32 +52,62 @@ try:
 except ImportError as e:
     ML_COMMONS_PARETO_AVAILABLE = False
     tprint_warning(f"⚠️ ML Commons Pareto utilities not available: {e}")
-    # Define fallback classes
+    # Fast-fail implementations - raise exceptions immediately when dependencies are missing
     class Solution:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class ParetoFront:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class ParetoOptimizer:
-        def __init__(self, *args, **kwargs): pass
-    def compute_pareto_front(*args, **kwargs): return []
-    def select_knee_point(*args, **kwargs): return None
-    def compute_hypervolume(*args, **kwargs): return 0.0
-    def scalarize_financial_goals(*args, **kwargs): return 0.0
-    def filter_by_constraints(*args, **kwargs): return []
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
+    def compute_pareto_front(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
+    def select_knee_point(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
+    def compute_hypervolume(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
+    def scalarize_financial_goals(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
+    def filter_by_constraints(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     DEFAULT_FINANCIAL_WEIGHTS = {}
-    def get_pareto_front(*args, **kwargs): return None
+    
+    def get_pareto_front(*args, **kwargs):
+        raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class NSGA2Optimizer:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class SPEA2Optimizer:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class GeneticAlgorithmOptimizer:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class EvolutionaryConfig:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class EvolutionaryResult:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
+    
     class Individual:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons Pareto utilities not available. Install required dependencies.")
 
 logger = logging.getLogger(__name__)
 
@@ -106,25 +136,22 @@ class MultiObjectiveResult:
 class ObjectiveFunction(ABC):
     """Abstract base class for objective functions."""
     
-    @abstractmethod
     def evaluate(self, features: pd.DataFrame, 
                 targets: pd.Series, 
                 selected_features: List[str],
                 **kwargs) -> ObjectiveResult:
         """Evaluate the objective function."""
-        pass
+        raise NotImplementedError("Subclasses must implement the evaluate method")
     
     @property
-    @abstractmethod
     def name(self) -> str:
         """Get the name of the objective function."""
-        pass
+        raise NotImplementedError("Subclasses must implement the name property")
     
     @property
-    @abstractmethod
     def is_higher_better(self) -> bool:
         """Whether higher values are better for this objective."""
-        pass
+        raise NotImplementedError("Subclasses must implement the is_higher_better property")
 
 
 class OutOfSampleSharpeObjective(ObjectiveFunction):

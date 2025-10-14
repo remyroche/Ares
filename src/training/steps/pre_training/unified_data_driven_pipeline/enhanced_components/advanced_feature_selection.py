@@ -3,6 +3,8 @@ Advanced Feature Selection Component for UnifiedDataDrivenPipeline
 
 This module provides intelligent feature pre-selection from a 200+ feature bank
 with sophisticated algorithms integrated from DataDrivenInteractionGenerator.
+Enhanced with multi-stage feature selection using lightweight screening and
+advanced selection methods (mRMR, LASSO, RFE, etc.).
 """
 
 import numpy as np
@@ -35,6 +37,28 @@ except ImportError:
     rolling_corr = None
     rolling_cov = None
     warnings.warn("VectorBT not available for advanced feature selection")
+
+        # Import feature selection utilities
+        try:
+            from src.feature_selection import (
+                VectorBTMRMRSelector, VectorBTRegularizationSelector, VectorBTRFESelector,
+                MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator,
+                FeatureImportanceRanker, CorrelationBasedFilter
+            )
+            from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
+            FEATURE_SELECTION_AVAILABLE = True
+        except ImportError:
+            FEATURE_SELECTION_AVAILABLE = False
+            tprint_warning("⚠️ Advanced feature selection utilities not available")
+        
+        # Import LGBM and SHAP
+        try:
+            import lightgbm as lgb
+            import shap
+            LGBM_SHAP_AVAILABLE = True
+        except ImportError:
+            LGBM_SHAP_AVAILABLE = False
+            tprint_warning("⚠️ LightGBM/SHAP not available. Install with: pip install lightgbm shap")
 
 try:
     from src.utils.tprint import (
@@ -83,6 +107,46 @@ class FeatureSelectionConfig:
     diversity_threshold: float = 0.3
     enable_stability_analysis: bool = True
     stability_window: int = 20
+    
+    # Multi-stage selection configuration
+    enable_multi_stage_selection: bool = True
+    screening_methods: List[str] = None
+    final_selection_methods: List[str] = None
+    screening_threshold: float = 0.1
+    max_screening_features: int = 100
+    final_selection_count: int = 40
+    
+    # Lightweight screening configuration
+    enable_lightweight_screening: bool = True
+    variance_threshold: float = 1e-6
+    correlation_threshold: float = 0.95
+    mutual_info_threshold: float = 0.01
+    
+    # LGBM/SHAP configuration
+    enable_lgbm_selection: bool = True
+    lgbm_params: Dict[str, Any] = None
+    shap_threshold: float = 0.01
+    shap_sample_size: int = 1000
+    use_shap_importance: bool = True
+    
+    def __post_init__(self):
+        if self.screening_methods is None:
+            self.screening_methods = ['variance', 'correlation', 'mutual_info']
+        if self.final_selection_methods is None:
+            self.final_selection_methods = ['mrmr', 'lgbm', 'rfe']
+        if self.lgbm_params is None:
+            self.lgbm_params = {
+                'objective': 'regression',
+                'metric': 'rmse',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1,
+                'random_state': 42
+            }
 
 
 @dataclass
@@ -153,7 +217,7 @@ class AdvancedFeatureSelector:
     def select_features(self, data: pd.DataFrame, targets: Optional[pd.Series] = None, 
                        available_categories: Optional[List[str]] = None) -> FeatureSelectionResult:
         """
-        Select features using advanced data-driven approach with intelligent pre-selection.
+        Select features using advanced multi-stage data-driven approach.
         
         Args:
             data: Input data with features
@@ -163,7 +227,7 @@ class AdvancedFeatureSelector:
         Returns:
             FeatureSelectionResult with selected features and analysis
         """
-        tprint_info(f"🎯 Starting advanced feature selection from {len(data.columns)} features")
+        tprint_info(f"🎯 Starting multi-stage feature selection from {len(data.columns)} features")
         
         start_time = time.time()
         
@@ -172,73 +236,136 @@ class AdvancedFeatureSelector:
             if not self._validate_inputs(data, targets):
                 return self._create_empty_result(start_time, "Invalid inputs")
             
-            # Step 1: Categorize features
-            tprint_debug("Step 1: Categorizing features")
-            feature_categories = self._categorize_features(data.columns, available_categories)
-            
-            if not feature_categories:
-                return self._create_empty_result(start_time, "No valid feature categories found")
-            
-            # Step 2: Analyze features in each category
-            tprint_debug("Step 2: Analyzing features in each category")
-            feature_scores = self._analyze_features_by_category(data, targets, feature_categories)
-            
-            if not feature_scores:
-                return self._create_empty_result(start_time, "No valid feature scores generated")
-            
-            # Step 3: Apply diversity selection
-            tprint_debug("Step 3: Applying diversity selection")
-            diverse_features = self._select_diverse_features(feature_scores)
-            
-            if not diverse_features:
-                return self._create_empty_result(start_time, "No diverse features selected")
-            
-            # Step 4: Apply stability analysis
-            tprint_debug("Step 4: Applying stability analysis")
-            stable_features = self._apply_stability_analysis(data, diverse_features)
-            
-            if not stable_features:
-                return self._create_empty_result(start_time, "No stable features found")
-            
-            # Step 5: Final selection with category balancing
-            tprint_debug("Step 5: Final selection with category balancing")
-            selected_features = self._final_selection_with_balancing(stable_features)
-            
-            if not selected_features:
-                return self._create_empty_result(start_time, "No features selected in final step")
-            
-            # Step 6: Calculate metrics
-            tprint_debug("Step 6: Calculating selection metrics")
-            metrics = self._calculate_selection_metrics(selected_features, data, targets)
-            
-            execution_time = time.time() - start_time
-            
-            # Update performance stats
-            self.performance_stats.update({
-                'total_selections': 1,
-                'successful_selections': 1,
-                'total_execution_time': execution_time,
-                'features_analyzed': len(data.columns)
-            })
-            
-            tprint_success(f"✅ Feature selection completed in {execution_time:.3f}s")
-            tprint_info(f"🏆 Selected {len(selected_features)} features from {len(data.columns)} available")
-            
-            return FeatureSelectionResult(
-                selected_features=selected_features,
-                category_distribution=metrics['category_distribution'],
-                aspect_distribution=metrics['aspect_distribution'],
-                total_features_analyzed=len(data.columns),
-                selection_time=execution_time,
-                quality_metrics=metrics['quality_metrics'],
-                diversity_metrics=metrics['diversity_metrics'],
-                stability_metrics=metrics['stability_metrics'],
-                success=True
-            )
+            if self.config.enable_multi_stage_selection:
+                return self._multi_stage_feature_selection(data, targets, available_categories, start_time)
+            else:
+                return self._single_stage_feature_selection(data, targets, available_categories, start_time)
             
         except Exception as e:
             tprint_error(f"❌ Feature selection failed: {e}")
             return self._create_empty_result(start_time, str(e))
+    
+    def _multi_stage_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                                     available_categories: Optional[List[str]], start_time: float) -> FeatureSelectionResult:
+        """Multi-stage feature selection with lightweight screening and advanced selection."""
+        tprint_info("🔄 Using multi-stage feature selection approach")
+        
+        # Stage 1: Lightweight screening
+        tprint_debug("Stage 1: Lightweight screening")
+        screened_features = self._lightweight_screening(data, targets)
+        
+        if not screened_features:
+            return self._create_empty_result(start_time, "No features passed lightweight screening")
+        
+        tprint_success(f"✅ Stage 1: {len(screened_features)} features passed screening")
+        
+        # Stage 2: Advanced selection methods
+        tprint_debug("Stage 2: Advanced selection methods")
+        selected_features = self._advanced_selection_methods(data[screened_features], targets)
+        
+        if not selected_features:
+            tprint_warning("⚠️ Advanced selection failed, using screened features")
+            selected_features = screened_features
+        
+        tprint_success(f"✅ Stage 2: {len(selected_features)} features selected")
+        
+        # Stage 3: Final validation and metrics
+        tprint_debug("Stage 3: Final validation and metrics")
+        final_features = self._final_validation_and_metrics(data, selected_features, targets)
+        
+        execution_time = time.time() - start_time
+        
+        # Update performance stats
+        self.performance_stats.update({
+            'total_selections': 1,
+            'successful_selections': 1,
+            'total_execution_time': execution_time,
+            'features_analyzed': len(data.columns)
+        })
+        
+        tprint_success(f"✅ Multi-stage feature selection completed in {execution_time:.3f}s")
+        tprint_info(f"🏆 Selected {len(final_features)} features from {len(data.columns)} available")
+        
+        return FeatureSelectionResult(
+            selected_features=final_features,
+            category_distribution=self._calculate_category_distribution(final_features),
+            aspect_distribution=self._calculate_aspect_distribution(final_features),
+            total_features_analyzed=len(data.columns),
+            selection_time=execution_time,
+            quality_metrics=self._calculate_quality_metrics(final_features, data, targets),
+            diversity_metrics=self._calculate_diversity_metrics(final_features, data),
+            stability_metrics=self._calculate_stability_metrics(final_features, data),
+            success=True
+        )
+    
+    def _single_stage_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                                      available_categories: Optional[List[str]], start_time: float) -> FeatureSelectionResult:
+        """Single-stage feature selection (original method)."""
+        tprint_info("🔄 Using single-stage feature selection approach")
+        
+        # Step 1: Categorize features
+        tprint_debug("Step 1: Categorizing features")
+        feature_categories = self._categorize_features(data.columns, available_categories)
+        
+        if not feature_categories:
+            return self._create_empty_result(start_time, "No valid feature categories found")
+        
+        # Step 2: Analyze features in each category
+        tprint_debug("Step 2: Analyzing features in each category")
+        feature_scores = self._analyze_features_by_category(data, targets, feature_categories)
+        
+        if not feature_scores:
+            return self._create_empty_result(start_time, "No valid feature scores generated")
+        
+        # Step 3: Apply diversity selection
+        tprint_debug("Step 3: Applying diversity selection")
+        diverse_features = self._select_diverse_features(feature_scores)
+        
+        if not diverse_features:
+            return self._create_empty_result(start_time, "No diverse features selected")
+        
+        # Step 4: Apply stability analysis
+        tprint_debug("Step 4: Applying stability analysis")
+        stable_features = self._apply_stability_analysis(data, diverse_features)
+        
+        if not stable_features:
+            return self._create_empty_result(start_time, "No stable features found")
+        
+        # Step 5: Final selection with category balancing
+        tprint_debug("Step 5: Final selection with category balancing")
+        selected_features = self._final_selection_with_balancing(stable_features)
+        
+        if not selected_features:
+            return self._create_empty_result(start_time, "No features selected in final step")
+        
+        # Step 6: Calculate metrics
+        tprint_debug("Step 6: Calculating selection metrics")
+        metrics = self._calculate_selection_metrics(selected_features, data, targets)
+        
+        execution_time = time.time() - start_time
+        
+        # Update performance stats
+        self.performance_stats.update({
+            'total_selections': 1,
+            'successful_selections': 1,
+            'total_execution_time': execution_time,
+            'features_analyzed': len(data.columns)
+        })
+        
+        tprint_success(f"✅ Single-stage feature selection completed in {execution_time:.3f}s")
+        tprint_info(f"🏆 Selected {len(selected_features)} features from {len(data.columns)} available")
+        
+        return FeatureSelectionResult(
+            selected_features=selected_features,
+            category_distribution=metrics['category_distribution'],
+            aspect_distribution=metrics['aspect_distribution'],
+            total_features_analyzed=len(data.columns),
+            selection_time=execution_time,
+            quality_metrics=metrics['quality_metrics'],
+            diversity_metrics=metrics['diversity_metrics'],
+            stability_metrics=metrics['stability_metrics'],
+            success=True
+        )
     
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
@@ -976,6 +1103,456 @@ class AdvancedFeatureSelector:
             return float(stability.mean())
         except:
             return 0.0
+    
+    def _lightweight_screening(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> List[str]:
+        """Lightweight screening using computationally efficient methods."""
+        tprint_debug("🔍 Starting lightweight screening")
+        
+        if not self.config.enable_lightweight_screening:
+            tprint_debug("Lightweight screening disabled, using all features")
+            return list(data.columns)
+        
+        screened_features = set(data.columns)
+        
+        try:
+            # Method 1: Variance screening
+            if 'variance' in self.config.screening_methods:
+                tprint_debug("📊 Applying variance screening")
+                variance_features = self._variance_screening(data)
+                screened_features = screened_features.intersection(variance_features)
+                tprint_debug(f"Variance screening: {len(variance_features)} features passed")
+            
+            # Method 2: Correlation screening
+            if 'correlation' in self.config.screening_methods and targets is not None:
+                tprint_debug("📊 Applying correlation screening")
+                correlation_features = self._correlation_screening(data, targets)
+                screened_features = screened_features.intersection(correlation_features)
+                tprint_debug(f"Correlation screening: {len(correlation_features)} features passed")
+            
+            # Method 3: Mutual information screening
+            if 'mutual_info' in self.config.screening_methods and targets is not None:
+                tprint_debug("📊 Applying mutual information screening")
+                mi_features = self._mutual_info_screening(data, targets)
+                screened_features = screened_features.intersection(mi_features)
+                tprint_debug(f"Mutual information screening: {len(mi_features)} features passed")
+            
+            # Limit to max screening features
+            screened_features = list(screened_features)
+            if len(screened_features) > self.config.max_screening_features:
+                # Sort by variance and take top features
+                variances = data[screened_features].var()
+                top_features = variances.nlargest(self.config.max_screening_features).index.tolist()
+                screened_features = top_features
+                tprint_debug(f"Limited to top {self.config.max_screening_features} features by variance")
+            
+            tprint_success(f"✅ Lightweight screening completed: {len(screened_features)} features")
+            return screened_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Lightweight screening failed: {e}, using all features")
+            return list(data.columns)
+    
+    def _variance_screening(self, data: pd.DataFrame) -> List[str]:
+        """Screen features based on variance threshold."""
+        try:
+            variances = data.var()
+            valid_features = variances[variances >= self.config.variance_threshold].index.tolist()
+            return valid_features
+        except Exception as e:
+            tprint_warning(f"Variance screening failed: {e}")
+            return list(data.columns)
+    
+    def _correlation_screening(self, data: pd.DataFrame, targets: pd.Series) -> List[str]:
+        """Screen features based on correlation with target."""
+        try:
+            correlations = data.corrwith(targets).abs()
+            valid_features = correlations[correlations >= self.config.screening_threshold].index.tolist()
+            return valid_features
+        except Exception as e:
+            tprint_warning(f"Correlation screening failed: {e}")
+            return list(data.columns)
+    
+    def _mutual_info_screening(self, data: pd.DataFrame, targets: pd.Series) -> List[str]:
+        """Screen features based on mutual information with target."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            
+            # Handle non-numeric data
+            numeric_data = data.select_dtypes(include=[np.number])
+            if numeric_data.empty:
+                return list(data.columns)
+            
+            mi_scores = mutual_info_regression(numeric_data, targets, random_state=42)
+            mi_series = pd.Series(mi_scores, index=numeric_data.columns)
+            valid_features = mi_series[mi_series >= self.config.mutual_info_threshold].index.tolist()
+            return valid_features
+        except Exception as e:
+            tprint_warning(f"Mutual information screening failed: {e}")
+            return list(data.columns)
+    
+    def _advanced_selection_methods(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> List[str]:
+        """Apply advanced selection methods (mRMR, LASSO, RFE, etc.)."""
+        tprint_debug("🔍 Starting advanced selection methods")
+        
+        if not FEATURE_SELECTION_AVAILABLE:
+            tprint_warning("⚠️ Advanced feature selection utilities not available, using all features")
+            return list(data.columns)
+        
+        try:
+            # Convert to numpy arrays for compatibility
+            X = data.values
+            y = targets.values if targets is not None else None
+            feature_names = list(data.columns)
+            
+            # Collect results from different methods
+            method_results = {}
+            
+            # Method 1: mRMR
+            if 'mrmr' in self.config.final_selection_methods:
+                tprint_debug("📊 Applying mRMR selection")
+                try:
+                    if VECTORBT_AVAILABLE:
+                        mrmr_selector = VectorBTMRMRSelector()
+                        mrmr_result = mrmr_selector.select_features(
+                            X, y, k=self.config.final_selection_count, 
+                            feature_names=feature_names
+                        )
+                    else:
+                        mrmr_selector = MRMRSelector()
+                        mrmr_result = mrmr_selector.select_features(
+                            X, y, feature_names, self.config.final_selection_count
+                        )
+                    
+                    if mrmr_result.get('success', False):
+                        method_results['mrmr'] = mrmr_result['selected_features']
+                        tprint_debug(f"mRMR: {len(method_results['mrmr'])} features selected")
+                except Exception as e:
+                    tprint_warning(f"mRMR selection failed: {e}")
+            
+            # Method 2: LGBM/SHAP
+            if 'lgbm' in self.config.final_selection_methods:
+                tprint_debug("📊 Applying LGBM/SHAP selection")
+                try:
+                    if LGBM_SHAP_AVAILABLE:
+                        lgbm_result = self._lgbm_shap_selection(data, targets)
+                        if lgbm_result:
+                            method_results['lgbm'] = lgbm_result
+                            tprint_debug(f"LGBM/SHAP: {len(method_results['lgbm'])} features selected")
+                    else:
+                        tprint_warning("⚠️ LightGBM/SHAP not available, skipping LGBM selection")
+                except Exception as e:
+                    tprint_warning(f"LGBM/SHAP selection failed: {e}")
+            
+            # Method 3: RFE
+            if 'rfe' in self.config.final_selection_methods:
+                tprint_debug("📊 Applying RFE selection")
+                try:
+                    if VECTORBT_AVAILABLE:
+                        rfe_selector = VectorBTRFESelector()
+                        rfe_result = rfe_selector.select_features(
+                            X, y, k=self.config.final_selection_count,
+                            feature_names=feature_names
+                        )
+                    else:
+                        rfe_selector = RecursiveFeatureEliminator()
+                        rfe_result = rfe_selector.select_features(
+                            X, y, feature_names, self.config.final_selection_count
+                        )
+                    
+                    if rfe_result.get('success', False):
+                        method_results['rfe'] = rfe_result['selected_features']
+                        tprint_debug(f"RFE: {len(method_results['rfe'])} features selected")
+                except Exception as e:
+                    tprint_warning(f"RFE selection failed: {e}")
+            
+            # Method 4: Feature Importance
+            if 'importance' in self.config.final_selection_methods:
+                tprint_debug("📊 Applying feature importance selection")
+                try:
+                    importance_selector = FeatureImportanceRanker()
+                    importance_result = importance_selector.select_features(
+                        X, y, feature_names, self.config.final_selection_count
+                    )
+                    
+                    if importance_result.get('success', False):
+                        method_results['importance'] = importance_result['selected_features']
+                        tprint_debug(f"Importance: {len(method_results['importance'])} features selected")
+                except Exception as e:
+                    tprint_warning(f"Feature importance selection failed: {e}")
+            
+            # Combine results using voting
+            if method_results:
+                selected_features = self._combine_selection_results(method_results)
+                tprint_success(f"✅ Advanced selection completed: {len(selected_features)} features")
+                return selected_features
+            else:
+                tprint_warning("⚠️ No advanced selection methods succeeded, using all features")
+                return list(data.columns)
+                
+        except Exception as e:
+            tprint_error(f"❌ Advanced selection methods failed: {e}")
+            return list(data.columns)
+    
+    def _combine_selection_results(self, method_results: Dict[str, List[str]]) -> List[str]:
+        """Combine results from multiple selection methods using voting."""
+        tprint_debug("🔄 Combining selection results using voting")
+        
+        try:
+            # Count votes for each feature
+            feature_votes = {}
+            for method, features in method_results.items():
+                for feature in features:
+                    feature_votes[feature] = feature_votes.get(feature, 0) + 1
+            
+            # Sort by vote count
+            sorted_features = sorted(feature_votes.items(), key=lambda x: x[1], reverse=True)
+            
+            # Select top features
+            selected_features = [feature for feature, votes in sorted_features[:self.config.final_selection_count]]
+            
+            tprint_debug(f"Voting results: {len(selected_features)} features selected")
+            return selected_features
+            
+        except Exception as e:
+            tprint_warning(f"Result combination failed: {e}")
+            # Fallback: use features from the first successful method
+            for method, features in method_results.items():
+                return features[:self.config.final_selection_count]
+            
+            return []
+    
+    def _final_validation_and_metrics(self, data: pd.DataFrame, selected_features: List[str], 
+                                    targets: Optional[pd.Series]) -> List[FeatureScore]:
+        """Final validation and create FeatureScore objects."""
+        tprint_debug("🔍 Final validation and metrics calculation")
+        
+        try:
+            final_features = []
+            
+            for feature_name in selected_features:
+                if feature_name not in data.columns:
+                    continue
+                
+                feature_series = data[feature_name]
+                
+                # Calculate metrics
+                variance = feature_series.var()
+                correlation_with_target = 0.0
+                if targets is not None:
+                    try:
+                        correlation = feature_series.corr(targets)
+                        correlation_with_target = abs(correlation) if not pd.isna(correlation) else 0.0
+                    except:
+                        correlation_with_target = 0.0
+                
+                # Calculate information content
+                information_content = self._calculate_information_content_vectorbt(feature_series)
+                
+                # Calculate uniqueness score
+                uniqueness_score = self._calculate_uniqueness_score_vectorbt(feature_series, data)
+                
+                # Calculate stability score
+                stability_score = self._calculate_stability_score_vectorbt(feature_series)
+                
+                # Calculate predictability score
+                predictability_score = self._calculate_predictability_score_vectorbt(feature_series)
+                
+                # Determine category and aspect
+                category, aspect_type = self._classify_feature(feature_name)
+                
+                # Calculate composite score
+                composite_score = self._calculate_composite_score(
+                    variance, correlation_with_target, information_content,
+                    uniqueness_score, stability_score, predictability_score, category
+                )
+                
+                # Create FeatureScore object
+                feature_score = FeatureScore(
+                    feature_name=feature_name,
+                    category=category,
+                    aspect_type=aspect_type,
+                    score=composite_score,
+                    variance=variance,
+                    correlation_with_target=correlation_with_target,
+                    information_content=information_content,
+                    uniqueness_score=uniqueness_score,
+                    stability_score=stability_score,
+                    predictability_score=predictability_score,
+                    metadata={
+                        'multi_stage_selection': True,
+                        'final_validation': True,
+                        'analysis_timestamp': time.time()
+                    }
+                )
+                
+                final_features.append(feature_score)
+            
+            tprint_success(f"✅ Final validation completed: {len(final_features)} features")
+            return final_features
+            
+        except Exception as e:
+            tprint_error(f"❌ Final validation failed: {e}")
+            return []
+    
+    def _calculate_category_distribution(self, features: List[FeatureScore]) -> Dict[str, int]:
+        """Calculate category distribution of selected features."""
+        distribution = defaultdict(int)
+        for feature in features:
+            distribution[feature.category] += 1
+        return dict(distribution)
+    
+    def _calculate_aspect_distribution(self, features: List[FeatureScore]) -> Dict[str, int]:
+        """Calculate aspect distribution of selected features."""
+        distribution = defaultdict(int)
+        for feature in features:
+            distribution[feature.aspect_type] += 1
+        return dict(distribution)
+    
+    def _calculate_quality_metrics(self, features: List[FeatureScore], data: pd.DataFrame, 
+                                 targets: Optional[pd.Series]) -> Dict[str, Any]:
+        """Calculate quality metrics for selected features."""
+        if not features:
+            return {}
+        
+        scores = [f.score for f in features]
+        variances = [f.variance for f in features]
+        correlations = [f.correlation_with_target for f in features]
+        information_contents = [f.information_content for f in features]
+        uniqueness_scores = [f.uniqueness_score for f in features]
+        
+        return {
+            'average_score': np.mean(scores),
+            'max_score': np.max(scores),
+            'min_score': np.min(scores),
+            'average_variance': np.mean(variances),
+            'average_correlation': np.mean(correlations),
+            'average_information_content': np.mean(information_contents),
+            'average_uniqueness': np.mean(uniqueness_scores),
+            'score_std': np.std(scores),
+            'total_features': len(features)
+        }
+    
+    def _calculate_diversity_metrics(self, features: List[FeatureScore], data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate diversity metrics for selected features."""
+        if not features:
+            return {}
+        
+        categories = [f.category for f in features]
+        aspects = [f.aspect_type for f in features]
+        
+        return {
+            'category_diversity': len(set(categories)),
+            'aspect_diversity': len(set(aspects)),
+            'average_uniqueness': np.mean([f.uniqueness_score for f in features]),
+            'min_uniqueness': min([f.uniqueness_score for f in features]),
+            'max_uniqueness': max([f.uniqueness_score for f in features])
+        }
+    
+    def _calculate_stability_metrics(self, features: List[FeatureScore], data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate stability metrics for selected features."""
+        if not features:
+            return {}
+        
+        stability_scores = [f.stability_score for f in features]
+        predictability_scores = [f.predictability_score for f in features]
+        
+        return {
+            'average_stability': np.mean(stability_scores),
+            'min_stability': min(stability_scores),
+            'max_stability': max(stability_scores),
+            'average_predictability': np.mean(predictability_scores)
+        }
+    
+    def _lgbm_shap_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> List[str]:
+        """Select features using LightGBM and SHAP importance."""
+        if not LGBM_SHAP_AVAILABLE or targets is None:
+            return []
+        
+        try:
+            import lightgbm as lgb
+            import shap
+            
+            tprint_debug("🔍 Starting LGBM/SHAP feature selection")
+            
+            # Prepare data
+            X = data.values
+            y = targets.values
+            feature_names = list(data.columns)
+            
+            # Create LightGBM dataset
+            train_data = lgb.Dataset(X, label=y, feature_name=feature_names)
+            
+            # Train LightGBM model
+            model = lgb.train(
+                self.config.lgbm_params,
+                train_data,
+                num_boost_round=100,
+                valid_sets=[train_data],
+                callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
+            )
+            
+            # Get feature importance from LightGBM
+            lgb_importance = model.feature_importance(importance_type='gain')
+            lgb_importance_dict = dict(zip(feature_names, lgb_importance))
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(model)
+            
+            # Sample data for SHAP calculation if dataset is too large
+            if len(X) > self.config.shap_sample_size:
+                sample_indices = np.random.choice(len(X), self.config.shap_sample_size, replace=False)
+                X_sample = X[sample_indices]
+            else:
+                X_sample = X
+            
+            shap_values = explainer.shap_values(X_sample)
+            
+            # Calculate mean absolute SHAP values
+            if len(shap_values.shape) > 1:
+                shap_importance = np.mean(np.abs(shap_values), axis=0)
+            else:
+                shap_importance = np.abs(shap_values)
+            
+            shap_importance_dict = dict(zip(feature_names, shap_importance))
+            
+            # Combine LGBM and SHAP importance
+            combined_importance = {}
+            for feature in feature_names:
+                lgb_score = lgb_importance_dict.get(feature, 0)
+                shap_score = shap_importance_dict.get(feature, 0)
+                
+                # Normalize scores
+                lgb_norm = lgb_score / (max(lgb_importance) + 1e-8)
+                shap_norm = shap_score / (max(shap_importance) + 1e-8)
+                
+                # Weighted combination (70% SHAP, 30% LGBM)
+                combined_importance[feature] = 0.7 * shap_norm + 0.3 * lgb_norm
+            
+            # Select features above threshold
+            if self.config.use_shap_importance:
+                # Use SHAP threshold
+                selected_features = [
+                    feature for feature, importance in combined_importance.items()
+                    if importance > self.config.shap_threshold
+                ]
+            else:
+                # Use top N features
+                sorted_features = sorted(combined_importance.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [feature for feature, _ in sorted_features[:self.config.final_selection_count]]
+            
+            # Ensure we don't exceed the maximum number of features
+            if len(selected_features) > self.config.final_selection_count:
+                sorted_features = sorted(combined_importance.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [feature for feature, _ in sorted_features[:self.config.final_selection_count]]
+            
+            tprint_debug(f"LGBM/SHAP selection: {len(selected_features)} features selected")
+            tprint_debug(f"Top 5 features: {selected_features[:5]}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_warning(f"LGBM/SHAP selection failed: {e}")
+            return []
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""

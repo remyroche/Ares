@@ -1631,6 +1631,32 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _advanced_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
+        """Advanced multi-stage feature selection from 200+ feature bank."""
+        tprint_debug("Starting advanced multi-stage feature selection")
+        
+        try:
+            # Configure multi-stage selection
+            if not hasattr(self.advanced_feature_selector.config, 'enable_multi_stage_selection'):
+                # Update config for multi-stage selection
+                self.advanced_feature_selector.config.enable_multi_stage_selection = True
+                self.advanced_feature_selector.config.enable_lightweight_screening = True
+                self.advanced_feature_selector.config.screening_methods = ['variance', 'correlation', 'mutual_info']
+                self.advanced_feature_selector.config.final_selection_methods = ['mrmr', 'lgbm', 'rfe']
+                self.advanced_feature_selector.config.max_screening_features = 100
+                self.advanced_feature_selector.config.final_selection_count = 40
+                tprint_info("🔧 Configured multi-stage feature selection")
+            
+            # Use the enhanced advanced feature selector
+            selection_result = self.advanced_feature_selector.select_features(data, targets)
+            
+            if selection_result.success:
+                tprint_success(f"✅ Multi-stage feature selection completed: {len(selection_result.selected_features)} features selected")
+                tprint_info(f"📊 Quality metrics: {selection_result.quality_metrics}")
+                tprint_info(f"📊 Diversity metrics: {selection_result.diversity_metrics}")
+                tprint_info(f"📊 Stability metrics: {selection_result.stability_metrics}")
+                return selection_result
+            else:
+                tprint_error(f"Multi-stage feature selection failed: {selection_result.error_message}")
         """Advanced feature selection from 200+ feature bank with enhanced validation and data leakage detection."""
         tprint_debug("Starting advanced feature selection with ML Common enhancements")
         
@@ -1756,7 +1782,7 @@ class UnifiedDataDrivenPipeline:
             return selection_result
                 
         except Exception as e:
-            tprint_error(f"Advanced feature selection failed: {e}")
+            tprint_error(f"Advanced multi-stage feature selection failed: {e}")
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
@@ -2741,18 +2767,22 @@ class UnifiedDataDrivenPipeline:
             }
     
     def _final_feature_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Any:
-        """Final feature selection using multi-objective optimization."""
-        tprint_debug("Starting final feature selection")
+        """Final feature selection using enhanced multi-objective optimization."""
+        tprint_debug("Starting enhanced final feature selection")
         
         try:
-            # Use the multi-objective feature selector
+            # Use the enhanced multi-objective feature selector
             selection_result = self.feature_selector.select_features(data, targets)
             
-            if selection_result:
-                tprint_success(f"✅ Final feature selection completed: {len(selection_result.selected_features)} features selected")
+            if selection_result and hasattr(selection_result, 'selected_features'):
+                tprint_success(f"✅ Enhanced final feature selection completed: {len(selection_result.selected_features)} features selected")
+                if hasattr(selection_result, 'objective_values'):
+                    tprint_info(f"📊 Objective values: {selection_result.objective_values}")
+                if hasattr(selection_result, 'quality_metrics'):
+                    tprint_info(f"📊 Quality metrics: {selection_result.quality_metrics}")
                 return selection_result
             else:
-                tprint_warning("⚠️ Final feature selection failed, using all available features")
+                tprint_warning("⚠️ Enhanced final feature selection failed, using all available features")
                 return type('FeatureSelectionResult', (), {
                     'selected_features': list(data.columns),
                     'objective_values': {},
@@ -2760,7 +2790,7 @@ class UnifiedDataDrivenPipeline:
                 })()
                 
         except Exception as e:
-            tprint_error(f"Final feature selection failed: {e}")
+            tprint_error(f"Enhanced final feature selection failed: {e}")
             return type('FeatureSelectionResult', (), {
                 'selected_features': list(data.columns),
                 'objective_values': {},

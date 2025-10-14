@@ -315,16 +315,6 @@ class ConsolidatedPipelineResult:
     lookback_optimization_metrics: Dict[str, Any] = None
     performance_monitoring_data: Dict[str, Any] = None
     
-    # ML Common ensemble metrics
-    ensemble_models: List[str] = None
-    ensemble_performance: Dict[str, float] = None
-    ensemble_diversity_score: float = 0.0
-    ensemble_stability_score: float = 0.0
-    oof_ensemble: Any = None
-    oof_metrics: Dict[str, Any] = None
-    oof_test_accuracy: float = 0.0
-    oof_test_f1: float = 0.0
-    
     # Configuration used
     config: Optional[UnifiedPipelineConfig] = None
     
@@ -1109,20 +1099,11 @@ class UnifiedDataDrivenPipeline:
             tprint_info("Step 8: Final feature selection")
             final_selection_results = self._final_feature_selection(processed_data, processed_targets)
             
-            # Step 8.5: Create ensemble models using ML Common utilities
-            tprint_info("Step 8.5: Creating ensemble models with ML Common utilities")
-            ensemble_results = await self._create_ensemble_models(processed_data, processed_targets)
-            
-            # Step 8.6: Create OOF stacking ensemble
-            tprint_info("Step 8.6: Creating OOF stacking ensemble")
-            oof_ensemble_results = self._create_oof_stacking_ensemble(processed_data, processed_targets)
-            
             # Step 9: Combine all results
             tprint_info("Step 9: Combine all results")
             combined_results = self._combine_results(
                 period_results, feature_selection_results, interaction_results, 
-                htf_results, lookback_results, enhanced_feature_results, final_selection_results,
-                ensemble_results, oof_ensemble_results
+                htf_results, lookback_results, enhanced_feature_results, final_selection_results
             )
             
             # Final comprehensive quality monitoring
@@ -1215,14 +1196,6 @@ class UnifiedDataDrivenPipeline:
                 peak_memory_usage_mb=self.performance_stats['peak_memory_usage_mb'],
                 vectorbt_operations=self.performance_stats['vectorbt_operations'],
                 cache_hit_rate=self._calculate_cache_hit_rate(),
-                ensemble_models=combined_results.get('ensemble_models', []),
-                ensemble_performance=combined_results.get('ensemble_performance', {}),
-                ensemble_diversity_score=combined_results.get('ensemble_diversity_score', 0.0),
-                ensemble_stability_score=combined_results.get('ensemble_stability_score', 0.0),
-                oof_ensemble=combined_results.get('oof_ensemble'),
-                oof_metrics=combined_results.get('oof_metrics', {}),
-                oof_test_accuracy=combined_results.get('oof_test_accuracy', 0.0),
-                oof_test_f1=combined_results.get('oof_test_f1', 0.0),
                 config=self.config,
                 success=True
             )
@@ -2702,8 +2675,7 @@ class UnifiedDataDrivenPipeline:
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 
                         lookback_results: Dict[str, Any], enhanced_feature_results: Dict[str, Any],
-                        final_selection_results: Any, ensemble_results: Dict[str, Any] = None,
-                        oof_ensemble_results: Dict[str, Any] = None) -> Dict[str, Any]:
+                        final_selection_results: Any) -> Dict[str, Any]:
         """Combine all pipeline results."""
         try:
             # Extract lookback results for backward compatibility
@@ -2742,14 +2714,6 @@ class UnifiedDataDrivenPipeline:
                 'no_features': enhanced_feature_results.get('no_features', []),
                 'comparison_features': enhanced_feature_results.get('comparison_features', []),
                 'enhanced_feature_metrics': enhanced_feature_results.get('enhanced_feature_metrics', {}),
-                'ensemble_models': ensemble_results.get('ensemble_models', []) if ensemble_results else [],
-                'ensemble_performance': ensemble_results.get('ensemble_performance', {}) if ensemble_results else {},
-                'ensemble_diversity_score': ensemble_results.get('diversity_score', 0.0) if ensemble_results else 0.0,
-                'ensemble_stability_score': ensemble_results.get('stability_score', 0.0) if ensemble_results else 0.0,
-                'oof_ensemble': oof_ensemble_results.get('oof_ensemble') if oof_ensemble_results else None,
-                'oof_metrics': oof_ensemble_results.get('oof_metrics', {}) if oof_ensemble_results else {},
-                'oof_test_accuracy': oof_ensemble_results.get('test_accuracy', 0.0) if oof_ensemble_results else 0.0,
-                'oof_test_f1': oof_ensemble_results.get('test_f1', 0.0) if oof_ensemble_results else 0.0,
                 'out_of_sample_sharpe': 0.5,  # Would be calculated from actual results
                 'max_drawdown': 0.1,  # Would be calculated from actual results
                 'stability_score': 0.8,  # Would be calculated from actual results
@@ -2777,14 +2741,6 @@ class UnifiedDataDrivenPipeline:
                 'no_features': [],
                 'comparison_features': [],
                 'enhanced_feature_metrics': {},
-                'ensemble_models': [],
-                'ensemble_performance': {},
-                'ensemble_diversity_score': 0.0,
-                'ensemble_stability_score': 0.0,
-                'oof_ensemble': None,
-                'oof_metrics': {},
-                'oof_test_accuracy': 0.0,
-                'oof_test_f1': 0.0,
                 'out_of_sample_sharpe': 0.0,
                 'max_drawdown': 0.0,
                 'stability_score': 0.0,

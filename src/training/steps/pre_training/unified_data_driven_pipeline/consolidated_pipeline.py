@@ -59,6 +59,48 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import feature_generation utilities
+try:
+    from src.feature_generation.utils import (
+        Step06UtilityContainer, UtilityConfig, get_utility_container,
+        EnhancedFeatureEngineering, FeatureGenerationOptimizer,
+        FeatureOptimizationConfig, CrossTimeframeAnalysisPipeline,
+        FractionalDifferentiationPipeline, EnhancedMatrixOperations,
+        validate_feature_quality, validate_features_dataframe,
+        feature_validation_decorator
+    )
+    FEATURE_GENERATION_AVAILABLE = True
+except ImportError as e:
+    FEATURE_GENERATION_AVAILABLE = False
+    tprint_warning(f"⚠️ Feature generation utilities not available: {e}")
+
+# Import features_common utilities
+try:
+    from src.features_common import (
+        OptimizationConfig, get_optimization_config,
+        VectorBTConfig as FeaturesCommonVectorBTConfig, get_vectorbt_config,
+        UnifiedConfig, get_unified_config,
+        OptimizationMixin, PerformanceMixin, VectorBTMixin,
+        ValidationMixin, CachingMixin, MonitoringMixin,
+        ScalerFactory, create_optimized_scaler, create_batch_scaler,
+        OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+        RegistryFactory, create_registry, create_feature_registry,
+        UnifiedFactory, create_optimized_component,
+        UnifiedVectorBTManager, get_unified_vectorbt_manager,
+        VectorBTOptimizationEngine, get_optimization_engine,
+        GPUAccelerator, get_gpu_accelerator,
+        VectorBTPerformanceMonitor, get_performance_monitor,
+        FeaturesCommonError, ValidationError, OptimizationError,
+        VectorBTError, ConfigurationError, SilentFailureError,
+        ensure_no_silent_failures, validate_input_data, safe_execute,
+        validate_configuration, check_system_health, report_silent_failures,
+        get_logger, log_operation
+    )
+    FEATURES_COMMON_AVAILABLE = True
+except ImportError as e:
+    FEATURES_COMMON_AVAILABLE = False
+    tprint_warning(f"⚠️ Features common utilities not available: {e}")
+
 # Import enhanced components
 from .enhanced_components.enhanced_walk_forward_validation import (
     AdvancedWalkForwardValidator, AdvancedWalkForwardConfig
@@ -193,12 +235,16 @@ except ImportError as e:
 
 # Import VectorBT utilities
 try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    tprint_warning("VectorBT utilities not available, using fallback implementations")
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    VECTORBT_UTILITIES_AVAILABLE = True
+    tprint_info("✅ VectorBT utilities imported successfully")
+except ImportError as e:
+    VECTORBT_UTILITIES_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    UnifiedVectorizationManager = None
+    VectorizationConfig = None
+    tprint_warning(f"⚠️ VectorBT utilities not available: {e}")
 
 # Import feature engineering roadmap utilities
 try:
@@ -364,6 +410,9 @@ class UnifiedDataDrivenPipeline:
         """
         self.config = config or create_default_config()
         
+        # Initialize utility systems first
+        self._initialize_utility_systems()
+        
         # Initialize all components
         self._initialize_core_components()
         self._initialize_enhanced_components()
@@ -374,6 +423,147 @@ class UnifiedDataDrivenPipeline:
         
         tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
         tprint_info(f"📊 Configuration: {self.config}")
+        if FEATURE_GENERATION_AVAILABLE:
+            tprint_success("✅ Feature generation utilities integrated")
+        if FEATURES_COMMON_AVAILABLE:
+            tprint_success("✅ Features common utilities integrated")
+    
+    def _initialize_utility_systems(self):
+        """Initialize utility systems from feature_generation and features_common."""
+        tprint_debug("Initializing utility systems")
+        
+        # Initialize feature generation utilities
+        if FEATURE_GENERATION_AVAILABLE:
+            try:
+                # Initialize utility container
+                self.utility_container = get_utility_container()
+                self.utility_config = UtilityConfig()
+                
+                # Initialize enhanced feature engineering
+                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                
+                # Initialize feature optimization
+                self.feature_optimizer = FeatureGenerationOptimizer()
+                self.feature_optimization_config = FeatureOptimizationConfig()
+                
+                # Initialize cross-timeframe analysis
+                self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
+                
+                # Initialize fractional differentiation
+                self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
+                
+                # Initialize matrix operations
+                self.enhanced_matrix_ops = EnhancedMatrixOperations()
+                
+                tprint_success("✅ Feature generation utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Feature generation utilities initialization failed: {e}")
+                self.utility_container = None
+                self.enhanced_feature_engineering = None
+                self.feature_optimizer = None
+                self.cross_timeframe_pipeline = None
+                self.fractional_diff_pipeline = None
+                self.enhanced_matrix_ops = None
+        else:
+            self.utility_container = None
+            self.enhanced_feature_engineering = None
+            self.feature_optimizer = None
+            self.cross_timeframe_pipeline = None
+            self.fractional_diff_pipeline = None
+            self.enhanced_matrix_ops = None
+        
+        # Initialize VectorBT utilities
+        if VECTORBT_UTILITIES_AVAILABLE:
+            try:
+                # Initialize VectorBT Rolling Optimizer
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    chunk_size=1000,
+                    fast_fail=True,
+                    enable_logging=True
+                )
+                
+                # Initialize Unified Vectorization Manager
+                vectorization_config = VectorizationConfig(
+                    enable_gpu=self.config.vectorbt_config.enable_gpu if hasattr(self.config, 'vectorbt_config') else False,
+                    enable_parallel=True,
+                    memory_efficient=True,
+                    batch_size=1000,
+                    chunk_size=1000,
+                    max_memory_gb=8.0,
+                    enable_monitoring=True
+                )
+                self.unified_vectorization_manager = UnifiedVectorizationManager(
+                    config=vectorization_config,
+                    fast_fail=True,
+                    enable_logging=True
+                )
+                
+                tprint_success("✅ VectorBT utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT utilities initialization failed: {e}")
+                self.vectorbt_rolling_optimizer = None
+                self.unified_vectorization_manager = None
+        else:
+            self.vectorbt_rolling_optimizer = None
+            self.unified_vectorization_manager = None
+
+        # Initialize features common utilities
+        if FEATURES_COMMON_AVAILABLE:
+            try:
+                # Initialize unified configuration
+                self.unified_config = get_unified_config()
+                self.optimization_config = get_optimization_config()
+                self.vectorbt_config = get_vectorbt_config()
+                
+                # Initialize unified VectorBT manager
+                self.unified_vectorbt_manager = get_unified_vectorbt_manager()
+                self.vectorbt_optimization_engine = get_optimization_engine()
+                self.gpu_accelerator = get_gpu_accelerator()
+                self.vectorbt_performance_monitor = get_performance_monitor()
+                
+                # Initialize factories
+                self.scaler_factory = ScalerFactory()
+                self.optimizer_factory = OptimizerFactory()
+                self.registry_factory = RegistryFactory()
+                self.unified_factory = UnifiedFactory()
+                
+                # Initialize enhanced scalers
+                self.optimized_scaler = create_optimized_scaler()
+                self.batch_scaler = create_batch_scaler()
+                
+                tprint_success("✅ Features common utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Features common utilities initialization failed: {e}")
+                self.unified_config = None
+                self.optimization_config = None
+                self.vectorbt_config = None
+                self.unified_vectorbt_manager = None
+                self.vectorbt_optimization_engine = None
+                self.gpu_accelerator = None
+                self.vectorbt_performance_monitor = None
+                self.scaler_factory = None
+                self.optimizer_factory = None
+                self.registry_factory = None
+                self.unified_factory = None
+                self.optimized_scaler = None
+                self.batch_scaler = None
+        else:
+            self.unified_config = None
+            self.optimization_config = None
+            self.vectorbt_config = None
+            self.unified_vectorbt_manager = None
+            self.vectorbt_optimization_engine = None
+            self.gpu_accelerator = None
+            self.vectorbt_performance_monitor = None
+            self.scaler_factory = None
+            self.optimizer_factory = None
+            self.registry_factory = None
+            self.unified_factory = None
+            self.optimized_scaler = None
+            self.batch_scaler = None
     
     def _initialize_core_components(self):
         """Initialize core pipeline components."""
@@ -821,6 +1011,12 @@ class UnifiedDataDrivenPipeline:
             'failed_pipeline_runs': 0,
             'total_execution_time': 0.0,
             'vectorbt_operations': 0,
+            'vectorized_rolling_operations': 0,
+            'unified_vectorization_operations': 0,
+            'correlation_features_generated': 0,
+            'momentum_features_generated': 0,
+            'volatility_features_generated': 0,
+            'volume_features_generated': 0,
             'economic_evaluations': 0,
             'feature_selections': 0,
             'interaction_generations': 0,
@@ -1033,6 +1229,31 @@ class UnifiedDataDrivenPipeline:
             # Step 3.5: Apply statistical transforms using feature engineering roadmap
             tprint_info("Step 3.5: Apply statistical transforms")
             transformed_features_df = self._apply_statistical_transforms(selected_features_df)
+            
+            # Step 3.6: Apply vectorized feature calculations using VectorBT utilities
+            tprint_info("Step 3.6: Apply vectorized feature calculations")
+            if VECTORBT_UTILITIES_AVAILABLE:
+                # Create feature configuration for vectorization
+                vectorization_config = {
+                    'rolling_windows': [5, 10, 20, 50, 100],
+                    'enable_correlation_features': True,
+                    'enable_momentum_features': True,
+                    'enable_volatility_features': True,
+                    'enable_volume_features': True
+                }
+                
+                # Apply optimized feature calculations
+                vectorized_features_df = self._optimized_feature_calculation(
+                    transformed_features_df, 
+                    feature_config=vectorization_config
+                )
+                
+                # Update the features dataframe with vectorized features
+                transformed_features_df = vectorized_features_df
+                tprint_success(f"✅ Vectorized feature calculations completed: {transformed_features_df.shape[1]} total features")
+            else:
+                tprint_warning("⚠️ VectorBT utilities not available, skipping vectorized feature calculations")
+            
             # Monitor data quality after feature generation
             if not selected_features_df.empty:
                 feature_quality_monitoring = self._monitor_data_quality_throughout_pipeline(
@@ -1094,6 +1315,26 @@ class UnifiedDataDrivenPipeline:
             # Step 7: LightGBM + Featuretools + ALE feature generation
             tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
             enhanced_feature_results = self._lightgbm_featuretools_generation(processed_data, processed_targets, selected_features_df)
+            
+            # Step 7.5: Apply additional vectorized operations to enhanced features
+            tprint_info("Step 7.5: Apply additional vectorized operations to enhanced features")
+            if VECTORBT_UTILITIES_AVAILABLE and enhanced_feature_results:
+                # Apply vectorized operations to the enhanced features if they exist
+                enhanced_features_data = enhanced_feature_results.get('enhanced_features', pd.DataFrame())
+                if not enhanced_features_data.empty:
+                    # Apply additional vectorized rolling operations
+                    vectorized_enhanced_features = self._vectorized_rolling_operations(
+                        enhanced_features_data, 
+                        windows=[3, 7, 14, 30]
+                    )
+                    
+                    # Update the enhanced features with vectorized operations
+                    enhanced_feature_results['vectorized_enhanced_features'] = vectorized_enhanced_features
+                    tprint_success(f"✅ Additional vectorized operations completed: {vectorized_enhanced_features.shape[1]} enhanced features")
+                else:
+                    tprint_warning("⚠️ No enhanced features available for vectorized operations")
+            else:
+                tprint_warning("⚠️ VectorBT utilities not available, skipping additional vectorized operations")
             
             # Step 8: Final feature selection
             tprint_info("Step 8: Final feature selection")
@@ -1519,10 +1760,33 @@ class UnifiedDataDrivenPipeline:
             return None
     
     def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
-        """Generate features for the selected feature set using Feature Bank integration."""
-        tprint_debug("Generating selected features using Feature Bank integration")
+        """Generate features for the selected feature set using enhanced utilities."""
+        tprint_debug("Generating selected features using enhanced utilities")
         
         try:
+            # First, try to use enhanced feature engineering if available
+            if FEATURE_GENERATION_AVAILABLE and self.enhanced_feature_engineering:
+                tprint_debug("🔧 Using enhanced feature engineering")
+                try:
+                    enhanced_features = self.enhanced_feature_engineering.generate_features(data)
+                    if enhanced_features is not None and not enhanced_features.empty:
+                        tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
+                        
+                        # Apply feature validation if available
+                        if FEATURE_GENERATION_AVAILABLE:
+                            try:
+                                validated_features = validate_features_dataframe(enhanced_features)
+                                if validated_features is not None:
+                                    enhanced_features = validated_features
+                                    tprint_success("✅ Features validated successfully")
+                            except Exception as e:
+                                tprint_warning(f"⚠️ Feature validation failed: {e}")
+                        
+                        return enhanced_features
+                except Exception as e:
+                    tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
+            
+            # Fallback to Feature Bank integration
             if selection_result is None or not selection_result.success:
                 tprint_warning("⚠️ No valid selection result, using Feature Bank for comprehensive feature generation")
                 # Use Feature Bank integration for comprehensive feature generation
@@ -1576,6 +1840,54 @@ class UnifiedDataDrivenPipeline:
         try:
             interactions = []
             
+            # Try to use unified VectorBT manager if available
+            if FEATURES_COMMON_AVAILABLE and self.unified_vectorbt_manager:
+                tprint_debug("🔧 Using unified VectorBT manager for interaction generation")
+                try:
+                    # Use the unified VectorBT manager for optimized interaction generation
+                    vectorbt_interactions = self.unified_vectorbt_manager.generate_interactions(
+                        features_df, targets
+                    )
+                    if vectorbt_interactions:
+                        interactions.extend(vectorbt_interactions)
+                        tprint_success(f"✅ Generated {len(vectorbt_interactions)} interactions using unified VectorBT manager")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Unified VectorBT manager failed: {e}")
+            
+            # Try to use cross-timeframe analysis if available
+            if FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
+                tprint_debug("🔧 Using cross-timeframe analysis for interaction generation")
+                try:
+                    cross_timeframe_interactions = self.cross_timeframe_pipeline.generate_interactions(
+                        features_df, targets
+                    )
+                    if cross_timeframe_interactions:
+                        interactions.extend(cross_timeframe_interactions)
+                        tprint_success(f"✅ Generated {len(cross_timeframe_interactions)} cross-timeframe interactions")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
+            
+            # Fallback to original VectorBT optimizer
+            if not interactions:
+                tprint_debug("🔧 Using fallback VectorBT optimizer for interaction generation")
+                interactions = self.vectorbt_optimizer.optimize_interaction_generation(features_df, targets)
+            
+            # Apply feature validation if available
+            if FEATURE_GENERATION_AVAILABLE and interactions:
+                try:
+                    validated_interactions = []
+                    for interaction in interactions:
+                        if hasattr(interaction, 'feature_data') and interaction.feature_data is not None:
+                            validated_data = validate_features_dataframe(interaction.feature_data)
+                            if validated_data is not None:
+                                interaction.feature_data = validated_data
+                                validated_interactions.append(interaction)
+                        else:
+                            validated_interactions.append(interaction)
+                    interactions = validated_interactions
+                    tprint_success("✅ Interactions validated successfully")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Interaction validation failed: {e}")
             # Use feature engineering roadmap interactions if available
             if FEATURE_ENGINEERING_ROADMAP_AVAILABLE and self.interaction_engine is not None:
                 tprint_info("🎯 Using feature engineering roadmap interactions")
@@ -2672,6 +2984,290 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Unified model evaluation failed: {e}")
             return {'evaluation_metrics': {}, 'error': str(e)}
     
+    def _vectorized_rolling_operations(self, data: pd.DataFrame, windows: List[int] = None) -> pd.DataFrame:
+        """
+        Perform vectorized rolling operations using VectorBTRollingOptimizer.
+        
+        Args:
+            data: Input data with OHLCV columns
+            windows: List of window sizes for rolling operations
+            
+        Returns:
+            DataFrame with vectorized rolling features
+        """
+        if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
+            tprint_warning("⚠️ VectorBT utilities not available, skipping vectorized rolling operations")
+            return data
+        
+        if windows is None:
+            windows = [5, 10, 20, 50, 100]
+        
+        tprint_info(f"🔄 Starting vectorized rolling operations with windows: {windows}")
+        
+        try:
+            enhanced_data = data.copy()
+            
+            # Vectorized rolling operations for each column
+            for column in data.columns:
+                if pd.api.types.is_numeric_dtype(data[column]):
+                    for window in windows:
+                        try:
+                            # Rolling mean
+                            mean_col = f"{column}_rolling_mean_{window}"
+                            enhanced_data[mean_col] = self.vectorbt_rolling_optimizer.rolling_mean(
+                                data[column], window
+                            )
+                            
+                            # Rolling standard deviation
+                            std_col = f"{column}_rolling_std_{window}"
+                            enhanced_data[std_col] = self.vectorbt_rolling_optimizer.rolling_std(
+                                data[column], window
+                            )
+                            
+                            # Rolling variance
+                            var_col = f"{column}_rolling_var_{window}"
+                            enhanced_data[var_col] = self.vectorbt_rolling_optimizer.rolling_var(
+                                data[column], window
+                            )
+                            
+                            # Rolling min/max
+                            min_col = f"{column}_rolling_min_{window}"
+                            max_col = f"{column}_rolling_max_{window}"
+                            enhanced_data[min_col] = self.vectorbt_rolling_optimizer.rolling_min(
+                                data[column], window
+                            )
+                            enhanced_data[max_col] = self.vectorbt_rolling_optimizer.rolling_max(
+                                data[column], window
+                            )
+                            
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Rolling operations failed for {column} window {window}: {e}")
+                            continue
+            
+            new_features = enhanced_data.shape[1] - data.shape[1]
+            self.performance_stats['vectorized_rolling_operations'] += new_features
+            tprint_success(f"✅ Vectorized rolling operations completed: {new_features} new features")
+            return enhanced_data
+            
+        except Exception as e:
+            tprint_error(f"❌ Vectorized rolling operations failed: {e}")
+            return data
+    
+    def _unified_vectorization_processing(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> pd.DataFrame:
+        """
+        Perform unified vectorization processing using UnifiedVectorizationManager.
+        
+        Args:
+            data: Input data with OHLCV columns
+            targets: Optional target series for supervised learning
+            
+        Returns:
+            DataFrame with vectorized features
+        """
+        if not VECTORBT_UTILITIES_AVAILABLE or self.unified_vectorization_manager is None:
+            tprint_warning("⚠️ VectorBT utilities not available, skipping unified vectorization")
+            return data
+        
+        tprint_info("🚀 Starting unified vectorization processing")
+        
+        try:
+            # Use the unified vectorization manager for comprehensive processing
+            vectorized_result = self.unified_vectorization_manager.process_dataframe(
+                data=data,
+                targets=targets,
+                enable_rolling_operations=True,
+                enable_statistical_operations=True,
+                enable_correlation_analysis=True,
+                enable_batch_processing=True
+            )
+            
+            if vectorized_result.success:
+                self.performance_stats['unified_vectorization_operations'] += vectorized_result.features_generated
+                tprint_success(f"✅ Unified vectorization completed: {vectorized_result.features_generated} features generated")
+                return vectorized_result.processed_data
+            else:
+                tprint_warning(f"⚠️ Unified vectorization failed: {vectorized_result.error_message}")
+                return data
+                
+        except Exception as e:
+            tprint_error(f"❌ Unified vectorization processing failed: {e}")
+            return data
+    
+    def _optimized_feature_calculation(self, data: pd.DataFrame, feature_config: Dict[str, Any] = None) -> pd.DataFrame:
+        """
+        Perform optimized feature calculations using both vectorization utilities.
+        
+        Args:
+            data: Input data with OHLCV columns
+            feature_config: Configuration for feature calculations
+            
+        Returns:
+            DataFrame with optimized features
+        """
+        if feature_config is None:
+            feature_config = {
+                'rolling_windows': [5, 10, 20, 50, 100],
+                'enable_correlation_features': True,
+                'enable_momentum_features': True,
+                'enable_volatility_features': True,
+                'enable_volume_features': True
+            }
+        
+        tprint_info("⚡ Starting optimized feature calculations")
+        
+        try:
+            # Start with vectorized rolling operations
+            enhanced_data = self._vectorized_rolling_operations(
+                data, 
+                windows=feature_config.get('rolling_windows', [5, 10, 20, 50, 100])
+            )
+            
+            # Apply unified vectorization processing
+            if VECTORBT_UTILITIES_AVAILABLE and self.unified_vectorization_manager is not None:
+                enhanced_data = self._unified_vectorization_processing(enhanced_data)
+            
+            # Add specialized features based on configuration
+            if feature_config.get('enable_correlation_features', True):
+                enhanced_data = self._add_correlation_features(enhanced_data)
+            
+            if feature_config.get('enable_momentum_features', True):
+                enhanced_data = self._add_momentum_features(enhanced_data)
+            
+            if feature_config.get('enable_volatility_features', True):
+                enhanced_data = self._add_volatility_features(enhanced_data)
+            
+            if feature_config.get('enable_volume_features', True):
+                enhanced_data = self._add_volume_features(enhanced_data)
+            
+            tprint_success(f"✅ Optimized feature calculations completed: {enhanced_data.shape[1]} total features")
+            return enhanced_data
+            
+        except Exception as e:
+            tprint_error(f"❌ Optimized feature calculations failed: {e}")
+            return data
+    
+    def _add_correlation_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Add correlation-based features using vectorized operations."""
+        if not VECTORBT_UTILITIES_AVAILABLE or self.unified_vectorization_manager is None:
+            return data
+        
+        try:
+            # Use unified vectorization manager for correlation analysis
+            correlation_result = self.unified_vectorization_manager.calculate_correlations(
+                data, 
+                windows=[10, 20, 50],
+                enable_rolling_correlations=True
+            )
+            
+            if correlation_result.success:
+                for feature_name, feature_data in correlation_result.correlation_features.items():
+                    data[feature_name] = feature_data
+                
+                self.performance_stats['correlation_features_generated'] += len(correlation_result.correlation_features)
+                tprint_debug(f"✅ Added {len(correlation_result.correlation_features)} correlation features")
+            
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Correlation features failed: {e}")
+            return data
+    
+    def _add_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Add momentum-based features using vectorized operations."""
+        if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
+            return data
+        
+        try:
+            # Calculate momentum features for price columns
+            price_columns = [col for col in data.columns if 'close' in col.lower() or 'price' in col.lower()]
+            
+            for col in price_columns:
+                if pd.api.types.is_numeric_dtype(data[col]):
+                    # Rate of change
+                    data[f"{col}_roc_5"] = data[col].pct_change(5)
+                    data[f"{col}_roc_10"] = data[col].pct_change(10)
+                    data[f"{col}_roc_20"] = data[col].pct_change(20)
+                    
+                    # Momentum using vectorized operations
+                    for window in [5, 10, 20]:
+                        momentum_col = f"{col}_momentum_{window}"
+                        data[momentum_col] = self.vectorbt_rolling_optimizer.rolling_sum(
+                            data[col].pct_change(), window
+                        )
+            
+            momentum_features = len([col for col in data.columns if 'momentum' in col or 'roc' in col])
+            self.performance_stats['momentum_features_generated'] += momentum_features
+            tprint_debug("✅ Added momentum features")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Momentum features failed: {e}")
+            return data
+    
+    def _add_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Add volatility-based features using vectorized operations."""
+        if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
+            return data
+        
+        try:
+            # Calculate volatility features
+            price_columns = [col for col in data.columns if 'close' in col.lower() or 'price' in col.lower()]
+            
+            for col in price_columns:
+                if pd.api.types.is_numeric_dtype(data[col]):
+                    returns = data[col].pct_change()
+                    
+                    for window in [5, 10, 20, 50]:
+                        # Rolling volatility
+                        vol_col = f"{col}_volatility_{window}"
+                        data[vol_col] = self.vectorbt_rolling_optimizer.rolling_std(returns, window)
+                        
+                        # Rolling variance
+                        var_col = f"{col}_variance_{window}"
+                        data[var_col] = self.vectorbt_rolling_optimizer.rolling_var(returns, window)
+            
+            volatility_features = len([col for col in data.columns if 'volatility' in col or 'variance' in col])
+            self.performance_stats['volatility_features_generated'] += volatility_features
+            tprint_debug("✅ Added volatility features")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Volatility features failed: {e}")
+            return data
+    
+    def _add_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Add volume-based features using vectorized operations."""
+        if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
+            return data
+        
+        try:
+            # Find volume columns
+            volume_columns = [col for col in data.columns if 'volume' in col.lower()]
+            
+            for col in volume_columns:
+                if pd.api.types.is_numeric_dtype(data[col]):
+                    for window in [5, 10, 20, 50]:
+                        # Rolling volume mean
+                        vol_mean_col = f"{col}_mean_{window}"
+                        data[vol_mean_col] = self.vectorbt_rolling_optimizer.rolling_mean(data[col], window)
+                        
+                        # Rolling volume std
+                        vol_std_col = f"{col}_std_{window}"
+                        data[vol_std_col] = self.vectorbt_rolling_optimizer.rolling_std(data[col], window)
+                        
+                        # Volume rate of change
+                        vol_roc_col = f"{col}_roc_{window}"
+                        data[vol_roc_col] = data[col].pct_change(window)
+            
+            volume_features = len([col for col in data.columns if 'volume' in col and ('mean' in col or 'std' in col or 'roc' in col)])
+            self.performance_stats['volume_features_generated'] += volume_features
+            tprint_debug("✅ Added volume features")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Volume features failed: {e}")
+            return data
+
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 
                         lookback_results: Dict[str, Any], enhanced_feature_results: Dict[str, Any],

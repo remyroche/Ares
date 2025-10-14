@@ -33,6 +33,28 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
 
+# Import features_common performance utilities
+try:
+    from src.features_common import (
+        PerformanceMixin, MonitoringMixin, VectorBTPerformanceMonitor,
+        get_performance_monitor, GPUAccelerator, get_gpu_accelerator,
+        VectorBTOptimizationEngine, get_optimization_engine,
+        validate_input_data, safe_execute, get_logger, log_operation
+    )
+    FEATURES_COMMON_PERFORMANCE_AVAILABLE = True
+except ImportError:
+    FEATURES_COMMON_PERFORMANCE_AVAILABLE = False
+
+# Import feature_generation optimization utilities
+try:
+    from src.feature_generation.utils import (
+        FeatureGenerationOptimizer, FeatureOptimizationConfig,
+        validate_feature_quality, validate_features_dataframe
+    )
+    FEATURE_GENERATION_PERFORMANCE_AVAILABLE = True
+except ImportError:
+    FEATURE_GENERATION_PERFORMANCE_AVAILABLE = False
+
 import numpy as np
 import pandas as pd
 

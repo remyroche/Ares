@@ -46,6 +46,23 @@ except ImportError as e:
     VECTORBT_OPTIMIZATIONS_AVAILABLE = False
     get_vectorbt_optimized_operations = None
 
+# Import VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBTRollingOptimizer not available: {e}")
+    VECTORBT_ROLLING_AVAILABLE = False
+    get_vectorbt_rolling_optimizer = None
+
+try:
+    from ...feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"UnifiedVectorizationManager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+
 logger = logging.getLogger(__name__)
 
 class BatchMatrixProcessor:
@@ -85,6 +102,37 @@ class BatchMatrixProcessor:
                 logger.info("✅ Batch matrix processor initialized with M1 optimization")
             except Exception as e:
                 logger.warning(f"⚠️ Error initializing utilities: {e}")
+
+        # Initialize VectorBT managers
+        self._initialize_vectorbt_managers()
+
+    def _initialize_vectorbt_managers(self):
+        """Initialize VectorBT managers for optimized operations."""
+        try:
+            # Initialize VectorBTRollingOptimizer
+            if VECTORBT_ROLLING_AVAILABLE:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                if self.rolling_optimizer:
+                    logger.debug("✅ VectorBTRollingOptimizer initialized")
+                else:
+                    logger.info("ℹ️ VectorBTRollingOptimizer not available")
+            else:
+                self.rolling_optimizer = None
+
+            # Initialize UnifiedVectorizationManager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                if self.vectorization_manager:
+                    logger.debug("✅ UnifiedVectorizationManager initialized")
+                else:
+                    logger.info("ℹ️ UnifiedVectorizationManager not available")
+            else:
+                self.vectorization_manager = None
+
+        except Exception as e:
+            logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
 
     def batch_matrix_multiply(self,
                             matrices_a: List['np.ndarray'],

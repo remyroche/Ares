@@ -66,6 +66,25 @@ except ImportError as e:
     logging.warning(f"VectorBT optimizations not available: {e}")
     VECTORBT_OPTIMIZATIONS_AVAILABLE = False
 
+# Import VectorBTRollingOptimizer and UnifiedVectorizationManager
+try:
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBTRollingOptimizer not available: {e}")
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+
+try:
+    from ...feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"UnifiedVectorizationManager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+
 # Import hardware optimizations
 try:
     from ..hardware.m1_gpu_utils import M1GPUManager
@@ -130,6 +149,9 @@ class UnifiedMatrixOperations:
         # Initialize components
         self._initialize_components()
 
+        # Initialize VectorBT managers
+        self._initialize_vectorbt_managers()
+
         # Initialize math validator for safe operations
         if UTILITIES_AVAILABLE:
             try:
@@ -150,6 +172,9 @@ class UnifiedMatrixOperations:
             'cpu_operations': 0,
             'parallel_operations': 0,
             'memory_optimized_operations': 0,
+            'vectorization_operations': 0,
+            'rolling_operations': 0,
+            'vectorbt_operations': 0,
             'average_execution_time': 0.0,
             'peak_memory_usage_mb': 0.0
         }
@@ -222,6 +247,34 @@ class UnifiedMatrixOperations:
             self.cpu_optimizer = None
             self.vectorized_core = None
 
+    def _initialize_vectorbt_managers(self):
+        """Initialize VectorBT managers for optimized operations."""
+        try:
+            # Initialize VectorBTRollingOptimizer
+            if VECTORBT_ROLLING_AVAILABLE:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                if self.rolling_optimizer:
+                    self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                else:
+                    self.logger.info("ℹ️ VectorBTRollingOptimizer not available")
+            else:
+                self.rolling_optimizer = None
+
+            # Initialize UnifiedVectorizationManager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                if self.vectorization_manager:
+                    self.logger.debug("✅ UnifiedVectorizationManager initialized")
+                else:
+                    self.logger.info("ℹ️ UnifiedVectorizationManager not available")
+            else:
+                self.vectorization_manager = None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
         Optimized matrix multiplication with automatic hardware selection and VectorBT optimization.
@@ -239,18 +292,17 @@ class UnifiedMatrixOperations:
         if A.shape[1] != B.shape[0]:
             raise ValueError(f"Matrix dimensions incompatible: {A.shape} @ {B.shape}")
 
-        # Try VectorBT optimization first if available
-        if VECTORBT_OPTIMIZATIONS_AVAILABLE and self._should_use_vectorbt(A, B):
+        # Try UnifiedVectorizationManager first if available
+        if self.vectorization_manager and self._should_use_vectorization_manager(A, B):
             try:
-                vectorbt_ops = get_vectorbt_optimized_operations()
-                result = vectorbt_ops.matrix_multiply(A, B)
-                self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
-                self.logger.debug("✅ VectorBT matrix multiplication completed")
+                result = self.vectorization_manager.matrix_multiply(A, B)
+                self.performance_stats['vectorization_operations'] = self.performance_stats.get('vectorization_operations', 0) + 1
+                self.logger.debug("✅ UnifiedVectorizationManager matrix multiplication completed")
             except Exception as e:
-                self.logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
-                result = self._standard_matrix_multiply(A, B)
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager matrix multiplication failed: {e}, falling back to VectorBT")
+                result = self._fallback_matrix_multiply(A, B)
         else:
-            result = self._standard_matrix_multiply(A, B)
+            result = self._fallback_matrix_multiply(A, B)
         
         # Update performance stats
         execution_time = time.time() - start_time
@@ -262,6 +314,44 @@ class UnifiedMatrixOperations:
 
         return result
     
+    def _should_use_vectorization_manager(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
+        """Determine if UnifiedVectorizationManager should be used for the operation."""
+        if not self.vectorization_manager:
+            return False
+        
+        # Use UnifiedVectorizationManager for medium to large matrices
+        total_elements = A.size + B.size
+        return total_elements > 5000  # 5K elements threshold
+
+    def _should_use_vectorization_manager_for_correlation(self, data: Union['np.ndarray', 'pd.DataFrame']) -> bool:
+        """Determine if UnifiedVectorizationManager should be used for correlation operations."""
+        if not self.vectorization_manager:
+            return False
+        
+        # Convert to numpy array for size check
+        if isinstance(data, pd.DataFrame):
+            data_array = data.values
+        else:
+            data_array = data
+        
+        # Use UnifiedVectorizationManager for medium to large datasets
+        return data_array.size > 10000  # 10K elements threshold
+
+    def _should_use_vectorization_manager_for_batch(self, data: Union['np.ndarray', 'pd.DataFrame'], operation: str) -> bool:
+        """Determine if UnifiedVectorizationManager should be used for batch operations."""
+        if not self.vectorization_manager:
+            return False
+        
+        # Convert to numpy array for size check
+        if isinstance(data, pd.DataFrame):
+            data_array = data.values
+        else:
+            data_array = data
+        
+        # Use UnifiedVectorizationManager for supported operations and medium to large datasets
+        supported_operations = ['correlation', 'rolling_features', 'trading_indicators', 'matrix_multiply', 'feature_engineering']
+        return operation in supported_operations and data_array.size > 5000  # 5K elements threshold
+
     def _should_use_vectorbt(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
         """Determine if VectorBT should be used for the operation."""
         if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
@@ -270,6 +360,22 @@ class UnifiedMatrixOperations:
         # Use VectorBT for medium to large matrices
         total_elements = A.size + B.size
         return total_elements > 10000  # 10K elements threshold
+
+    def _fallback_matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
+        """Fallback matrix multiplication using VectorBT or standard methods."""
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE and self._should_use_vectorbt(A, B):
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                result = vectorbt_ops.matrix_multiply(A, B)
+                self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
+                self.logger.debug("✅ VectorBT matrix multiplication completed")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
+        
+        # Fall back to standard implementation
+        return self._standard_matrix_multiply(A, B)
     
     def _standard_matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """Standard matrix multiplication with hardware selection."""
@@ -369,7 +475,17 @@ class UnifiedMatrixOperations:
         Returns:
             Correlation matrix with safe operations
         """
-        # Try VectorBT optimization first if available
+        # Try UnifiedVectorizationManager first if available
+        if self.vectorization_manager and self._should_use_vectorization_manager_for_correlation(data):
+            try:
+                result = self.vectorization_manager.correlation_matrix(data, method)
+                self.performance_stats['vectorization_operations'] = self.performance_stats.get('vectorization_operations', 0) + 1
+                self.logger.debug("✅ UnifiedVectorizationManager correlation matrix completed")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager correlation matrix failed: {e}, falling back to VectorBT")
+        
+        # Try VectorBT optimization if available
         if VECTORBT_OPTIMIZATIONS_AVAILABLE:
             try:
                 vectorbt_ops = get_vectorbt_optimized_operations()
@@ -500,7 +616,7 @@ class UnifiedMatrixOperations:
     def batch_process(self, data: Union['np.ndarray', 'pd.DataFrame'],
                      operation: str, **kwargs) -> Any:
         """
-        Batch processing with automatic memory management.
+        Batch processing with automatic memory management and VectorBT optimization.
 
         Args:
             data: Input data
@@ -510,6 +626,16 @@ class UnifiedMatrixOperations:
         Returns:
             Processed result
         """
+        # Try UnifiedVectorizationManager first if available
+        if self.vectorization_manager and self._should_use_vectorization_manager_for_batch(data, operation):
+            try:
+                result = self.vectorization_manager.batch_process(data, operation, **kwargs)
+                self.performance_stats['vectorization_operations'] = self.performance_stats.get('vectorization_operations', 0) + 1
+                self.logger.debug("✅ UnifiedVectorizationManager batch processing completed")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ UnifiedVectorizationManager batch processing failed: {e}, falling back to standard method")
+
         if isinstance(data, pd.DataFrame):
             data = data.values
 
@@ -803,12 +929,21 @@ class UnifiedMatrixOperations:
             'gpu_available': self.enable_gpu and self.gpu_manager is not None,
             'memory_optimizer_available': self.enable_memory_optimization and self.memory_optimizer is not None,
             'cpu_optimizer_available': self.enable_parallel and self.cpu_optimizer is not None,
-            'vectorized_core_available': self.vectorized_core is not None
+            'vectorized_core_available': self.vectorized_core is not None,
+            'rolling_optimizer_available': self.rolling_optimizer is not None,
+            'vectorization_manager_available': self.vectorization_manager is not None
         }
 
         # Add GPU info if available
         if self.gpu_manager and hasattr(self.gpu_manager, 'get_gpu_info'):
             info['gpu_info'] = self.gpu_manager.get_gpu_info()
+
+        # Add VectorBT manager info if available
+        if self.rolling_optimizer and hasattr(self.rolling_optimizer, 'get_performance_stats'):
+            info['rolling_optimizer_stats'] = self.rolling_optimizer.get_performance_stats()
+
+        if self.vectorization_manager and hasattr(self.vectorization_manager, 'get_performance_stats'):
+            info['vectorization_manager_stats'] = self.vectorization_manager.get_performance_stats()
 
         return info
 
@@ -1107,8 +1242,8 @@ class UnifiedMatrixOperations:
             # Return original matrix on failure
             return similarity_matrix
 
-    def calculate_regime_stability(self, regime_predictions: np.ndarray, 
-                                  timestamps: np.ndarray) -> np.ndarray:
+    def calculate_regime_stability(self, regime_predictions: 'np.ndarray', 
+                                  timestamps: 'np.ndarray') -> 'np.ndarray':
         """
         Calculate regime stability scores for each time point.
         
@@ -1149,8 +1284,8 @@ class UnifiedMatrixOperations:
             self.logger.warning(f"Regime stability calculation failed: {e}")
             return np.ones(len(regime_predictions)) * 0.5
 
-    def calculate_transition_probabilities(self, regime_predictions: np.ndarray, 
-                                         n_regimes: int) -> np.ndarray:
+    def calculate_transition_probabilities(self, regime_predictions: 'np.ndarray', 
+                                         n_regimes: int) -> 'np.ndarray':
         """
         Calculate regime transition probability matrix.
         
@@ -1179,6 +1314,82 @@ class UnifiedMatrixOperations:
             self.logger.warning(f"Transition probability calculation failed: {e}")
             # Return uniform transition matrix as fallback
             return np.ones((n_regimes, n_regimes)) / n_regimes
+
+    def rolling_operations(self, data: Union['np.ndarray', 'pd.DataFrame'],
+                          windows: List[int] = [5, 10, 20, 50],
+                          operations: List[str] = ['mean', 'std', 'min', 'max'],
+                          **kwargs) -> Union['np.ndarray', 'pd.DataFrame']:
+        """
+        Perform rolling operations using VectorBTRollingOptimizer.
+
+        Args:
+            data: Input data
+            windows: List of window sizes
+            operations: List of operations to perform
+            **kwargs: Additional arguments
+
+        Returns:
+            Result with rolling features
+        """
+        # Try VectorBTRollingOptimizer first if available
+        if self.rolling_optimizer and self._should_use_rolling_optimizer(data, windows):
+            try:
+                result = self.rolling_optimizer.batch_rolling_operations(
+                    data, windows=windows, operations=operations, **kwargs
+                )
+                self.performance_stats['rolling_operations'] = self.performance_stats.get('rolling_operations', 0) + 1
+                self.logger.debug("✅ VectorBTRollingOptimizer rolling operations completed")
+                return result
+            except Exception as e:
+                self.logger.warning(f"⚠️ VectorBTRollingOptimizer rolling operations failed: {e}, falling back to standard method")
+
+        # Fallback to standard implementation
+        return self._standard_rolling_operations(data, windows, operations, **kwargs)
+
+    def _should_use_rolling_optimizer(self, data: Union['np.ndarray', 'pd.DataFrame'], windows: List[int]) -> bool:
+        """Determine if VectorBTRollingOptimizer should be used for rolling operations."""
+        if not self.rolling_optimizer:
+            return False
+        
+        # Convert to numpy array for size check
+        if isinstance(data, pd.DataFrame):
+            data_array = data.values
+        else:
+            data_array = data
+        
+        # Use VectorBTRollingOptimizer for medium to large datasets
+        return data_array.size > 1000  # 1K elements threshold
+
+    def _standard_rolling_operations(self, data: Union['np.ndarray', 'pd.DataFrame'],
+                                   windows: List[int], operations: List[str], **kwargs) -> Union['np.ndarray', 'pd.DataFrame']:
+        """Standard rolling operations implementation."""
+        if isinstance(data, pd.DataFrame):
+            result = data.copy()
+            is_dataframe = True
+        else:
+            result = data.copy()
+            is_dataframe = False
+
+        # Implement basic rolling operations
+        for window in windows:
+            for operation in operations:
+                if operation == 'mean':
+                    if is_dataframe:
+                        result[f'rolling_mean_{window}'] = data.rolling(window=window, min_periods=1).mean()
+                    else:
+                        # For numpy arrays, we'd need to implement rolling manually
+                        pass
+                elif operation == 'std':
+                    if is_dataframe:
+                        result[f'rolling_std_{window}'] = data.rolling(window=window, min_periods=1).std()
+                elif operation == 'min':
+                    if is_dataframe:
+                        result[f'rolling_min_{window}'] = data.rolling(window=window, min_periods=1).min()
+                elif operation == 'max':
+                    if is_dataframe:
+                        result[f'rolling_max_{window}'] = data.rolling(window=window, min_periods=1).max()
+
+        return result
 
 
 # Alias for backward compatibility

@@ -41,6 +41,25 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
+# Import VectorBTRollingOptimizer and UnifiedVectorizationManager
+try:
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBTRollingOptimizer not available: {e}")
+    VECTORBT_ROLLING_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+
+try:
+    from ...feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"UnifiedVectorizationManager not available: {e}")
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    get_unified_vectorization_manager = None
+
 logger = logging.getLogger(__name__)
 
 class VectorBTOptimizedOperations:
@@ -67,7 +86,9 @@ class VectorBTOptimizedOperations:
             'average_execution_time': 0.0,
             'gpu_operations': 0,
             'memory_optimized_operations': 0,
-            'chunked_operations': 0
+            'chunked_operations': 0,
+            'rolling_operations': 0,
+            'vectorization_operations': 0
         }
         
         # Memory management
@@ -77,6 +98,9 @@ class VectorBTOptimizedOperations:
         # GPU detection and configuration
         self.gpu_available = self._detect_gpu_availability()
         self.gpu_memory_limit = self._get_gpu_memory_limit()
+        
+        # Initialize VectorBT managers
+        self._initialize_vectorbt_managers()
         
         self.logger = logger.getChild('VectorBTOptimizedOperations')
         
@@ -127,6 +151,34 @@ class VectorBTOptimizedOperations:
         
         return 0.0
     
+    def _initialize_vectorbt_managers(self):
+        """Initialize VectorBT managers for optimized operations."""
+        try:
+            # Initialize VectorBTRollingOptimizer
+            if VECTORBT_ROLLING_AVAILABLE:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                if self.rolling_optimizer:
+                    self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                else:
+                    self.logger.info("ℹ️ VectorBTRollingOptimizer not available")
+            else:
+                self.rolling_optimizer = None
+
+            # Initialize UnifiedVectorizationManager
+            if UNIFIED_VECTORIZATION_AVAILABLE:
+                self.vectorization_manager = get_unified_vectorization_manager()
+                if self.vectorization_manager:
+                    self.logger.debug("✅ UnifiedVectorizationManager initialized")
+                else:
+                    self.logger.info("ℹ️ UnifiedVectorizationManager not available")
+            else:
+                self.vectorization_manager = None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error initializing VectorBT managers: {e}")
+            self.rolling_optimizer = None
+            self.vectorization_manager = None
+    
     def _check_memory_usage(self) -> float:
         """Check current memory usage in GB."""
         try:
@@ -155,6 +207,38 @@ class VectorBTOptimizedOperations:
                 current_memory > self.memory_limit_gb * 0.8 or
                 data_size > self.chunk_size_threshold)
     
+    def _should_use_vectorization_manager(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
+        """Determine if UnifiedVectorizationManager should be used for the operation."""
+        if not self.vectorization_manager:
+            return False
+        
+        # Use UnifiedVectorizationManager for medium to large matrices
+        total_elements = A.size + B.size
+        return total_elements > 5000  # 5K elements threshold
+
+    def _should_use_rolling_optimizer(self, data: 'pd.DataFrame', windows: List[int]) -> bool:
+        """Determine if VectorBTRollingOptimizer should be used for rolling operations."""
+        if not self.rolling_optimizer:
+            return False
+        
+        # Use VectorBTRollingOptimizer for medium to large datasets
+        return data.size > 1000  # 1K elements threshold
+
+    def _should_use_vectorization_manager_for_batch(self, data: Union['np.ndarray', 'pd.DataFrame'], operation: str) -> bool:
+        """Determine if UnifiedVectorizationManager should be used for batch operations."""
+        if not self.vectorization_manager:
+            return False
+        
+        # Convert to numpy array for size check
+        if isinstance(data, pd.DataFrame):
+            data_array = data.values
+        else:
+            data_array = data
+        
+        # Use UnifiedVectorizationManager for supported operations and medium to large datasets
+        supported_operations = ['correlation', 'rolling_features', 'trading_indicators', 'matrix_multiply', 'feature_engineering']
+        return operation in supported_operations and data_array.size > 5000  # 5K elements threshold
+    
     def matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """
         VectorBT-optimized matrix multiplication with enhanced performance.
@@ -169,6 +253,19 @@ class VectorBTOptimizedOperations:
         start_time = time.time()
         
         try:
+            # Try UnifiedVectorizationManager first if available
+            if self.vectorization_manager and self._should_use_vectorization_manager(A, B):
+                try:
+                    result = self.vectorization_manager.matrix_multiply(A, B)
+                    self.performance_stats['vectorization_operations'] += 1
+                    self.logger.debug("✅ UnifiedVectorizationManager matrix multiplication completed")
+                    execution_time = time.time() - start_time
+                    self._update_performance_stats(execution_time)
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ UnifiedVectorizationManager matrix multiplication failed: {e}, falling back to VectorBT")
+            
+            # Try VectorBT optimization
             if VECTORBT_AVAILABLE:
                 # Enhanced VectorBT matrix multiplication with memory optimization
                 # Use VectorBT's optimized matrix multiplication with chunking for large matrices
@@ -555,13 +652,32 @@ class VectorBTOptimizedOperations:
         Returns:
             DataFrame with rolling features
         """
-        if not VECTORBT_AVAILABLE:
-            self.logger.warning("⚠️ VectorBT not available for rolling features")
-            return data.copy()
-        
         start_time = time.time()
         
         try:
+            # Try VectorBTRollingOptimizer first if available
+            if self.rolling_optimizer and self._should_use_rolling_optimizer(data, windows):
+                try:
+                    if features is None:
+                        features = data.select_dtypes(include=[np.number]).columns.tolist()
+                    
+                    result = self.rolling_optimizer.batch_rolling_operations(
+                        data, windows=windows, operations=['mean', 'std', 'min', 'max'], 
+                        features=features
+                    )
+                    self.performance_stats['rolling_operations'] += 1
+                    self.logger.debug("✅ VectorBTRollingOptimizer rolling features completed")
+                    execution_time = time.time() - start_time
+                    self._update_performance_stats(execution_time)
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBTRollingOptimizer rolling features failed: {e}, falling back to VectorBT")
+            
+            # Fallback to VectorBT if available
+            if not VECTORBT_AVAILABLE:
+                self.logger.warning("⚠️ VectorBT not available for rolling features")
+                return data.copy()
+            
             if features is None:
                 features = data.select_dtypes(include=[np.number]).columns.tolist()
             
@@ -648,6 +764,19 @@ class VectorBTOptimizedOperations:
         start_time = time.time()
         
         try:
+            # Try UnifiedVectorizationManager first if available
+            if self.vectorization_manager and self._should_use_vectorization_manager_for_batch(data, operation):
+                try:
+                    result = self.vectorization_manager.batch_process(data, operation, **kwargs)
+                    self.performance_stats['vectorization_operations'] += 1
+                    self.logger.debug("✅ UnifiedVectorizationManager batch processing completed")
+                    execution_time = time.time() - start_time
+                    self._update_performance_stats(execution_time)
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ UnifiedVectorizationManager batch processing failed: {e}, falling back to VectorBT")
+            
+            # Try VectorBT optimization
             if VECTORBT_AVAILABLE and self.enable_parallel:
                 # Use VectorBT's optimized batch processing with intelligent chunking
                 if operation == 'correlation':

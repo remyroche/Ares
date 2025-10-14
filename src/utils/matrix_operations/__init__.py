@@ -237,6 +237,27 @@ except ImportError as e:
     VECTORBT_OPTIMIZATIONS_AVAILABLE = False
     logger.warning(f"VectorBT optimizations not available: {e}")
 
+# VectorBT Rolling Optimizer and Unified Vectorization Manager
+try:
+    from ...feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer,
+        get_vectorbt_rolling_optimizer,
+    )
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError as e:
+    VECTORBT_ROLLING_AVAILABLE = False
+    logger.warning(f"VectorBTRollingOptimizer not available: {e}")
+
+try:
+    from ...feature_generation.utils.unified_vectorization_manager import (
+        UnifiedVectorizationManager,
+        get_unified_vectorization_manager,
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError as e:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    logger.warning(f"UnifiedVectorizationManager not available: {e}")
+
 # Version and compatibility information
 __version__ = "1.0.0"
 __author__ = "Unified Matrix Operations Team"
@@ -397,6 +418,20 @@ if VECTORBT_OPTIMIZATIONS_AVAILABLE:
         "vectorbt_batch_processing",
     ])
 
+# Add VectorBT Rolling Optimizer to __all__ if available
+if VECTORBT_ROLLING_AVAILABLE:
+    __all__.extend([
+        "VectorBTRollingOptimizer",
+        "get_vectorbt_rolling_optimizer",
+    ])
+
+# Add Unified Vectorization Manager to __all__ if available
+if UNIFIED_VECTORIZATION_AVAILABLE:
+    __all__.extend([
+        "UnifiedVectorizationManager",
+        "get_unified_vectorization_manager",
+    ])
+
 # Initialize default custom operations
 # Note: Default operations are automatically registered when enhanced_operations module is imported
 
@@ -411,3 +446,13 @@ if VECTORBT_AVAILABLE:
     logger.info("🚀 VectorBT optimizations enabled - expect 2-10x performance improvements")
 else:
     logger.info("ℹ️ VectorBT not available - using standard implementations")
+
+if VECTORBT_ROLLING_AVAILABLE:
+    logger.info("🎯 VectorBTRollingOptimizer available - enhanced rolling operations")
+else:
+    logger.info("ℹ️ VectorBTRollingOptimizer not available")
+
+if UNIFIED_VECTORIZATION_AVAILABLE:
+    logger.info("⚡ UnifiedVectorizationManager available - unified vectorization operations")
+else:
+    logger.info("ℹ️ UnifiedVectorizationManager not available")

@@ -754,7 +754,10 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             highest_high = base_values.rolling(window=self.k_period).max()
             k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
             
-            return k_percentclass WilliamsRGenerator(VectorizedFeatureGenerator):
+            return k_percent
+
+
+class WilliamsRGenerator(VectorizedFeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
     def __init__(self, 
@@ -851,7 +854,10 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             lowest_low = base_values.rolling(window=self.period).min()
             williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
             
-            return williams_rclass MomentumOscillatorGenerator(VectorizedFeatureGenerator):
+            return williams_r
+
+
+class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Momentum Oscillator with different base calculations."""
     
     def __init__(self, 
@@ -905,7 +911,10 @@ class StochasticGenerator(VectorizedFeatureGenerator):
         # Calculate momentum
         momentum = base_values - base_values.shift(self.period)
         
-        return momentumclass RateOfChangeGenerator(VectorizedFeatureGenerator):
+        return momentum
+
+
+class RateOfChangeGenerator(VectorizedFeatureGenerator):
     """Generator for Rate of Change (ROC) with different base calculations."""
     
     def __init__(self, 

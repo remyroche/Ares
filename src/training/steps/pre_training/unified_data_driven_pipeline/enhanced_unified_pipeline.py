@@ -59,6 +59,9 @@ from .enhanced_components.modular_architecture import (
 from .enhanced_components.advanced_caching import (
     AdvancedCacheManager, CacheConfig, create_advanced_cache_manager
 )
+from .enhanced_components.enhanced_feature_generator import (
+    EnhancedFeatureGenerator, FeatureGenerationConfig, create_enhanced_feature_generator
+)
 
 # Import existing components
 from .config import UnifiedPipelineConfig, create_default_config
@@ -136,6 +139,13 @@ class EnhancedFeaturePipelineResult:
     optimized_lookbacks: Dict[str, int]
     lookback_metrics: Dict[str, Any]
     
+    # Enhanced feature generation results
+    cross_timeframe_features: List[Any]  # GeneratedFeature objects
+    interaction_features: List[Any]  # GeneratedFeature objects
+    no_features: List[Any]  # GeneratedFeature objects
+    comparison_features: List[Any]  # GeneratedFeature objects
+    enhanced_feature_metrics: Dict[str, Any]
+    
     # Overall metrics
     total_processing_time: float
     vectorbt_operations: int
@@ -144,6 +154,7 @@ class EnhancedFeaturePipelineResult:
     interaction_generations: int
     htf_generations: int
     lookback_optimizations: int
+    enhanced_feature_generations: int
     
     # Success indicators
     success: bool
@@ -287,6 +298,25 @@ class EnhancedUnifiedDataDrivenPipeline:
         )
         self.advanced_cache_manager = create_advanced_cache_manager(cache_config)
         
+        # Enhanced feature generator
+        feature_gen_config = FeatureGenerationConfig(
+            enable_cross_timeframe=True,
+            enable_interaction_features=True,
+            enable_multiple_creation_methods=True,
+            enable_no_features=True,
+            enable_feature_comparisons=True,
+            max_cross_timeframe_features=20,
+            max_interaction_features=30,
+            max_no_features=15,
+            max_comparison_features=20,
+            base_timeframe_minutes=15,  # Default 15-minute timeframe
+            enable_vectorbt=True,
+            enable_parallel=True,
+            memory_efficient=True,
+            max_workers=4
+        )
+        self.enhanced_feature_generator = create_enhanced_feature_generator(feature_gen_config)
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_existing_components(self):
@@ -383,7 +413,8 @@ class EnhancedUnifiedDataDrivenPipeline:
             'feature_selections': 0,
             'interaction_generations': 0,
             'htf_generations': 0,
-            'lookback_optimizations': 0
+            'lookback_optimizations': 0,
+            'enhanced_feature_generations': 0
         }
     
     def process(self, data: pd.DataFrame, 
@@ -434,11 +465,15 @@ class EnhancedUnifiedDataDrivenPipeline:
             tprint_info("Step 6: Advanced lookback optimization")
             lookback_results = self._advanced_lookback_optimization(data, targets, selected_features_df)
             
-            # Step 7: Combine all results
-            tprint_info("Step 7: Combine all results")
+            # Step 7: Enhanced feature generation
+            tprint_info("Step 7: Enhanced feature generation")
+            enhanced_feature_results = self._enhanced_feature_generation(data, targets, selected_features_df)
+            
+            # Step 8: Combine all results
+            tprint_info("Step 8: Combine all results")
             combined_results = self._combine_results(
                 period_results, feature_selection_results, interaction_results, 
-                htf_results, lookback_results
+                htf_results, lookback_results, enhanced_feature_results
             )
             
             execution_time = time.time() - start_time
@@ -453,13 +488,21 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'feature_selections': self.feature_selector.performance_stats['successful_selections'],
                 'interaction_generations': len(interaction_results),
                 'htf_generations': len(htf_results),
-                'lookback_optimizations': len(lookback_results)
+                'lookback_optimizations': len(lookback_results),
+                'enhanced_feature_generations': len(enhanced_feature_results.get('cross_timeframe_features', [])) + 
+                                              len(enhanced_feature_results.get('interaction_features', [])) + 
+                                              len(enhanced_feature_results.get('no_features', [])) +
+                                              len(enhanced_feature_results.get('comparison_features', []))
             })
             
             tprint_success(f"✅ Enhanced pipeline processing completed in {execution_time:.3f}s")
             tprint_info(f"🏆 Results: {len(combined_results['selected_features'])} features, "
                        f"{len(combined_results['generated_interactions'])} interactions, "
-                       f"{len(combined_results['htf_interactions'])} HTF interactions")
+                       f"{len(combined_results['htf_interactions'])} HTF interactions, "
+                       f"{len(combined_results['cross_timeframe_features'])} cross-timeframe, "
+                       f"{len(combined_results['interaction_features'])} interaction features, "
+                       f"{len(combined_results['no_features'])} no features, "
+                       f"{len(combined_results['comparison_features'])} comparison features")
             
             return EnhancedFeaturePipelineResult(
                 optimal_periods=combined_results['optimal_periods'],
@@ -473,6 +516,11 @@ class EnhancedUnifiedDataDrivenPipeline:
                 htf_metrics=combined_results['htf_metrics'],
                 optimized_lookbacks=combined_results['optimized_lookbacks'],
                 lookback_metrics=combined_results['lookback_metrics'],
+                cross_timeframe_features=combined_results['cross_timeframe_features'],
+                interaction_features=combined_results['interaction_features'],
+                no_features=combined_results['no_features'],
+                comparison_features=combined_results['comparison_features'],
+                enhanced_feature_metrics=combined_results['enhanced_feature_metrics'],
                 total_processing_time=execution_time,
                 vectorbt_operations=self.performance_stats['vectorbt_operations'],
                 economic_evaluations=self.performance_stats['economic_evaluations'],
@@ -480,6 +528,7 @@ class EnhancedUnifiedDataDrivenPipeline:
                 interaction_generations=self.performance_stats['interaction_generations'],
                 htf_generations=self.performance_stats['htf_generations'],
                 lookback_optimizations=self.performance_stats['lookback_optimizations'],
+                enhanced_feature_generations=self.performance_stats['enhanced_feature_generations'],
                 success=True
             )
             
@@ -786,9 +835,64 @@ class EnhancedUnifiedDataDrivenPipeline:
             self.error_handler.handle_error(e, ErrorCategory.COMPUTATION, ErrorSeverity.HIGH)
             return {}
     
+    def _enhanced_feature_generation(
+        self, 
+        data: pd.DataFrame, 
+        targets: Optional[pd.Series], 
+        base_features: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Enhanced feature generation including cross-timeframe, interactions, and no features."""
+        tprint_debug("Starting enhanced feature generation")
+        
+        try:
+            # Use the enhanced feature generator
+            feature_result = self.enhanced_feature_generator.generate_features(
+                data, targets, base_features
+            )
+            
+            if feature_result.success:
+                tprint_success(f"✅ Enhanced feature generation completed: "
+                             f"{len(feature_result.cross_timeframe_features)} cross-timeframe, "
+                             f"{len(feature_result.interaction_features)} interaction, "
+                             f"{len(feature_result.no_features)} no features")
+                
+                return {
+                    'cross_timeframe_features': feature_result.cross_timeframe_features,
+                    'interaction_features': feature_result.interaction_features,
+                    'no_features': feature_result.no_features,
+                    'comparison_features': feature_result.comparison_features,
+                    'enhanced_feature_metrics': {
+                        'total_features': len(feature_result.all_features),
+                        'cross_timeframe_count': len(feature_result.cross_timeframe_features),
+                        'interaction_count': len(feature_result.interaction_features),
+                        'no_features_count': len(feature_result.no_features),
+                        'comparison_count': len(feature_result.comparison_features),
+                        'generation_time': feature_result.generation_time
+                    }
+                }
+            else:
+                tprint_error(f"❌ Enhanced feature generation failed: {feature_result.error_message}")
+                return {
+                    'cross_timeframe_features': [],
+                    'interaction_features': [],
+                    'no_features': [],
+                    'comparison_features': [],
+                    'enhanced_feature_metrics': {}
+                }
+                
+        except Exception as e:
+            tprint_error(f"❌ Enhanced feature generation failed: {e}")
+            return {
+                'cross_timeframe_features': [],
+                'interaction_features': [],
+                'no_features': [],
+                'comparison_features': [],
+                'enhanced_feature_metrics': {}
+            }
+    
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 
-                        lookback_results: Dict[str, int]) -> Dict[str, Any]:
+                        lookback_results: Dict[str, int], enhanced_feature_results: Dict[str, Any]) -> Dict[str, Any]:
         """Combine all pipeline results."""
         try:
             return {
@@ -802,7 +906,12 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'htf_interactions': htf_results,
                 'htf_metrics': self._calculate_interaction_metrics(htf_results),
                 'optimized_lookbacks': lookback_results,
-                'lookback_metrics': self._calculate_lookback_metrics(lookback_results)
+                'lookback_metrics': self._calculate_lookback_metrics(lookback_results),
+                'cross_timeframe_features': enhanced_feature_results.get('cross_timeframe_features', []),
+                'interaction_features': enhanced_feature_results.get('interaction_features', []),
+                'no_features': enhanced_feature_results.get('no_features', []),
+                'comparison_features': enhanced_feature_results.get('comparison_features', []),
+                'enhanced_feature_metrics': enhanced_feature_results.get('enhanced_feature_metrics', {})
             }
             
         except Exception as e:
@@ -818,7 +927,12 @@ class EnhancedUnifiedDataDrivenPipeline:
                 'htf_interactions': [],
                 'htf_metrics': {},
                 'optimized_lookbacks': {},
-                'lookback_metrics': {}
+                'lookback_metrics': {},
+                'cross_timeframe_features': [],
+                'interaction_features': [],
+                'no_features': [],
+                'comparison_features': [],
+                'enhanced_feature_metrics': {}
             }
     
     def _calculate_interaction_metrics(self, interactions: List[Any]) -> Dict[str, Any]:
@@ -868,6 +982,11 @@ class EnhancedUnifiedDataDrivenPipeline:
             htf_metrics={},
             optimized_lookbacks={},
             lookback_metrics={},
+            cross_timeframe_features=[],
+            interaction_features=[],
+            no_features=[],
+            comparison_features=[],
+            enhanced_feature_metrics={},
             total_processing_time=time.time() - start_time,
             vectorbt_operations=0,
             economic_evaluations=0,
@@ -875,6 +994,7 @@ class EnhancedUnifiedDataDrivenPipeline:
             interaction_generations=0,
             htf_generations=0,
             lookback_optimizations=0,
+            enhanced_feature_generations=0,
             success=False,
             error_message=error_message
         )
@@ -893,6 +1013,7 @@ class EnhancedUnifiedDataDrivenPipeline:
         stats['advanced_lookback_optimizer'] = self.advanced_lookback_optimizer.get_performance_stats()
         stats['feature_bank_integration'] = self.feature_bank_integration.get_performance_stats()
         stats['advanced_cache_manager'] = self.advanced_cache_manager.get_stats()
+        stats['enhanced_feature_generator'] = self.enhanced_feature_generator.get_performance_stats()
         
         # Add modular architecture stats
         stats['input_validator'] = self.input_validator.get_validation_stats()
@@ -927,6 +1048,7 @@ class EnhancedUnifiedDataDrivenPipeline:
         # Reset new component stats
         self.advanced_lookback_optimizer.reset_stats()
         self.feature_bank_integration.reset_stats()
+        self.enhanced_feature_generator.reset_stats()
         
         # Reset modular architecture stats
         self.performance_monitor.reset_stats()

@@ -17,6 +17,14 @@ import warnings
 import logging
 from abc import ABC, abstractmethod
 
+# Import math validation utilities
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
+    validate_positive, validate_range, safe_correlation, safe_covariance,
+    safe_mean, safe_std, safe_percentile, safe_percentage_change,
+    safe_weighted_average, MathValidation
+)
+
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
@@ -638,7 +646,7 @@ class StatisticalAnalysisFramework:
         return len(seasonal_periods) > 0, seasonal_periods
     
     def _calculate_trend_strength(self, data: pd.DataFrame) -> float:
-        """Calculate trend strength in the data."""
+        """Calculate trend strength in the data with math validation."""
         trend_strengths = []
         
         for col in data.select_dtypes(include=[np.number]).columns:
@@ -646,26 +654,59 @@ class StatisticalAnalysisFramework:
             if len(series) < 10:
                 continue
             
-            # Calculate trend using linear regression
+            # Validate series data
+            series = validate_finite(series, f"series_{col}")
+            if len(series) < 10:
+                continue
+            
+            # Calculate trend using linear regression with safe operations
             x = np.arange(len(series))
-            slope, _, r_value, _, _ = stats.linregress(x, series)
-            trend_strengths.append(abs(r_value))
+            try:
+                slope, _, r_value, _, _ = stats.linregress(x, series)
+                # Use safe absolute value and validate result
+                r_abs = abs(validate_finite(r_value, f"r_value_{col}"))
+                r_abs = validate_range(r_abs, 0.0, 1.0, f"r_value_{col}")
+                trend_strengths.append(r_abs)
+            except Exception as e:
+                self.logger.warning(f"Trend calculation failed for {col}: {e}")
+                continue
         
-        return np.mean(trend_strengths) if trend_strengths else 0.0
+        # Use safe mean calculation
+        return safe_mean(trend_strengths, default=0.0) if trend_strengths else 0.0
     
     def _calculate_data_quality_score(self, data: pd.DataFrame, 
                                     missing_ratios: Dict[str, float],
                                     corr_matrix: pd.DataFrame) -> float:
-        """Calculate overall data quality score."""
-        # Penalize high missing ratios
-        missing_penalty = np.mean(list(missing_ratios.values()))
-        
-        # Penalize high correlations (potential redundancy)
-        corr_penalty = (corr_matrix.abs() - np.eye(len(corr_matrix))).max().max()
-        
-        # Calculate quality score (0-1, higher is better)
-        quality_score = 1.0 - missing_penalty - corr_penalty
-        return max(0.0, quality_score)
+        """Calculate overall data quality score with math validation."""
+        try:
+            # Validate inputs
+            missing_ratios = {k: validate_finite(v, f"missing_ratio_{k}") for k, v in missing_ratios.items()}
+            corr_matrix = validate_finite(corr_matrix, "corr_matrix")
+            
+            # Penalize high missing ratios with safe operations
+            missing_values = list(missing_ratios.values())
+            missing_penalty = safe_mean(missing_values, default=0.0)
+            missing_penalty = validate_range(missing_penalty, 0.0, 1.0, "missing_penalty")
+            
+            # Penalize high correlations (potential redundancy) with safe operations
+            if len(corr_matrix) > 0:
+                corr_abs = corr_matrix.abs()
+                eye_matrix = np.eye(len(corr_matrix))
+                corr_diff = corr_abs - eye_matrix
+                corr_penalty = safe_percentile(corr_diff.values.flatten(), 95.0, default=0.0)
+                corr_penalty = validate_range(corr_penalty, 0.0, 1.0, "corr_penalty")
+            else:
+                corr_penalty = 0.0
+            
+            # Calculate quality score (0-1, higher is better) with safe operations
+            quality_score = 1.0 - missing_penalty - corr_penalty
+            quality_score = validate_range(quality_score, 0.0, 1.0, "quality_score")
+            
+            return float(quality_score)
+            
+        except Exception as e:
+            self.logger.warning(f"Data quality score calculation failed: {e}")
+            return 0.0
     
     def _calculate_outliers_ratio(self, data: pd.DataFrame) -> float:
         """Calculate ratio of outliers in the data."""

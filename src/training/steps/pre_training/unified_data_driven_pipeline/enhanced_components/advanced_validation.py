@@ -303,13 +303,17 @@ class AdvancedInputValidator:
         return True, "All data types are valid", {"data_types": {col: str(dtype) for col, dtype in data.dtypes.items()}}
 
     def _validate_no_infinite_values(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-        """Validate no infinite values."""
+        """Validate no infinite values using math validation utilities."""
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         infinite_cols = []
         
         for col in numeric_cols:
-            if np.isinf(data[col]).any():
-                infinite_cols.append(col)
+            try:
+                # Use math validation to check for infinite values
+                validate_finite(data[col], f"column_{col}")
+            except ValueError as e:
+                if "non-finite values" in str(e):
+                    infinite_cols.append(col)
         
         if infinite_cols:
             return False, f"Infinite values found in columns: {infinite_cols}", {"infinite_columns": infinite_cols}

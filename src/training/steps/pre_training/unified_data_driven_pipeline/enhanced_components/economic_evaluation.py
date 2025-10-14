@@ -13,6 +13,14 @@ import logging
 import time
 import warnings
 
+# Import math validation utilities
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
+    validate_positive, validate_range, safe_correlation, safe_covariance,
+    safe_mean, safe_std, safe_percentile, safe_percentage_change,
+    safe_weighted_average, safe_kelly_calculation, MathValidation
+)
+
 # VectorBT imports for economic evaluation
 try:
     import vectorbt as vbt
@@ -478,19 +486,27 @@ class EconomicPeriodEvaluator:
             )
     
     def _calculate_sharpe_ratio_vectorbt(self, returns: pd.Series) -> float:
-        """Calculate Sharpe ratio using VectorBT optimization."""
+        """Calculate Sharpe ratio using VectorBT optimization with math validation."""
         try:
             if not VECTORBT_AVAILABLE:
                 return self._calculate_sharpe_ratio_fallback(returns)
             
-            # VectorBT-optimized Sharpe ratio calculation
-            mean_return = returns.mean()
-            std_return = returns.std()
-            
-            if std_return == 0:
+            # Validate input data
+            returns = validate_finite(returns, "returns")
+            if len(returns) == 0:
                 return 0.0
             
-            sharpe_ratio = mean_return / std_return
+            # VectorBT-optimized Sharpe ratio calculation with safe math operations
+            mean_return = safe_mean(returns.values, default=0.0)
+            std_return = safe_std(returns.values, default=0.0)
+            
+            # Use safe division to prevent division by zero
+            sharpe_ratio = safe_divide(mean_return, std_return, default=0.0)
+            
+            # Validate the result is finite and reasonable
+            sharpe_ratio = validate_finite(sharpe_ratio, "sharpe_ratio")
+            sharpe_ratio = validate_range(sharpe_ratio, -10.0, 10.0, "sharpe_ratio")
+            
             return float(sharpe_ratio)
             
         except Exception as e:
@@ -498,38 +514,66 @@ class EconomicPeriodEvaluator:
             return self._calculate_sharpe_ratio_fallback(returns)
     
     def _calculate_max_drawdown_vectorbt(self, prices: pd.Series, signals: pd.Series) -> float:
-        """Calculate maximum drawdown using VectorBT optimization."""
+        """Calculate maximum drawdown using VectorBT optimization with math validation."""
         try:
             if not VECTORBT_AVAILABLE:
                 return self._calculate_max_drawdown_fallback(prices, signals)
             
-            # VectorBT-optimized drawdown calculation
-            # Calculate cumulative returns
-            returns = prices.pct_change()
-            strategy_returns = signals.shift(1) * returns
+            # Validate input data
+            prices = validate_finite(prices, "prices")
+            signals = validate_finite(signals, "signals")
+            
+            if len(prices) == 0 or len(signals) == 0:
+                return 0.0
+            
+            # VectorBT-optimized drawdown calculation with safe math operations
+            # Calculate cumulative returns with safe operations
+            returns = prices.pct_change().fillna(0.0)
+            strategy_returns = signals.shift(1).fillna(0.0) * returns
+            
+            # Use safe operations for cumulative product
             cumulative_returns = (1 + strategy_returns).cumprod()
+            cumulative_returns = validate_finite(cumulative_returns, "cumulative_returns")
             
             # Calculate running maximum
             running_max = rolling_max(cumulative_returns, window=len(cumulative_returns))
+            running_max = validate_finite(running_max, "running_max")
             
-            # Calculate drawdown
-            drawdown = (cumulative_returns - running_max) / running_max
+            # Calculate drawdown with safe division
+            drawdown = safe_divide(
+                cumulative_returns - running_max, 
+                running_max, 
+                default=0.0
+            )
+            drawdown = validate_finite(drawdown, "drawdown")
             
-            return float(drawdown.min())
+            # Get minimum drawdown safely
+            max_drawdown = safe_percentile(drawdown.values, 0.0, default=0.0)
+            max_drawdown = validate_range(max_drawdown, -1.0, 0.0, "max_drawdown")
+            
+            return float(max_drawdown)
             
         except Exception as e:
             self.logger.warning(f"VectorBT max drawdown calculation failed: {e}")
             return self._calculate_max_drawdown_fallback(prices, signals)
     
     def _calculate_win_rate_vectorbt(self, returns: pd.Series) -> float:
-        """Calculate win rate using VectorBT optimization."""
+        """Calculate win rate using VectorBT optimization with math validation."""
         try:
             if not VECTORBT_AVAILABLE:
                 return self._calculate_win_rate_fallback(returns)
             
-            # VectorBT-optimized win rate calculation
+            # Validate input data
+            returns = validate_finite(returns, "returns")
+            if len(returns) == 0:
+                return 0.0
+            
+            # VectorBT-optimized win rate calculation with safe operations
             positive_returns = (returns > 0).astype(int)
-            win_rate = positive_returns.mean()
+            win_rate = safe_mean(positive_returns.values, default=0.0)
+            
+            # Validate win rate is in valid range [0, 1]
+            win_rate = validate_range(win_rate, 0.0, 1.0, "win_rate")
             
             return float(win_rate)
             
@@ -727,15 +771,21 @@ class EconomicPeriodEvaluator:
     
     # Fallback methods for when VectorBT is not available
     def _calculate_sharpe_ratio_fallback(self, returns: pd.Series) -> float:
-        """Fallback Sharpe ratio calculation."""
+        """Fallback Sharpe ratio calculation with math validation."""
         try:
-            mean_return = returns.mean()
-            std_return = returns.std()
-            
-            if std_return == 0:
+            # Validate input data
+            returns = validate_finite(returns, "returns")
+            if len(returns) == 0:
                 return 0.0
             
-            sharpe_ratio = mean_return / std_return
+            # Use safe math operations
+            mean_return = safe_mean(returns.values, default=0.0)
+            std_return = safe_std(returns.values, default=0.0)
+            
+            # Use safe division
+            sharpe_ratio = safe_divide(mean_return, std_return, default=0.0)
+            sharpe_ratio = validate_range(sharpe_ratio, -10.0, 10.0, "sharpe_ratio")
+            
             return float(sharpe_ratio)
         except:
             return 0.0

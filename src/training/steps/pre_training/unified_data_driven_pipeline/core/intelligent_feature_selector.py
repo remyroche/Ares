@@ -15,6 +15,14 @@ from collections import defaultdict
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import math validation utilities
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
+    validate_positive, validate_range, safe_correlation, safe_covariance,
+    safe_mean, safe_std, safe_percentile, safe_percentage_change,
+    safe_weighted_average, MathValidation
+)
+
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -523,20 +531,37 @@ class IntelligentFeatureSelector:
                                 information_content: float, 
                                 uniqueness_score: float, 
                                 category: str) -> float:
-        """Calculate overall feature score."""
+        """Calculate overall feature score with math validation."""
         try:
-            # Get category weight
+            # Validate inputs
+            variance = validate_finite(variance, "variance")
+            correlation_with_target = validate_finite(correlation_with_target, "correlation_with_target")
+            information_content = validate_finite(information_content, "information_content")
+            uniqueness_score = validate_finite(uniqueness_score, "uniqueness_score")
+            
+            # Get category weight with validation
             category_weight = self.config.category_weights.get(category, 1.0)
+            category_weight = validate_positive(category_weight, "category_weight")
             
-            # Weighted combination of metrics
-            score = (
-                0.3 * min(variance / 1.0, 1.0) +  # Normalize variance
-                0.3 * correlation_with_target +
-                0.2 * information_content +
-                0.2 * uniqueness_score
-            ) * category_weight
+            # Weighted combination of metrics with safe operations
+            variance_norm = safe_divide(variance, 1.0, default=0.0)
+            variance_norm = validate_range(variance_norm, 0.0, 1.0, "variance_norm")
             
-            return min(max(score, 0), 1)
+            correlation_norm = validate_range(correlation_with_target, -1.0, 1.0, "correlation_with_target")
+            information_norm = validate_range(information_content, 0.0, 1.0, "information_content")
+            uniqueness_norm = validate_range(uniqueness_score, 0.0, 1.0, "uniqueness_score")
+            
+            # Calculate weighted score with safe operations
+            score = safe_weighted_average(
+                [variance_norm, correlation_norm, information_norm, uniqueness_norm],
+                [0.3, 0.3, 0.2, 0.2]
+            )
+            
+            # Apply category weight with safe multiplication
+            score = score * category_weight
+            score = validate_range(score, 0.0, 1.0, "feature_score")
+            
+            return float(score)
             
         except Exception as e:
             self.logger.warning(f"Error calculating feature score: {e}")

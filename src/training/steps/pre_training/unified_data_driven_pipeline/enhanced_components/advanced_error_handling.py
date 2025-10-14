@@ -14,11 +14,14 @@ from functools import wraps
 from datetime import datetime
 
 # Import utility modules
-from src.utils.common_utilities import (
+from src.utils.common_operations import (
     CommonUtilities, safe_dataframe_operation, safe_convert_dtypes,
     safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
     safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
-    get_dataframe_info, create_summary_statistics
+    get_dataframe_info, create_summary_statistics, safe_log_metric,
+    safe_log_params, safe_log_artifact, calculate_data_quality_metrics,
+    validate_dataframe, validate_dataframe_columns, optimize_dataframe_dtypes,
+    safe_fillna, safe_timestamp_conversion, guard_dataframe_nulls
 )
 from src.utils.serialization_utils import UniversalSerializer
 
@@ -165,9 +168,20 @@ class AdvancedErrorHandler:
         # Log error based on severity
         self._log_error(error_details)
         
+        # Log error metrics safely
+        safe_log_metric(f"error_{severity.value}", 1)
+        safe_log_params({
+            "operation": operation,
+            "error_type": type(error).__name__,
+            "error_message": str(error),
+            "severity": severity.value,
+            "category": category.value
+        })
+        
         # For critical errors, always raise
         if severity == ErrorSeverity.CRITICAL:
             tprint_error(f"❌ CRITICAL ERROR in {operation}: {str(error)}")
+            safe_log_artifact("critical_error", f"critical_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
             raise error
         
         # For high severity errors, raise unless return_value is provided
@@ -404,6 +418,30 @@ class AdvancedErrorHandler:
         return self.safe_execute(
             safe_convert_dtypes, data, dtype_mapping,
             operation="dataframe_dtype_conversion",
+            return_value=data
+        )
+    
+    def safe_dataframe_quality_assessment(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Safely assess DataFrame quality using utilities."""
+        return self.safe_execute(
+            calculate_data_quality_metrics, data,
+            operation="dataframe_quality_assessment",
+            return_value={}
+        )
+    
+    def safe_dataframe_optimization(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Safely optimize DataFrame using utilities."""
+        return self.safe_execute(
+            optimize_dataframe_dtypes, data,
+            operation="dataframe_optimization",
+            return_value=data
+        )
+    
+    def safe_dataframe_null_handling(self, data: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+        """Safely handle null values in DataFrame using utilities."""
+        return self.safe_execute(
+            guard_dataframe_nulls, data, threshold,
+            operation="dataframe_null_handling",
             return_value=data
         )
 

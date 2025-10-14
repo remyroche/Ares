@@ -591,7 +591,8 @@ class FeatureBankIntegration:
         try:
             memory_usage = data.memory_usage(deep=True).sum() / 1024 / 1024
             return float(memory_usage)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating memory usage: {e}")
             return 0.0
     
     

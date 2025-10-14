@@ -16,6 +16,23 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: tprint utilities not available: {e}")
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_info(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_success(msg, **kwargs): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg, **kwargs): print(f"[WARNING] {msg}")
+    def tprint_error(msg, **kwargs): print(f"[ERROR] {msg}")
+    def tprint_debug(msg, **kwargs): print(f"[DEBUG] {msg}")
+
 def create_test_data(n_samples=500, n_features=100):
     """Create test data for feature selection."""
     np.random.seed(42)
@@ -76,7 +93,7 @@ def create_test_data(n_samples=500, n_features=100):
 
 def test_lgbm_basic():
     """Test basic LightGBM feature selection."""
-    print("🧪 Testing basic LightGBM feature selection")
+    tprint_info("Testing basic LightGBM feature selection")
     
     try:
         # Install required packages

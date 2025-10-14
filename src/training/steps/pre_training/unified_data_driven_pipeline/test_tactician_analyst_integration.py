@@ -15,6 +15,23 @@ from pathlib import Path
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: tprint utilities not available: {e}")
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_info(msg, **kwargs): print(f"[INFO] {msg}")
+    def tprint_success(msg, **kwargs): print(f"[SUCCESS] {msg}")
+    def tprint_warning(msg, **kwargs): print(f"[WARNING] {msg}")
+    def tprint_error(msg, **kwargs): print(f"[ERROR] {msg}")
+    def tprint_debug(msg, **kwargs): print(f"[DEBUG] {msg}")
+
 from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import (
     UnifiedDataDrivenPipeline, 
     create_default_config

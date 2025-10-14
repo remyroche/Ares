@@ -787,7 +787,8 @@ class EconomicPeriodEvaluator:
             sharpe_ratio = validate_range(sharpe_ratio, -10.0, 10.0, "sharpe_ratio")
             
             return float(sharpe_ratio)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating Sharpe ratio fallback: {e}")
             return 0.0
     
     def _calculate_max_drawdown_fallback(self, prices: pd.Series, signals: pd.Series) -> float:
@@ -801,7 +802,8 @@ class EconomicPeriodEvaluator:
             drawdown = (cumulative_returns - running_max) / running_max
             
             return float(drawdown.min())
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating max drawdown fallback: {e}")
             return 0.0
     
     def _calculate_win_rate_fallback(self, returns: pd.Series) -> float:
@@ -809,21 +811,24 @@ class EconomicPeriodEvaluator:
         try:
             positive_returns = (returns > 0).astype(int)
             return float(positive_returns.mean())
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating win rate fallback: {e}")
             return 0.0
     
     def _calculate_total_return_fallback(self, returns: pd.Series) -> float:
         """Fallback total return calculation."""
         try:
             return float((1 + returns).prod() - 1)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating total return fallback: {e}")
             return 0.0
     
     def _calculate_volatility_fallback(self, returns: pd.Series) -> float:
         """Fallback volatility calculation."""
         try:
             return float(returns.std() * np.sqrt(252))
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating volatility fallback: {e}")
             return 0.0
     
     def _calculate_calmar_ratio_fallback(self, total_return: float, max_drawdown: float) -> float:
@@ -832,7 +837,8 @@ class EconomicPeriodEvaluator:
             if max_drawdown == 0:
                 return 0.0
             return float(total_return / abs(max_drawdown))
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating Calmar ratio fallback: {e}")
             return 0.0
     
     def _calculate_sortino_ratio_fallback(self, returns: pd.Series) -> float:
@@ -850,7 +856,8 @@ class EconomicPeriodEvaluator:
                 return 0.0
             
             return float(mean_return / downside_std)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating Sortino ratio fallback: {e}")
             return 0.0
     
     def _calculate_information_ratio_fallback(self, strategy_returns: pd.Series, 
@@ -865,7 +872,8 @@ class EconomicPeriodEvaluator:
                 return 0.0
             
             return float(mean_excess_return / tracking_error)
-        except:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating information ratio fallback: {e}")
             return 0.0
     
     def get_performance_stats(self) -> Dict[str, Any]:

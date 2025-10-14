@@ -173,6 +173,15 @@ class ConsolidatedPipelineResult:
     optimized_lookbacks: Dict[str, int] = None
     lookback_metrics: Dict[str, Any] = None
     
+    # Enhanced lookback optimization results
+    long_pipeline_results: Dict[str, Any] = None
+    short_pipeline_results: Dict[str, Any] = None
+    lookback_optimization_method: str = None
+    execution_mode: str = None
+    nested_cv_applied: bool = False
+    outer_fold_count: int = 0
+    feature_lag_metadata: Dict[str, Any] = None
+    
     # Enhanced feature generation results
     cross_timeframe_features: List[Any] = None
     interaction_features: List[Any] = None
@@ -481,7 +490,8 @@ class UnifiedDataDrivenPipeline:
     def process(self, data: pd.DataFrame, 
                 targets: Optional[pd.Series] = None,
                 feature_columns: Optional[List[str]] = None,
-                timeframe: str = "15m") -> ConsolidatedPipelineResult:
+                timeframe: str = "15m",
+                pipeline_state: Optional[Dict[str, Any]] = None) -> ConsolidatedPipelineResult:
         """
         Process data through the consolidated unified pipeline.
         
@@ -529,7 +539,7 @@ class UnifiedDataDrivenPipeline:
             
             # Step 6: Advanced lookback optimization
             tprint_info("Step 6: Advanced lookback optimization")
-            lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df)
+            lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df, pipeline_state)
             
             # Step 7: LightGBM + Featuretools + ALE feature generation
             tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
@@ -570,6 +580,14 @@ class UnifiedDataDrivenPipeline:
                 htf_metrics=combined_results['htf_metrics'],
                 optimized_lookbacks=combined_results['optimized_lookbacks'],
                 lookback_metrics=combined_results['lookback_metrics'],
+                # Enhanced lookback optimization results
+                long_pipeline_results=lookback_results.get('long_pipeline', {}),
+                short_pipeline_results=lookback_results.get('short_pipeline', {}),
+                lookback_optimization_method=lookback_results.get('optimization_method', 'unknown'),
+                execution_mode=lookback_results.get('execution_mode', 'unknown'),
+                nested_cv_applied=lookback_results.get('nested_cv_applied', False),
+                outer_fold_count=lookback_results.get('outer_fold_count', 0),
+                feature_lag_metadata=lookback_results.get('feature_lag_metadata', {}),
                 cross_timeframe_features=combined_results['cross_timeframe_features'],
                 interaction_features=combined_results['interaction_features'],
                 no_features=combined_results['no_features'],
@@ -801,9 +819,20 @@ class UnifiedDataDrivenPipeline:
             return {}
     
     def _advanced_lookback_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series], 
-                                      features_df: pd.DataFrame) -> Dict[str, int]:
-        """Advanced lookback optimization using sophisticated algorithms."""
-        tprint_debug("Starting advanced lookback optimization")
+                                      features_df: pd.DataFrame, pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Advanced lookback optimization using sophisticated algorithms with differentiated long/short pipelines.
+        
+        Features:
+        - Differentiated long/short optimization
+        - Walk-forward cross-validation with nested CV
+        - Bayesian optimization with mode awareness
+        - Execution mode constraints (light/blank/full)
+        - Advanced regularization and bootstrap sampling
+        - Feature lag metadata tracking
+        """
+        tprint_info("🚀 Starting sophisticated lookback optimization with differentiated pipelines")
+        tprint_debug(f"📊 Data shape: {data.shape}, Features: {len(features_df.columns)}")
         
         try:
             # Prepare data for optimization
@@ -825,46 +854,399 @@ class UnifiedDataDrivenPipeline:
                 tprint_warning("⚠️ No features available for lookback optimization")
                 return {}
             
-            # Use advanced lookback optimizer
-            tprint_debug(f"🔧 Optimizing {len(feature_names)} features using advanced algorithms")
+            # Determine outer walk-forward splits for nested CV
+            outer_splits = self._build_walk_forward_splits(len(aligned_data))
+            use_nested_cv = bool(outer_splits)
             
-            # Configure optimization
-            lookback_range = (5, 100)  # Extended range for better optimization
-            method = OptimizationMethod.COARSE_TO_REFINE  # Use sophisticated method
+            if use_nested_cv:
+                tprint_info(f"🧭 Using nested walk-forward CV with {len(outer_splits)} outer folds")
+            else:
+                tprint_info("🧭 Nested walk-forward CV unavailable, using single-pass optimization")
             
-            # Run parallel batch optimization
-            optimization_results = self.advanced_lookback_optimizer.optimize_features_parallel_batch(
-                data=aligned_data,
-                feature_names=feature_names,
-                target_column='target',  # We'll add this column
-                lookback_range=lookback_range,
-                method=method,
-                max_workers=4,
-                batch_size=10
-            )
+            # Get optimization direction from pipeline state (default to 'both')
+            optimization_direction = pipeline_state.get('direction', 'both') if pipeline_state else 'both'
+            tprint_info(f"🎯 Optimization direction: {optimization_direction}")
             
-            # Extract optimized lookbacks
-            optimized_lookbacks = {}
-            successful_optimizations = 0
+            # Select optimal target columns for long/short directions
+            long_target_column = self._select_optimal_target_column(aligned_data, direction='long')
+            short_target_column = self._select_optimal_target_column(aligned_data, direction='short')
             
-            for result in optimization_results:
-                if result.success:
-                    optimized_lookbacks[result.feature_name] = result.best_lookback
-                    successful_optimizations += 1
-                    tprint_debug(f"✅ {result.feature_name}: lookback={result.best_lookback}, score={result.best_score:.4f}")
-                else:
-                    tprint_warning(f"⚠️ Failed to optimize {result.feature_name}: {result.error_message}")
+            tprint_success(f"✅ Target selection complete - Long: {long_target_column}, Short: {short_target_column}")
+            
+            # Determine which directions to optimize
+            optimize_longs = optimization_direction in ('longs', 'both')
+            optimize_shorts = optimization_direction in ('shorts', 'both')
+            
+            # Detect execution mode and create mode-aware constraints
+            execution_mode = aligned_data.attrs.get('ares_mode', 'full')
+            if execution_mode not in ['light', 'blank', 'full']:
+                execution_mode = pipeline_state.get('execution_mode', 'full') if pipeline_state else 'full'
+            
+            tprint_info(f"🎯 Detected execution mode: {execution_mode.upper()}")
+            
+            # Create mode-aware constraints
+            mode_constraints = self._create_mode_aware_constraints(execution_mode)
+            
+            # Apply mode-specific optimization parameters
+            use_bayesian_opt = mode_constraints.get('use_bayesian_optimization', True)
+            n_bootstrap = mode_constraints.get('n_bootstrap_samples', 100)
+            cv_folds = mode_constraints.get('cv_folds', 5)
+            
+            tprint_debug(f"⚙️ Optimization settings: bayesian={use_bayesian_opt}, bootstrap={n_bootstrap}, cv_folds={cv_folds}")
+            tprint_debug(f"🎯 Directions: longs={optimize_longs}, shorts={optimize_shorts}")
+            
+            # Separate optimization for long and short directions
+            long_feature_results = {}
+            short_feature_results = {}
+            
+            total_features = len(feature_names)
+            tprint_info(f"🚀 Starting optimization of {total_features} features")
+            
+            # Reset feature lag metadata
+            feature_lag_metadata = {}
+            
+            for idx, feature in enumerate(feature_names, 1):
+                try:
+                    if idx % max(1, total_features // 10) == 0:  # Log every 10%
+                        tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
+                    
+                    tprint_debug(f"🔍 Optimizing feature {idx}/{total_features}: {feature}")
+                    
+                    # Use consistent lookback range for all execution modes
+                    lookback_range = (3, 100)  # Optimized range for faster, more relevant periods
+                    
+                    optimizer_kwargs = {
+                        'regularization_settings': self._get_regularization_settings(),
+                        'n_bootstrap_samples': n_bootstrap,
+                        'cv_folds': cv_folds,
+                        'use_bayesian_optimization': use_bayesian_opt
+                    }
+                    
+                    if use_nested_cv:
+                        optimizer_kwargs['outer_split_iterator'] = outer_splits
+                    
+                    # Optimize for LONG direction
+                    if optimize_longs and long_target_column:
+                        tprint_debug(f"📈 Optimizing LONG direction for {feature}")
+                        long_entry = self._optimize_feature_direction(
+                            aligned_data, feature, long_target_column, 'long',
+                            lookback_range, optimizer_kwargs, use_bayesian_opt,
+                            execution_mode, use_nested_cv, pipeline_state
+                        )
+                        if long_entry:
+                            feature_key = self._normalize_feature_key(feature)
+                            long_feature_results[feature_key] = long_entry
+                            feature_lag_metadata[f"{feature_key}_long"] = long_entry.get('best_lookback_period', 0)
+                            tprint_debug(f"✅ LONG optimization completed for {feature}")
+                        else:
+                            tprint_warning(f"⚠️ LONG optimization failed for {feature}")
+                    
+                    # Optimize for SHORT direction
+                    if optimize_shorts and short_target_column:
+                        tprint_debug(f"📉 Optimizing SHORT direction for {feature}")
+                        short_entry = self._optimize_feature_direction(
+                            aligned_data, feature, short_target_column, 'short',
+                            lookback_range, optimizer_kwargs, use_bayesian_opt,
+                            execution_mode, use_nested_cv, pipeline_state
+                        )
+                        if short_entry:
+                            feature_key = self._normalize_feature_key(feature)
+                            short_feature_results[feature_key] = short_entry
+                            feature_lag_metadata[f"{feature_key}_short"] = short_entry.get('best_lookback_period', 0)
+                            tprint_debug(f"✅ SHORT optimization completed for {feature}")
+                        else:
+                            tprint_warning(f"⚠️ SHORT optimization failed for {feature}")
+                
+                except Exception as e:
+                    tprint_error(f"❌ Feature optimization failed for {feature}: {e}")
+                    continue
+            
+            # Combine results
+            total_optimized = len(long_feature_results) + len(short_feature_results)
+            
+            # Report results
+            if optimization_direction == 'longs':
+                tprint_success(f"🎯 Completed LONGS-only optimization - {len(long_feature_results)} features")
+            elif optimization_direction == 'shorts':
+                tprint_success(f"🎯 Completed SHORTS-only optimization - {len(short_feature_results)} features")
+            else:
+                tprint_success(f"🎯 Completed differentiated optimization - Long: {len(long_feature_results)} features, Short: {len(short_feature_results)} features")
             
             # Update performance stats
-            self.performance_stats['lookback_optimizations'] = successful_optimizations
+            self.performance_stats['lookback_optimizations'] = total_optimized
             
-            tprint_success(f"✅ Advanced lookback optimization completed: {successful_optimizations}/{len(feature_names)} features optimized")
-            
-            return optimized_lookbacks
+            # Return comprehensive results
+            return {
+                'long_pipeline': long_feature_results,
+                'short_pipeline': short_feature_results,
+                'long_target': long_target_column,
+                'short_target': short_target_column,
+                'total_features_optimized': total_optimized,
+                'optimization_method': 'coarse_to_refine_directional',
+                'feature_lag_metadata': feature_lag_metadata,
+                'execution_mode': execution_mode,
+                'nested_cv_applied': use_nested_cv,
+                'outer_fold_count': len(outer_splits) if outer_splits else 0
+            }
             
         except Exception as e:
             tprint_error(f"❌ Advanced lookback optimization failed: {e}")
-            return {}
+            return {
+                'long_pipeline': {},
+                'short_pipeline': {},
+                'long_target': None,
+                'short_target': None,
+                'total_features_optimized': 0,
+                'optimization_method': 'failed',
+                'feature_lag_metadata': {},
+                'execution_mode': 'failed',
+                'nested_cv_applied': False,
+                'outer_fold_count': 0,
+                'error': str(e)
+            }
+    
+    def _build_walk_forward_splits(self, data_length: int, wf_config: Optional[Dict[str, Any]] = None) -> List[Tuple[slice, slice]]:
+        """Create walk-forward outer CV splits when enough history is available with configurable parameters."""
+        # Use provided config or create default
+        if wf_config is None:
+            wf_config = {
+                'n_splits': 5,
+                'min_window_size': 50,
+                'min_val_samples': 20,
+                'min_train_samples': 100,
+                'min_train_ratio': 0.6
+            }
+        
+        if data_length <= 0 or wf_config['n_splits'] <= 0:
+            tprint_debug(f"⚠️ Invalid data length ({data_length}) or n_splits ({wf_config['n_splits']})")
+            return []
+
+        max_splits = max(1, wf_config['n_splits'])
+        window = data_length // (max_splits + 1)
+
+        # Reduce split count until validation windows are large enough for stable estimates
+        while max_splits > 1 and window < wf_config['min_window_size']:
+            max_splits -= 1
+            window = data_length // (max_splits + 1)
+            tprint_debug(f"🔄 Reduced splits to {max_splits} (window={window})")
+
+        if window < wf_config['min_val_samples']:
+            tprint_warning(f"⚠️ Window size {window} < minimum {wf_config['min_val_samples']}, no splits created")
+            return []
+
+        splits: List[Tuple[slice, slice]] = []
+        min_train_size = max(wf_config['min_train_samples'], int(data_length * wf_config['min_train_ratio']))
+        min_val_size = max(wf_config['min_val_samples'], window // 2)
+
+        tprint_debug(f"📊 Walk-forward config: min_train={min_train_size}, min_val={min_val_size}, window={window}")
+
+        for fold_idx in range(1, max_splits + 1):
+            train_end = window * fold_idx
+            val_start = train_end
+            val_end = min(data_length, val_start + window)
+
+            if train_end < min_train_size:
+                tprint_debug(f"⚠️ Fold {fold_idx}: train_end ({train_end}) < min_train_size ({min_train_size}), skipping")
+                continue
+
+            if val_end - val_start < min_val_size:
+                tprint_debug(f"⚠️ Fold {fold_idx}: val_size ({val_end - val_start}) < min_val_size ({min_val_size}), stopping")
+                break
+
+            splits.append((slice(0, train_end), slice(val_start, val_end)))
+            tprint_debug(f"✅ Fold {fold_idx}: train[0:{train_end}], val[{val_start}:{val_end}]")
+
+        tprint_info(f"📊 Created {len(splits)} walk-forward splits from {data_length} samples")
+        return splits
+    
+    def _select_optimal_target_column(self, data: pd.DataFrame, direction: str) -> Optional[str]:
+        """Select optimal target column for the given direction (long/short)."""
+        try:
+            # Look for target columns in the data
+            target_columns = [col for col in data.columns if 'target' in col.lower()]
+            
+            if not target_columns:
+                tprint_warning(f"⚠️ No target columns found for {direction} direction")
+                return None
+            
+            # Prefer direction-specific targets
+            direction_targets = [col for col in target_columns if direction in col.lower()]
+            
+            if direction_targets:
+                selected = direction_targets[0]
+                tprint_debug(f"✅ Selected {direction}-specific target: {selected}")
+                return selected
+            
+            # Fall back to generic targets
+            if target_columns:
+                selected = target_columns[0]
+                tprint_debug(f"✅ Selected generic target for {direction}: {selected}")
+                return selected
+            
+            return None
+            
+        except Exception as e:
+            tprint_error(f"❌ Target column selection failed for {direction}: {e}")
+            return None
+    
+    def _create_mode_aware_constraints(self, execution_mode: str) -> Dict[str, Any]:
+        """Create mode-aware constraints for optimization based on execution mode."""
+        constraints = {
+            'light': {
+                'use_bayesian_optimization': False,
+                'n_bootstrap_samples': 20,
+                'cv_folds': 3,
+                'max_features': 50,
+                'max_lookback': 30
+            },
+            'blank': {
+                'use_bayesian_optimization': False,
+                'n_bootstrap_samples': 10,
+                'cv_folds': 2,
+                'max_features': 20,
+                'max_lookback': 20
+            },
+            'full': {
+                'use_bayesian_optimization': True,
+                'n_bootstrap_samples': 100,
+                'cv_folds': 5,
+                'max_features': 200,
+                'max_lookback': 100
+            }
+        }
+        
+        return constraints.get(execution_mode, constraints['full'])
+    
+    def _get_regularization_settings(self) -> Dict[str, Any]:
+        """Get regularization settings for lookback optimization."""
+        return {
+            'l1_alpha': 0.01,
+            'l2_alpha': 0.01,
+            'elastic_net_ratio': 0.5,
+            'max_lookback_penalty': 0.001,
+            'min_lookback_penalty': 0.0001
+        }
+    
+    def _optimize_feature_direction(self, data: pd.DataFrame, feature: str, target_column: str, 
+                                  direction: str, lookback_range: Tuple[int, int], 
+                                  optimizer_kwargs: Dict[str, Any], use_bayesian_opt: bool,
+                                  execution_mode: str, use_nested_cv: bool, 
+                                  pipeline_state: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Optimize a single feature for a specific direction (long/short)."""
+        tprint_debug(f"🎯 Optimizing {feature} for {direction} direction using {target_column}")
+        
+        try:
+            # Try VectorBT optimization first if available
+            if hasattr(self, 'vectorbt_optimizer') and self.vectorbt_optimizer:
+                tprint_debug(f"🚀 Using VectorBT optimization for {feature} ({direction})")
+                try:
+                    result = self.vectorbt_optimizer.optimize_feature_lookback(
+                        data,
+                        feature,
+                        target_column,
+                        lookback_range=lookback_range,
+                        regularization_settings=optimizer_kwargs.get('regularization_settings', {})
+                    )
+                    
+                    tprint_debug(f"✅ VectorBT optimization completed: period={result.best_lookback_period}, score={result.best_score:.4f}")
+                    
+                    # Convert VectorBT result to expected format
+                    return {
+                        'best_lookback_period': result.best_lookback_period,
+                        'best_score': result.best_score,
+                        'optimization_method': getattr(result, 'optimization_method', 'vectorbt'),
+                        'target_column': target_column,
+                        'direction': direction,
+                        'total_trials': getattr(result, 'total_trials', 1),
+                        'optimization_time': getattr(result, 'optimization_time', 0.0),
+                        'convergence_achieved': getattr(result, 'convergence_achieved', True)
+                    }
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT optimization failed, falling back to standard: {e}")
+                    return self._fallback_optimization(
+                        data, feature, target_column, lookback_range, 
+                        optimizer_kwargs, use_bayesian_opt, execution_mode
+                    )
+            else:
+                # Use fallback optimization
+                tprint_debug(f"🔄 Using fallback optimization for {feature} ({direction})")
+                return self._fallback_optimization(
+                    data, feature, target_column, lookback_range, 
+                    optimizer_kwargs, use_bayesian_opt, execution_mode
+                )
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature optimization failed for {feature} ({direction}): {e}")
+            return None
+    
+    def _fallback_optimization(self, data: pd.DataFrame, feature: str, target_column: str,
+                             lookback_range: Tuple[int, int], optimizer_kwargs: Dict[str, Any],
+                             use_bayesian_opt: bool, execution_mode: str) -> Optional[Dict[str, Any]]:
+        """Fallback optimization method when VectorBT is not available."""
+        try:
+            # Simple grid search optimization
+            min_lookback, max_lookback = lookback_range
+            best_score = -np.inf
+            best_lookback = min_lookback
+            
+            # Sample lookback periods based on execution mode
+            if execution_mode == 'light':
+                lookback_samples = range(min_lookback, max_lookback + 1, 5)
+            elif execution_mode == 'blank':
+                lookback_samples = range(min_lookback, max_lookback + 1, 10)
+            else:
+                lookback_samples = range(min_lookback, max_lookback + 1, 2)
+            
+            for lookback in lookback_samples:
+                try:
+                    # Calculate feature with current lookback
+                    if feature in data.columns:
+                        feature_values = data[feature].rolling(lookback).mean()
+                        target_values = data[target_column]
+                        
+                        # Align data
+                        aligned_data = pd.DataFrame({
+                            'feature': feature_values,
+                            'target': target_values
+                        }).dropna()
+                        
+                        if len(aligned_data) < 10:  # Need minimum samples
+                            continue
+                        
+                        # Calculate correlation as score
+                        correlation = aligned_data['feature'].corr(aligned_data['target'])
+                        score = abs(correlation) if not np.isnan(correlation) else 0
+                        
+                        if score > best_score:
+                            best_score = score
+                            best_lookback = lookback
+                            
+                except Exception as e:
+                    tprint_debug(f"⚠️ Lookback {lookback} failed: {e}")
+                    continue
+            
+            if best_score > -np.inf:
+                return {
+                    'best_lookback_period': best_lookback,
+                    'best_score': best_score,
+                    'optimization_method': 'grid_search_fallback',
+                    'target_column': target_column,
+                    'direction': 'unknown',
+                    'total_trials': len(lookback_samples),
+                    'optimization_time': 0.0,
+                    'convergence_achieved': True
+                }
+            else:
+                tprint_warning(f"⚠️ Fallback optimization failed for {feature}")
+                return None
+                
+        except Exception as e:
+            tprint_error(f"❌ Fallback optimization failed for {feature}: {e}")
+            return None
+    
+    def _normalize_feature_key(self, feature: str) -> str:
+        """Normalize feature key for consistent naming."""
+        return str(feature).replace(' ', '_').replace('-', '_').lower()
     
     def _lightgbm_featuretools_generation(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                         base_features: pd.DataFrame) -> Dict[str, Any]:
@@ -1029,10 +1411,27 @@ class UnifiedDataDrivenPipeline:
     
     def _combine_results(self, period_results: Dict[str, Any], feature_selection_results: Any,
                         interaction_results: List[Any], htf_results: List[Any], 
-                        lookback_results: Dict[str, int], enhanced_feature_results: Dict[str, Any],
+                        lookback_results: Dict[str, Any], enhanced_feature_results: Dict[str, Any],
                         final_selection_results: Any) -> Dict[str, Any]:
         """Combine all pipeline results."""
         try:
+            # Extract lookback results for backward compatibility
+            optimized_lookbacks = {}
+            if isinstance(lookback_results, dict):
+                # Handle enhanced lookback results
+                if 'long_pipeline' in lookback_results and 'short_pipeline' in lookback_results:
+                    # Extract lookbacks from both pipelines
+                    for feature_data in lookback_results.get('long_pipeline', {}).values():
+                        if 'best_lookback_period' in feature_data:
+                            optimized_lookbacks[f"{feature_data.get('feature_name', 'unknown')}_long"] = feature_data['best_lookback_period']
+                    
+                    for feature_data in lookback_results.get('short_pipeline', {}).values():
+                        if 'best_lookback_period' in feature_data:
+                            optimized_lookbacks[f"{feature_data.get('feature_name', 'unknown')}_short"] = feature_data['best_lookback_period']
+                else:
+                    # Fallback to simple lookback results
+                    optimized_lookbacks = lookback_results
+            
             return {
                 'optimal_periods': period_results.get('optimal_periods', []),
                 'period_scores': period_results.get('period_scores', {}),
@@ -1045,8 +1444,8 @@ class UnifiedDataDrivenPipeline:
                 'interaction_metrics': self._calculate_interaction_metrics(interaction_results),
                 'htf_interactions': htf_results,
                 'htf_metrics': self._calculate_interaction_metrics(htf_results),
-                'optimized_lookbacks': lookback_results,
-                'lookback_metrics': self._calculate_lookback_metrics(lookback_results),
+                'optimized_lookbacks': optimized_lookbacks,
+                'lookback_metrics': self._calculate_enhanced_lookback_metrics(lookback_results),
                 'cross_timeframe_features': enhanced_feature_results.get('cross_timeframe_features', []),
                 'interaction_features': enhanced_feature_results.get('interaction_features', []),
                 'no_features': enhanced_feature_results.get('no_features', []),
@@ -1158,6 +1557,57 @@ class UnifiedDataDrivenPipeline:
         except:
             return {}
     
+    def _calculate_enhanced_lookback_metrics(self, lookback_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate enhanced metrics for sophisticated lookback optimization."""
+        if not lookback_results:
+            return {}
+        
+        try:
+            metrics = {
+                'total_features_optimized': lookback_results.get('total_features_optimized', 0),
+                'optimization_method': lookback_results.get('optimization_method', 'unknown'),
+                'execution_mode': lookback_results.get('execution_mode', 'unknown'),
+                'nested_cv_applied': lookback_results.get('nested_cv_applied', False),
+                'outer_fold_count': lookback_results.get('outer_fold_count', 0)
+            }
+            
+            # Calculate metrics for long pipeline
+            long_pipeline = lookback_results.get('long_pipeline', {})
+            if long_pipeline:
+                long_lookbacks = [data.get('best_lookback_period', 0) for data in long_pipeline.values() 
+                                if isinstance(data, dict) and 'best_lookback_period' in data]
+                if long_lookbacks:
+                    metrics['long_pipeline'] = {
+                        'features_count': len(long_lookbacks),
+                        'average_lookback': np.mean(long_lookbacks),
+                        'min_lookback': min(long_lookbacks),
+                        'max_lookback': max(long_lookbacks)
+                    }
+            
+            # Calculate metrics for short pipeline
+            short_pipeline = lookback_results.get('short_pipeline', {})
+            if short_pipeline:
+                short_lookbacks = [data.get('best_lookback_period', 0) for data in short_pipeline.values() 
+                                 if isinstance(data, dict) and 'best_lookback_period' in data]
+                if short_lookbacks:
+                    metrics['short_pipeline'] = {
+                        'features_count': len(short_lookbacks),
+                        'average_lookback': np.mean(short_lookbacks),
+                        'min_lookback': min(short_lookbacks),
+                        'max_lookback': max(short_lookbacks)
+                    }
+            
+            # Feature lag metadata
+            feature_lag_metadata = lookback_results.get('feature_lag_metadata', {})
+            if feature_lag_metadata:
+                metrics['feature_lag_metadata'] = feature_lag_metadata
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_error(f"Enhanced lookback metrics calculation failed: {e}")
+            return {}
+    
     def _update_performance_stats(self, execution_time: float, combined_results: Dict[str, Any]):
         """Update performance statistics."""
         self.performance_stats.update({
@@ -1208,6 +1658,14 @@ class UnifiedDataDrivenPipeline:
             htf_metrics={},
             optimized_lookbacks={},
             lookback_metrics={},
+            # Enhanced lookback optimization results
+            long_pipeline_results={},
+            short_pipeline_results={},
+            lookback_optimization_method='failed',
+            execution_mode='failed',
+            nested_cv_applied=False,
+            outer_fold_count=0,
+            feature_lag_metadata={},
             cross_timeframe_features=[],
             interaction_features=[],
             no_features=[],
@@ -1304,7 +1762,8 @@ def process_with_unified_pipeline(data: pd.DataFrame,
                                 targets: Optional[pd.Series] = None,
                                 feature_columns: Optional[List[str]] = None,
                                 timeframe: str = "15m",
-                                config: Optional[UnifiedPipelineConfig] = None) -> ConsolidatedPipelineResult:
+                                config: Optional[UnifiedPipelineConfig] = None,
+                                pipeline_state: Optional[Dict[str, Any]] = None) -> ConsolidatedPipelineResult:
     """
     Convenience function to process data with unified pipeline.
     
@@ -1319,7 +1778,7 @@ def process_with_unified_pipeline(data: pd.DataFrame,
         ConsolidatedPipelineResult with selected features and performance metrics
     """
     pipeline = create_unified_pipeline(config)
-    return pipeline.process(data, targets, feature_columns, timeframe)
+    return pipeline.process(data, targets, feature_columns, timeframe, pipeline_state)
 
 
 # Export main classes and functions

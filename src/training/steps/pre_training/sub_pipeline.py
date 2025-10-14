@@ -4017,6 +4017,11 @@ class PreTrainingSubPipeline:
                 labeling_type = 'tactician'
             elif 'analyst' in run_metadata.get('run_type', '').lower():
                 labeling_type = 'analyst'
+            
+            # Both analyst and tactician use 15m timeframe
+            if config.timeframe != '15m':
+                tprint_info(f"🔄 Adjusting timeframe from {config.timeframe} to 15m for unified pipeline")
+                config.timeframe = '15m'
 
             # Create pipeline configuration
             pipeline_config = create_default_config()

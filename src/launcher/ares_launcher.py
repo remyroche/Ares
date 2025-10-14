@@ -587,7 +587,7 @@ class AresLauncher:
         # Parse the shortcut to determine configuration
         parts = sub_pipeline.split('_')
         labeling_type = 'analyst'  # default
-        direction = 'both'  # default
+        direction = 'longs'  # default
         
         if 'analyst' in parts:
             labeling_type = 'analyst'
@@ -603,10 +603,8 @@ class AresLauncher:
         config.direction = DirectionType(direction)
         
         # Set appropriate timeframe based on labeling type
-        if labeling_type == 'analyst':
-            config.timeframe = '60m'
-        else:  # tactician
-            config.timeframe = '15m'
+        # Both analyst and tactician use 15m timeframe
+        config.timeframe = '15m'
         
         # Add custom parameters for the unified pipeline
         if not hasattr(config, 'custom_params'):
@@ -1636,15 +1634,15 @@ Examples:
   # Shortcut: Execute Tactician entry labeler
   python ares_launcher.py --tactician-labeler --symbol ETHUSDT --timeframe 15m
 
-  # Shortcut: Execute Unified Data-Driven Pipeline in Analyst mode
-  python ares_launcher.py --unified-pipeline-analyst --symbol ETHUSDT --timeframe 60m
+  # Shortcut: Execute Unified Data-Driven Pipeline in Analyst mode (15m timeframe, long positions)
+  python ares_launcher.py --unified-pipeline-analyst --symbol ETHUSDT
 
-  # Shortcut: Execute Unified Data-Driven Pipeline in Tactician mode
-  python ares_launcher.py --unified-pipeline-tactician --symbol ETHUSDT --timeframe 15m
+  # Shortcut: Execute Unified Data-Driven Pipeline in Tactician mode (15m timeframe, long positions)
+  python ares_launcher.py --unified-pipeline-tactician --symbol ETHUSDT
 
   # Shortcut: Execute Unified Data-Driven Pipeline with specific direction
-  python ares_launcher.py --unified-pipeline-analyst-long --symbol ETHUSDT --timeframe 60m
-  python ares_launcher.py --unified-pipeline-tactician-short --symbol ETHUSDT --timeframe 15m
+  python ares_launcher.py --unified-pipeline-analyst-long --symbol ETHUSDT
+  python ares_launcher.py --unified-pipeline-tactician-short --symbol ETHUSDT
 
   # Shortcut: Execute Tactician ensemble training in light mode
   python ares_launcher.py --tactician-ensemble --execution-mode light --symbol ETHUSDT
@@ -1683,7 +1681,7 @@ Examples:
     parser.add_argument(
         '--timeframe',
         default='1m',
-        help='Data timeframe (default: 1m; use 15m for Analyst steps and 5m for Tactician steps)'
+        help='Data timeframe (default: 1m; use 15m for both Analyst and Tactician steps)'
     )
     
     parser.add_argument(

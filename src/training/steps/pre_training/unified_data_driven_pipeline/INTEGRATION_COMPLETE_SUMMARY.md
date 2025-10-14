@@ -47,7 +47,7 @@ The UnifiedDataDrivenPipeline has been successfully integrated with the tacticia
     - `--unified-pipeline-tactician-short`: Tactician mode (short only)
   - Added `_execute_unified_pipeline_shortcut()` method
   - Updated help text and examples
-  - Added automatic timeframe selection (60m for analyst, 15m for tactician)
+  - Added automatic timeframe selection (15m for both analyst and tactician)
   - Added direction parameter handling
 
 ## 🚀 **New Usage Examples**
@@ -55,10 +55,10 @@ The UnifiedDataDrivenPipeline has been successfully integrated with the tacticia
 ### **Command Line Usage**
 
 ```bash
-# Analyst mode (both directions, 60m timeframe)
+# Analyst mode (long positions, 15m timeframe)
 python ares_launcher.py --unified-pipeline-analyst --symbol ETHUSDT
 
-# Tactician mode (both directions, 15m timeframe)
+# Tactician mode (long positions, 15m timeframe)
 python ares_launcher.py --unified-pipeline-tactician --symbol ETHUSDT
 
 # Analyst mode (long positions only)

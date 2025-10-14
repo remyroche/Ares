@@ -77,6 +77,9 @@ from .enhanced_components.gpu_optimizations import (
 from .enhanced_components.advanced_feature_selection import (
     AdvancedFeatureSelector, FeatureSelectionConfig as AdvancedFeatureSelectionConfig
 )
+from .enhanced_components.lightgbm_featuretools_generator import (
+    LightGBMFeatureToolsGenerator, LightGBMFeatureToolsConfig
+)
 from .enhanced_components.advanced_lookback_optimizer import (
     AdvancedLookbackOptimizer, LookbackConstraints, OptimizationMethod
 )
@@ -404,6 +407,20 @@ class UnifiedDataDrivenPipeline:
         )
         self.enhanced_feature_generator = EnhancedFeatureGenerator(feature_gen_config)
         
+        # LightGBM + Featuretools + ALE feature generator
+        lightgbm_config = LightGBMFeatureToolsConfig(
+            model_type='lightgbm',  # Can be 'lightgbm' or 'catboost'
+            max_features_to_select=100,  # Maximum 100 features as requested
+            use_featuretools=True,
+            use_ale_validation=True,
+            use_shap=True,
+            enable_vectorbt=VECTORBT_AVAILABLE,
+            enable_parallel=True,
+            memory_efficient=True,
+            max_workers=4
+        )
+        self.lightgbm_featuretools_generator = LightGBMFeatureToolsGenerator(lightgbm_config)
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_validation_components(self):
@@ -514,9 +531,9 @@ class UnifiedDataDrivenPipeline:
             tprint_info("Step 6: Advanced lookback optimization")
             lookback_results = self._advanced_lookback_optimization(processed_data, processed_targets, selected_features_df)
             
-            # Step 7: Enhanced feature generation
-            tprint_info("Step 7: Enhanced feature generation")
-            enhanced_feature_results = self._enhanced_feature_generation(processed_data, processed_targets, selected_features_df)
+            # Step 7: LightGBM + Featuretools + ALE feature generation
+            tprint_info("Step 7: LightGBM + Featuretools + ALE feature generation")
+            enhanced_feature_results = self._lightgbm_featuretools_generation(processed_data, processed_targets, selected_features_df)
             
             # Step 8: Final feature selection
             tprint_info("Step 8: Final feature selection")
@@ -849,6 +866,89 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Advanced lookback optimization failed: {e}")
             return {}
     
+    def _lightgbm_featuretools_generation(self, data: pd.DataFrame, targets: Optional[pd.Series], 
+                                        base_features: pd.DataFrame) -> Dict[str, Any]:
+        """LightGBM + Featuretools + ALE feature generation."""
+        tprint_debug("Starting LightGBM + Featuretools + ALE feature generation")
+        
+        try:
+            # Prepare data for feature generation
+            if targets is None:
+                # Create synthetic targets if none provided
+                if 'close' in data.columns:
+                    targets = data['close'].pct_change().dropna()
+                else:
+                    tprint_warning("⚠️ No targets provided and no close price available")
+                    return self._create_empty_enhanced_feature_result()
+            
+            # Align data and targets
+            aligned_data = data.copy()
+            aligned_targets = targets.reindex(data.index)
+            
+            # Use LightGBM + Featuretools generator
+            feature_result = self.lightgbm_featuretools_generator.generate_features(
+                aligned_data, 
+                'target',  # We'll add this column
+                list(base_features.columns) if base_features is not None else None,
+                'full'
+            )
+            
+            if feature_result.generated_features:
+                tprint_success(f"✅ LightGBM + Featuretools + ALE feature generation completed: "
+                             f"{len(feature_result.generated_features)} features generated, "
+                             f"{feature_result.featuretools_features_generated} from Featuretools, "
+                             f"SHAP: {feature_result.shap_analysis_completed}, "
+                             f"ALE: {feature_result.ale_validation_completed}")
+                
+                # Convert to the expected format
+                generated_features = []
+                for feat in feature_result.generated_features:
+                    generated_features.append({
+                        'name': feat.name,
+                        'formula': feat.formula,
+                        'feature_series': feat.feature_series,
+                        'importance_score': feat.importance_score,
+                        'parent_features': feat.parent_features,
+                        'feature_type': feat.feature_type,
+                        'generation_method': feat.generation_method,
+                        'metadata': feat.metadata
+                    })
+                
+                return {
+                    'cross_timeframe_features': generated_features[:len(generated_features)//4],
+                    'interaction_features': generated_features[len(generated_features)//4:len(generated_features)//2],
+                    'no_features': generated_features[len(generated_features)//2:3*len(generated_features)//4],
+                    'comparison_features': generated_features[3*len(generated_features)//4:],
+                    'enhanced_feature_metrics': {
+                        'total_features': len(generated_features),
+                        'cross_timeframe_count': len(generated_features)//4,
+                        'interaction_count': len(generated_features)//4,
+                        'no_features_count': len(generated_features)//4,
+                        'comparison_count': len(generated_features) - 3*(len(generated_features)//4),
+                        'generation_time': feature_result.generation_time,
+                        'shap_analysis_completed': feature_result.shap_analysis_completed,
+                        'ale_validation_completed': feature_result.ale_validation_completed,
+                        'featuretools_features_generated': feature_result.featuretools_features_generated
+                    }
+                }
+            else:
+                tprint_error(f"❌ LightGBM + Featuretools feature generation failed: No features generated")
+                return self._create_empty_enhanced_feature_result()
+                
+        except Exception as e:
+            tprint_error(f"❌ LightGBM + Featuretools feature generation failed: {e}")
+            return self._create_empty_enhanced_feature_result()
+    
+    def _create_empty_enhanced_feature_result(self) -> Dict[str, Any]:
+        """Create empty enhanced feature result."""
+        return {
+            'cross_timeframe_features': [],
+            'interaction_features': [],
+            'no_features': [],
+            'comparison_features': [],
+            'enhanced_feature_metrics': {}
+        }
+    
     def _enhanced_feature_generation(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                    base_features: pd.DataFrame) -> Dict[str, Any]:
         """Enhanced feature generation including cross-timeframe, interactions, and no features."""
@@ -1150,6 +1250,7 @@ class UnifiedDataDrivenPipeline:
         stats['advanced_lookback_optimizer'] = self.advanced_lookback_optimizer.get_performance_stats()
         stats['feature_bank_integration'] = self.feature_bank_integration.get_performance_stats()
         stats['enhanced_feature_generator'] = self.enhanced_feature_generator.get_performance_stats()
+        stats['lightgbm_featuretools_generator'] = self.lightgbm_featuretools_generator.get_performance_stats()
         
         # Add modular architecture stats
         stats['input_validator'] = self.input_validator.get_validation_stats()
@@ -1187,6 +1288,7 @@ class UnifiedDataDrivenPipeline:
         self.advanced_lookback_optimizer.reset_stats()
         self.feature_bank_integration.reset_stats()
         self.enhanced_feature_generator.reset_stats()
+        self.lightgbm_featuretools_generator.reset_stats()
         
         # Reset modular architecture stats
         self.performance_monitor.reset_stats()

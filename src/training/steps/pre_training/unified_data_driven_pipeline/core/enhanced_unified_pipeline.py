@@ -55,6 +55,21 @@ from .vectorbt_optimizer import (
     create_vectorbt_optimizer
 )
 
+# Import sophisticated components
+from ..enhanced_components.sophisticated_lookback_optimizer import (
+    SophisticatedLookbackOptimizer, SophisticatedOptimizationResult,
+    OptimizationDirection, create_sophisticated_lookback_optimizer
+)
+from ..enhanced_components.multi_horizon_integration import (
+    MultiHorizonIntegration, MultiHorizonIntegrationResult,
+    TargetDirection, create_multi_horizon_integration
+)
+from ..enhanced_components.comprehensive_validation import (
+    ComprehensiveValidator, ValidationLevel as CompValidationLevel,
+    ErrorSeverity as CompErrorSeverity, ErrorCategory as CompErrorCategory,
+    ValidationSummary, PerformanceValidationResult, create_comprehensive_validator
+)
+
 # Import existing components
 from .config import UnifiedPipelineConfig, create_default_config
 from ..time_series_cv import PurgedEmbargoedWalkForwardCV, create_purged_embargoed_cv
@@ -263,6 +278,15 @@ class EnhancedUnifiedDataDrivenPipeline:
         )
         self.vectorbt_optimizer = create_vectorbt_optimizer(vectorbt_config)
         
+        # Sophisticated lookback optimizer
+        self.sophisticated_lookback_optimizer = create_sophisticated_lookback_optimizer()
+        
+        # Multi-horizon integration
+        self.multi_horizon_integration = create_multi_horizon_integration()
+        
+        # Comprehensive validator
+        self.comprehensive_validator = create_comprehensive_validator("EnhancedUnifiedPipeline")
+        
         tprint_success("✅ Enhanced components initialized")
     
     def _initialize_existing_components(self):
@@ -397,11 +421,31 @@ class EnhancedUnifiedDataDrivenPipeline:
         
         start_time = time.time()
         
-        # Validate inputs using modular architecture
-        validation_result = self.modular_architecture.validate_inputs(data, ValidationLevel.STANDARD)
-        if not validation_result.is_valid:
-            tprint_error(f"❌ Input validation failed: {validation_result.errors}")
-            raise ValueError(f"Input validation failed: {validation_result.errors}")
+        # Validate inputs using comprehensive validation
+        required_columns = ['close', 'open', 'high', 'low', 'volume']
+        is_valid, validation_summary, validated_data = self.comprehensive_validator.validate_data_comprehensive(
+            data, required_columns, CompValidationLevel.STANDARD, check_stationarity=True, check_memory=True
+        )
+        
+        if not is_valid:
+            tprint_error(f"❌ Comprehensive validation failed: {validation_summary.errors}")
+            tprint_error(f"❌ Warnings: {validation_summary.warnings}")
+            tprint_error(f"❌ Recommendations: {validation_summary.recommendations}")
+            raise ValueError(f"Comprehensive validation failed: {validation_summary.errors}")
+        
+        # Use validated data
+        data = validated_data
+        
+        # Log validation summary
+        tprint_success(f"✅ Comprehensive validation passed")
+        tprint_info(f"📊 Data quality score: {validation_summary.data_quality_score:.3f}")
+        tprint_info(f"📊 Memory usage: {validation_summary.memory_usage_mb:.1f} MB")
+        tprint_info(f"📊 Validation time: {validation_summary.validation_time:.3f}s")
+        
+        if validation_summary.warnings:
+            tprint_warning(f"⚠️ Validation warnings: {validation_summary.warnings}")
+        if validation_summary.recommendations:
+            tprint_info(f"💡 Recommendations: {validation_summary.recommendations}")
         
         # Prepare data
         processed_data, processed_targets = self._prepare_data(data, targets, feature_columns)
@@ -490,6 +534,12 @@ class EnhancedUnifiedDataDrivenPipeline:
         # Get modular architecture summary
         modular_architecture_summary = self.modular_architecture.get_system_summary()
         
+        # Get sophisticated optimization performance stats
+        sophisticated_stats = self.sophisticated_lookback_optimizer.get_performance_stats()
+        
+        # Get comprehensive validation stats
+        validation_stats = self.comprehensive_validator.get_validation_stats()
+        
         result = EnhancedFeaturePipelineResult(
             selected_features=selection_result.selected_features,
             feature_importance=final_metrics['feature_importance'],
@@ -513,12 +563,22 @@ class EnhancedUnifiedDataDrivenPipeline:
             vectorbt_operations=self.performance_stats['vectorbt_operations'],
             pandas_fallbacks=self.performance_stats['pandas_fallbacks'],
             cache_hit_rate=cache_hit_rate,
-            optimization_iterations=0,  # Would need optimization tracking
-            convergence_achieved=True,  # Would need convergence tracking
+            optimization_iterations=sophisticated_stats.get('total_optimizations', 0),
+            convergence_achieved=sophisticated_stats.get('successful_optimizations', 0) > 0,
             feature_diversity_score=final_metrics.get('feature_diversity_score', 0.0),
             interaction_utility_scores=interaction_result.get('utility_scores', {}) if interaction_result else {},
             lookback_optimization_metrics=lookback_result,
-            performance_monitoring_data=self.performance_stats.copy(),
+            performance_monitoring_data={
+                **self.performance_stats.copy(),
+                'sophisticated_optimization': sophisticated_stats,
+                'comprehensive_validation': validation_stats,
+                'validation_summary': {
+                    'data_quality_score': validation_summary.data_quality_score,
+                    'memory_usage_mb': validation_summary.memory_usage_mb,
+                    'validation_time': validation_summary.validation_time,
+                    'n_checks_performed': validation_summary.n_checks_performed
+                }
+            },
             economic_evaluation_result=economic_evaluation_result,
             feature_preselection_result=feature_preselection_result,
             template_interaction_result=template_interaction_result,
@@ -590,8 +650,124 @@ class EnhancedUnifiedDataDrivenPipeline:
                                            data: pd.DataFrame, 
                                            targets: Optional[pd.Series], 
                                            characteristics: Any) -> Dict[str, Any]:
-        """Enhanced feature lookback optimization with modular architecture."""
-        tprint_debug("Starting enhanced feature lookback optimization with modular architecture")
+        """Enhanced feature lookback optimization with sophisticated algorithms."""
+        tprint_debug("Starting sophisticated feature lookback optimization")
+        
+        try:
+            # Detect execution mode
+            execution_mode = data.attrs.get('ares_mode', 'full')
+            if execution_mode not in ['light', 'blank', 'full']:
+                execution_mode = 'full'
+            
+            tprint_info(f"🎯 Execution mode: {execution_mode.upper()}")
+            
+            # Integrate multi-horizon labeling
+            tprint_debug("🧪 Integrating multi-horizon profit labeling")
+            labeling_result = self.multi_horizon_integration.integrate_multi_horizon_labeling(
+                data, force_refresh=False
+            )
+            
+            if not labeling_result.integration_success:
+                tprint_warning("⚠️ Multi-horizon integration failed, using fallback")
+                return self._fallback_lookback_optimization(data, targets, characteristics)
+            
+            # Extract target columns
+            target_columns = labeling_result.target_columns
+            if not target_columns:
+                tprint_warning("⚠️ No target columns available, using fallback")
+                return self._fallback_lookback_optimization(data, targets, characteristics)
+            
+            # Get feature columns to optimize
+            feature_columns = [col for col in data.columns if col not in ['close', 'open', 'high', 'low', 'volume']]
+            if not feature_columns:
+                tprint_warning("⚠️ No feature columns available")
+                return {'optimized_lookbacks': {}, 'optimization_metrics': {}, 'optimization_method': 'no_features'}
+            
+            # Determine optimization direction
+            optimization_direction = OptimizationDirection.BOTH
+            if 'long' in target_columns and 'short' not in target_columns:
+                optimization_direction = OptimizationDirection.LONGS
+            elif 'short' in target_columns and 'long' not in target_columns:
+                optimization_direction = OptimizationDirection.SHORTS
+            
+            tprint_info(f"🎯 Optimization direction: {optimization_direction.value}")
+            tprint_info(f"📊 Target columns: {target_columns}")
+            
+            # Perform sophisticated optimization
+            lookback_range = (5, 100)  # Default range
+            if execution_mode == 'light':
+                lookback_range = (5, 50)
+            elif execution_mode == 'blank':
+                lookback_range = (5, 20)
+            
+            optimization_results = self.sophisticated_lookback_optimizer.optimize_features_sophisticated(
+                data=data,
+                feature_names=feature_columns[:20],  # Limit features for performance
+                target_columns=target_columns,
+                lookback_range=lookback_range,
+                optimization_direction=optimization_direction,
+                execution_mode=execution_mode,
+                use_nested_cv=True,
+                regularization_settings=self.config.get('lookback_regularization', {}),
+                max_workers=4
+            )
+            
+            # Process results
+            optimized_lookbacks = {}
+            optimization_metrics = {
+                'total_features': len(feature_columns),
+                'optimized_features': len(optimization_results),
+                'execution_mode': execution_mode,
+                'optimization_direction': optimization_direction.value,
+                'target_columns': target_columns,
+                'lookback_range': lookback_range
+            }
+            
+            for feature_name, feature_results in optimization_results.items():
+                if isinstance(feature_results, dict):
+                    # Multiple directions
+                    for direction, result in feature_results.items():
+                        if result.success:
+                            key = f"{feature_name}_{direction}"
+                            optimized_lookbacks[key] = {
+                                'lookback': result.best_lookback,
+                                'score': result.best_score,
+                                'method': result.method,
+                                'direction': direction,
+                                'target_column': result.target_column
+                            }
+                else:
+                    # Single result
+                    if feature_results.success:
+                        optimized_lookbacks[feature_name] = {
+                            'lookback': feature_results.best_lookback,
+                            'score': feature_results.best_score,
+                            'method': feature_results.method,
+                            'direction': feature_results.direction,
+                            'target_column': feature_results.target_column
+                        }
+            
+            result = {
+                'optimized_lookbacks': optimized_lookbacks,
+                'optimization_metrics': optimization_metrics,
+                'optimization_method': 'sophisticated_enhanced',
+                'labeling_result': labeling_result,
+                'performance_stats': self.sophisticated_lookback_optimizer.get_performance_stats()
+            }
+            
+            tprint_success(f"✅ Sophisticated optimization completed: {len(optimized_lookbacks)} features optimized")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Sophisticated optimization failed: {e}")
+            return self._fallback_lookback_optimization(data, targets, characteristics)
+    
+    def _fallback_lookback_optimization(self, 
+                                       data: pd.DataFrame, 
+                                       targets: Optional[pd.Series], 
+                                       characteristics: Any) -> Dict[str, Any]:
+        """Fallback lookback optimization when sophisticated methods fail."""
+        tprint_debug("Using fallback lookback optimization")
         
         # Use modular architecture for optimization
         def objective_function(lookback_period: int) -> float:
@@ -624,10 +800,10 @@ class EnhancedUnifiedDataDrivenPipeline:
         result = {
             'optimized_lookbacks': optimization_result.get('best_params', {}),
             'optimization_metrics': optimization_result,
-            'optimization_method': 'modular_architecture_enhanced'
+            'optimization_method': 'fallback_modular_architecture'
         }
         
-        tprint_success("Enhanced feature lookback optimization with modular architecture completed")
+        tprint_success("Fallback lookback optimization completed")
         return result
     
     def _enhanced_generate_interactions(self, 

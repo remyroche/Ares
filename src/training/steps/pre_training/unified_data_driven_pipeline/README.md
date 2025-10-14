@@ -1,6 +1,10 @@
 # Unified Data-Driven Feature Pipeline
 
-A comprehensive, data-driven feature engineering pipeline that consolidates period optimization, interaction generation, and feature selection into a single, coherent system. This pipeline addresses key challenges in time series feature engineering while preventing leakage and overfitting.
+A comprehensive, data-driven feature engineering pipeline that consolidates period optimization, interaction generation, and feature selection into a single, coherent system.
+
+## 🚀 **CONSOLIDATED VERSION**
+
+This pipeline has been **consolidated** to eliminate redundancy and provide a single, comprehensive implementation that integrates all advanced features. See [MIGRATION_GUIDE.md](MIGRATION_GUIDE.md) for migration instructions. This pipeline addresses key challenges in time series feature engineering while preventing leakage and overfitting.
 
 ## Key Features
 
@@ -28,14 +32,14 @@ A comprehensive, data-driven feature engineering pipeline that consolidates peri
 ## Quick Start
 
 ```python
-from src.training.steps.pre_training.unified_data_driven_pipeline import process_features, create_default_config
+from src.training.steps.pre_training.unified_data_driven_pipeline import process_with_unified_pipeline, create_default_config
 
 # Load your data
 data = pd.read_csv('your_features.csv')
 targets = pd.read_csv('your_targets.csv')['returns']
 
 # Process features with default configuration
-result = process_features(data, targets)
+result = process_with_unified_pipeline(data, targets, feature_columns=None, timeframe="15m")
 
 print(f"Selected {len(result.selected_features)} features")
 print(f"Out-of-sample Sharpe: {result.out_of_sample_sharpe:.3f}")
@@ -226,10 +230,10 @@ config.performance.log_level = "DEBUG"
 
 ### Basic Usage
 ```python
-from src.training.steps.pre_training.unified_data_driven_pipeline import process_features
+from src.training.steps.pre_training.unified_data_driven_pipeline import process_with_unified_pipeline
 
 # Simple feature processing
-result = process_features(data, targets)
+result = process_with_unified_pipeline(data, targets, feature_columns=None, timeframe="15m")
 print(f"Selected features: {result.selected_features}")
 ```
 
@@ -321,7 +325,7 @@ config.performance.enable_profiling = True
 
 ### Key Functions
 
-- `process_features()`: Simple feature processing
+- `process_with_unified_pipeline()`: Simple feature processing
 - `create_unified_pipeline()`: Create pipeline instance
 - `create_default_config()`: Default configuration
 - `validate_time_series_splits()`: Validate CV splits

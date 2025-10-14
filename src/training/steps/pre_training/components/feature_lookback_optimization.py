@@ -1,16 +1,15 @@
 """
 Feature Lookback Optimization Component Import.
 
-This module provides the FeatureLookbackOptimizationComponent for the market analysis pipeline.
+This module is deprecated and will be removed.
 """
 
-from ..feature_lookback_optimization.feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 
 _event_logger = PreTrainingEventLogger(configure_pre_training_logging())
-_event_logger.info(
-    "FeatureLookbackOptimizationComponent imported",
+_event_logger.warning(
+    "FeatureLookbackOptimizationComponent has been removed",
     context={'step': 'component.feature_lookback_import'},
 )
 
-__all__ = ['FeatureLookbackOptimizationComponent']
+# Component has been removed

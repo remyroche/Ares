@@ -12,7 +12,6 @@ __all__ = [
     'ComponentResult',
     'ComponentError',
     'ComponentFactory',
-    'FeatureLookbackOptimizationComponent',
     'FinalFeatureSelectionComponent'
 ]
 
@@ -21,9 +20,6 @@ def __getattr__(name):
     if name == 'ComponentFactory':
         from .component_factory import ComponentFactory  # type: ignore
         return ComponentFactory
-    if name == 'FeatureLookbackOptimizationComponent':
-        from .feature_lookback_optimization import FeatureLookbackOptimizationComponent  # type: ignore
-        return FeatureLookbackOptimizationComponent
     if name == 'FinalFeatureSelectionComponent':
         from .final_feature_selection import FinalFeatureSelectionComponent  # type: ignore
         return FinalFeatureSelectionComponent

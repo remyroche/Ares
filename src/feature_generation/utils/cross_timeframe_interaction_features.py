@@ -19,14 +19,10 @@ except ImportError:
     EnhancedDataDrivenPeriodSelector = None
     EnhancedPeriodSelectionConfig = None
 
-# Data-driven interaction generation
-try:
-    from .data_driven_interaction_generator import DataDrivenInteractionGenerator, InteractionResult
-    DATA_DRIVEN_INTERACTIONS_AVAILABLE = True
-except ImportError:
-    DATA_DRIVEN_INTERACTIONS_AVAILABLE = False
-    DataDrivenInteractionGenerator = None
-    InteractionResult = None
+# Data-driven interaction generation (deprecated)
+DATA_DRIVEN_INTERACTIONS_AVAILABLE = False
+# DataDrivenInteractionGenerator has been removed
+InteractionResult = None
 
 '\nRefactored cross-timeframe and interaction feature generation with reduced complexity.\nThis module breaks down the high-complexity feature generation methods into smaller,\nfocused functions with proper type annotations.\n'
 import logging
@@ -175,7 +171,8 @@ class CrossTimeframeFeatureGenerator:
         # Initialize data-driven interaction generator
         self.interaction_generator = None
         if DATA_DRIVEN_INTERACTIONS_AVAILABLE:
-            self.interaction_generator = DataDrivenInteractionGenerator(
+            # DataDrivenInteractionGenerator has been removed
+            self.interaction_generator = None  # DataDrivenInteractionGenerator(
                 max_interactions=100,
                 utility_threshold=0.1,
                 correlation_threshold=0.95,

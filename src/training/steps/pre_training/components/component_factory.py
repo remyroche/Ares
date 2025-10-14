@@ -592,14 +592,6 @@ class ComponentFactory:
             except Exception as e:
                 _log_warning(f"⚠️ Could not register final_feature_selection: {e}")
             
-            # Try to register feature_lookback_optimization
-            try:
-                from ..feature_lookback_optimization.feature_lookback_optimization import FeatureLookbackOptimizationComponent
-                if 'feature_lookback_optimization' not in cls.registry.available_components():
-                    cls.registry.register('feature_lookback_optimization', FeatureLookbackOptimizationComponent)
-                    _log_info("✅ Manually registered feature_lookback_optimization")
-            except Exception as e:
-                _log_warning(f"⚠️ Could not register feature_lookback_optimization: {e}")
             
             # Try to register interactive_feature_generation
             try:

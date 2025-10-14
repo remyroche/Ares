@@ -44,6 +44,14 @@ from .enhanced_unified_pipeline import (
     PipelineExecutionResult
 )
 
+from .lightgbm_feature_generator import (
+    LightGBMFeatureGenerator,
+    FeatureGenerationConfig,
+    GeneratedFeature,
+    FeatureGenerationResult,
+    create_lightgbm_feature_generator
+)
+
 __all__ = [
     # Walk-forward validation
     'AdvancedWalkForwardValidator',
@@ -76,5 +84,12 @@ __all__ = [
     # Enhanced unified pipeline
     'EnhancedUnifiedDataDrivenPipeline',
     'EnhancedPipelineConfig',
-    'PipelineExecutionResult'
+    'PipelineExecutionResult',
+    
+    # LightGBM feature generator
+    'LightGBMFeatureGenerator',
+    'FeatureGenerationConfig',
+    'GeneratedFeature',
+    'FeatureGenerationResult',
+    'create_lightgbm_feature_generator'
 ]

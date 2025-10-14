@@ -130,6 +130,14 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Apply Tactician-specific entry timing labels (15m timeframe).',
         order=12,
     ),
+    'unified_data_driven_pipeline': StepSpec(
+        name='unified_data_driven_pipeline',
+        component_key='unified_data_driven_pipeline',
+        executor_method='_execute_unified_data_driven_pipeline',
+        display_name='Unified Data-Driven Pipeline',
+        description='Advanced feature engineering pipeline with tactician/analyst labeling integration.',
+        order=13,
+    ),
     'feature_lookback_optimization': StepSpec(
         name='feature_lookback_optimization',
         component_key='feature_lookback_optimization',
@@ -223,6 +231,7 @@ STEP_PROGRESS_ICONS: Dict[str, str] = {
     'multi_horizon_profit_labeler': '🎯',
     'analyst_profit_labeler': '📈',
     'tactician_entry_labeler': '🎲',
+    'unified_data_driven_pipeline': '🚀',
     'feature_lookback_optimization': '⚙️',
     'analyst_feature_lookback_optimization': '📊',
     'tactician_feature_lookback_optimization': '⚡',
@@ -3980,6 +3989,138 @@ class PreTrainingSubPipeline:
             )
             self._extend_messages(result.errors, [result.error_message or str(e)])
 
+        return result
+
+    async def _execute_unified_data_driven_pipeline(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute unified data-driven pipeline with tactician/analyst labeling integration."""
+        result = SubPipelineResult(
+            sub_pipeline_name='unified_data_driven_pipeline',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('unified_data_driven_pipeline')
+
+        try:
+            # Import the unified data driven pipeline
+            from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import (
+                UnifiedDataDrivenPipeline,
+                create_default_config
+            )
+
+            # Determine labeling type based on custom parameters or run metadata
+            labeling_type = config.custom_params.get('labeling_type', 'analyst')
+            if 'tactician' in run_metadata.get('run_type', '').lower():
+                labeling_type = 'tactician'
+            elif 'analyst' in run_metadata.get('run_type', '').lower():
+                labeling_type = 'analyst'
+
+            # Create pipeline configuration
+            pipeline_config = create_default_config()
+            pipeline_config.labeling_type = labeling_type
+            pipeline_config.enable_labeling_optimization = True
+            pipeline_config.labeling_quality_threshold = 0.7
+
+            # Create pipeline instance
+            pipeline = UnifiedDataDrivenPipeline(pipeline_config)
+
+            # Prepare pipeline state
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            
+            # Load market data
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            
+            try:
+                klines_manager = KlinesParquetManager()
+                market_data = klines_manager.read_data(
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    start_date=config.start_date,
+                    end_date=config.end_date
+                )
+                self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for unified pipeline")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load market data: {e}")
+                raise ValueError(f"Could not load market data for unified_data_driven_pipeline: {e}") from e
+            
+            if market_data is None or market_data.empty:
+                raise ValueError("Market data is required for unified_data_driven_pipeline but none was loaded")
+
+            # Execute pipeline
+            pipeline_result = await pipeline.run_pipeline(market_data, pipeline_state)
+            
+            # Process results
+            if pipeline_result.success:
+                tprint_success(f"✅ Unified data-driven pipeline completed successfully")
+                
+                # Store results in artifacts
+                result.artifacts = {
+                    'unified_pipeline_result': pipeline_result,
+                    'labeling_type': labeling_type,
+                    'selected_features': pipeline_result.selected_features,
+                    'interaction_features': pipeline_result.interaction_features,
+                    'feature_quality_score': pipeline_result.feature_quality_score,
+                    'performance_metrics': pipeline_result.performance_metrics
+                }
+                
+                result.metadata = {
+                    'labeling_type': labeling_type,
+                    'features_selected': len(pipeline_result.selected_features),
+                    'interactions_generated': len(pipeline_result.interaction_features),
+                    'quality_score': pipeline_result.feature_quality_score,
+                    'execution_time': pipeline_result.execution_time_seconds
+                }
+                
+                result.status = SubPipelineStatus.COMPLETED
+            else:
+                tprint_error(f"❌ Unified data-driven pipeline failed: {pipeline_result.error_message}")
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = pipeline_result.error_message
+                result.failure = self._create_failure(
+                    'unified_data_driven_pipeline',
+                    result.error_code,
+                    result.error_message or 'Unified data-driven pipeline failed'
+                )
+
+        except ImportError as e:
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.status = SubPipelineStatus.FAILED
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Unified data-driven pipeline failed - missing dependencies: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('unified_data_driven_pipeline')}_IMPORT"
+            result.failure = self._create_failure(
+                'unified_data_driven_pipeline',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
+
+        except Exception as e:
+            result.error_message = f"Unexpected error: {str(e)}"
+            result.status = SubPipelineStatus.FAILED
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Unified data-driven pipeline failed - unexpected error: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('unified_data_driven_pipeline')}_UNEXPECTED"
+            result.failure = self._create_failure(
+                'unified_data_driven_pipeline',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
+
+        # Store artifacts in chain for next steps (success or failure)
+        if result.artifacts:
+            self._store_artifacts_in_chain('unified_data_driven_pipeline', result.artifacts)
+        
         return result
 
     async def _execute_feature_lookback_optimization(

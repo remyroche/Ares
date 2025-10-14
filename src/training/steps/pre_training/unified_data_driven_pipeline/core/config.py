@@ -190,8 +190,7 @@ class LookbackOptimizationConfig:
     regularization_strength: float = 0.1
     
     # Labeling system configuration
-    labeling_system: str = "tactician_analyst"  # "triple_barrier" or "tactician_analyst"
-    labeling_type: str = "analyst"  # "analyst" or "tactician" - only used when labeling_system="tactician_analyst"
+    labeling_type: str = "analyst"  # "analyst" or "tactician"
     enable_labeling_optimization: bool = True
     labeling_quality_threshold: float = 0.7
     preferred_min_lookback: float = 40.0

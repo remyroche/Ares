@@ -580,6 +580,44 @@ class AresLauncher:
             tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
             return await self._execute_full_pipeline(config)
     
+    async def _execute_unified_pipeline_shortcut(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute unified data driven pipeline with specific configuration based on shortcut."""
+        tprint(f"🚀 [UNIFIED_PIPELINE] Executing unified pipeline shortcut: {sub_pipeline}")
+        
+        # Parse the shortcut to determine configuration
+        parts = sub_pipeline.split('_')
+        labeling_type = 'analyst'  # default
+        direction = 'both'  # default
+        
+        if 'analyst' in parts:
+            labeling_type = 'analyst'
+        elif 'tactician' in parts:
+            labeling_type = 'tactician'
+        
+        if 'long' in parts:
+            direction = 'longs'
+        elif 'short' in parts:
+            direction = 'shorts'
+        
+        # Update config with specific parameters
+        config.direction = DirectionType(direction)
+        
+        # Set appropriate timeframe based on labeling type
+        if labeling_type == 'analyst':
+            config.timeframe = '60m'
+        else:  # tactician
+            config.timeframe = '15m'
+        
+        # Add custom parameters for the unified pipeline
+        if not hasattr(config, 'custom_params'):
+            config.custom_params = {}
+        config.custom_params['labeling_type'] = labeling_type
+        
+        tprint(f"🎯 [UNIFIED_PIPELINE] Configuration: labeling_type={labeling_type}, direction={direction}, timeframe={config.timeframe}")
+        
+        # Execute the unified_data_driven_pipeline sub-pipeline
+        return await self._execute_sub_pipeline('unified_data_driven_pipeline', config)
+    
     def _create_config(
         self,
         mode: LauncherMode,
@@ -1085,6 +1123,10 @@ class AresLauncher:
     
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
+        # Handle unified data driven pipeline shortcuts
+        if sub_pipeline.startswith('unified_data_driven_pipeline'):
+            return await self._execute_unified_pipeline_shortcut(sub_pipeline, config)
+        
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
@@ -1594,6 +1636,16 @@ Examples:
   # Shortcut: Execute Tactician entry labeler
   python ares_launcher.py --tactician-labeler --symbol ETHUSDT --timeframe 15m
 
+  # Shortcut: Execute Unified Data-Driven Pipeline in Analyst mode
+  python ares_launcher.py --unified-pipeline-analyst --symbol ETHUSDT --timeframe 60m
+
+  # Shortcut: Execute Unified Data-Driven Pipeline in Tactician mode
+  python ares_launcher.py --unified-pipeline-tactician --symbol ETHUSDT --timeframe 15m
+
+  # Shortcut: Execute Unified Data-Driven Pipeline with specific direction
+  python ares_launcher.py --unified-pipeline-analyst-long --symbol ETHUSDT --timeframe 60m
+  python ares_launcher.py --unified-pipeline-tactician-short --symbol ETHUSDT --timeframe 15m
+
   # Shortcut: Execute Tactician ensemble training in light mode
   python ares_launcher.py --tactician-ensemble --execution-mode light --symbol ETHUSDT
 
@@ -1712,10 +1764,52 @@ Examples:
         const='tactician_entry_labeler',
         help='Shortcut for Tactician entry labeler sub-pipeline.'
     )
+    shortcut_group.add_argument(
+        '--unified-pipeline-analyst',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_analyst',
+        help='Shortcut for Unified Data-Driven Pipeline in Analyst mode.'
+    )
+    shortcut_group.add_argument(
+        '--unified-pipeline-tactician',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_tactician',
+        help='Shortcut for Unified Data-Driven Pipeline in Tactician mode.'
+    )
+    shortcut_group.add_argument(
+        '--unified-pipeline-analyst-long',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_analyst_long',
+        help='Shortcut for Unified Data-Driven Pipeline in Analyst mode (long positions only).'
+    )
+    shortcut_group.add_argument(
+        '--unified-pipeline-analyst-short',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_analyst_short',
+        help='Shortcut for Unified Data-Driven Pipeline in Analyst mode (short positions only).'
+    )
+    shortcut_group.add_argument(
+        '--unified-pipeline-tactician-long',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_tactician_long',
+        help='Shortcut for Unified Data-Driven Pipeline in Tactician mode (long positions only).'
+    )
+    shortcut_group.add_argument(
+        '--unified-pipeline-tactician-short',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='unified_data_driven_pipeline_tactician_short',
+        help='Shortcut for Unified Data-Driven Pipeline in Tactician mode (short positions only).'
+    )
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble.'
     )
     
     parser.add_argument(

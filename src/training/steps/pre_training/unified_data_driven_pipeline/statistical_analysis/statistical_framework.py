@@ -64,21 +64,38 @@ try:
 except ImportError as e:
     ML_COMMONS_VALIDATION_AVAILABLE = False
     tprint_warning(f"⚠️ ML Commons validation utilities not available: {e}")
-    # Define fallback classes
+    # Fast-fail implementations - raise exceptions immediately when dependencies are missing
     class UnifiedCrossValidator:
-        def __init__(self, *args, **kwargs): pass
-    def perform_cross_validation(*args, **kwargs): return {}
-    def temporal_cross_validation(*args, **kwargs): return {}
-    def analyze_splits(*args, **kwargs): return {}
-    def validate_cv_integrity(*args, **kwargs): return {}
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
+    def perform_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
+    def temporal_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
+    def analyze_splits(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
+    def validate_cv_integrity(*args, **kwargs):
+        raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
     class DataLeakageDetector:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
     class EnhancedValidationFramework:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
     class StabilityAnalyzer:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
+    
     class OverfittingMonitor:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
 
 logger = logging.getLogger(__name__)
 
@@ -174,15 +191,13 @@ class RelationshipAnalysis:
 class StatisticalTest(ABC):
     """Abstract base class for statistical tests."""
     
-    @abstractmethod
     def test(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
         """Perform the statistical test."""
-        pass
+        raise NotImplementedError("Subclasses must implement the test method")
     
-    @abstractmethod
     def is_significant(self, result: Dict[str, Any], alpha: float = 0.05) -> bool:
         """Check if the result is statistically significant."""
-        pass
+        raise NotImplementedError("Subclasses must implement the is_significant method")
 
 
 class NormalityTest(StatisticalTest):

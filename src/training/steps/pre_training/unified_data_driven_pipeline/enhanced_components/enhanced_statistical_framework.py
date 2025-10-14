@@ -110,15 +110,13 @@ class StatisticalAnalysisResult:
 class StatisticalTest(ABC):
     """Abstract base class for statistical tests."""
     
-    @abstractmethod
     def test(self, data: pd.DataFrame, **kwargs) -> HypothesisTestResult:
         """Perform the statistical test."""
-        pass
+        raise NotImplementedError(f"Subclasses must implement the test method. Class: {self.__class__.__name__}")
     
-    @abstractmethod
     def is_significant(self, result: HypothesisTestResult, alpha: float = 0.05) -> bool:
         """Check if the result is statistically significant."""
-        pass
+        raise NotImplementedError(f"Subclasses must implement the is_significant method. Class: {self.__class__.__name__}")
 
 
 class NormalityTest(StatisticalTest):

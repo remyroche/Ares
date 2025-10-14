@@ -52,25 +52,48 @@ try:
 except ImportError as e:
     ML_COMMONS_CV_AVAILABLE = False
     tprint_warning(f"⚠️ ML Commons CV utilities not available: {e}")
-    # Define fallback classes
+    # Fast-fail implementations - raise exceptions immediately when dependencies are missing
     class UnifiedCrossValidator:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
     class UnifiedCVResult:
-        def __init__(self, *args, **kwargs): pass
-    def perform_cross_validation(*args, **kwargs): return {}
-    def temporal_cross_validation(*args, **kwargs): return {}
-    def nested_cross_validation(*args, **kwargs): return 0.0
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def perform_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def temporal_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def nested_cross_validation(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
     class TemporalCrossValidator:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
     class VectorBTCrossValidator:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
     class OOFGenerator:
-        def __init__(self, *args, **kwargs): pass
-    def purged_time_series_splits(*args, **kwargs): return []
-    def analyze_splits(*args, **kwargs): return {}
-    def validate_cv_integrity(*args, **kwargs): return {}
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def purged_time_series_splits(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def analyze_splits(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
+    def validate_cv_integrity(*args, **kwargs):
+        raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
+    
     class PurgedSplitConfig:
-        def __init__(self, *args, **kwargs): pass
+        def __init__(self, *args, **kwargs):
+            raise ImportError("ML Commons CV utilities not available. Install required dependencies.")
 
 logger = logging.getLogger(__name__)
 

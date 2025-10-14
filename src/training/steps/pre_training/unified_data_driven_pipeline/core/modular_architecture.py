@@ -136,10 +136,9 @@ class BaseModule(ABC):
             'total_time': 0.0
         }
     
-    @abstractmethod
     def process(self, *args, **kwargs) -> Any:
         """Process method to be implemented by subclasses."""
-        pass
+        raise NotImplementedError(f"Subclasses must implement the process method. Class: {self.__class__.__name__}")
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""

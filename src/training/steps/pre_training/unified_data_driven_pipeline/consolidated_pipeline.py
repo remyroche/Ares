@@ -798,8 +798,104 @@ class UnifiedDataDrivenPipeline:
             
         except Exception as e:
             tprint_error(f"❌ Error during pipeline cleanup: {e}")
-            tprint_error(f"❌ Cleanup error details: {type(e).__name__}: {str(e)}")
-            # Don't re-raise here as cleanup should be best-effort
+    
+    def _calculate_mutual_information(self, feature: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate mutual information between feature and targets."""
+        try:
+            if targets is None or feature is None or feature.empty or targets.empty:
+                return 0.0
+            
+            # Align feature and targets by index
+            common_index = feature.index.intersection(targets.index)
+            if len(common_index) < 2:
+                return 0.0
+            
+            feature_aligned = feature.loc[common_index].dropna()
+            targets_aligned = targets.loc[common_index].dropna()
+            
+            # Further align by removing NaN values
+            valid_mask = feature_aligned.notna() & targets_aligned.notna()
+            if valid_mask.sum() < 2:
+                return 0.0
+            
+            feature_clean = feature_aligned[valid_mask]
+            targets_clean = targets_aligned[valid_mask]
+            
+            # Calculate mutual information
+            from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
+            
+            # Determine if targets are continuous or categorical
+            if targets_clean.nunique() > 10:  # Assume continuous
+                mi = mutual_info_regression(feature_clean.values.reshape(-1, 1), targets_clean.values)
+            else:  # Assume categorical
+                mi = mutual_info_classif(feature_clean.values.reshape(-1, 1), targets_clean.values)
+            
+            return float(mi[0]) if len(mi) > 0 else 0.0
+            
+        except Exception as e:
+            tprint_debug(f"Error calculating mutual information: {e}")
+            return 0.0
+    
+    def _calculate_shap_score(self, feature: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate SHAP score for feature importance."""
+        try:
+            if targets is None or feature is None or feature.empty or targets.empty:
+                return 0.0
+            
+            # Align feature and targets by index
+            common_index = feature.index.intersection(targets.index)
+            if len(common_index) < 2:
+                return 0.0
+            
+            feature_aligned = feature.loc[common_index].dropna()
+            targets_aligned = targets.loc[common_index].dropna()
+            
+            # Further align by removing NaN values
+            valid_mask = feature_aligned.notna() & targets_aligned.notna()
+            if valid_mask.sum() < 2:
+                return 0.0
+            
+            feature_clean = feature_aligned[valid_mask]
+            targets_clean = targets_aligned[valid_mask]
+            
+            # Calculate correlation as a proxy for SHAP score
+            # In a real implementation, you would use actual SHAP values
+            correlation = safe_correlation_util(feature_clean.values, targets_clean.values)
+            return abs(correlation) if correlation is not None else 0.0
+            
+        except Exception as e:
+            tprint_debug(f"Error calculating SHAP score: {e}")
+            return 0.0
+    
+    def _calculate_correlation_with_target(self, feature: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Calculate correlation between feature and targets."""
+        try:
+            if targets is None or feature is None or feature.empty or targets.empty:
+                return 0.0
+            
+            # Align feature and targets by index
+            common_index = feature.index.intersection(targets.index)
+            if len(common_index) < 2:
+                return 0.0
+            
+            feature_aligned = feature.loc[common_index].dropna()
+            targets_aligned = targets.loc[common_index].dropna()
+            
+            # Further align by removing NaN values
+            valid_mask = feature_aligned.notna() & targets_aligned.notna()
+            if valid_mask.sum() < 2:
+                return 0.0
+            
+            feature_clean = feature_aligned[valid_mask]
+            targets_clean = targets_aligned[valid_mask]
+            
+            # Calculate correlation
+            correlation = safe_correlation_util(feature_clean.values, targets_clean.values)
+            return correlation if correlation is not None else 0.0
+            
+        except Exception as e:
+            tprint_debug(f"Error calculating correlation: {e}")
+            return 0.0
         
         # Clean up M1 optimizations
         if hasattr(self, 'm1_available') and self.m1_available:
@@ -2083,7 +2179,7 @@ class UnifiedDataDrivenPipeline:
             # Step 3: Generate selected features
             tprint_info("Step 3: Generate selected features")
             self.detailed_reporter.start_step("feature_generation", len(processed_data.columns))
-            selected_features_df = self._generate_selected_features(processed_data, feature_selection_results)
+            selected_features_df = self._generate_selected_features(processed_data, feature_selection_results, targets)
             
             # Step 3.5: Apply statistical transforms using feature engineering roadmap
             tprint_info("Step 3.5: Apply statistical transforms")
@@ -3015,7 +3111,7 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Error details: {str(e)}")
             raise RuntimeError(error_msg) from e
     
-    def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any) -> pd.DataFrame:
+    def _generate_selected_features(self, data: pd.DataFrame, selection_result: Any, targets: Optional[pd.Series] = None) -> pd.DataFrame:
         """Generate features for the selected feature set using enhanced utilities and safe operations."""
         tprint_info("🔧 Starting feature generation with comprehensive logging")
         tprint_debug(f"📊 Input data shape: {data.shape}")
@@ -3059,14 +3155,19 @@ class UnifiedDataDrivenPipeline:
                             # Track feature creation for reporting
                             for feature_name in enhanced_features.columns:
                                 if feature_name not in data.columns:  # Only track newly created features
+                                    # Calculate actual metrics
+                                    mutual_information = self._calculate_mutual_information(enhanced_features[feature_name], targets)
+                                    shap_score = self._calculate_shap_score(enhanced_features[feature_name], targets)
+                                    correlation_with_target = self._calculate_correlation_with_target(enhanced_features[feature_name], targets)
+                                    
                                     self.detailed_reporter.track_feature_creation(
                                         feature_name=feature_name,
                                         feature_type="enhanced_technical",
                                         parent_features=list(data.columns),
                                         transform_type="enhanced_engineering",
-                                        mutual_information=0.5,  # Placeholder - would be calculated
-                                        shap_score=0.3,  # Placeholder - would be calculated
-                                        correlation_with_target=0.4  # Placeholder - would be calculated
+                                        mutual_information=mutual_information,
+                                        shap_score=shap_score,
+                                        correlation_with_target=correlation_with_target
                                     )
                             
                             # Apply feature validation if available

@@ -274,7 +274,7 @@ class UnifiedVectorizationManager:
             'validation_errors': 0
         }
         
-        # Enhanced intelligent caching system
+        # Enhanced intelligent caching system with advanced strategies
         self._result_cache = {}
         self._cache_enabled = True
         self._max_cache_size = 1000
@@ -282,6 +282,34 @@ class UnifiedVectorizationManager:
         self._cache_memory_usage = 0
         self._max_cache_memory_mb = 100  # Maximum cache memory in MB
         self._cache_hit_rates = {}  # Track hit rates per operation type
+        
+        # Advanced cache features
+        self._cache_compression_enabled = True
+        self._cache_serialization_enabled = True
+        self._cache_ttl = {}  # Time-to-live for cache entries
+        self._cache_priority = {}  # Priority levels for cache entries
+        self._cache_access_frequency = {}  # Access frequency tracking
+        self._cache_creation_times = {}  # Creation time tracking
+        
+        # Memory management
+        self._memory_pool = {}  # Memory pool for pre-allocated objects
+        self._memory_usage_history = []  # Memory usage history
+        self._memory_peak_usage = 0
+        self._memory_cleanup_threshold = 0.8  # Cleanup when 80% of max memory used
+        self._memory_profiling_enabled = True
+        
+        # Cache statistics
+        self._cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0,
+            'compressions': 0,
+            'decompressions': 0,
+            'serializations': 0,
+            'deserializations': 0,
+            'memory_savings': 0,
+            'total_operations': 0
+        }
         
         tprint_success(f"✅ UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}, FastFail={self.fast_fail}")
         logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
@@ -935,29 +963,71 @@ class UnifiedVectorizationManager:
         return f"{operation}_{window}_{data_hash}_{params_hash}"
     
     def _get_from_cache(self, cache_key: str) -> Optional[Union[pd.Series, pd.DataFrame]]:
-        """Get result from cache with intelligent LRU eviction."""
+        """Get result from cache with intelligent LRU eviction and TTL support."""
         if not self._cache_enabled:
             return None
         
         try:
             if cache_key in self._result_cache:
-                # Update access time for LRU
-                self._cache_access_times[cache_key] = time.time()
+                # Check TTL (Time To Live)
+                if cache_key in self._cache_ttl:
+                    if time.time() > self._cache_ttl[cache_key]:
+                        tprint_debug("💾 Cache entry expired")
+                        self._remove_from_cache(cache_key)
+                        self._cache_stats['misses'] += 1
+                        return None
+                
+                # Update access tracking
+                current_time = time.time()
+                self._cache_access_times[cache_key] = current_time
+                self._cache_access_frequency[cache_key] = self._cache_access_frequency.get(cache_key, 0) + 1
+                
+                # Decompress if needed
+                result = self._result_cache[cache_key]
+                if self._cache_compression_enabled and isinstance(result, bytes):
+                    result = self._decompress_cache_entry(result)
+                    self._cache_stats['decompressions'] += 1
+                
+                # Deserialize if needed
+                if self._cache_serialization_enabled and isinstance(result, bytes):
+                    result = self._deserialize_cache_entry(result)
+                    self._cache_stats['deserializations'] += 1
+                
+                self._cache_stats['hits'] += 1
                 tprint_debug("💾 Cache hit")
-                return self._result_cache[cache_key]
+                return result
         except Exception as e:
             tprint_warning(f"⚠️ Cache retrieval failed: {e}")
+            self._cache_stats['misses'] += 1
         
         tprint_debug("💾 Cache miss")
+        self._cache_stats['misses'] += 1
         return None
     
-    def _put_in_cache(self, cache_key: str, result: Union[pd.Series, pd.DataFrame]):
-        """Put result in cache with intelligent memory management."""
+    def _put_in_cache(self, cache_key: str, result: Union[pd.Series, pd.DataFrame], 
+                     ttl_seconds: int = 3600, priority: int = 1):
+        """Put result in cache with intelligent memory management and compression."""
         if not self._cache_enabled:
             return
         
         try:
             # Calculate memory usage of the result
+            original_memory = self._estimate_result_memory(result)
+            
+            # Apply compression if enabled
+            if self._cache_compression_enabled and original_memory > 1024:  # Compress if > 1KB
+                result = self._compress_cache_entry(result)
+                self._cache_stats['compressions'] += 1
+                compressed_memory = self._estimate_result_memory(result)
+                memory_savings = original_memory - compressed_memory
+                self._cache_stats['memory_savings'] += memory_savings
+                tprint_debug(f"💾 Compressed cache entry: {memory_savings / (1024*1024):.2f}MB saved")
+            
+            # Apply serialization if enabled
+            if self._cache_serialization_enabled:
+                result = self._serialize_cache_entry(result)
+                self._cache_stats['serializations'] += 1
+            
             result_memory = self._estimate_result_memory(result)
             
             # Check if we need to evict items
@@ -965,15 +1035,97 @@ class UnifiedVectorizationManager:
                    self._cache_memory_usage + result_memory > self._max_cache_memory_mb * 1024 * 1024):
                 self._evict_least_recently_used()
             
-            # Store result
+            # Store result with metadata
             self._result_cache[cache_key] = result
-            self._cache_access_times[cache_key] = time.time()
-            self._cache_memory_usage += result_memory
+            current_time = time.time()
+            self._cache_access_times[cache_key] = current_time
+            self._cache_creation_times[cache_key] = current_time
+            self._cache_priority[cache_key] = priority
+            self._cache_access_frequency[cache_key] = 1
             
-            tprint_debug(f"💾 Result cached: {result_memory / (1024*1024):.2f}MB")
+            # Set TTL
+            if ttl_seconds > 0:
+                self._cache_ttl[cache_key] = current_time + ttl_seconds
+            
+            self._cache_memory_usage += result_memory
+            self._cache_stats['total_operations'] += 1
+            
+            tprint_debug(f"💾 Result cached: {result_memory / (1024*1024):.2f}MB (priority: {priority})")
             
         except Exception as e:
             tprint_warning(f"⚠️ Cache storage failed: {e}")
+    
+    def _compress_cache_entry(self, data: Union[pd.Series, pd.DataFrame]) -> bytes:
+        """Compress cache entry using pickle and gzip."""
+        try:
+            import pickle
+            import gzip
+            
+            # Serialize first
+            serialized = pickle.dumps(data)
+            
+            # Compress
+            compressed = gzip.compress(serialized)
+            
+            return compressed
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache compression failed: {e}")
+            return data  # Return original if compression fails
+    
+    def _decompress_cache_entry(self, compressed_data: bytes) -> Union[pd.Series, pd.DataFrame]:
+        """Decompress cache entry."""
+        try:
+            import pickle
+            import gzip
+            
+            # Decompress
+            serialized = gzip.decompress(compressed_data)
+            
+            # Deserialize
+            data = pickle.loads(serialized)
+            
+            return data
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache decompression failed: {e}")
+            return compressed_data  # Return original if decompression fails
+    
+    def _serialize_cache_entry(self, data: Union[pd.Series, pd.DataFrame]) -> bytes:
+        """Serialize cache entry using pickle."""
+        try:
+            import pickle
+            return pickle.dumps(data)
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache serialization failed: {e}")
+            return data  # Return original if serialization fails
+    
+    def _deserialize_cache_entry(self, serialized_data: bytes) -> Union[pd.Series, pd.DataFrame]:
+        """Deserialize cache entry."""
+        try:
+            import pickle
+            return pickle.loads(serialized_data)
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache deserialization failed: {e}")
+            return serialized_data  # Return original if deserialization fails
+    
+    def _remove_from_cache(self, cache_key: str):
+        """Remove entry from cache and update memory usage."""
+        if cache_key in self._result_cache:
+            # Calculate memory being freed
+            freed_memory = self._estimate_result_memory(self._result_cache[cache_key])
+            
+            # Remove from all tracking dictionaries
+            del self._result_cache[cache_key]
+            self._cache_access_times.pop(cache_key, None)
+            self._cache_creation_times.pop(cache_key, None)
+            self._cache_priority.pop(cache_key, None)
+            self._cache_access_frequency.pop(cache_key, None)
+            self._cache_ttl.pop(cache_key, None)
+            
+            # Update memory usage
+            self._cache_memory_usage = max(0, self._cache_memory_usage - freed_memory)
+            self._cache_stats['evictions'] += 1
+            
+            tprint_debug(f"💾 Cache entry removed: {freed_memory / (1024*1024):.2f}MB freed")
     
     def _estimate_result_memory(self, result: Union[pd.Series, pd.DataFrame]) -> int:
         """Estimate memory usage of a result."""
@@ -987,21 +1139,284 @@ class UnifiedVectorizationManager:
             return 1024  # Default estimate
     
     def _evict_least_recently_used(self):
-        """Evict least recently used cache entry."""
+        """Evict least recently used cache entry with priority consideration."""
         if not self._cache_access_times:
             return
         
-        # Find least recently used key
-        lru_key = min(self._cache_access_times.keys(), key=lambda k: self._cache_access_times[k])
+        # Enhanced eviction strategy: consider priority, frequency, and recency
+        def eviction_score(key):
+            # Lower score = more likely to be evicted
+            recency_score = self._cache_access_times.get(key, 0)
+            frequency_score = self._cache_access_frequency.get(key, 1)
+            priority_score = self._cache_priority.get(key, 1)
+            
+            # Weighted combination: recency (70%), frequency (20%), priority (10%)
+            return (recency_score * 0.7) + (frequency_score * 0.2) + (priority_score * 0.1)
+        
+        # Find least valuable key
+        lru_key = min(self._cache_access_times.keys(), key=eviction_score)
         
         # Remove from cache
-        if lru_key in self._result_cache:
-            evicted_memory = self._estimate_result_memory(self._result_cache[lru_key])
-            del self._result_cache[lru_key]
-            del self._cache_access_times[lru_key]
-            self._cache_memory_usage = max(0, self._cache_memory_usage - evicted_memory)
-            tprint_debug(f"💾 Evicted LRU entry: {lru_key}")
+        self._remove_from_cache(lru_key)
+        tprint_debug(f"💾 Evicted entry: {lru_key}")
     
+    def _evict_expired_entries(self):
+        """Evict expired cache entries based on TTL."""
+        current_time = time.time()
+        expired_keys = [key for key, expiry_time in self._cache_ttl.items() 
+                       if current_time > expiry_time]
+        
+        for key in expired_keys:
+            self._remove_from_cache(key)
+            tprint_debug(f"💾 Evicted expired entry: {key}")
+    
+    def _evict_low_priority_entries(self, target_memory_mb: float):
+        """Evict low priority entries to free up memory."""
+        # Sort by priority (ascending) and recency (ascending)
+        sorted_keys = sorted(self._cache_access_times.keys(), 
+                           key=lambda k: (self._cache_priority.get(k, 1), 
+                                        self._cache_access_times[k]))
+        
+        freed_memory = 0
+        for key in sorted_keys:
+            if freed_memory >= target_memory_mb * 1024 * 1024:
+                break
+            
+            entry_memory = self._estimate_result_memory(self._result_cache[key])
+            self._remove_from_cache(key)
+            freed_memory += entry_memory
+            tprint_debug(f"💾 Evicted low priority entry: {key}")
+    
+    def _cleanup_memory(self):
+        """Clean up memory when usage exceeds threshold."""
+        current_memory_usage = self._get_current_memory_usage()
+        self._memory_usage_history.append(current_memory_usage)
+        
+        # Keep only last 100 memory readings
+        if len(self._memory_usage_history) > 100:
+            self._memory_usage_history = self._memory_usage_history[-100:]
+        
+        # Update peak usage
+        self._memory_peak_usage = max(self._memory_peak_usage, current_memory_usage)
+        
+        # Check if cleanup is needed
+        memory_ratio = current_memory_usage / (self._max_cache_memory_mb * 1024 * 1024)
+        if memory_ratio > self._memory_cleanup_threshold:
+            tprint_info(f"🧹 Memory cleanup triggered: {memory_ratio:.1%} usage")
+            
+            # Evict expired entries first
+            self._evict_expired_entries()
+            
+            # If still over threshold, evict low priority entries
+            if self._cache_memory_usage > self._max_cache_memory_mb * 1024 * 1024 * self._memory_cleanup_threshold:
+                target_memory = self._max_cache_memory_mb * 1024 * 1024 * 0.5  # Target 50% usage
+                self._evict_low_priority_entries(target_memory)
+            
+            tprint_success(f"✅ Memory cleanup completed: {self._cache_memory_usage / (1024*1024):.2f}MB used")
+    
+    def _get_current_memory_usage(self) -> float:
+        """Get current memory usage in MB."""
+        try:
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / (1024 * 1024)  # MB
+        except:
+            return self._cache_memory_usage / (1024 * 1024)  # Fallback to cache memory
+    
+    def _initialize_memory_pool(self, pool_size: int = 10):
+        """Initialize memory pool with pre-allocated objects."""
+        tprint_debug(f"🔄 Initializing memory pool with {pool_size} objects")
+        
+        try:
+            # Pre-allocate common data structures
+            for i in range(pool_size):
+                # Pre-allocate empty DataFrames
+                self._memory_pool[f'df_{i}'] = pd.DataFrame()
+                
+                # Pre-allocate empty Series
+                self._memory_pool[f'series_{i}'] = pd.Series(dtype=float)
+                
+                # Pre-allocate numpy arrays
+                self._memory_pool[f'array_{i}'] = np.empty(1000, dtype=np.float64)
+            
+            tprint_success(f"✅ Memory pool initialized with {len(self._memory_pool)} objects")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory pool initialization failed: {e}")
+    
+    def _get_from_memory_pool(self, object_type: str) -> Any:
+        """Get object from memory pool."""
+        if object_type in self._memory_pool:
+            return self._memory_pool[object_type].copy()
+        return None
+    
+    def _return_to_memory_pool(self, object_type: str, obj: Any):
+        """Return object to memory pool."""
+        if object_type in self._memory_pool:
+            # Clear the object and return to pool
+            if hasattr(obj, 'clear'):
+                obj.clear()
+            self._memory_pool[object_type] = obj
+    
+    def get_memory_profiling(self) -> Dict[str, Any]:
+        """Get comprehensive memory profiling information."""
+        if not self._memory_profiling_enabled:
+            return {"profiling_disabled": True}
+        
+        current_memory = self._get_current_memory_usage()
+        
+        profiling = {
+            'current_memory_mb': current_memory,
+            'peak_memory_mb': self._memory_peak_usage,
+            'cache_memory_mb': self._cache_memory_usage / (1024 * 1024),
+            'cache_entries': len(self._result_cache),
+            'memory_pool_objects': len(self._memory_pool),
+            'memory_usage_history': self._memory_usage_history[-10:],  # Last 10 readings
+            'memory_trend': self._calculate_memory_trend(),
+            'memory_leaks': self._detect_memory_leaks(),
+            'optimization_recommendations': self._get_memory_optimization_recommendations()
+        }
+        
+        return profiling
+    
+    def _calculate_memory_trend(self) -> str:
+        """Calculate memory usage trend."""
+        if len(self._memory_usage_history) < 10:
+            return "insufficient_data"
+        
+        recent = self._memory_usage_history[-5:]
+        older = self._memory_usage_history[-10:-5]
+        
+        recent_avg = sum(recent) / len(recent)
+        older_avg = sum(older) / len(older)
+        
+        if recent_avg > older_avg * 1.1:
+            return "increasing"
+        elif recent_avg < older_avg * 0.9:
+            return "decreasing"
+        else:
+            return "stable"
+    
+    def _detect_memory_leaks(self) -> List[str]:
+        """Detect potential memory leaks."""
+        leaks = []
+        
+        if len(self._memory_usage_history) < 20:
+            return leaks
+        
+        # Check for consistent memory growth
+        recent_trend = self._memory_usage_history[-10:]
+        if all(recent_trend[i] < recent_trend[i+1] for i in range(len(recent_trend)-1)):
+            leaks.append("Consistent memory growth detected")
+        
+        # Check for high memory usage
+        if self._memory_peak_usage > self._max_cache_memory_mb * 2:
+            leaks.append("Peak memory usage exceeds 2x cache limit")
+        
+        # Check for cache bloat
+        if len(self._result_cache) > self._max_cache_size * 0.9:
+            leaks.append("Cache size approaching limit")
+        
+        return leaks
+    
+    def _get_memory_optimization_recommendations(self) -> List[str]:
+        """Get memory optimization recommendations."""
+        recommendations = []
+        
+        current_memory = self._get_current_memory_usage()
+        memory_ratio = current_memory / self._max_cache_memory_mb
+        
+        if memory_ratio > 0.8:
+            recommendations.append("Consider increasing cache memory limit")
+        
+        if len(self._result_cache) > self._max_cache_size * 0.8:
+            recommendations.append("Consider increasing cache size limit")
+        
+        if self._cache_stats['evictions'] > self._cache_stats['hits'] * 0.5:
+            recommendations.append("High eviction rate - consider increasing cache size or memory")
+        
+        if self._cache_stats['memory_savings'] < 1024 * 1024:  # Less than 1MB saved
+            recommendations.append("Low compression savings - consider disabling compression for small objects")
+        
+        return recommendations
+    
+    def force_garbage_collection(self):
+        """Force garbage collection and memory cleanup."""
+        tprint_info("🧹 Forcing garbage collection and memory cleanup")
+        
+        try:
+            import gc
+            
+            # Clear cache if memory usage is high
+            current_memory = self._get_current_memory_usage()
+            if current_memory > self._max_cache_memory_mb * 1.5:
+                tprint_warning("⚠️ High memory usage, clearing cache")
+                self.clear_cache()
+            
+            # Force garbage collection
+            collected = gc.collect()
+            tprint_success(f"✅ Garbage collection completed: {collected} objects collected")
+            
+            # Update memory usage
+            new_memory = self._get_current_memory_usage()
+            memory_freed = current_memory - new_memory
+            if memory_freed > 0:
+                tprint_success(f"✅ Memory freed: {memory_freed:.2f}MB")
+            
+        except Exception as e:
+            tprint_error(f"❌ Garbage collection failed: {e}")
+    
+    def clear_cache(self):
+        """Clear all cache entries."""
+        tprint_info("🧹 Clearing all cache entries")
+        
+        # Clear all cache-related dictionaries
+        self._result_cache.clear()
+        self._cache_access_times.clear()
+        self._cache_creation_times.clear()
+        self._cache_priority.clear()
+        self._cache_access_frequency.clear()
+        self._cache_ttl.clear()
+        
+        # Reset memory usage
+        self._cache_memory_usage = 0
+        
+        # Reset cache statistics
+        self._cache_stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0,
+            'compressions': 0,
+            'decompressions': 0,
+            'serializations': 0,
+            'deserializations': 0,
+            'memory_savings': 0,
+            'total_operations': 0
+        }
+        
+        tprint_success("✅ Cache cleared successfully")
+    
+    def get_cache_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive cache statistics."""
+        total_operations = self._cache_stats['hits'] + self._cache_stats['misses']
+        hit_rate = (self._cache_stats['hits'] / total_operations * 100) if total_operations > 0 else 0
+        
+        stats = {
+            'cache_enabled': self._cache_enabled,
+            'cache_size': len(self._result_cache),
+            'max_cache_size': self._max_cache_size,
+            'cache_memory_mb': self._cache_memory_usage / (1024 * 1024),
+            'max_cache_memory_mb': self._max_cache_memory_mb,
+            'hit_rate_percent': hit_rate,
+            'total_operations': total_operations,
+            'compression_enabled': self._cache_compression_enabled,
+            'serialization_enabled': self._cache_serialization_enabled,
+            'memory_savings_mb': self._cache_stats['memory_savings'] / (1024 * 1024),
+            'detailed_stats': self._cache_stats.copy()
+        }
+        
+        return stats
+
     def adaptive_batch_size(self, data_size: int, operation_type: str, 
                            available_memory_mb: float = None) -> int:
         """

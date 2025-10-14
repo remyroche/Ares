@@ -170,6 +170,25 @@ class VectorBTRollingOptimizer:
             'validation_errors': 0
         }
         
+        # Enhanced memory and cache management
+        self._operation_cache = {}
+        self._cache_enabled = True
+        self._max_cache_size = 500
+        self._cache_memory_usage = 0
+        self._max_cache_memory_mb = 50  # 50MB for rolling optimizer
+        self._memory_usage_history = []
+        self._memory_peak_usage = 0
+        self._memory_cleanup_threshold = 0.8
+        
+        # Memory optimization settings
+        self._memory_optimization_enabled = memory_efficient
+        self._chunk_size = chunk_size
+        self._adaptive_chunking = True
+        self._memory_pool = {}
+        
+        # Initialize memory pool
+        self._initialize_memory_pool()
+        
         # Configure VectorBT settings with error handling
         try:
             if self.use_vectorbt:
@@ -1451,6 +1470,217 @@ class VectorBTRollingOptimizer:
             bottlenecks.append("Frequent memory optimizations - consider increasing chunk size or memory budget")
         
         return bottlenecks
+    
+    def _initialize_memory_pool(self):
+        """Initialize memory pool for VectorBTRollingOptimizer."""
+        tprint_debug("🔄 Initializing VectorBT memory pool")
+        
+        try:
+            # Pre-allocate common data structures
+            self._memory_pool['empty_series'] = pd.Series(dtype=float)
+            self._memory_pool['empty_dataframe'] = pd.DataFrame()
+            self._memory_pool['small_array'] = np.empty(100, dtype=np.float64)
+            self._memory_pool['medium_array'] = np.empty(1000, dtype=np.float64)
+            self._memory_pool['large_array'] = np.empty(10000, dtype=np.float64)
+            
+            tprint_success("✅ VectorBT memory pool initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory pool initialization failed: {e}")
+    
+    def _get_adaptive_chunk_size(self, data_size: int, operation: str) -> int:
+        """Calculate adaptive chunk size based on data size and operation."""
+        if not self._adaptive_chunking:
+            return self.chunk_size
+        
+        # Base chunk size based on operation complexity
+        base_sizes = {
+            'mean': 2000,
+            'std': 1500,
+            'var': 1500,
+            'min': 2000,
+            'max': 2000,
+            'sum': 2000,
+            'quantile': 1000,
+            'skew': 800,
+            'kurt': 800,
+            'corr': 500,
+            'cov': 500,
+            'apply': 1000
+        }
+        
+        base_chunk = base_sizes.get(operation, 1000)
+        
+        # Adjust based on data size
+        if data_size < 1000:
+            return min(base_chunk, data_size)
+        elif data_size < 10000:
+            return int(base_chunk * 0.8)
+        elif data_size < 100000:
+            return int(base_chunk * 0.6)
+        else:
+            return int(base_chunk * 0.4)
+    
+    def _monitor_memory_usage(self):
+        """Monitor and track memory usage."""
+        try:
+            import psutil
+            current_memory = psutil.Process().memory_info().rss / (1024 * 1024)  # MB
+            self._memory_usage_history.append(current_memory)
+            
+            # Keep only last 50 readings
+            if len(self._memory_usage_history) > 50:
+                self._memory_usage_history = self._memory_usage_history[-50:]
+            
+            # Update peak usage
+            self._memory_peak_usage = max(self._memory_peak_usage, current_memory)
+            
+            # Check if cleanup is needed
+            if current_memory > self._max_cache_memory_mb * self._memory_cleanup_threshold:
+                self._cleanup_memory()
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory monitoring failed: {e}")
+    
+    def _cleanup_memory(self):
+        """Clean up memory when usage exceeds threshold."""
+        tprint_info("🧹 VectorBT memory cleanup triggered")
+        
+        try:
+            # Clear operation cache
+            if len(self._operation_cache) > self._max_cache_size * 0.8:
+                # Remove oldest entries
+                sorted_keys = sorted(self._operation_cache.keys(), 
+                                   key=lambda k: getattr(self, f'_cache_time_{k}', 0))
+                for key in sorted_keys[:len(sorted_keys)//2]:  # Remove half
+                    del self._operation_cache[key]
+                    if hasattr(self, f'_cache_time_{key}'):
+                        delattr(self, f'_cache_time_{key}')
+            
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            
+            tprint_success(f"✅ VectorBT memory cleanup completed: {collected} objects collected")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory cleanup failed: {e}")
+    
+    def get_memory_statistics(self) -> Dict[str, Any]:
+        """Get memory usage statistics for VectorBTRollingOptimizer."""
+        current_memory = 0
+        try:
+            import psutil
+            current_memory = psutil.Process().memory_info().rss / (1024 * 1024)
+        except:
+            pass
+        
+        return {
+            'current_memory_mb': current_memory,
+            'peak_memory_mb': self._memory_peak_usage,
+            'cache_size': len(self._operation_cache),
+            'max_cache_size': self._max_cache_size,
+            'cache_memory_mb': self._cache_memory_usage / (1024 * 1024),
+            'max_cache_memory_mb': self._max_cache_memory_mb,
+            'memory_optimization_enabled': self._memory_optimization_enabled,
+            'adaptive_chunking': self._adaptive_chunking,
+            'chunk_size': self.chunk_size,
+            'memory_usage_history': self._memory_usage_history[-10:],
+            'memory_pool_objects': len(self._memory_pool)
+        }
+    
+    def optimize_memory_usage(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
+        """Optimize memory usage for input data."""
+        if not self._memory_optimization_enabled:
+            return data
+        
+        try:
+            # Use enhanced memory optimization
+            optimized_data = self.enhanced_memory_optimization(data)
+            
+            # Monitor memory usage
+            self._monitor_memory_usage()
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Memory optimization failed: {e}")
+            return data
+    
+    def _cache_operation_result(self, cache_key: str, result: Union[pd.Series, pd.DataFrame]):
+        """Cache operation result with memory management."""
+        if not self._cache_enabled:
+            return
+        
+        try:
+            # Calculate memory usage
+            result_memory = self._estimate_result_memory(result)
+            
+            # Check if we need to evict entries
+            while (len(self._operation_cache) >= self._max_cache_size or 
+                   self._cache_memory_usage + result_memory > self._max_cache_memory_mb * 1024 * 1024):
+                self._evict_oldest_cache_entry()
+            
+            # Store result
+            self._operation_cache[cache_key] = result
+            setattr(self, f'_cache_time_{cache_key}', time.time())
+            self._cache_memory_usage += result_memory
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache storage failed: {e}")
+    
+    def _get_cached_result(self, cache_key: str) -> Optional[Union[pd.Series, pd.DataFrame]]:
+        """Get cached operation result."""
+        if not self._cache_enabled or cache_key not in self._operation_cache:
+            return None
+        
+        # Update access time
+        setattr(self, f'_cache_time_{cache_key}', time.time())
+        return self._operation_cache[cache_key]
+    
+    def _evict_oldest_cache_entry(self):
+        """Evict oldest cache entry."""
+        if not self._operation_cache:
+            return
+        
+        # Find oldest entry
+        oldest_key = min(self._operation_cache.keys(), 
+                        key=lambda k: getattr(self, f'_cache_time_{k}', 0))
+        
+        # Calculate memory being freed
+        freed_memory = self._estimate_result_memory(self._operation_cache[oldest_key])
+        
+        # Remove entry
+        del self._operation_cache[oldest_key]
+        if hasattr(self, f'_cache_time_{oldest_key}'):
+            delattr(self, f'_cache_time_{oldest_key}')
+        
+        # Update memory usage
+        self._cache_memory_usage = max(0, self._cache_memory_usage - freed_memory)
+    
+    def _estimate_result_memory(self, result: Union[pd.Series, pd.DataFrame]) -> int:
+        """Estimate memory usage of a result."""
+        try:
+            if hasattr(result, 'memory_usage'):
+                return result.memory_usage(deep=True).sum()
+            else:
+                return len(str(result)) * 8  # Rough estimate
+        except:
+            return 1024  # Default estimate
+    
+    def clear_operation_cache(self):
+        """Clear all cached operation results."""
+        tprint_info("🧹 Clearing VectorBT operation cache")
+        
+        self._operation_cache.clear()
+        self._cache_memory_usage = 0
+        
+        # Clear cache time attributes
+        for attr_name in dir(self):
+            if attr_name.startswith('_cache_time_'):
+                delattr(self, attr_name)
+        
+        tprint_success("✅ VectorBT operation cache cleared")
 
     def reset_stats(self):
         """Reset performance statistics."""

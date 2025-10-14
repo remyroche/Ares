@@ -84,7 +84,6 @@ class FeatureBankConfig:
     enable_caching: bool = True
     enable_multi_horizon: bool = True
     enable_memory_optimization: bool = True
-    max_features: int = 200
     min_variance: float = 1e-8
     max_correlation_threshold: float = 0.95
     cache_force_refresh: bool = False
@@ -414,11 +413,7 @@ class FeatureBankIntegration:
                     filtered_data, self.config.max_correlation_threshold
                 )
             
-            # Limit number of features
-            if len(filtered_data.columns) > self.config.max_features:
-                # Select top features by variance
-                top_features = filtered_data.var().nlargest(self.config.max_features).index
-                filtered_data = filtered_data[top_features]
+            # No artificial limit on number of features - let the Feature Bank generate all available features
             
             tprint_success(f"✅ Filtered to {len(filtered_data.columns)} features")
             return filtered_data

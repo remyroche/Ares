@@ -72,9 +72,6 @@ class FeatureScore:
 @dataclass
 class FeatureSelectionConfig:
     """Configuration for advanced feature selection."""
-    target_feature_count: int = 40
-    min_features_per_category: int = 2
-    max_features_per_category: int = 4
     min_variance: float = 1e-8
     max_correlation_threshold: float = 0.95
     min_information_content: float = 0.1
@@ -608,24 +605,9 @@ class AdvancedFeatureSelector:
             # Select diverse features
             selected_features = []
             
-            # First pass: select top features from each category
+            # Select all features from each category (no artificial limits)
             for category, features in category_features.items():
-                max_features = min(len(features), self.config.max_features_per_category)
-                selected_features.extend(features[:max_features])
-            
-            # Second pass: add more features if needed
-            if len(selected_features) < self.config.target_feature_count:
-                # Collect remaining features
-                remaining_features = []
-                for category, features in category_features.items():
-                    remaining_features.extend(features[self.config.max_features_per_category:])
-                
-                # Sort by score
-                remaining_features.sort(key=lambda x: x.score, reverse=True)
-                
-                # Add remaining features
-                needed = self.config.target_feature_count - len(selected_features)
-                selected_features.extend(remaining_features[:needed])
+                selected_features.extend(features)
             
             # Apply diversity filtering
             if self.config.enable_diversity_selection:
@@ -776,26 +758,11 @@ class AdvancedFeatureSelector:
             for feature in features:
                 category_features[feature.category].append(feature)
             
-            # Ensure minimum features per category
+            # Select all features from each category (no artificial limits)
             selected_features = []
             
             for category, features_list in category_features.items():
-                min_features = min(self.config.min_features_per_category, len(features_list))
-                selected_features.extend(features_list[:min_features])
-            
-            # Add more features if needed
-            if len(selected_features) < self.config.target_feature_count:
-                # Collect remaining features
-                remaining_features = []
-                for category, features_list in category_features.items():
-                    remaining_features.extend(features_list[self.config.min_features_per_category:])
-                
-                # Sort by score
-                remaining_features.sort(key=lambda x: x.score, reverse=True)
-                
-                # Add remaining features
-                needed = self.config.target_feature_count - len(selected_features)
-                selected_features.extend(remaining_features[:needed])
+                selected_features.extend(features_list)
             
             # Sort final selection by score
             selected_features.sort(key=lambda x: x.score, reverse=True)

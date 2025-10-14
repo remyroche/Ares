@@ -210,9 +210,6 @@ class EnhancedUnifiedDataDrivenPipeline:
         
         # Advanced feature selector
         feature_config = FeatureSelectionConfig(
-            target_feature_count=40,
-            min_features_per_category=2,
-            max_features_per_category=4,
             min_variance=1e-8,
             max_correlation_threshold=0.95,
             min_information_content=0.1,
@@ -266,7 +263,6 @@ class EnhancedUnifiedDataDrivenPipeline:
             enable_caching=True,
             enable_multi_horizon=True,
             enable_memory_optimization=True,
-            max_features=200,
             min_variance=1e-8,
             max_correlation_threshold=0.95,
             cache_force_refresh=False,

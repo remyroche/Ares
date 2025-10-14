@@ -113,6 +113,18 @@ from .enhanced_components.advanced_artifact_management import (
     AdvancedArtifactManager, ArtifactMetadata, ArtifactSaveReport
 )
 
+# Import math validation utilities
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite, 
+    validate_positive, validate_range, safe_correlation, safe_covariance,
+    safe_mean, safe_std, safe_percentile, safe_percentage_change,
+    safe_weighted_average, safe_kelly_calculation, MathValidation
+)
+
+# Import math validation integration
+from .enhanced_components.math_validation_integration import (
+    MathValidationIntegration, MathValidationResult, validate_pipeline_calculation
+)
 # Import unified data utilities
 from src.utils.data import UnifiedDataUtils, unified_data_utils
 from src.utils.data.processing.data_processing import DataProcessor
@@ -607,6 +619,9 @@ class UnifiedDataDrivenPipeline:
             base_dir="artifacts/unified_pipeline",
             logger=self.logger
         )
+        
+        # Math validation integration
+        self.math_validator = MathValidationIntegration(logger=self.logger)
         
         tprint_success("✅ Advanced infrastructure components initialized")
     
@@ -2189,20 +2204,36 @@ class UnifiedDataDrivenPipeline:
         return optimal_periods
     
     def _calculate_interaction_metrics(self, interactions: List[Any]) -> Dict[str, Any]:
-        """Calculate metrics for generated interactions."""
+        """Calculate metrics for generated interactions with math validation."""
         if not interactions:
             return {}
         
         try:
+            # Extract utility scores safely
+            utility_scores = []
+            for i in interactions:
+                score = validate_finite(i.utility_score, "utility_score")
+                utility_scores.append(score)
+            
+            # Calculate metrics with safe operations
+            total_interactions = len(interactions)
+            avg_utility_score = safe_mean(utility_scores, default=0.0)
+            max_utility_score = safe_percentile(utility_scores, 100.0, default=0.0)
+            min_utility_score = safe_percentile(utility_scores, 0.0, default=0.0)
+            
+            interaction_types = list(set(i.interaction_type for i in interactions))
+            unique_parent_features = len(set(f for i in interactions for f in i.parent_features))
+            
             return {
-                'total_interactions': len(interactions),
-                'average_utility_score': np.mean([i.utility_score for i in interactions]),
-                'max_utility_score': max(i.utility_score for i in interactions),
-                'min_utility_score': min(i.utility_score for i in interactions),
-                'interaction_types': list(set(i.interaction_type for i in interactions)),
-                'unique_parent_features': len(set(f for i in interactions for f in i.parent_features))
+                'total_interactions': total_interactions,
+                'average_utility_score': float(avg_utility_score),
+                'max_utility_score': float(max_utility_score),
+                'min_utility_score': float(min_utility_score),
+                'interaction_types': interaction_types,
+                'unique_parent_features': unique_parent_features
             }
-        except:
+        except Exception as e:
+            self.logger.warning(f"Interaction metrics calculation failed: {e}")
             return {}
     
     def _calculate_lookback_metrics(self, lookback_results: Dict[str, int]) -> Dict[str, Any]:
@@ -2300,11 +2331,73 @@ class UnifiedDataDrivenPipeline:
             return 0.0
     
     def _calculate_cache_hit_rate(self) -> float:
-        """Calculate cache hit rate."""
-        hits = self.performance_stats.get('cache_hits', 0)
-        misses = self.performance_stats.get('cache_misses', 0)
-        total = hits + misses
-        return hits / total if total > 0 else 0.0
+        """Calculate cache hit rate with math validation."""
+        try:
+            hits = self.performance_stats.get('cache_hits', 0)
+            misses = self.performance_stats.get('cache_misses', 0)
+            
+            # Validate inputs
+            hits = validate_positive(hits, "cache_hits")
+            misses = validate_positive(misses, "cache_misses")
+            
+            # Use safe division
+            total = hits + misses
+            hit_rate = safe_divide(hits, total, default=0.0)
+            hit_rate = validate_range(hit_rate, 0.0, 1.0, "cache_hit_rate")
+            
+            return float(hit_rate)
+            
+        except Exception as e:
+            self.logger.warning(f"Cache hit rate calculation failed: {e}")
+            return 0.0
+    
+    def validate_pipeline_math(self, 
+                             data: pd.DataFrame, 
+                             targets: Optional[pd.Series] = None,
+                             returns: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Validate all mathematical operations in the pipeline using comprehensive math validation.
+        
+        Args:
+            data: Input data for validation
+            targets: Target values for supervised learning validation
+            returns: Returns data for financial metrics validation
+            
+        Returns:
+            Dictionary containing validation results for all mathematical operations
+        """
+        tprint_info("🔢 Starting comprehensive math validation")
+        
+        validation_results = {}
+        
+        try:
+            # Validate financial metrics if returns are provided
+            if returns is not None:
+                tprint_debug("Validating financial metrics")
+                financial_results = self.math_validator.validate_financial_metrics(returns)
+                validation_results['financial_metrics'] = financial_results
+            
+            # Validate statistical metrics
+            tprint_debug("Validating statistical metrics")
+            statistical_results = self.math_validator.validate_statistical_metrics(data, targets)
+            validation_results['statistical_metrics'] = statistical_results
+            
+            # Validate feature metrics
+            tprint_debug("Validating feature metrics")
+            feature_results = self.math_validator.validate_feature_metrics(data, targets)
+            validation_results['feature_metrics'] = feature_results
+            
+            # Get validation statistics
+            validation_results['validation_stats'] = self.math_validator.get_validation_stats()
+            
+            tprint_success("✅ Math validation completed successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Math validation failed: {e}")
+            validation_results['error'] = str(e)
+            validation_results['validation_stats'] = self.math_validator.get_validation_stats()
+        
+        return validation_results
     
     def _create_empty_result(self, start_time: float, error_message: str) -> ConsolidatedPipelineResult:
         """Create empty result for failed processing."""

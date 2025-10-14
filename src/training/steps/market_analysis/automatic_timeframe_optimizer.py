@@ -27,17 +27,17 @@ from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHo
 
 # Import optimization components
 try:
-    from src.research.profit_labeling.dynamic_target_optimizer import (
+    from research.profit_labeling.dynamic_target_optimizer import (
         JointTargetHorizonOptimizer,
         DynamicOptimizationConfig,
         OptimizationMethod,
         OptimizationObjective
     )
-    from src.research.profit_labeling.heuristic_analyzer import (
+    from research.profit_labeling.heuristic_analyzer import (
         HeuristicAnalyzer,
         HeuristicAnalysisConfig
     )
-    from src.research.profit_labeling.labeling_validator import (
+    from research.profit_labeling.labeling_validator import (
         LabelingValidator,
         ValidationConfig
     )

@@ -11,15 +11,13 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import the unified pipeline
+# Import the consolidated unified pipeline
 from .. import (
     UnifiedDataDrivenPipeline,
+    ConsolidatedPipelineResult,
     create_unified_pipeline,
-    process_features,
-    create_default_config,
-    create_high_performance_config,
-    create_memory_efficient_config,
-    create_fast_config
+    process_with_unified_pipeline,
+    create_default_config
 )
 
 def create_sample_data(n_samples: int = 1000, n_features: int = 50) -> Tuple[pd.DataFrame, pd.Series]:
@@ -132,7 +130,7 @@ def example_custom_configuration():
     
     # Create pipeline with custom config
     pipeline = create_unified_pipeline(config)
-    result = pipeline.process(data, targets)
+    result = pipeline.process(data, targets, feature_columns=None, timeframe="15m")
     
     print(f"\nResults:")
     print(f"- Selected features: {len(result.selected_features)}")
@@ -158,7 +156,7 @@ def example_high_performance_config():
     
     # Create pipeline
     pipeline = create_unified_pipeline(config)
-    result = pipeline.process(data, targets)
+    result = pipeline.process(data, targets, feature_columns=None, timeframe="15m")
     
     print(f"\nResults:")
     print(f"- Selected features: {len(result.selected_features)}")
@@ -185,7 +183,7 @@ def example_memory_efficient_config():
     
     # Create pipeline
     pipeline = create_unified_pipeline(config)
-    result = pipeline.process(data, targets)
+    result = pipeline.process(data, targets, feature_columns=None, timeframe="15m")
     
     print(f"\nResults:")
     print(f"- Selected features: {len(result.selected_features)}")
@@ -211,7 +209,7 @@ def example_fast_config():
     
     # Create pipeline
     pipeline = create_unified_pipeline(config)
-    result = pipeline.process(data, targets)
+    result = pipeline.process(data, targets, feature_columns=None, timeframe="15m")
     
     print(f"\nResults:")
     print(f"- Selected features: {len(result.selected_features)}")

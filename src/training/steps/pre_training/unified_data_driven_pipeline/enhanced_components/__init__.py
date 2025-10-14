@@ -38,11 +38,8 @@ from .gpu_optimizations import (
     GPUOperationResult
 )
 
-from .enhanced_unified_pipeline import (
-    EnhancedUnifiedDataDrivenPipeline,
-    EnhancedPipelineConfig,
-    PipelineExecutionResult
-)
+# Note: Enhanced unified pipeline has been consolidated into the main pipeline
+# The enhanced pipeline classes are no longer available as separate components
 
 __all__ = [
     # Walk-forward validation
@@ -71,10 +68,5 @@ __all__ = [
     # GPU optimizations
     'GPUOptimizer',
     'GPUConfig',
-    'GPUOperationResult',
-    
-    # Enhanced unified pipeline
-    'EnhancedUnifiedDataDrivenPipeline',
-    'EnhancedPipelineConfig',
-    'PipelineExecutionResult'
+    'GPUOperationResult'
 ]

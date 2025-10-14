@@ -38,18 +38,27 @@ except ImportError:
     rolling_cov = None
     warnings.warn("VectorBT not available for advanced feature selection")
 
-# Import feature selection utilities
-try:
-    from src.feature_selection import (
-        VectorBTMRMRSelector, VectorBTRegularizationSelector, VectorBTRFESelector,
-        MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator,
-        FeatureImportanceRanker, CorrelationBasedFilter
-    )
-    from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
-    FEATURE_SELECTION_AVAILABLE = True
-except ImportError:
-    FEATURE_SELECTION_AVAILABLE = False
-    tprint_warning("⚠️ Advanced feature selection utilities not available")
+        # Import feature selection utilities
+        try:
+            from src.feature_selection import (
+                VectorBTMRMRSelector, VectorBTRegularizationSelector, VectorBTRFESelector,
+                MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator,
+                FeatureImportanceRanker, CorrelationBasedFilter
+            )
+            from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
+            FEATURE_SELECTION_AVAILABLE = True
+        except ImportError:
+            FEATURE_SELECTION_AVAILABLE = False
+            tprint_warning("⚠️ Advanced feature selection utilities not available")
+        
+        # Import LGBM and SHAP
+        try:
+            import lightgbm as lgb
+            import shap
+            LGBM_SHAP_AVAILABLE = True
+        except ImportError:
+            LGBM_SHAP_AVAILABLE = False
+            tprint_warning("⚠️ LightGBM/SHAP not available. Install with: pip install lightgbm shap")
 
 try:
     from src.utils.tprint import (
@@ -113,11 +122,31 @@ class FeatureSelectionConfig:
     correlation_threshold: float = 0.95
     mutual_info_threshold: float = 0.01
     
+    # LGBM/SHAP configuration
+    enable_lgbm_selection: bool = True
+    lgbm_params: Dict[str, Any] = None
+    shap_threshold: float = 0.01
+    shap_sample_size: int = 1000
+    use_shap_importance: bool = True
+    
     def __post_init__(self):
         if self.screening_methods is None:
             self.screening_methods = ['variance', 'correlation', 'mutual_info']
         if self.final_selection_methods is None:
-            self.final_selection_methods = ['mrmr', 'lasso', 'rfe']
+            self.final_selection_methods = ['mrmr', 'lgbm', 'rfe']
+        if self.lgbm_params is None:
+            self.lgbm_params = {
+                'objective': 'regression',
+                'metric': 'rmse',
+                'boosting_type': 'gbdt',
+                'num_leaves': 31,
+                'learning_rate': 0.05,
+                'feature_fraction': 0.9,
+                'bagging_fraction': 0.8,
+                'bagging_freq': 5,
+                'verbose': -1,
+                'random_state': 42
+            }
 
 
 @dataclass
@@ -1200,25 +1229,19 @@ class AdvancedFeatureSelector:
                 except Exception as e:
                     tprint_warning(f"mRMR selection failed: {e}")
             
-            # Method 2: LASSO
-            if 'lasso' in self.config.final_selection_methods:
-                tprint_debug("📊 Applying LASSO selection")
+            # Method 2: LGBM/SHAP
+            if 'lgbm' in self.config.final_selection_methods:
+                tprint_debug("📊 Applying LGBM/SHAP selection")
                 try:
-                    if VECTORBT_AVAILABLE:
-                        lasso_selector = VectorBTRegularizationSelector()
-                        lasso_result = lasso_selector.select_features_lasso(
-                            X, y, k=self.config.final_selection_count,
-                            feature_names=feature_names
-                        )
+                    if LGBM_SHAP_AVAILABLE:
+                        lgbm_result = self._lgbm_shap_selection(data, targets)
+                        if lgbm_result:
+                            method_results['lgbm'] = lgbm_result
+                            tprint_debug(f"LGBM/SHAP: {len(method_results['lgbm'])} features selected")
                     else:
-                        lasso_selector = ElasticNetStabilitySelector()
-                        lasso_result = lasso_selector.select_features(X, y, feature_names)
-                    
-                    if lasso_result.get('success', False):
-                        method_results['lasso'] = lasso_result['selected_features']
-                        tprint_debug(f"LASSO: {len(method_results['lasso'])} features selected")
+                        tprint_warning("⚠️ LightGBM/SHAP not available, skipping LGBM selection")
                 except Exception as e:
-                    tprint_warning(f"LASSO selection failed: {e}")
+                    tprint_warning(f"LGBM/SHAP selection failed: {e}")
             
             # Method 3: RFE
             if 'rfe' in self.config.final_selection_methods:
@@ -1439,6 +1462,97 @@ class AdvancedFeatureSelector:
             'max_stability': max(stability_scores),
             'average_predictability': np.mean(predictability_scores)
         }
+    
+    def _lgbm_shap_selection(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> List[str]:
+        """Select features using LightGBM and SHAP importance."""
+        if not LGBM_SHAP_AVAILABLE or targets is None:
+            return []
+        
+        try:
+            import lightgbm as lgb
+            import shap
+            
+            tprint_debug("🔍 Starting LGBM/SHAP feature selection")
+            
+            # Prepare data
+            X = data.values
+            y = targets.values
+            feature_names = list(data.columns)
+            
+            # Create LightGBM dataset
+            train_data = lgb.Dataset(X, label=y, feature_name=feature_names)
+            
+            # Train LightGBM model
+            model = lgb.train(
+                self.config.lgbm_params,
+                train_data,
+                num_boost_round=100,
+                valid_sets=[train_data],
+                callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
+            )
+            
+            # Get feature importance from LightGBM
+            lgb_importance = model.feature_importance(importance_type='gain')
+            lgb_importance_dict = dict(zip(feature_names, lgb_importance))
+            
+            # Calculate SHAP values
+            explainer = shap.TreeExplainer(model)
+            
+            # Sample data for SHAP calculation if dataset is too large
+            if len(X) > self.config.shap_sample_size:
+                sample_indices = np.random.choice(len(X), self.config.shap_sample_size, replace=False)
+                X_sample = X[sample_indices]
+            else:
+                X_sample = X
+            
+            shap_values = explainer.shap_values(X_sample)
+            
+            # Calculate mean absolute SHAP values
+            if len(shap_values.shape) > 1:
+                shap_importance = np.mean(np.abs(shap_values), axis=0)
+            else:
+                shap_importance = np.abs(shap_values)
+            
+            shap_importance_dict = dict(zip(feature_names, shap_importance))
+            
+            # Combine LGBM and SHAP importance
+            combined_importance = {}
+            for feature in feature_names:
+                lgb_score = lgb_importance_dict.get(feature, 0)
+                shap_score = shap_importance_dict.get(feature, 0)
+                
+                # Normalize scores
+                lgb_norm = lgb_score / (max(lgb_importance) + 1e-8)
+                shap_norm = shap_score / (max(shap_importance) + 1e-8)
+                
+                # Weighted combination (70% SHAP, 30% LGBM)
+                combined_importance[feature] = 0.7 * shap_norm + 0.3 * lgb_norm
+            
+            # Select features above threshold
+            if self.config.use_shap_importance:
+                # Use SHAP threshold
+                selected_features = [
+                    feature for feature, importance in combined_importance.items()
+                    if importance > self.config.shap_threshold
+                ]
+            else:
+                # Use top N features
+                sorted_features = sorted(combined_importance.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [feature for feature, _ in sorted_features[:self.config.final_selection_count]]
+            
+            # Ensure we don't exceed the maximum number of features
+            if len(selected_features) > self.config.final_selection_count:
+                sorted_features = sorted(combined_importance.items(), key=lambda x: x[1], reverse=True)
+                selected_features = [feature for feature, _ in sorted_features[:self.config.final_selection_count]]
+            
+            tprint_debug(f"LGBM/SHAP selection: {len(selected_features)} features selected")
+            tprint_debug(f"Top 5 features: {selected_features[:5]}")
+            
+            return selected_features
+            
+        except Exception as e:
+            tprint_warning(f"LGBM/SHAP selection failed: {e}")
+            return []
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""

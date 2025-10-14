@@ -1360,7 +1360,7 @@ class UnifiedDataDrivenPipeline:
                 self.advanced_feature_selector.config.enable_multi_stage_selection = True
                 self.advanced_feature_selector.config.enable_lightweight_screening = True
                 self.advanced_feature_selector.config.screening_methods = ['variance', 'correlation', 'mutual_info']
-                self.advanced_feature_selector.config.final_selection_methods = ['mrmr', 'lasso', 'rfe']
+                self.advanced_feature_selector.config.final_selection_methods = ['mrmr', 'lgbm', 'rfe']
                 self.advanced_feature_selector.config.max_screening_features = 100
                 self.advanced_feature_selector.config.final_selection_count = 40
                 tprint_info("🔧 Configured multi-stage feature selection")

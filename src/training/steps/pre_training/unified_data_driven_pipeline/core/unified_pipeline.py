@@ -2579,6 +2579,325 @@ class UnifiedDataDrivenPipeline:
             tprint_debug(f"Confidence score calculation failed: {e}")
             return 0.5  # Default moderate confidence
     
+    def _batch_analyze_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Analyze data characteristics using batch processing for large datasets.
+        
+        Args:
+            data: Input data for analysis
+            
+        Returns:
+            Dictionary containing data characteristics
+        """
+        tprint_debug("🔍 Performing batch analysis of data characteristics")
+        
+        characteristics = {}
+        
+        try:
+            # Basic data info
+            characteristics['data_length'] = len(data)
+            characteristics['data_frequency'] = self._detect_frequency(data)
+            characteristics['timeframe_minutes'] = self._get_timeframe_minutes(data)
+            
+            # Process data in chunks if it's large
+            chunk_size = 1000
+            if len(data) > chunk_size:
+                tprint_debug(f"📊 Processing {len(data)} rows in chunks of {chunk_size}")
+                
+                # Analyze volatility in chunks
+                vol_stats = []
+                for i in range(0, len(data), chunk_size):
+                    chunk = data.iloc[i:i+chunk_size]
+                    if 'close' in chunk.columns:
+                        chunk_vol = chunk['close'].pct_change().std()
+                        vol_stats.append(chunk_vol)
+                
+                if vol_stats:
+                    characteristics['volatility_stats'] = {
+                        'mean_volatility': np.mean(vol_stats),
+                        'volatility_of_volatility': np.std(vol_stats),
+                        'min_volatility': np.min(vol_stats),
+                        'max_volatility': np.max(vol_stats)
+                    }
+            else:
+                # Process normally for smaller datasets
+                if 'close' in data.columns:
+                    returns = data['close'].pct_change().dropna()
+                    characteristics['volatility_stats'] = {
+                        'mean_volatility': returns.std(),
+                        'volatility_of_volatility': returns.rolling(20).std().std(),
+                        'min_volatility': returns.min(),
+                        'max_volatility': returns.max()
+                    }
+            
+            # Data quality assessment
+            null_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            characteristics['data_quality_score'] = 1.0 - null_ratio
+            
+            # Memory usage estimation
+            memory_usage = data.memory_usage(deep=True).sum() / 1024**2  # MB
+            characteristics['memory_usage_mb'] = memory_usage
+            
+            tprint_debug(f"✅ Batch analysis complete: {len(characteristics)} characteristics")
+            
+        except Exception as e:
+            tprint_error(f"❌ Batch analysis failed: {e}")
+            characteristics['error'] = str(e)
+        
+        return characteristics
+    
+    def _individual_analyze_characteristics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Analyze data characteristics using individual processing for smaller datasets.
+        
+        Args:
+            data: Input data for analysis
+            
+        Returns:
+            Dictionary containing data characteristics
+        """
+        tprint_debug("🔍 Performing individual analysis of data characteristics")
+        
+        characteristics = {}
+        
+        try:
+            # Basic data info
+            characteristics['data_length'] = len(data)
+            characteristics['data_frequency'] = self._detect_frequency(data)
+            characteristics['timeframe_minutes'] = self._get_timeframe_minutes(data)
+            
+            # Detailed analysis for smaller datasets
+            if 'close' in data.columns:
+                prices = data['close']
+                returns = prices.pct_change().dropna()
+                
+                # Volatility analysis
+                characteristics['volatility_stats'] = {
+                    'mean_volatility': returns.std(),
+                    'volatility_of_volatility': returns.rolling(20).std().std(),
+                    'min_volatility': returns.min(),
+                    'max_volatility': returns.max(),
+                    'skewness': returns.skew(),
+                    'kurtosis': returns.kurtosis()
+                }
+                
+                # Trend analysis
+                sma_20 = prices.rolling(20).mean()
+                trend_strength = (prices - sma_20).abs().mean() / prices.mean()
+                characteristics['trend_strength'] = trend_strength
+                
+                # Volume analysis if available
+                if 'volume' in data.columns:
+                    volume = data['volume']
+                    characteristics['volume_stats'] = {
+                        'mean_volume': volume.mean(),
+                        'volume_volatility': volume.std(),
+                        'volume_trend': volume.rolling(20).mean().iloc[-1] / volume.rolling(20).mean().iloc[0] if len(volume) >= 20 else 1.0
+                    }
+            
+            # Data quality assessment
+            null_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            characteristics['data_quality_score'] = 1.0 - null_ratio
+            
+            # Memory usage estimation
+            memory_usage = data.memory_usage(deep=True).sum() / 1024**2  # MB
+            characteristics['memory_usage_mb'] = memory_usage
+            
+            tprint_debug(f"✅ Individual analysis complete: {len(characteristics)} characteristics")
+            
+        except Exception as e:
+            tprint_error(f"❌ Individual analysis failed: {e}")
+            characteristics['error'] = str(e)
+        
+        return characteristics
+    
+    def _filter_periods(self, periods: List[int], characteristics: Dict[str, Any]) -> List[int]:
+        """
+        Filter periods based on data characteristics and constraints.
+        
+        Args:
+            periods: List of candidate periods
+            characteristics: Data characteristics
+            
+        Returns:
+            List of filtered periods
+        """
+        tprint_debug(f"🔍 Filtering {len(periods)} periods")
+        
+        if not periods:
+            return []
+        
+        filtered = []
+        data_length = characteristics.get('data_length', 0)
+        timeframe_minutes = characteristics.get('timeframe_minutes', 15)
+        
+        for period in periods:
+            if not isinstance(period, int):
+                continue
+            
+            # Check if period is within bounds
+            if not (2 <= period <= 200):
+                continue
+            
+            # Check if period is appropriate for data length
+            if period > data_length // 2:
+                continue
+            
+            # Check if period is reasonable for timeframe
+            period_minutes = period * timeframe_minutes
+            if period_minutes > 1440:  # More than 1 day
+                continue
+            
+            filtered.append(period)
+        
+        tprint_debug(f"✅ Filtered to {len(filtered)} periods")
+        return filtered
+    
+    def _rank_periods(self, periods: List[int], characteristics: Dict[str, Any]) -> List[int]:
+        """
+        Rank periods based on quality metrics.
+        
+        Args:
+            periods: List of periods to rank
+            characteristics: Data characteristics
+            
+        Returns:
+            List of periods ranked by quality
+        """
+        tprint_debug(f"📊 Ranking {len(periods)} periods")
+        
+        if not periods:
+            return []
+        
+        # Calculate scores for each period
+        period_scores = {}
+        for period in periods:
+            score = 0.0
+            
+            # Base score from period value (prefer moderate periods)
+            if 5 <= period <= 50:
+                score += 0.3
+            elif 2 <= period <= 100:
+                score += 0.2
+            
+            # Score based on data length ratio
+            data_length = characteristics.get('data_length', 1000)
+            length_ratio = period / data_length
+            if 0.01 <= length_ratio <= 0.1:  # 1-10% of data length
+                score += 0.3
+            elif 0.001 <= length_ratio <= 0.2:  # 0.1-20% of data length
+                score += 0.2
+            
+            # Score based on volatility characteristics
+            vol_stats = characteristics.get('volatility_stats', {})
+            if vol_stats:
+                mean_vol = vol_stats.get('mean_volatility', 0.01)
+                if 0.005 <= mean_vol <= 0.05:  # Reasonable volatility range
+                    score += 0.2
+                elif 0.001 <= mean_vol <= 0.1:
+                    score += 0.1
+            
+            # Score based on data quality
+            data_quality = characteristics.get('data_quality_score', 0.5)
+            score += data_quality * 0.2
+            
+            period_scores[period] = score
+        
+        # Sort by score (descending)
+        ranked_periods = sorted(period_scores.keys(), key=lambda p: period_scores[p], reverse=True)
+        
+        tprint_debug(f"✅ Ranked {len(ranked_periods)} periods")
+        return ranked_periods
+    
+    def _categorize_periods(self, periods: List[int], characteristics: Dict[str, Any]) -> Dict[str, List[int]]:
+        """
+        Categorize periods into different types.
+        
+        Args:
+            periods: List of periods to categorize
+            characteristics: Data characteristics
+            
+        Returns:
+            Dictionary with categorized periods
+        """
+        tprint_debug(f"📂 Categorizing {len(periods)} periods")
+        
+        categories = {
+            'short_term': [],
+            'medium_term': [],
+            'long_term': [],
+            'trend_following': [],
+            'mean_reversion': [],
+            'volatility': []
+        }
+        
+        for period in periods:
+            # Time-based categorization
+            if period <= 10:
+                categories['short_term'].append(period)
+            elif period <= 30:
+                categories['medium_term'].append(period)
+            else:
+                categories['long_term'].append(period)
+            
+            # Strategy-based categorization (simplified)
+            if 5 <= period <= 20:
+                categories['trend_following'].append(period)
+            elif 10 <= period <= 50:
+                categories['mean_reversion'].append(period)
+            
+            # Volatility-based categorization
+            vol_stats = characteristics.get('volatility_stats', {})
+            if vol_stats:
+                mean_vol = vol_stats.get('mean_volatility', 0.01)
+                if mean_vol > 0.02:  # High volatility
+                    if period <= 15:
+                        categories['volatility'].append(period)
+                else:  # Low volatility
+                    if period >= 20:
+                        categories['volatility'].append(period)
+        
+        # Remove empty categories
+        categories = {k: v for k, v in categories.items() if v}
+        
+        tprint_debug(f"✅ Categorized into {len(categories)} categories")
+        return categories
+    
+    def _optimize_for_large_datasets(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize data for large dataset processing.
+        
+        Args:
+            data: Input data to optimize
+            
+        Returns:
+            Optimized data for processing
+        """
+        tprint_debug("🔧 Optimizing data for large dataset processing")
+        
+        try:
+            # Use VectorBT optimization if available
+            if self.vectorization_manager:
+                optimized_data = self.vectorization_manager.optimize_dataframe(data)
+                self.performance_stats['memory_optimizations'] += 1
+                return optimized_data
+            
+            # Fallback to basic optimization
+            optimized_data = data.copy()
+            
+            # Convert to appropriate dtypes to save memory
+            for col in optimized_data.columns:
+                if optimized_data[col].dtype == 'float64':
+                    optimized_data[col] = optimized_data[col].astype('float32')
+                elif optimized_data[col].dtype == 'int64':
+                    optimized_data[col] = optimized_data[col].astype('int32')
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data optimization failed, using original data: {e}")
+            return data
+    
     def select_optimal_periods(self, data: pd.DataFrame, 
                              target_timeframe: Optional[str] = None) -> PeriodAnalysisResult:
         """
@@ -2718,7 +3037,123 @@ class UnifiedDataDrivenPipeline:
         """Reset cache statistics."""
         if hasattr(self, 'cache_metrics'):
             self.cache_metrics = {'hits': 0, 'misses': 0, 'writes': 0, 'force_refreshes': 0}
-            tprint_success("Cache statistics reset")
+    
+    def get_data_driven_periods(self, data: pd.DataFrame, 
+                              target_timeframe: Optional[str] = None,
+                              max_periods: int = 8) -> List[int]:
+        """
+        Get data-driven periods (backward compatibility method).
+        
+        Args:
+            data: Input data
+            target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+            max_periods: Maximum number of periods to return
+            
+        Returns:
+            List of optimal periods
+        """
+        result = self.select_optimal_periods(data, target_timeframe)
+        return result.optimal_periods[:max_periods]
+    
+    def get_periods_with_metadata(self, data: pd.DataFrame, 
+                                target_timeframe: Optional[str] = None,
+                                max_periods: int = 8) -> Tuple[List[int], Dict[str, Any]]:
+        """
+        Get data-driven periods with comprehensive metadata.
+        
+        Args:
+            data: Input data
+            target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+            max_periods: Maximum number of periods to return
+            
+        Returns:
+            Tuple of (optimal periods, comprehensive metadata)
+        """
+        result = self.select_optimal_periods(data, target_timeframe)
+        
+        # Extract metadata
+        metadata = {
+            'optimal_periods': result.optimal_periods,
+            'period_categories': getattr(result, 'period_categories', {}),
+            'analysis_metadata': getattr(result, 'analysis_metadata', {}),
+            'confidence_score': getattr(result, 'confidence_score', 0.0),
+            'data_shape': data.shape,
+            'target_timeframe': target_timeframe,
+            'max_periods': max_periods
+        }
+        
+        # Limit to max_periods
+        optimal_periods = result.optimal_periods[:max_periods]
+        
+        return optimal_periods, metadata
+    
+    def validate_period_quality(self, data: pd.DataFrame, 
+                              periods: List[int],
+                              target_timeframe: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Validate the quality of selected periods.
+        
+        Args:
+            data: Input data
+            periods: List of periods to validate
+            target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+            
+        Returns:
+            Dictionary containing quality validation results
+        """
+        tprint_info(f"🔍 Validating period quality for {len(periods)} periods")
+        
+        if not isinstance(periods, list) or not periods:
+            raise ValueError("Periods must be a non-empty list")
+        
+        # Analyze data characteristics
+        characteristics = self.analyze_data_characteristics(data)
+        
+        # Validate periods
+        validation_results = {
+            'periods': periods,
+            'data_length': len(data),
+            'target_timeframe': target_timeframe,
+            'validation_passed': True,
+            'issues': [],
+            'recommendations': []
+        }
+        
+        # Check if periods are within reasonable bounds
+        data_length = len(data)
+        for period in periods:
+            if period < 2:
+                validation_results['issues'].append(f"Period {period} is too small (minimum: 2)")
+                validation_results['validation_passed'] = False
+            elif period > data_length // 2:
+                validation_results['issues'].append(f"Period {period} is too large (maximum: {data_length // 2})")
+                validation_results['validation_passed'] = False
+        
+        # Check for period diversity
+        unique_periods = len(set(periods))
+        if unique_periods < len(periods) * 0.8:
+            validation_results['issues'].append("Low period diversity - many duplicate periods")
+            validation_results['recommendations'].append("Consider selecting more diverse periods")
+        
+        # Check if periods are appropriate for timeframe
+        if target_timeframe:
+            timeframe_minutes = self._get_timeframe_minutes(data)
+            for period in periods:
+                period_minutes = period * timeframe_minutes
+                if period_minutes > 1440:  # More than 1 day
+                    validation_results['recommendations'].append(f"Period {period} ({period_minutes} minutes) may be too long for {target_timeframe}")
+        
+        # Calculate overall quality score
+        quality_score = 1.0
+        if validation_results['issues']:
+            quality_score -= len(validation_results['issues']) * 0.1
+        if validation_results['recommendations']:
+            quality_score -= len(validation_results['recommendations']) * 0.05
+        
+        validation_results['quality_score'] = max(0.0, min(1.0, quality_score))
+        
+        tprint_success(f"✅ Period quality validation complete: {validation_results['quality_score']:.2f}")
+        return validation_results
     
     def _optimize_feature_lookback(self, data: pd.DataFrame, targets: Optional[pd.Series], 
                                   characteristics: Any) -> Dict[str, Any]:
@@ -5861,6 +6296,124 @@ def get_data_driven_periods_with_stats(data: pd.DataFrame,
         raise RuntimeError(f"Failed to get enhanced data-driven periods with stats: {e}")
 
 
+# Additional methods from DataDrivenPeriodSelector for backward compatibility
+def optimize_for_large_datasets(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Optimize data for large dataset processing.
+    
+    Args:
+        data: Input data to optimize
+        
+    Returns:
+        Optimized data for processing
+    """
+    tprint_info(f"🔧 Optimizing data for large dataset processing (shape: {data.shape})")
+    
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError("Expected pandas DataFrame, got {type(data).__name__}")
+    
+    try:
+        pipeline = create_unified_pipeline()
+        optimized_data = pipeline._optimize_for_large_datasets(data)
+        
+        tprint_success(f"✅ Data optimization complete: {optimized_data.shape}")
+        return optimized_data
+        
+    except Exception as e:
+        tprint_error(f"❌ Data optimization failed: {e}")
+        return data
+
+
+def benchmark_period_selector(data: pd.DataFrame, 
+                            target_timeframe: Optional[str] = None,
+                            max_periods: int = 8,
+                            trials: int = 3) -> Dict[str, Any]:
+    """
+    Benchmark period selector performance across different configurations.
+    
+    Args:
+        data: Input data
+        target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+        max_periods: Maximum number of periods to return
+        trials: Number of trials to run for each configuration
+        
+    Returns:
+        Benchmarking results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If benchmarking fails
+    """
+    tprint_info(f"🚀 Starting period selector benchmark (data_shape: {data.shape}, trials: {trials})")
+    tprint_debug(f"📊 Target timeframe: {target_timeframe}, max_periods: {max_periods}")
+    
+    # Fast fail for invalid inputs
+    if not isinstance(data, pd.DataFrame):
+        tprint_error("❌ Invalid input: expected pandas DataFrame")
+        raise ValueError("Expected pandas DataFrame, got {type(data).__name__}")
+    
+    if len(data) == 0:
+        tprint_error("❌ Empty DataFrame provided")
+        raise ValueError("DataFrame cannot be empty")
+    
+    if not isinstance(trials, int) or trials <= 0:
+        tprint_error("❌ Invalid trials: must be positive integer")
+        raise ValueError("trials must be a positive integer")
+    
+    if not isinstance(max_periods, int) or max_periods <= 0:
+        tprint_error("❌ Invalid max_periods: must be positive integer")
+        raise ValueError("max_periods must be a positive integer")
+    
+    try:
+        configurations = [
+            {'enable_vectorbt': False, 'enable_parallel': False, 'memory_efficient': False, 'name': 'baseline'},
+            {'enable_vectorbt': True, 'enable_parallel': False, 'memory_efficient': False, 'name': 'vectorbt_only'},
+            {'enable_vectorbt': True, 'enable_parallel': True, 'memory_efficient': False, 'name': 'vectorbt_parallel'},
+            {'enable_vectorbt': True, 'enable_parallel': True, 'memory_efficient': True, 'name': 'vectorbt_optimized'},
+        ]
+        
+        results = {}
+        
+        for config in configurations:
+            config_name = config.pop('name')
+            tprint_info(f"🔄 Benchmarking configuration: {config_name}")
+            tprint_debug(f"📊 Config: {config}")
+            
+            times = []
+            
+            for trial in range(trials):
+                try:
+                    tprint_debug(f"🔄 Trial {trial + 1}/{trials} for {config_name}")
+                    pipeline = create_unified_pipeline()
+                    start_time = time.time()
+                    result = pipeline.select_optimal_periods(data, target_timeframe)
+                    execution_time = time.time() - start_time
+                    times.append(execution_time)
+                    tprint_debug(f"✅ Trial {trial + 1} completed in {execution_time:.3f}s")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Configuration {config_name} trial {trial + 1} failed: {e}")
+                    continue
+            
+            if times:
+                results[config_name] = {
+                    'avg_time': np.mean(times),
+                    'std_time': np.std(times),
+                    'min_time': np.min(times),
+                    'max_time': np.max(times),
+                    'trials_completed': len(times)
+                }
+                tprint_success(f"✅ {config_name}: {results[config_name]['avg_time']:.3f}s ± {results[config_name]['std_time']:.3f}s ({len(times)}/{trials} trials)")
+            else:
+                tprint_error(f"❌ {config_name}: All trials failed")
+        
+        tprint_success(f"✅ Benchmark complete: {len(results)} configurations tested")
+        return results
+        
+    except Exception as e:
+        tprint_error(f"❌ Benchmarking failed: {e}")
+        raise RuntimeError(f"Benchmarking failed: {e}")
+
+
 def analyze_data_characteristics(data: pd.DataFrame) -> Dict[str, Any]:
     """
     Analyze data characteristics using enhanced analysis methods.
@@ -5928,6 +6481,145 @@ def detect_market_cycles(data: pd.DataFrame) -> List[int]:
         return []
 
 
+# Additional convenience functions for backward compatibility
+def get_periods_with_metadata(data: pd.DataFrame, 
+                            target_timeframe: Optional[str] = None,
+                            max_periods: int = 8,
+                            enable_vectorbt: bool = True,
+                            enable_parallel: bool = True,
+                            memory_efficient: bool = True) -> Tuple[List[int], Dict[str, Any]]:
+    """
+    Get data-driven periods with comprehensive metadata.
+    
+    Args:
+        data: Input data
+        target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+        max_periods: Maximum number of periods to return
+        enable_vectorbt: Enable VectorBT optimizations
+        enable_parallel: Enable parallel processing
+        memory_efficient: Enable memory optimization
+        
+    Returns:
+        Tuple of (optimal periods, comprehensive metadata)
+    """
+    tprint_info(f"🚀 Getting data-driven periods with metadata (data_shape: {data.shape}, target: {target_timeframe})")
+    
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError("Expected pandas DataFrame, got {type(data).__name__}")
+    
+    if len(data) == 0:
+        raise ValueError("DataFrame cannot be empty")
+    
+    try:
+        pipeline = create_unified_pipeline()
+        result = pipeline.select_optimal_periods(data, target_timeframe)
+        
+        # Extract metadata
+        metadata = {
+            'optimal_periods': result.optimal_periods,
+            'period_categories': getattr(result, 'period_categories', {}),
+            'analysis_metadata': getattr(result, 'analysis_metadata', {}),
+            'confidence_score': getattr(result, 'confidence_score', 0.0),
+            'data_shape': data.shape,
+            'target_timeframe': target_timeframe,
+            'max_periods': max_periods,
+            'configuration': {
+                'enable_vectorbt': enable_vectorbt,
+                'enable_parallel': enable_parallel,
+                'memory_efficient': memory_efficient
+            }
+        }
+        
+        # Limit to max_periods
+        optimal_periods = result.optimal_periods[:max_periods]
+        
+        tprint_success(f"✅ Data-driven periods with metadata retrieved: {optimal_periods}")
+        return optimal_periods, metadata
+        
+    except Exception as e:
+        tprint_error(f"❌ Failed to get data-driven periods with metadata: {e}")
+        raise RuntimeError(f"Failed to get data-driven periods with metadata: {e}")
+
+
+def validate_period_quality(data: pd.DataFrame, 
+                          periods: List[int],
+                          target_timeframe: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Validate the quality of selected periods.
+    
+    Args:
+        data: Input data
+        periods: List of periods to validate
+        target_timeframe: Target timeframe (5m, 15m, 60m, etc.)
+        
+    Returns:
+        Dictionary containing quality validation results
+    """
+    tprint_info(f"🔍 Validating period quality for {len(periods)} periods")
+    
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError("Expected pandas DataFrame, got {type(data).__name__}")
+    
+    if not isinstance(periods, list) or not periods:
+        raise ValueError("Periods must be a non-empty list")
+    
+    try:
+        pipeline = create_unified_pipeline()
+        
+        # Analyze data characteristics
+        characteristics = pipeline.analyze_data_characteristics(data)
+        
+        # Validate periods
+        validation_results = {
+            'periods': periods,
+            'data_length': len(data),
+            'target_timeframe': target_timeframe,
+            'validation_passed': True,
+            'issues': [],
+            'recommendations': []
+        }
+        
+        # Check if periods are within reasonable bounds
+        data_length = len(data)
+        for period in periods:
+            if period < 2:
+                validation_results['issues'].append(f"Period {period} is too small (minimum: 2)")
+                validation_results['validation_passed'] = False
+            elif period > data_length // 2:
+                validation_results['issues'].append(f"Period {period} is too large (maximum: {data_length // 2})")
+                validation_results['validation_passed'] = False
+        
+        # Check for period diversity
+        unique_periods = len(set(periods))
+        if unique_periods < len(periods) * 0.8:
+            validation_results['issues'].append("Low period diversity - many duplicate periods")
+            validation_results['recommendations'].append("Consider selecting more diverse periods")
+        
+        # Check if periods are appropriate for timeframe
+        if target_timeframe:
+            timeframe_minutes = pipeline._get_timeframe_minutes(data)
+            for period in periods:
+                period_minutes = period * timeframe_minutes
+                if period_minutes > 1440:  # More than 1 day
+                    validation_results['recommendations'].append(f"Period {period} ({period_minutes} minutes) may be too long for {target_timeframe}")
+        
+        # Calculate overall quality score
+        quality_score = 1.0
+        if validation_results['issues']:
+            quality_score -= len(validation_results['issues']) * 0.1
+        if validation_results['recommendations']:
+            quality_score -= len(validation_results['recommendations']) * 0.05
+        
+        validation_results['quality_score'] = max(0.0, min(1.0, quality_score))
+        
+        tprint_success(f"✅ Period quality validation complete: {validation_results['quality_score']:.2f}")
+        return validation_results
+        
+    except Exception as e:
+        tprint_error(f"❌ Period quality validation failed: {e}")
+        raise RuntimeError(f"Period quality validation failed: {e}")
+
+
 # Export the main classes and functions
 __all__ = [
     'UnifiedDataDrivenPipeline',
@@ -5939,6 +6631,10 @@ __all__ = [
     'process_features',
     'get_data_driven_periods',
     'get_data_driven_periods_with_stats',
+    'get_periods_with_metadata',
+    'validate_period_quality',
+    'optimize_for_large_datasets',
+    'benchmark_period_selector',
     'analyze_data_characteristics',
     'detect_market_cycles'
 ]

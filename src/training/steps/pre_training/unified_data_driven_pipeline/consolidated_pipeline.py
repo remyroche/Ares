@@ -92,10 +92,6 @@ try:
         UnifiedConfig, get_unified_config,
         OptimizationMixin, PerformanceMixin, VectorBTMixin,
         ValidationMixin, CachingMixin, MonitoringMixin,
-        # Factory imports temporarily disabled
-        # ScalerFactory, create_optimized_scaler, create_batch_scaler,
-        # OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
-        # RegistryFactory, create_registry, create_feature_registry,
         UnifiedFactory, create_optimized_component,
         UnifiedVectorBTManager, get_unified_vectorbt_manager,
         VectorBTOptimizationEngine, get_optimization_engine,
@@ -3593,8 +3589,9 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ Polynomial interaction generation failed: {e}")
-            return []
+            error_msg = f"Polynomial interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _generate_log_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Generate log relationship interactions."""
@@ -3627,8 +3624,9 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ Log interaction generation failed: {e}")
-            return []
+            error_msg = f"Log interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _generate_cross_feature_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Generate cross-feature interactions (ratios, differences, etc.)."""
@@ -3661,8 +3659,9 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ Cross-feature interaction generation failed: {e}")
-            return []
+            error_msg = f"Cross-feature interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _generate_randomforest_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Generate RandomForest-based interactions."""
@@ -3702,8 +3701,9 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ RandomForest interaction generation failed: {e}")
-            return []
+            error_msg = f"RandomForest interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _generate_lightgbm_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Generate LightGBM-based interactions."""
@@ -3743,8 +3743,9 @@ class UnifiedDataDrivenPipeline:
             return interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ LightGBM interaction generation failed: {e}")
-            return []
+            error_msg = f"LightGBM interaction generation failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
     def _select_top_interactions(self, interactions: List[Any], targets: Optional[pd.Series], max_features: int = 100) -> List[Any]:
         """
@@ -4020,8 +4021,9 @@ class UnifiedDataDrivenPipeline:
             return features_df
             
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to convert interactions to DataFrame: {e}")
-            return None
+            error_msg = f"Failed to convert interactions to DataFrame: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     def _use_final_feature_selection_pipeline(self, features_df: pd.DataFrame, targets: Optional[pd.Series], 
                                             max_features: int, original_interactions: List[Any]) -> List[Any]:

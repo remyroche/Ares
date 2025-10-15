@@ -4216,12 +4216,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_data_validation_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_data_validation_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_data_validation_step import (
+                handle_feature_generation_data_validation_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_data_validation_step_command(
+            step_result = await handle_feature_generation_data_validation_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4267,12 +4267,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_feature_generation_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_feature_generation_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_feature_generation_step import (
+                handle_feature_generation_feature_generation_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_feature_generation_step_command(
+            step_result = await handle_feature_generation_feature_generation_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4318,12 +4318,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_feature_selection_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_feature_selection_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_feature_selection_step import (
+                handle_feature_generation_feature_selection_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_feature_selection_step_command(
+            step_result = await handle_feature_generation_feature_selection_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4369,12 +4369,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_period_optimization_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_period_optimization_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_period_optimization_step import (
+                handle_feature_generation_period_optimization_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_period_optimization_step_command(
+            step_result = await handle_feature_generation_period_optimization_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4420,12 +4420,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_lookback_optimization_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_lookback_optimization_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_lookback_optimization_step import (
+                handle_feature_generation_lookback_optimization_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_lookback_optimization_step_command(
+            step_result = await handle_feature_generation_lookback_optimization_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4471,12 +4471,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_interaction_generation_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_interaction_generation_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_interaction_generation_step import (
+                handle_feature_generation_interaction_generation_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_interaction_generation_step_command(
+            step_result = await handle_feature_generation_interaction_generation_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4522,12 +4522,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_vectorization_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_vectorization_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_vectorization_step import (
+                handle_feature_generation_vectorization_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_vectorization_step_command(
+            step_result = await handle_feature_generation_vectorization_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4573,12 +4573,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_labeling_integration_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_labeling_integration_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_labeling_integration_step import (
+                handle_feature_generation_labeling_integration_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_labeling_integration_step_command(
+            step_result = await handle_feature_generation_labeling_integration_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4624,12 +4624,12 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('feature_generation_final_validation_step')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
-                handle_feature_generation_final_validation_step_command
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_final_validation_step import (
+                handle_feature_generation_final_validation_step
             )
 
             # Execute step
-            step_result = await handle_feature_generation_final_validation_step_command(
+            step_result = await handle_feature_generation_final_validation_step(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,

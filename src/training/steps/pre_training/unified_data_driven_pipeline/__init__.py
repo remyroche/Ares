@@ -28,14 +28,18 @@ from .consolidated_pipeline import (
     process_with_unified_pipeline
 )
 
-# Import the refactored pipeline (recommended for new usage)
-from .refactored_pipeline import (
-    RefactoredUnifiedPipeline,
-    RefactoredPipelineResult,
-    create_refactored_pipeline,
-    create_full_pipeline,
-    create_blank_pipeline,
-    create_light_pipeline
+# Import the consolidated pipeline runner for step-based execution
+from .consolidated_pipeline_runner import (
+    ConsolidatedPipelineRunner,
+    run_data_validation_step,
+    run_feature_generation_step,
+    run_feature_selection_step,
+    run_period_optimization_step,
+    run_lookback_optimization_step,
+    run_interaction_generation_step,
+    run_vectorization_step,
+    run_labeling_integration_step,
+    run_final_validation_step
 )
 
 from .core.config import (
@@ -56,58 +60,27 @@ from .core.simplified_config import (
     PipelineIntensity
 )
 
-# Import unified pipeline commands
-from .unified_pipeline_commands import (
-    UnifiedPipelineCommandHandler,
-    UnifiedPipelineCommandConfig,
-    create_unified_pipeline_command_handler,
-    handle_unified_pipeline_analyst,
-    handle_unified_pipeline_tactician,
-    handle_unified_pipeline_analyst_short,
-    handle_unified_pipeline_tactician_long
-)
-
-
-from .time_series_cv import (
-    PurgedEmbargoedWalkForwardCV,
-    PurgedEmbargoedConfig,
-    TimeSeriesSplit,
-    create_purged_embargoed_cv,
-    validate_time_series_splits
-)
-
-from .statistical_analysis import (
-    StatisticalAnalysisFramework,
-    DataCharacteristics,
-    PatternAnalysis,
-    RelationshipAnalysis
-)
-
-from .feature_selection.multi_objective_selector import (
-    MultiObjectiveFeatureSelector,
-    create_default_objectives,
-    create_performance_objectives,
-    create_stability_objectives,
-    create_balanced_objectives
-)
-
 __version__ = "1.0.0"
 __author__ = "Ares Trading System"
 
 __all__ = [
-    # Main consolidated pipeline (legacy)
+    # Main consolidated pipeline
     'UnifiedDataDrivenPipeline',
     'ConsolidatedPipelineResult',
     'create_unified_pipeline',
     'process_with_unified_pipeline',
     
-    # Refactored pipeline (recommended for new usage)
-    'RefactoredUnifiedPipeline',
-    'RefactoredPipelineResult',
-    'create_refactored_pipeline',
-    'create_full_pipeline',
-    'create_blank_pipeline',
-    'create_light_pipeline',
+    # Consolidated pipeline runner for step-based execution
+    'ConsolidatedPipelineRunner',
+    'run_data_validation_step',
+    'run_feature_generation_step',
+    'run_feature_selection_step',
+    'run_period_optimization_step',
+    'run_lookback_optimization_step',
+    'run_interaction_generation_step',
+    'run_vectorization_step',
+    'run_labeling_integration_step',
+    'run_final_validation_step',
     
     # Configuration
     'UnifiedPipelineConfig',
@@ -122,34 +95,5 @@ __all__ = [
     'create_light_config',
     'create_config_by_intensity',
     'list_available_intensities',
-    'PipelineIntensity',
-    
-    # Unified pipeline commands
-    'UnifiedPipelineCommandHandler',
-    'UnifiedPipelineCommandConfig',
-    'create_unified_pipeline_command_handler',
-    'handle_unified_pipeline_analyst',
-    'handle_unified_pipeline_tactician',
-    'handle_unified_pipeline_analyst_short',
-    'handle_unified_pipeline_tactician_long',
-    
-    # Time series CV
-    'PurgedEmbargoedWalkForwardCV',
-    'PurgedEmbargoedConfig',
-    'TimeSeriesSplit',
-    'create_purged_embargoed_cv',
-    'validate_time_series_splits',
-    
-    # Statistical analysis
-    'StatisticalAnalysisFramework',
-    'DataCharacteristics',
-    'PatternAnalysis',
-    'RelationshipAnalysis',
-    
-    # Feature selection
-    'MultiObjectiveFeatureSelector',
-    'create_default_objectives',
-    'create_performance_objectives',
-    'create_stability_objectives',
-    'create_balanced_objectives'
+    'PipelineIntensity'
 ]

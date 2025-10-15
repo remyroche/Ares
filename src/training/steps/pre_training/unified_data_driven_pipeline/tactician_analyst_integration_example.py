@@ -12,8 +12,8 @@ from src.training.steps.pre_training.unified_data_driven_pipeline.core.simplifie
     create_light_config,
     PipelineIntensity
 )
-from src.training.steps.pre_training.unified_data_driven_pipeline.refactored_pipeline import (
-    RefactoredUnifiedPipeline
+from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import (
+    UnifiedDataDrivenPipeline
 )
 
 def create_analyst_config():
@@ -82,8 +82,8 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Configuration examples created successfully!")
     print("\nTo use these configurations:")
-    print("   from src.training.steps.pre_training.unified_data_driven_pipeline.refactored_pipeline import RefactoredUnifiedPipeline")
-    print("   pipeline = RefactoredUnifiedPipeline(analyst_config)  # or tactician_config, triple_barrier_config")
+    print("   from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import UnifiedDataDrivenPipeline")
+    print("   pipeline = UnifiedDataDrivenPipeline(analyst_config)  # or tactician_config, triple_barrier_config")
 
 if __name__ == "__main__":
     main()

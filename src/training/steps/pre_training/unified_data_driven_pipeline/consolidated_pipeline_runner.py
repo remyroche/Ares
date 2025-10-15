@@ -752,6 +752,15 @@ class ConsolidatedPipelineRunner:
     async def _generate_data_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """
         Generate human-readable report for data validation step.
+        """Generate human-readable report for data validation step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+        
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"data_validation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
         
         Args:
             result: Validation result dictionary
@@ -848,7 +857,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"feature_generation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -890,7 +899,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"feature_selection_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -932,7 +941,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"period_optimization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -974,7 +983,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"lookback_optimization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -1016,7 +1025,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"interaction_generation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -1058,7 +1067,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"vectorization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -1100,7 +1109,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"labeling_integration_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
@@ -1142,7 +1151,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         outcomes_dir.mkdir(exist_ok=True)
         
         # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"final_validation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         

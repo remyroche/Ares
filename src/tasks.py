@@ -44,22 +44,24 @@ def run_monthly_training_pipeline() -> None:
     Celery task to run the monthly retraining and validation pipeline using TrainingManager.
     """
     tprint('Celery Task: Kicking off monthly training pipeline...')
+    
+    async def run_training() -> None:
+        db_manager = SQLiteManager({})
+        await db_manager.initialize()
+        training_manager = TrainingManager(db_manager)
+        env_settings = get_environment_settings()
+        symbol = env_settings.trade_symbol
+        exchange_name = env_settings.exchange_name
+        success = await training_manager.run_full_training(symbol, exchange_name)
+        if success:
+            tprint(f'Monthly training pipeline completed successfully for {symbol}')
+        else:
+            tprint(f'Monthly training pipeline failed for {symbol}')
+        await db_manager.close()
+    
     try:
-
-        async def run_training() -> None:
-            db_manager = SQLiteManager({})
-            await db_manager.initialize()
-            training_manager = TrainingManager(db_manager)
-            env_settings = get_environment_settings()
-            symbol = env_settings.trade_symbol
-            exchange_name = env_settings.exchange_name
-            success = await training_manager.run_full_training(symbol, exchange_name)
-            if success:
-                tprint(f'Monthly training pipeline completed successfully for {symbol}')
-            else:
-                tprint(f'Monthly training pipeline failed for {symbol}')
-            await db_manager.close()
-        await run_training()
+        import asyncio
+        asyncio.run(run_training())
     except Exception as e:
         tprint(f'An unexpected error occurred while running the training pipeline task: {e}')
 app.conf.beat_schedule = {'run-monthly-training': {'task': 'src.tasks.run_monthly_training_pipeline', 'schedule': crontab(day_of_month='1', hour = 0, minute = 0)}}

@@ -132,6 +132,16 @@ class RegimeDetector:
         try:
             # Try to load from existing market analysis components
             from src.training.steps.market_analysis.enhanced_market_analysis import EnhancedMarketAnalysis
+            
+            self.market_analyzer = EnhancedMarketAnalysis()
+            self.logger.info("Market analyzer loaded successfully")
+            
+        except ImportError:
+            self.logger.warning("Enhanced market analysis not available, using basic regime detection")
+            self.market_analyzer = None
+        except Exception as e:
+            self.logger.error(f"Error loading market analyzer: {e}")
+            self.market_analyzer = None
 
 # VectorBT imports for native optimization
 try:
@@ -166,15 +176,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            # This would integrate with your existing market analysis
-            self.logger.info("🔍 Loading Market Analyzer for regime detection...")
-            
-            # Placeholder for market analyzer loading
-            self.market_analyzer = None  # Load actual analyzer here
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Market Analyzer not available: {e}")
     
     @trading_error_handler(
         error_types=(Exception,),

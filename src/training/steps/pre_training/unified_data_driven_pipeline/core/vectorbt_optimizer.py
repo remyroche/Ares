@@ -709,7 +709,8 @@ class VectorBTOptimizer:
                 return rolling_mean(df, window=window)
             else:
                 return df.rolling(window=window).mean()
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT rolling mean failed: {e}, using pandas fallback")
             return df.rolling(window=window).mean()
     
     def _apply_rolling_std(self, df: pd.DataFrame, window: int) -> pd.DataFrame:
@@ -823,17 +824,31 @@ class VectorBTOptimizer:
             importance_scores = {}
             
             if VECTORBT_AVAILABLE and rolling_corr is not None:
-                # Use VectorBT for optimized correlation calculation
-                for col in features.columns:
-                    try:
-                        corr = rolling_corr(features[col], targets, window=min(50, len(features)))
-                        importance_scores[col] = float(corr.abs().mean())
-                    except Exception:
-                        # Fallback to simple correlation
-                        importance_scores[col] = float(features[col].corr(targets).abs())
+                # Use VectorBT for optimized vectorized correlation calculation
+                try:
+                    # Vectorized correlation calculation for all features at once
+                    if len(features) > 50:
+                        # Use rolling correlation for large datasets
+                        rolling_corrs = rolling_corr(features, targets, window=50)
+                        importance_scores = rolling_corrs.abs().mean().to_dict()
+                    else:
+                        # Use simple correlation for smaller datasets
+                        corr_matrix = features.corrwith(targets)
+                        importance_scores = corr_matrix.abs().to_dict()
+                except Exception as e:
+                    tprint_warning(f"⚠️ VectorBT correlation failed: {e}, using fallback")
+                    # Fallback to vectorized pandas correlation
+                    corr_matrix = features.corrwith(targets)
+                    importance_scores = corr_matrix.abs().to_dict()
             else:
-                # Fallback to pandas correlation
-                for col in features.columns:
+                # Optimized pandas correlation using vectorized operations
+                try:
+                    corr_matrix = features.corrwith(targets)
+                    importance_scores = corr_matrix.abs().to_dict()
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorized correlation failed: {e}, using loop fallback")
+                    # Fallback to loop-based correlation
+                    for col in features.columns:
                     try:
                         importance_scores[col] = float(features[col].corr(targets).abs())
                     except Exception:

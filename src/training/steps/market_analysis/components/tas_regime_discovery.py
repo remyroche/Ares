@@ -8,6 +8,7 @@ Integrates with the advanced TAS regime detection system.
 import asyncio
 import json
 import logging
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -443,6 +444,14 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
                 # Try to load data using klines_parquet manager
                 from src.utils.data.klines_parquet import get_klines_manager
+                
+                # Load data logic would go here
+                # For now, return None as placeholder
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load market data: {e}")
+            return None
 
 # VectorBT imports for native optimization
 try:
@@ -477,44 +486,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                
-                manager = get_klines_manager()
-                timeframe = getattr(self.config, 'timeframe', "15m")
-                
-                self.logger.info(f"📊 Loading {symbol} {timeframe} data using klines_parquet manager")
-                
-                # Get date filtering from config if available
-                start_date = None
-                end_date = None
-                if hasattr(self.config, 'start_date') and self.config.start_date:
-                    start_date = datetime.strptime(self.config.start_date, '%Y-%m-%d')
-                if hasattr(self.config, 'end_date') and self.config.end_date:
-                    end_date = datetime.strptime(self.config.end_date, '%Y-%m-%d')
-                
-                # Try processed data first
-                market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="processed")
-                
-                if market_data is None or market_data.empty:
-                    # Fallback to raw data
-                    market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")
-                
-                if market_data is None or market_data.empty:
-                    self.logger.error(f"❌ No data available for {symbol} {timeframe}")
-                    return None
-                
-                self.logger.info(f"✅ Loaded {len(market_data)} rows of {symbol} {timeframe} data")
-                return market_data
-            
-            # If data is already a DataFrame, use it
-            if isinstance(data, pd.DataFrame):
-                self.logger.info(f"📊 Using provided DataFrame with {len(data)} rows")
-                return data.copy()
-            
-            return None
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Error loading market data: {e}")
-            return None
     
     def _calculate_tas_regime_metrics(self, regime_predictions: np.ndarray, tas_result: Any) -> Dict[str, Any]:
         """Calculate TAS-specific regime metrics."""

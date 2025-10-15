@@ -196,9 +196,8 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 return sma.values
             except Exception as e:
                 self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
-                return self._optimized_rolling_operation(prices_series, "mean", period).values
                 self.performance_stats['pandas_fallbacks'] += 1
-                return self._calculate_sma_vectorized(prices_series, period).values
+                return self._optimized_rolling_operation(prices_series, "mean", period).values
         else:
             return self._calculate_sma_vectorized(prices_series, period).values
 
@@ -1743,26 +1742,6 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
-
-
-    
-class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
-        # Use VectorBT for VWMA calculation
-        if VECTORBT_AVAILABLE:
-            try:
-                # Calculate VWMA using VectorBT rolling sum
-                price_volume = base_values * volume
-                price_volume_sum = rolling_sum(price_volume, window=self.period)
-                volume_sum = rolling_sum(volume, window=self.period)
-                vwma = price_volume_sum / volume_sum
-                return vwma
-            except Exception as e:
-                self.logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
-                vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-                return vwma
-        else:
-            vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-            return vwma
 
 
 class KeltnerChannelsGenerator(VectorizedFeatureGenerator):

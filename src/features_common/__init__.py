@@ -34,12 +34,13 @@ from .mixins import (
     ValidationMixin, CachingMixin, MonitoringMixin
 )
 
-from .factories import (
-    ScalerFactory, create_optimized_scaler, create_batch_scaler,
-    OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
-    RegistryFactory, create_registry, create_feature_registry,
-    UnifiedFactory, create_optimized_component
-)
+# Factory imports temporarily disabled
+# from .factories import (
+#     ScalerFactory, create_optimized_scaler, create_batch_scaler,
+#     OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+#     RegistryFactory, create_registry, create_feature_registry,
+#     UnifiedFactory, create_optimized_component
+# )
 
 from .vectorbt import (
     UnifiedVectorBTManager, get_unified_vectorbt_manager,

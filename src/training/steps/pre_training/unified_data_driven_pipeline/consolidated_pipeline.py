@@ -92,9 +92,10 @@ try:
         UnifiedConfig, get_unified_config,
         OptimizationMixin, PerformanceMixin, VectorBTMixin,
         ValidationMixin, CachingMixin, MonitoringMixin,
-        ScalerFactory, create_optimized_scaler, create_batch_scaler,
-        OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
-        RegistryFactory, create_registry, create_feature_registry,
+        # Factory imports temporarily disabled
+        # ScalerFactory, create_optimized_scaler, create_batch_scaler,
+        # OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+        # RegistryFactory, create_registry, create_feature_registry,
         UnifiedFactory, create_optimized_component,
         UnifiedVectorBTManager, get_unified_vectorbt_manager,
         VectorBTOptimizationEngine, get_optimization_engine,
@@ -1221,15 +1222,15 @@ class UnifiedDataDrivenPipeline:
                     self.gpu_accelerator = get_gpu_accelerator()
                     self.vectorbt_performance_monitor = get_performance_monitor()
                     
-                    # Initialize factories
-                    self.scaler_factory = ScalerFactory()
-                    self.optimizer_factory = OptimizerFactory()
-                    self.registry_factory = RegistryFactory()
-                    self.unified_factory = UnifiedFactory()
+                    # Initialize factories (temporarily disabled)
+                    # self.scaler_factory = ScalerFactory()
+                    # self.optimizer_factory = OptimizerFactory()
+                    # self.registry_factory = RegistryFactory()
+                    # self.unified_factory = UnifiedFactory()
                     
-                    # Initialize enhanced scalers
-                    self.optimized_scaler = create_optimized_scaler()
-                    self.batch_scaler = create_batch_scaler()
+                    # Initialize enhanced scalers (temporarily disabled)
+                    # self.optimized_scaler = create_optimized_scaler()
+                    # self.batch_scaler = create_batch_scaler()
                     
                     tprint_success("✅ Features common utilities initialized")
                 except Exception as e:

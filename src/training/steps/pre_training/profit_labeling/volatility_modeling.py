@@ -12,6 +12,7 @@ Key Features:
 - Integration with existing ML optimization utilities
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple, Union
@@ -38,6 +39,8 @@ from src.utils.math_validation import MathValidation
 # Import ML optimization utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+except ImportError:
+    BayesianTPEOptimizer = None
 
 # VectorBT imports for native optimization
 try:

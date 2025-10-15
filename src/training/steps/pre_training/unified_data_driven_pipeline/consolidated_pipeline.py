@@ -3548,10 +3548,10 @@ class UnifiedDataDrivenPipeline:
             all_interactions.extend(lgb_interactions)
             tprint_success(f"✅ Generated {len(lgb_interactions)} LightGBM interactions")
             
-            # 6. Feature selection to keep only top 100 features
-            tprint_info("🔧 Performing feature selection (max 100 features)")
-            selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
-            tprint_success(f"✅ Selected {len(selected_interactions)} top interactions")
+        # 6. Feature selection to keep only top 100 features
+        tprint_info("🔧 Performing feature selection (target: 100 features)")
+        selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
+        tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 100)")
             
             return selected_interactions
             
@@ -3780,7 +3780,7 @@ class UnifiedDataDrivenPipeline:
                 tprint_warning("⚠️ No valid interactions to select from")
                 return interactions[:max_features]
             
-            # Try final feature selection pipeline first, then advanced, then multi-objective
+            # Use final feature selection pipeline only
             selected_interactions = self._use_final_feature_selection_pipeline(
                 features_df, targets, max_features, interactions
             )
@@ -4036,10 +4036,10 @@ class UnifiedDataDrivenPipeline:
             
             # Create configuration for interaction selection
             config = FinalFeatureSelectionConfig(
-                max_features=max_features,
-                min_features=min(10, max_features // 2),
-                # Use multi-stage selection (120→100→80→60)
-                selection_stages=[max_features * 1.2, max_features, max_features * 0.8, max_features * 0.6],
+                max_features=max_features,  # Ensure we can get up to 100 features
+                min_features=min(20, max_features // 2),  # At least 20 features
+                # Use multi-stage selection to ensure we can reach target
+                selection_stages=[max_features * 1.5, max_features * 1.2, max_features, max_features * 0.9],
                 enable_vectorbt_optimization=True,
                 enable_economic_evaluation=True,
                 enable_stability_analysis=True,
@@ -4097,202 +4097,9 @@ class UnifiedDataDrivenPipeline:
             return selected_interactions
             
         except Exception as e:
-            tprint_warning(f"⚠️ Final feature selection pipeline failed: {e}")
-            # Fallback to advanced feature selection
-            return self._use_advanced_feature_selection(features_df, targets, max_features, original_interactions)
+            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
+            raise RuntimeError(f"Feature selection failed: {e}") from e
     
-    def _use_advanced_feature_selection(self, features_df: pd.DataFrame, targets: Optional[pd.Series], 
-                                      max_features: int, original_interactions: List[Any]) -> List[Any]:
-        """Use the advanced feature selection component."""
-        try:
-            # Import the advanced feature selection component
-            from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.advanced_feature_selection import (
-                AdvancedFeatureSelector, AdvancedFeatureSelectionConfig
-            )
-            
-            # Create configuration for interaction selection
-            config = AdvancedFeatureSelectionConfig(
-                max_features=max_features,
-                min_features=min(10, max_features // 2),
-                enable_mrmr=True,
-                enable_lasso=True,
-                enable_rfe=True,
-                enable_correlation_filter=True,
-                enable_stability_analysis=True,
-                # Focus on features that work well together
-                mrmr_k=min(20, max_features),
-                lasso_alpha=0.01,
-                rfe_n_features=max_features,
-                correlation_threshold=0.95,
-                stability_threshold=0.7
-            )
-            
-            # Create selector
-            selector = AdvancedFeatureSelector(config)
-            
-            # Prepare targets if available
-            if targets is not None:
-                aligned_targets = targets.align(features_df.index, join='inner')[0]
-                if len(aligned_targets) == 0:
-                    tprint_warning("⚠️ No aligned targets available")
-                    aligned_targets = None
-            else:
-                aligned_targets = None
-            
-            # Run feature selection
-            tprint_info("🔧 Running advanced feature selection")
-            selection_result = selector.select_features(
-                features_df, 
-                aligned_targets,
-                method='comprehensive'
-            )
-            
-            # Extract selected feature names
-            selected_feature_names = selection_result.get('selected_features', [])
-            
-            # Map back to original interactions
-            selected_interactions = []
-            interaction_metadata = features_df.attrs.get('interaction_metadata', {})
-            
-            for feature_name in selected_feature_names:
-                for i, interaction in enumerate(original_interactions):
-                    if interaction.get('name') == feature_name or f'interaction_{i}' == feature_name:
-                        selected_interactions.append(interaction)
-                        break
-            
-            tprint_success(f"✅ Advanced selection: {len(features_df.columns)} → {len(selected_interactions)}")
-            
-            # Store selection metadata
-            for interaction in selected_interactions:
-                interaction['selection_metadata'] = {
-                    'method': 'advanced_feature_selection',
-                    'config': config.__dict__,
-                    'selection_result': selection_result
-                }
-            
-            return selected_interactions
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Advanced feature selection failed: {e}")
-            # Fallback to multi-objective selection
-            return self._use_multi_objective_selector(features_df, targets, max_features, original_interactions)
-    
-    def _use_multi_objective_selector(self, features_df: pd.DataFrame, targets: Optional[pd.Series], 
-                                    max_features: int, original_interactions: List[Any]) -> List[Any]:
-        """Use the existing multi-objective feature selector."""
-        try:
-            # Import the multi-objective selector
-            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_selection.multi_objective_selector import (
-                MultiObjectiveFeatureSelector, MultiObjectiveConfig
-            )
-            
-            # Create configuration for interaction selection
-            config = MultiObjectiveConfig(
-                max_features=max_features,
-                min_features=min(10, max_features // 2),  # At least 10 features
-                enable_sharpe_ratio=True,
-                enable_drawdown=True,
-                enable_turnover=True,
-                enable_stability=True,
-                enable_diversity=True,
-                enable_mutual_info=True,
-                # Adjust weights for interaction selection
-                sharpe_weight=0.25,
-                drawdown_weight=0.20,
-                turnover_weight=0.15,
-                stability_weight=0.15,
-                diversity_weight=0.15,
-                mutual_info_weight=0.10
-            )
-            
-            # Create selector
-            selector = MultiObjectiveFeatureSelector(config)
-            
-            # Prepare targets if available
-            if targets is not None:
-                # Align targets with features
-                aligned_targets = targets.align(features_df.index, join='inner')[0]
-                if len(aligned_targets) == 0:
-                    tprint_warning("⚠️ No aligned targets available")
-                    aligned_targets = None
-            else:
-                aligned_targets = None
-            
-            # Run feature selection
-            tprint_info("🔧 Running multi-objective feature selection")
-            selection_result = selector.select_features(
-                features_df, 
-                aligned_targets,
-                method='pareto_optimization'
-            )
-            
-            # Extract selected feature names
-            selected_feature_names = selection_result.get('selected_features', [])
-            
-            # Map back to original interactions
-            selected_interactions = []
-            interaction_metadata = features_df.attrs.get('interaction_metadata', {})
-            
-            for feature_name in selected_feature_names:
-                # Find the original interaction
-                for i, interaction in enumerate(original_interactions):
-                    if interaction.get('name') == feature_name or f'interaction_{i}' == feature_name:
-                        selected_interactions.append(interaction)
-                        break
-            
-            tprint_success(f"✅ Multi-objective selection: {len(features_df.columns)} → {len(selected_interactions)}")
-            
-            # Store selection metadata
-            for interaction in selected_interactions:
-                interaction['selection_metadata'] = {
-                    'method': 'multi_objective',
-                    'config': config.__dict__,
-                    'selection_result': selection_result
-                }
-            
-            return selected_interactions
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Multi-objective selection failed: {e}")
-            # Fallback to correlation-based selection
-            return self._fallback_correlation_selection(features_df, targets, max_features, original_interactions)
-    
-    def _fallback_correlation_selection(self, features_df: pd.DataFrame, targets: Optional[pd.Series], 
-                                      max_features: int, original_interactions: List[Any]) -> List[Any]:
-        """Fallback correlation-based selection."""
-        try:
-            tprint_info("🔧 Using fallback correlation-based selection")
-            
-            if targets is None:
-                # If no targets, use variance-based selection
-                variances = features_df.var()
-                selected_features = variances.nlargest(max_features).index.tolist()
-            else:
-                # Use correlation with targets
-                aligned_targets = targets.align(features_df.index, join='inner')[0]
-                if len(aligned_targets) == 0:
-                    variances = features_df.var()
-                    selected_features = variances.nlargest(max_features).index.tolist()
-                else:
-                    correlations = features_df.corrwith(aligned_targets).abs()
-                    selected_features = correlations.nlargest(max_features).index.tolist()
-            
-            # Map back to original interactions
-            selected_interactions = []
-            interaction_metadata = features_df.attrs.get('interaction_metadata', {})
-            
-            for feature_name in selected_features:
-                for i, interaction in enumerate(original_interactions):
-                    if interaction.get('name') == feature_name or f'interaction_{i}' == feature_name:
-                        selected_interactions.append(interaction)
-                        break
-            
-            tprint_success(f"✅ Fallback selection: {len(features_df.columns)} → {len(selected_interactions)}")
-            return selected_interactions
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Fallback selection failed: {e}")
-            return original_interactions[:max_features]
     
     def _generate_interaction_selection_report(self, original_interactions: List[Any], selected_interactions: List[Any], targets: Optional[pd.Series]) -> None:
         """Generate detailed interaction selection report."""

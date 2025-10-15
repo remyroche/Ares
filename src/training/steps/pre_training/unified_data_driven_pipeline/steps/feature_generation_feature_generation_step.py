@@ -1,8 +1,8 @@
 """
 Feature Generation Feature Generation Step
 
-This step generates features using multiple methods as part of the
-unified data-driven pipeline.
+This step generates features as part of the unified data-driven pipeline
+by calling the consolidated pipeline at the appropriate stage.
 """
 
 from __future__ import annotations
@@ -16,11 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.training.steps.pre_training.unified_data_driven_pipeline.core.config import UnifiedPipelineConfig
-from src.training.steps.pre_training.unified_data_driven_pipeline.stages.feature_generation_stage import (
-    CommonFeatureGenerator,
-    EnhancedFeatureGenerator,
-    LightGBMFeatureToolsGenerator
+from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
+    run_feature_generation_step
 )
 
 
@@ -29,346 +26,77 @@ class FeatureGenerationResult:
     """Result of feature generation step."""
     
     success: bool
-    features: pd.DataFrame
+    generated_features: pd.DataFrame
     feature_metadata: Dict[str, Any]
     generation_metrics: Dict[str, Any]
+    artifacts: Dict[str, Any]
     error_message: Optional[str] = None
-    artifacts: Optional[Dict[str, Any]] = None
 
 
 class FeatureGenerationFeatureGenerationStep:
-    """Feature generation step for feature generation pipeline."""
+    """Feature generation step that calls the consolidated pipeline."""
     
-    def __init__(self, config: UnifiedPipelineConfig, logger: Optional[logging.Logger] = None):
-        """Initialize the feature generation step.
-        
-        Args:
-            config: Unified pipeline configuration
-            logger: Optional logger instance
-        """
-        self.config = config
-        self.logger = logger or logging.getLogger(__name__)
-        
-        # Initialize feature generators
-        self.common_generator = CommonFeatureGenerator()
-        self.enhanced_generator = EnhancedFeatureGenerator()
-        self.lightgbm_generator = LightGBMFeatureToolsGenerator()
+    def __init__(self):
+        """Initialize the feature generation step."""
+        self.logger = logging.getLogger(__name__)
     
-    async def execute(self, 
-                     market_data: pd.DataFrame,
-                     artifacts_dir: str,
-                     previous_artifacts: Optional[Dict[str, Any]] = None,
-                     **kwargs) -> FeatureGenerationResult:
-        """Execute feature generation step.
+    async def execute(self,
+                     data: pd.DataFrame,
+                     symbol: str = "ETHUSDT",
+                     timeframe: str = "15m",
+                     direction: str = "longs",
+                     intensity: str = "blank",
+                     lookback_days: Optional[int] = None,
+                     start_date: Optional[str] = None,
+                     end_date: Optional[str] = None,
+                     exchange: str = "binance",
+                     custom_overrides: Optional[Dict[str, Any]] = None) -> FeatureGenerationResult:
+        """Execute feature generation step using consolidated pipeline."""
         
-        Args:
-            market_data: Input market data
-            artifacts_dir: Directory to save artifacts
-            previous_artifacts: Artifacts from previous steps
-            **kwargs: Additional arguments
-            
-        Returns:
-            FeatureGenerationResult with generated features
-        """
-        self.logger.info("🔧 Starting feature generation step...")
+        self.logger.info("🔧 Starting feature generation step using consolidated pipeline")
         
         try:
-            # Create artifacts directory
-            artifacts_path = Path(artifacts_dir) / "feature_generation_feature_generation_step"
-            artifacts_path.mkdir(parents=True, exist_ok=True)
+            # Call the consolidated pipeline runner
+            result = await run_feature_generation_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
             
-            all_features = []
-            feature_metadata = {}
-            generation_metrics = {}
+            # Convert result to FeatureGenerationResult
+            generation_result = FeatureGenerationResult(
+                success=result['success'],
+                generated_features=result.get('generated_features', pd.DataFrame()),
+                feature_metadata=result.get('feature_metadata', {}),
+                generation_metrics=result.get('generation_metrics', {}),
+                artifacts=result.get('artifacts', {}),
+                error_message=result.get('error_message')
+            )
             
-            # 1. Generate common features
-            self.logger.info("📊 Generating common features...")
-            common_features = await self._generate_common_features(market_data)
-            if not common_features.empty:
-                all_features.append(common_features)
-                feature_metadata["common_features"] = {
-                    "count": len(common_features.columns),
-                    "columns": list(common_features.columns)
-                }
-                generation_metrics["common_features"] = {
-                    "generation_time": 0.0,  # Would be measured in actual implementation
-                    "memory_usage": common_features.memory_usage(deep=True).sum()
-                }
-            
-            # 2. Generate enhanced features
-            self.logger.info("🚀 Generating enhanced features...")
-            enhanced_features = await self._generate_enhanced_features(market_data)
-            if not enhanced_features.empty:
-                all_features.append(enhanced_features)
-                feature_metadata["enhanced_features"] = {
-                    "count": len(enhanced_features.columns),
-                    "columns": list(enhanced_features.columns)
-                }
-                generation_metrics["enhanced_features"] = {
-                    "generation_time": 0.0,
-                    "memory_usage": enhanced_features.memory_usage(deep=True).sum()
-                }
-            
-            # 3. Generate LightGBM features
-            self.logger.info("🌲 Generating LightGBM features...")
-            lightgbm_features = await self._generate_lightgbm_features(market_data)
-            if not lightgbm_features.empty:
-                all_features.append(lightgbm_features)
-                feature_metadata["lightgbm_features"] = {
-                    "count": len(lightgbm_features.columns),
-                    "columns": list(lightgbm_features.columns)
-                }
-                generation_metrics["lightgbm_features"] = {
-                    "generation_time": 0.0,
-                    "memory_usage": lightgbm_features.memory_usage(deep=True).sum()
-                }
-            
-            # 4. Combine all features
-            if all_features:
-                combined_features = pd.concat(all_features, axis=1)
-                self.logger.info(f"✅ Generated {len(combined_features.columns)} total features")
+            if generation_result.success:
+                self.logger.info(f"✅ Feature generation completed successfully with {len(generation_result.generated_features.columns)} features")
             else:
-                combined_features = pd.DataFrame()
-                self.logger.warning("⚠️ No features were generated")
+                self.logger.error(f"❌ Feature generation failed: {generation_result.error_message}")
             
-            # 5. Save artifacts
-            artifacts = await self._save_artifacts(
-                artifacts_path, combined_features, feature_metadata, 
-                generation_metrics, market_data
-            )
-            
-            # 6. Create generation metadata
-            generation_metadata = {
-                "step_name": "feature_generation_feature_generation_step",
-                "timestamp": datetime.now().isoformat(),
-                "total_features": len(combined_features.columns),
-                "feature_categories": list(feature_metadata.keys()),
-                "data_shape": combined_features.shape
-            }
-            
-            self.logger.info(f"✅ Feature generation completed with {len(combined_features.columns)} features")
-            
-            return FeatureGenerationResult(
-                success=True,
-                features=combined_features,
-                feature_metadata=generation_metadata,
-                generation_metrics=generation_metrics,
-                artifacts=artifacts
-            )
+            return generation_result
             
         except Exception as e:
-            self.logger.error(f"❌ Feature generation failed: {e}")
+            self.logger.error(f"❌ Feature generation step failed with exception: {e}")
             return FeatureGenerationResult(
                 success=False,
-                features=pd.DataFrame(),
+                generated_features=pd.DataFrame(),
                 feature_metadata={},
                 generation_metrics={},
+                artifacts={},
                 error_message=str(e)
             )
-    
-    async def _generate_common_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate common features.
-        
-        Args:
-            market_data: Input market data
-            
-        Returns:
-            DataFrame with common features
-        """
-        try:
-            # This would use the actual CommonFeatureGenerator
-            # For now, return empty DataFrame as placeholder
-            return pd.DataFrame()
-        except Exception as e:
-            self.logger.error(f"Failed to generate common features: {e}")
-            return pd.DataFrame()
-    
-    async def _generate_enhanced_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate enhanced features.
-        
-        Args:
-            market_data: Input market data
-            
-        Returns:
-            DataFrame with enhanced features
-        """
-        try:
-            # This would use the actual EnhancedFeatureGenerator
-            # For now, return empty DataFrame as placeholder
-            return pd.DataFrame()
-        except Exception as e:
-            self.logger.error(f"Failed to generate enhanced features: {e}")
-            return pd.DataFrame()
-    
-    async def _generate_lightgbm_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate LightGBM features.
-        
-        Args:
-            market_data: Input market data
-            
-        Returns:
-            DataFrame with LightGBM features
-        """
-        try:
-            # This would use the actual LightGBMFeatureToolsGenerator
-            # For now, return empty DataFrame as placeholder
-            return pd.DataFrame()
-        except Exception as e:
-            self.logger.error(f"Failed to generate LightGBM features: {e}")
-            return pd.DataFrame()
-    
-    async def _save_artifacts(self,
-                             artifacts_path: Path,
-                             features: pd.DataFrame,
-                             feature_metadata: Dict[str, Any],
-                             generation_metrics: Dict[str, Any],
-                             market_data: pd.DataFrame) -> Dict[str, Any]:
-        """Save feature generation artifacts.
-        
-        Args:
-            artifacts_path: Path to save artifacts
-            features: Generated features
-            feature_metadata: Feature metadata
-            generation_metrics: Generation metrics
-            market_data: Original market data
-            
-        Returns:
-            Dictionary of saved artifact paths
-        """
-        artifacts = {}
-        
-        # Save features
-        if not features.empty:
-            features_path = artifacts_path / "generated_features.parquet"
-            features.to_parquet(features_path)
-            artifacts["generated_features"] = str(features_path)
-        
-        # Save feature metadata
-        feature_metadata_path = artifacts_path / "feature_metadata.json"
-        with open(feature_metadata_path, 'w') as f:
-            json.dump(feature_metadata, f, indent=2)
-        artifacts["feature_metadata"] = str(feature_metadata_path)
-        
-        # Save generation metrics
-        generation_metrics_path = artifacts_path / "generation_metrics.json"
-        with open(generation_metrics_path, 'w') as f:
-            json.dump(generation_metrics, f, indent=2)
-        artifacts["generation_metrics"] = str(generation_metrics_path)
-        
-        # Save generation log
-        generation_log = {
-            "step_name": "feature_generation_feature_generation_step",
-            "timestamp": datetime.now().isoformat(),
-            "total_features": len(features.columns),
-            "feature_categories": list(feature_metadata.keys()),
-            "generation_metrics": generation_metrics
-        }
-        
-        generation_log_path = artifacts_path / "generation_log.json"
-        with open(generation_log_path, 'w') as f:
-            json.dump(generation_log, f, indent=2)
-        artifacts["generation_log"] = str(generation_log_path)
-        
-        # Generate human-readable report
-        report_path = await self._generate_human_readable_report(artifacts_path, features, feature_metadata, generation_metrics)
-        if report_path:
-            artifacts["human_readable_report"] = str(report_path)
-        
-        return artifacts
-    
-    async def _generate_human_readable_report(self,
-                                            artifacts_path: Path,
-                                            features: pd.DataFrame,
-                                            feature_metadata: Dict[str, Any],
-                                            generation_metrics: Dict[str, Any]) -> Optional[Path]:
-        """Generate human-readable report in outcomes/ directory.
-        
-        Args:
-            artifacts_path: Path to save artifacts
-            features: Generated features
-            feature_metadata: Feature metadata
-            generation_metrics: Generation metrics
-            
-        Returns:
-            Path to the generated report file
-        """
-        # Create outcomes directory
-        outcomes_dir = Path("outcomes")
-        outcomes_dir.mkdir(exist_ok=True)
-        
-        # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"feature_generation_report_{timestamp}.md"
-        report_path = outcomes_dir / report_filename
-        
-        # Calculate feature statistics
-        total_features = len(features.columns)
-        memory_usage_mb = features.memory_usage(deep=True).sum() / 1024 / 1024 if not features.empty else 0
-        
-        # Generate report content
-        report_content = f"""# Feature Generation Report
-Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-## Executive Summary
-- **Total Features Generated**: {total_features}
-- **Data Shape**: {features.shape[0]} rows × {features.shape[1]} columns
-- **Memory Usage**: {memory_usage_mb:.2f} MB
-- **Generation Status**: {'✅ SUCCESS' if total_features > 0 else '❌ FAILED'}
-
-## Feature Categories
-"""
-        
-        # Add feature category details
-        for category, details in feature_metadata.items():
-            if isinstance(details, dict) and 'count' in details:
-                report_content += f"- **{category.replace('_', ' ').title()}**: {details['count']} features\n"
-        
-        report_content += f"""
-## Generation Metrics
-"""
-        
-        # Add generation metrics
-        for category, metrics in generation_metrics.items():
-            if isinstance(metrics, dict):
-                report_content += f"### {category.replace('_', ' ').title()}\n"
-                for metric, value in metrics.items():
-                    if isinstance(value, (int, float)):
-                        if 'time' in metric:
-                            report_content += f"- **{metric.replace('_', ' ').title()}**: {value:.3f} seconds\n"
-                        elif 'memory' in metric:
-                            report_content += f"- **{metric.replace('_', ' ').title()}**: {value / 1024 / 1024:.2f} MB\n"
-                        else:
-                            report_content += f"- **{metric.replace('_', ' ').title()}**: {value}\n"
-                report_content += "\n"
-        
-        report_content += f"""
-## Feature Overview
-- **Feature Names**: {', '.join(features.columns[:10])}{'...' if len(features.columns) > 10 else ''}
-- **Data Types**: {dict(features.dtypes.value_counts()) if not features.empty else 'N/A'}
-- **Missing Values**: {features.isnull().sum().sum() if not features.empty else 0}
-- **Memory per Feature**: {memory_usage_mb / total_features:.4f} MB (average) if total_features > 0 else 'N/A'}
-
-## Quality Assessment
-- **Feature Completeness**: {((features.count().sum() / (features.shape[0] * features.shape[1])) * 100):.2f}% if not features.empty else 'N/A'}}
-- **Memory Efficiency**: {'Good' if memory_usage_mb < 100 else 'High' if memory_usage_mb < 500 else 'Very High'}
-- **Feature Diversity**: {len(set(features.dtypes))} different data types
-
-## Next Steps
-1. Review generated features for quality
-2. Proceed to feature selection step
-3. Consider feature engineering optimizations
-
----
-*Report generated by Feature Generation Feature Generation Step*
-"""
-        
-        # Write report
-        with open(report_path, 'w') as f:
-            f.write(report_content)
-        
-        self.logger.info(f"📊 Human-readable report saved: {report_path}")
-        
-        return report_path
 
 
 # Command handler for ares_launcher integration
@@ -384,41 +112,45 @@ async def handle_feature_generation_feature_generation_step(
     custom_overrides: Optional[Dict[str, Any]] = None,
     **kwargs
 ) -> FeatureGenerationResult:
-    """Handle feature_generation_feature_generation_step command.
+    """
+    Handle feature generation feature generation step command.
     
     Args:
-        symbol: Trading symbol
-        timeframe: Data timeframe
-        direction: Direction type
-        intensity: Pipeline intensity
-        lookback_days: Lookback period in days
-        start_date: Start date for data
-        end_date: End date for data
-        exchange: Exchange name
-        custom_overrides: Custom configuration overrides
+        symbol: Trading symbol (default: "ETHUSDT")
+        timeframe: Timeframe (default: "15m")
+        direction: Direction (default: "longs")
+        intensity: Pipeline intensity (default: "blank")
+        lookback_days: Lookback days (optional)
+        start_date: Start date (optional)
+        end_date: End date (optional)
+        exchange: Exchange (default: "binance")
+        custom_overrides: Custom configuration overrides (optional)
         **kwargs: Additional arguments
         
     Returns:
-        FeatureGenerationResult
+        FeatureGenerationResult with generation results
     """
-    from src.training.steps.pre_training.unified_data_driven_pipeline.core.simplified_config import (
-        SimplifiedConfig
+    # Create sample data for feature generation (in real usage, this would come from data loading)
+    sample_data = pd.DataFrame({
+        'open': np.random.randn(1000).cumsum() + 100,
+        'high': np.random.randn(1000).cumsum() + 105,
+        'low': np.random.randn(1000).cumsum() + 95,
+        'close': np.random.randn(1000).cumsum() + 100,
+        'volume': np.random.randint(1000, 10000, 1000)
+    })
+    
+    # Create step instance and execute
+    step = FeatureGenerationFeatureGenerationStep()
+    
+    return await step.execute(
+        data=sample_data,
+        symbol=symbol,
+        timeframe=timeframe,
+        direction=direction,
+        intensity=intensity,
+        lookback_days=lookback_days,
+        start_date=start_date,
+        end_date=end_date,
+        exchange=exchange,
+        custom_overrides=custom_overrides
     )
-    
-    # Create configuration
-    simplified_config = SimplifiedConfig()
-    simplified_config.set_intensity(intensity)
-    
-    if custom_overrides:
-        simplified_config.apply_custom_overrides(custom_overrides)
-    
-    config = simplified_config.get_config()
-    
-    # Create step instance
-    step = FeatureGenerationFeatureGenerationStep(config)
-    
-    # Load market data (placeholder - would integrate with actual data loading)
-    market_data = pd.DataFrame()  # Placeholder
-    
-    # Execute step
-    return await step.execute(market_data, "artifacts")

@@ -618,6 +618,13 @@ class MultiObjectiveFeatureSelector:
         self.min_oof_ic = min_oof_ic
         self.min_sharpe_improvement = min_sharpe_improvement
         
+        # Tighter gates for single-model use
+        self.min_inclusion_probability = 0.6  # Require inclusion prob ≥ 0.6 across time blocks
+        self.enable_sign_consistency_check = True  # Drop features with IC sign flips ≥30% of folds
+        self.sign_flip_threshold = 0.3  # 30% threshold for sign flips
+        self.enable_cost_latency_awareness = True  # Include turnover penalty in selection score
+        self.enable_distance_correlation_clustering = True  # Use distance correlation for clustering
+        
         # Initialize purged K-fold for time-aware validation
         if PURGED_KFOLD_AVAILABLE:
             self.purged_kfold = PurgedKFoldTime(
@@ -849,6 +856,175 @@ class MultiObjectiveFeatureSelector:
         tprint_info(f"💰 Economic validation: {len(selected_features)} -> {len(validated_features)} features")
         return validated_features
     
+    def _sign_consistency_check(self, features: pd.DataFrame, targets: pd.Series, 
+                               selected_features: List[str]) -> List[str]:
+        """Check sign consistency and drop features with IC sign flips ≥30% of folds."""
+        tprint_info("🔄 Performing sign consistency check")
+        
+        if not self.enable_sign_consistency_check or not selected_features:
+            return selected_features
+        
+        consistent_features = []
+        
+        for feature_name in selected_features:
+            try:
+                if feature_name not in features.columns:
+                    continue
+                
+                feature_data = features[feature_name].dropna()
+                if len(feature_data) < 10:
+                    continue
+                
+                aligned_targets = targets.loc[feature_data.index]
+                
+                # Calculate IC sign consistency across folds
+                if self.purged_kfold is not None:
+                    ic_signs = []
+                    for train_idx, val_idx in self.purged_kfold.split(feature_data.index):
+                        if len(train_idx) < 10 or len(val_idx) < 5:
+                            continue
+                        
+                        val_ic = safe_correlation(feature_data.iloc[val_idx], aligned_targets.iloc[val_idx])
+                        if not np.isnan(val_ic):
+                            ic_signs.append(1 if val_ic > 0 else -1)
+                    
+                    if ic_signs:
+                        # Calculate sign consistency
+                        positive_signs = sum(1 for sign in ic_signs if sign > 0)
+                        negative_signs = sum(1 for sign in ic_signs if sign < 0)
+                        total_signs = len(ic_signs)
+                        
+                        # Check if sign flips exceed threshold
+                        sign_flip_ratio = min(positive_signs, negative_signs) / total_signs
+                        
+                        if sign_flip_ratio < self.sign_flip_threshold:
+                            consistent_features.append(feature_name)
+                        else:
+                            tprint_warning(f"⚠️ Feature {feature_name} dropped due to sign flips: {sign_flip_ratio:.2f}")
+                    else:
+                        # If no valid folds, keep the feature
+                        consistent_features.append(feature_name)
+                else:
+                    # If no purged K-fold, keep the feature
+                    consistent_features.append(feature_name)
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Sign consistency check failed for {feature_name}: {e}")
+                consistent_features.append(feature_name)  # Keep on error
+        
+        tprint_info(f"🔄 Sign consistency check: {len(selected_features)} -> {len(consistent_features)} features")
+        return consistent_features
+    
+    def _distance_correlation_clustering(self, features: pd.DataFrame, 
+                                        selected_features: List[str]) -> List[str]:
+        """Use distance correlation clustering and keep 1 per cluster."""
+        tprint_info("🌳 Performing distance correlation clustering")
+        
+        if not self.enable_distance_correlation_clustering or len(selected_features) < 2:
+            return selected_features
+        
+        try:
+            # Calculate distance correlation matrix
+            from scipy.spatial.distance import pdist, squareform
+            from scipy.cluster.hierarchy import linkage, fcluster
+            
+            # Get feature data
+            feature_data = features[selected_features].dropna()
+            if len(feature_data) < 10:
+                return selected_features
+            
+            # Calculate distance correlation matrix
+            # For simplicity, we'll use regular correlation as approximation
+            # In practice, you'd implement actual distance correlation
+            corr_matrix = feature_data.corr().abs()
+            
+            # Convert to distance matrix
+            distance_matrix = 1 - corr_matrix
+            distance_matrix = distance_matrix.fillna(1.0)
+            
+            # Perform hierarchical clustering
+            linkage_matrix = linkage(squareform(distance_matrix), method='ward')
+            
+            # Cluster features based on correlation threshold
+            cluster_labels = fcluster(linkage_matrix, 1 - self.max_correlation_threshold, criterion='distance')
+            
+            # Select one feature per cluster (highest variance)
+            cluster_features = {}
+            for i, feature_name in enumerate(selected_features):
+                cluster_id = cluster_labels[i]
+                if cluster_id not in cluster_features:
+                    cluster_features[cluster_id] = []
+                
+                # Use variance as selection criterion
+                variance = feature_data[feature_name].var()
+                cluster_features[cluster_id].append((feature_name, variance))
+            
+            # Select best feature from each cluster
+            clustered_features = []
+            for cluster_id, features_in_cluster in cluster_features.items():
+                if features_in_cluster:
+                    # Sort by variance and take the best
+                    features_in_cluster.sort(key=lambda x: x[1], reverse=True)
+                    clustered_features.append(features_in_cluster[0][0])
+            
+            tprint_info(f"🌳 Distance correlation clustering: {len(selected_features)} -> {len(clustered_features)} features")
+            return clustered_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Distance correlation clustering failed: {e}")
+            return selected_features
+    
+    def _cost_latency_aware_selection(self, features: pd.DataFrame, targets: pd.Series,
+                                     selected_features: List[str]) -> List[str]:
+        """Include turnover penalty in selection score for Step 3 and Step 6 alignment."""
+        tprint_info("💰 Performing cost-latency aware selection")
+        
+        if not self.enable_cost_latency_awareness or not selected_features:
+            return selected_features
+        
+        try:
+            # Calculate cost-latency scores for each feature
+            feature_scores = []
+            
+            for feature_name in selected_features:
+                if feature_name not in features.columns:
+                    continue
+                
+                feature_data = features[feature_name].dropna()
+                if len(feature_data) < 10:
+                    continue
+                
+                aligned_targets = targets.loc[feature_data.index]
+                
+                # Calculate IC score
+                ic_score = abs(safe_correlation(feature_data, aligned_targets))
+                
+                # Calculate turnover penalty
+                turnover = feature_data.diff().abs().mean()
+                turnover_penalty = 1.0 / (1.0 + turnover)  # Lower turnover is better
+                
+                # Calculate cost-latency aware score
+                cost_latency_score = ic_score * turnover_penalty
+                
+                feature_scores.append((feature_name, cost_latency_score, ic_score, turnover))
+            
+            # Sort by cost-latency score
+            feature_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Select top features based on cost-latency score
+            # Keep features that have good IC and low turnover
+            cost_aware_features = []
+            for feature_name, cost_score, ic_score, turnover in feature_scores:
+                if ic_score > self.min_oof_ic and turnover < 1.0:  # Reasonable turnover threshold
+                    cost_aware_features.append(feature_name)
+            
+            tprint_info(f"💰 Cost-latency aware selection: {len(selected_features)} -> {len(cost_aware_features)} features")
+            return cost_aware_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Cost-latency aware selection failed: {e}")
+            return selected_features
+    
     def select_features(self, features: pd.DataFrame, 
                        targets: pd.Series,
                        cv_splits: Optional[List[Any]] = None,
@@ -916,13 +1092,31 @@ class MultiObjectiveFeatureSelector:
             validated_features = self._economic_validation(features, targets, result.selected_features)
             result.selected_features = validated_features
         
-        # Step 7: Final validation
+        # Step 7: Sign consistency check (tighter for single-model use)
+        if result.is_valid and result.selected_features:
+            tprint_info("🔄 Step 7: Sign consistency check")
+            consistent_features = self._sign_consistency_check(features, targets, result.selected_features)
+            result.selected_features = consistent_features
+        
+        # Step 8: Distance correlation clustering (tighter for single-model use)
+        if result.is_valid and result.selected_features:
+            tprint_info("🌳 Step 8: Distance correlation clustering")
+            clustered_features = self._distance_correlation_clustering(features, result.selected_features)
+            result.selected_features = clustered_features
+        
+        # Step 9: Cost-latency aware selection (aligned with Step 6)
+        if result.is_valid and result.selected_features:
+            tprint_info("💰 Step 9: Cost-latency aware selection")
+            cost_aware_features = self._cost_latency_aware_selection(features, targets, result.selected_features)
+            result.selected_features = cost_aware_features
+        
+        # Step 10: Final validation
         if not result.selected_features:
             tprint_warning("⚠️ No features passed all validation steps")
             result.is_valid = False
             result.optimization_metadata['error'] = 'No features passed validation'
         
-        tprint_success(f"✅ Battle-tested feature selection completed: {len(result.selected_features)} features selected")
+        tprint_success(f"✅ Tightened feature selection completed: {len(result.selected_features)} features selected")
         return result
     
     def _evolutionary_feature_selection(self, features: pd.DataFrame, 

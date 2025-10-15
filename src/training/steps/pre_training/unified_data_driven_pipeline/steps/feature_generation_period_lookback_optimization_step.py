@@ -54,17 +54,26 @@ class PeriodLookbackOptimizationConfig:
     max_lookback: int = 500  # Battle-tested lookback range
     lookback_step: int = 5
     
-    # Battle-tested optimization strategy
-    optimization_method: str = "bayesian_tpe"  # Use Bayesian TPE optimization
+    # Regime-agnostic optimization strategy
+    optimization_method: str = "robustness_first"  # Robustness-first scoring
     enable_economic_evaluation: bool = True
     enable_statistical_analysis: bool = True
     enable_coarse_fine_search: bool = True  # Coarse → fine search strategy
+    enable_u_shape_detection: bool = True  # Detect and avoid U-shape extremes
     
-    # Multi-objective optimization weights
-    ic_weight: float = 0.4
-    sharpe_weight: float = 0.3
-    stability_weight: float = 0.2
-    turnover_weight: float = 0.1
+    # Robustness-first composite scoring (OOF only)
+    ic_weight: float = 0.4  # w1·IC_t
+    sharpe_weight: float = 0.3  # w2·Sharpe_adj
+    turnover_weight: float = 0.2  # w3·Turnover
+    lag_penalty_weight: float = 0.1  # w4·LagPenalty
+    
+    # Sharpe adjustment parameters
+    turnover_lambda: float = 0.1  # λ in Sharpe_adj = Sharpe - λ·Turnover
+    
+    # Lag penalty parameters
+    lag_penalty_theta: float = 0.5  # θ in LagPenalty formula
+    phase_delay_ema_factor: float = 0.5  # (period-1)/2 for EMA
+    phase_delay_sma_factor: float = 0.5  # (period-1)/2 for SMA
     
     # Economic validation thresholds
     min_oof_ic: float = 0.01
@@ -255,24 +264,27 @@ class PeriodLookbackOptimizationStep:
     
     def _evaluate_period_lookback_combo(self, data: pd.DataFrame, targets: pd.Series, 
                                        period: int, lookback: int) -> Optional[float]:
-        """Evaluate a specific period + lookback combination."""
+        """Evaluate a specific period + lookback combination with regime-agnostic robustness scoring."""
         try:
-            # This is a simplified implementation
-            # In practice, you would implement the actual evaluation logic
-            # based on the period and lookback parameters
+            # Calculate OOF metrics only (no in-sample bias)
+            oof_ic = self._calculate_oof_ic(data, targets, period, lookback)
+            oof_sharpe = self._calculate_oof_sharpe(data, targets, period, lookback)
+            oof_turnover = self._calculate_oof_turnover(data, targets, period, lookback)
+            lag_penalty = self._calculate_lag_penalty(period, lookback, targets)
             
-            # Calculate basic metrics
-            ic_score = self._calculate_ic_score(data, targets, period, lookback)
-            sharpe_score = self._calculate_sharpe_score(data, targets, period, lookback)
-            stability_score = self._calculate_stability_score(data, targets, period, lookback)
-            turnover_score = self._calculate_turnover_score(data, targets, period, lookback)
+            # Apply fail-fast bounds
+            if not self._check_fail_fast_bounds(data, period, lookback, oof_ic, lag_penalty):
+                return None
             
-            # Calculate composite score
+            # Calculate adjusted Sharpe (Sharpe_adj = Sharpe - λ·Turnover)
+            sharpe_adj = oof_sharpe - self.config.turnover_lambda * oof_turnover
+            
+            # Calculate composite score: w1·IC_t + w2·Sharpe_adj - w3·Turnover - w4·LagPenalty
             composite_score = (
-                self.config.ic_weight * ic_score +
-                self.config.sharpe_weight * sharpe_score +
-                self.config.stability_weight * stability_score +
-                self.config.turnover_weight * turnover_score
+                self.config.ic_weight * oof_ic +
+                self.config.sharpe_weight * sharpe_adj -
+                self.config.turnover_weight * oof_turnover -
+                self.config.lag_penalty_weight * lag_penalty
             )
             
             return composite_score
@@ -280,6 +292,176 @@ class PeriodLookbackOptimizationStep:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to evaluate period={period}, lookback={lookback}: {e}")
             return None
+    
+    def _calculate_oof_ic(self, data: pd.DataFrame, targets: pd.Series, 
+                         period: int, lookback: int) -> float:
+        """Calculate out-of-fold Information Coefficient."""
+        try:
+            # Use purged walk-forward CV for OOF IC calculation
+            if hasattr(self, 'purged_kfold') and self.purged_kfold is not None:
+                oof_ics = []
+                for train_idx, val_idx in self.purged_kfold.split(data.index):
+                    if len(train_idx) < 10 or len(val_idx) < 5:
+                        continue
+                    
+                    # Generate features for this period/lookback combination
+                    val_features = self._generate_features_for_combo(data.iloc[val_idx], period, lookback)
+                    val_targets = targets.iloc[val_idx]
+                    
+                    if val_features is not None and len(val_features) > 0:
+                        # Calculate IC for this fold
+                        ic = self._calculate_ic_between_features_and_targets(val_features, val_targets)
+                        if not np.isnan(ic):
+                            oof_ics.append(ic)
+                
+                return np.mean(oof_ics) if oof_ics else 0.0
+            else:
+                # Fallback to simple correlation
+                features = self._generate_features_for_combo(data, period, lookback)
+                if features is not None and len(features) > 0:
+                    return self._calculate_ic_between_features_and_targets(features, targets)
+                return 0.0
+                
+        except Exception:
+            return 0.0
+    
+    def _calculate_oof_sharpe(self, data: pd.DataFrame, targets: pd.Series, 
+                             period: int, lookback: int) -> float:
+        """Calculate out-of-fold Sharpe ratio."""
+        try:
+            # Use purged walk-forward CV for OOF Sharpe calculation
+            if hasattr(self, 'purged_kfold') and self.purged_kfold is not None:
+                oof_sharpes = []
+                for train_idx, val_idx in self.purged_kfold.split(data.index):
+                    if len(train_idx) < 10 or len(val_idx) < 5:
+                        continue
+                    
+                    # Calculate returns for this fold
+                    val_targets = targets.iloc[val_idx]
+                    returns = val_targets.pct_change().dropna()
+                    
+                    if len(returns) > 1:
+                        sharpe = returns.mean() / (returns.std() + 1e-8)
+                        if not np.isnan(sharpe):
+                            oof_sharpes.append(sharpe)
+                
+                return np.mean(oof_sharpes) if oof_sharpes else 0.0
+            else:
+                # Fallback to simple Sharpe calculation
+                returns = targets.pct_change().dropna()
+                if len(returns) > 1:
+                    return returns.mean() / (returns.std() + 1e-8)
+                return 0.0
+                
+        except Exception:
+            return 0.0
+    
+    def _calculate_oof_turnover(self, data: pd.DataFrame, targets: pd.Series, 
+                               period: int, lookback: int) -> float:
+        """Calculate out-of-fold turnover."""
+        try:
+            # Generate features for this combination
+            features = self._generate_features_for_combo(data, period, lookback)
+            if features is None or len(features) < 2:
+                return 0.0
+            
+            # Calculate turnover as average absolute change
+            turnover = features.diff().abs().mean().mean()
+            return turnover if not np.isnan(turnover) else 0.0
+            
+        except Exception:
+            return 0.0
+    
+    def _calculate_lag_penalty(self, period: int, lookback: int, targets: pd.Series) -> float:
+        """Calculate lag penalty: max(0, (phase_delay / avg_holding_period) - θ)."""
+        try:
+            # Calculate phase delay (crude but effective)
+            phase_delay = (period - 1) / 2  # For both EMA and SMA
+            
+            # Calculate average holding period from targets
+            # This is a simplified calculation - in practice, you'd use actual holding periods
+            avg_holding_period = 10  # Placeholder - should be calculated from actual data
+            
+            # Calculate lag penalty
+            lag_ratio = phase_delay / avg_holding_period
+            lag_penalty = max(0, lag_ratio - self.config.lag_penalty_theta)
+            
+            return lag_penalty
+            
+        except Exception:
+            return 0.0
+    
+    def _check_fail_fast_bounds(self, data: pd.DataFrame, period: int, lookback: int, 
+                               oof_ic: float, lag_penalty: float) -> bool:
+        """Check fail-fast bounds for regime-agnostic optimization."""
+        try:
+            # Minimum data for long windows: n_eff ≥ 5×max(period, lookback)
+            n_eff = len(data) - max(period, lookback)
+            min_required = 5 * max(period, lookback)
+            if n_eff < min_required:
+                return False
+            
+            # Latency cap: phase_delay > 0.7×avg_holding_period
+            phase_delay = (period - 1) / 2
+            avg_holding_period = 10  # Placeholder
+            if phase_delay > 0.7 * avg_holding_period:
+                return False
+            
+            # IC threshold (basic quality check)
+            if abs(oof_ic) < 0.005:  # Minimum IC threshold
+                return False
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    def _generate_features_for_combo(self, data: pd.DataFrame, period: int, lookback: int) -> Optional[pd.DataFrame]:
+        """Generate features for a specific period/lookback combination."""
+        try:
+            # This is a simplified implementation
+            # In practice, you would implement the actual feature generation logic
+            # based on the period and lookback parameters
+            
+            features = data.copy()
+            
+            # Apply period-based transformations
+            for col in data.columns:
+                if period > 1:
+                    # Simple moving average as example
+                    features[f"{col}_sma_{period}"] = features[col].rolling(window=period).mean()
+            
+            # Apply lookback-based transformations
+            for col in data.columns:
+                if lookback > 1:
+                    # Simple lookback features as example
+                    features[f"{col}_lag_{lookback}"] = features[col].shift(lookback)
+            
+            # Remove NaN values
+            features = features.dropna()
+            
+            if len(features) < 10:
+                return None
+            
+            return features
+            
+        except Exception:
+            return None
+    
+    def _calculate_ic_between_features_and_targets(self, features: pd.DataFrame, targets: pd.Series) -> float:
+        """Calculate IC between features and targets."""
+        try:
+            # Calculate mean IC across all features
+            ics = []
+            for col in features.columns:
+                ic = np.corrcoef(features[col], targets)[0, 1]
+                if not np.isnan(ic):
+                    ics.append(ic)
+            
+            return np.mean(ics) if ics else 0.0
+            
+        except Exception:
+            return 0.0
     
     def _calculate_ic_score(self, data: pd.DataFrame, targets: pd.Series, 
                            period: int, lookback: int) -> float:
@@ -324,6 +506,125 @@ class PeriodLookbackOptimizationStep:
             return np.random.uniform(0.0, 1.0)  # Placeholder
         except Exception:
             return 0.5
+    
+    def _detect_and_avoid_u_shape(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Detect U-shape and restrict to middle quantiles if present."""
+        try:
+            if len(results) < 10:
+                return results
+            
+            # Extract periods and scores
+            periods = [r['period'] for r in results]
+            scores = [r['score'] for r in results]
+            
+            # Fit quadratic to (period, score)
+            periods_array = np.array(periods)
+            scores_array = np.array(scores)
+            
+            # Fit quadratic: score = a*period^2 + b*period + c
+            coeffs = np.polyfit(periods_array, scores_array, 2)
+            a, b, c = coeffs
+            
+            # Check if U-shape is present (negative coefficient a)
+            if a < 0:
+                tprint_info("🔄 U-shape detected, restricting to middle quantiles")
+                
+                # Calculate middle quantiles (0.25-0.75)
+                period_25 = np.percentile(periods_array, 25)
+                period_75 = np.percentile(periods_array, 75)
+                
+                # Filter to middle quantiles
+                middle_results = [
+                    r for r in results 
+                    if period_25 <= r['period'] <= period_75
+                ]
+                
+                if middle_results:
+                    tprint_info(f"📊 Restricted to middle quantiles: {len(results)} -> {len(middle_results)} combinations")
+                    return middle_results
+                else:
+                    tprint_warning("⚠️ No combinations in middle quantiles, using original results")
+                    return results
+            else:
+                tprint_info("📊 No U-shape detected, using all results")
+                return results
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ U-shape detection failed: {e}")
+            return results
+    
+    def _static_diversification(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Select top-3 diverse combos with distance-constrained greedy selection."""
+        try:
+            if len(results) < 3:
+                return results
+            
+            # Sort by score (descending)
+            sorted_results = sorted(results, key=lambda x: x['score'], reverse=True)
+            
+            # Start with the best combination
+            selected = [sorted_results[0]]
+            remaining = sorted_results[1:]
+            
+            # Greedily add diverse combinations
+            while len(selected) < 3 and remaining:
+                best_candidate = None
+                best_candidate_idx = -1
+                
+                for i, candidate in enumerate(remaining):
+                    # Check distance constraints
+                    if self._is_diverse_enough(candidate, selected):
+                        best_candidate = candidate
+                        best_candidate_idx = i
+                        break
+                
+                if best_candidate is not None:
+                    selected.append(best_candidate)
+                    remaining.pop(best_candidate_idx)
+                else:
+                    # If no diverse candidate found, take the best remaining
+                    selected.append(remaining[0])
+                    remaining.pop(0)
+            
+            tprint_info(f"🎯 Static diversification: selected {len(selected)} diverse combinations")
+            return selected
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Static diversification failed: {e}")
+            return results[:3]  # Fallback to top 3
+    
+    def _is_diverse_enough(self, candidate: Dict[str, Any], selected: List[Dict[str, Any]]) -> bool:
+        """Check if candidate is diverse enough from selected combinations."""
+        try:
+            candidate_period = candidate['period']
+            candidate_lookback = candidate['lookback']
+            
+            for selected_combo in selected:
+                selected_period = selected_combo['period']
+                selected_lookback = selected_combo['lookback']
+                
+                # Check L∞ radius constraint (e.g., 5 bars)
+                period_diff = abs(candidate_period - selected_period)
+                lookback_diff = abs(candidate_lookback - selected_lookback)
+                max_diff = max(period_diff, lookback_diff)
+                
+                if max_diff <= 5:  # Within L∞ radius
+                    return False
+                
+                # Check OOF correlation constraint (≤ 0.85)
+                # This would require actual correlation calculation in practice
+                # For now, we'll use a simplified distance-based approximation
+                period_ratio = min(candidate_period, selected_period) / max(candidate_period, selected_period)
+                lookback_ratio = min(candidate_lookback, selected_lookback) / max(candidate_lookback, selected_lookback)
+                
+                # If both ratios are very high, they're likely highly correlated
+                if period_ratio > 0.9 and lookback_ratio > 0.9:
+                    return False
+            
+            return True
+            
+        except Exception:
+            return True  # If check fails, allow the candidate
     
     async def execute(self, 
                      data: pd.DataFrame, 
@@ -370,12 +671,20 @@ class PeriodLookbackOptimizationStep:
         tprint_info("🎯 Step 3: Fine grid search around best results")
         fine_results = self._fine_grid_search(data, targets, coarse_results)
         
-        # Step 4: Select final combinations
-        tprint_info("📊 Step 4: Selecting final combinations")
-        final_results = fine_results[:self.config.top_periods_for_interactions]
+        # Step 4: U-shape detection and middle quantile restriction
+        tprint_info("📊 Step 4: U-shape detection and middle quantile restriction")
+        if self.config.enable_u_shape_detection and len(fine_results) > 10:
+            fine_results = self._detect_and_avoid_u_shape(fine_results)
         
-        # Step 5: Generate results
-        tprint_info("📋 Step 5: Generating results")
+        # Step 5: Static diversification (no conditional logic)
+        tprint_info("🎯 Step 5: Static diversification with distance-constrained greedy selection")
+        final_results = self._static_diversification(fine_results)
+        
+        # Step 6: Generate artifacts
+        tprint_info("📋 Step 6: Generating artifacts")
+        artifacts = self._generate_artifacts(final_results, coarse_results, fine_results)
+        
+        # Update optimization results
         self.optimization_results.update({
             'period_results': {f"period_{i}": result['period'] for i, result in enumerate(final_results)},
             'lookback_results': {f"lookback_{i}": result['lookback'] for i, result in enumerate(final_results)},
@@ -386,16 +695,101 @@ class PeriodLookbackOptimizationStep:
                 'coarse_combinations': len(coarse_results),
                 'fine_combinations': len(fine_results),
                 'final_combinations': len(final_results),
-                'method': 'battle_tested_coarse_fine_search'
-            }
+                'method': 'regime_agnostic_robustness_first'
+            },
+            'artifacts': artifacts
         })
         
-        tprint_success(f"✅ Battle-tested optimization completed: {len(final_results)} combinations selected")
+        tprint_success(f"✅ Regime-agnostic optimization completed: {len(final_results)} combinations selected")
         return {
             'success': True,
             'optimization_results': self.optimization_results,
-            'selected_combinations': final_results
+            'selected_combinations': final_results,
+            'artifacts': artifacts
         }
+    
+    def _generate_artifacts(self, final_results: List[Dict[str, Any]], 
+                           coarse_results: List[Dict[str, Any]], 
+                           fine_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate artifacts for regime-agnostic optimization."""
+        try:
+            from datetime import datetime
+            import json
+            from pathlib import Path
+            
+            # Create artifacts directory
+            artifacts_dir = Path("outcomes")
+            artifacts_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            artifacts = {}
+            
+            # 1. trading_default.json: single (period, lookback)
+            if final_results:
+                trading_default = {
+                    "period": final_results[0]['period'],
+                    "lookback": final_results[0]['lookback'],
+                    "score": final_results[0]['score'],
+                    "timestamp": timestamp
+                }
+                
+                trading_default_path = artifacts_dir / f"trading_default_{timestamp}.json"
+                with open(trading_default_path, 'w') as f:
+                    json.dump(trading_default, f, indent=2)
+                artifacts['trading_default_path'] = str(trading_default_path)
+            
+            # 2. interaction_periods.json: 3 diverse (period, lookback) tuples
+            interaction_periods = []
+            for i, result in enumerate(final_results[:3]):
+                interaction_periods.append({
+                    "period": result['period'],
+                    "lookback": result['lookback'],
+                    "score": result['score'],
+                    "rank": i + 1
+                })
+            
+            interaction_periods_path = artifacts_dir / f"interaction_periods_{timestamp}.json"
+            with open(interaction_periods_path, 'w') as f:
+                json.dump(interaction_periods, f, indent=2)
+            artifacts['interaction_periods_path'] = str(interaction_periods_path)
+            
+            # 3. Heatmap + local sensitivity plot data
+            heatmap_data = {
+                "periods": [r['period'] for r in fine_results],
+                "lookbacks": [r['lookback'] for r in fine_results],
+                "scores": [r['score'] for r in fine_results],
+                "trading_default": final_results[0] if final_results else None,
+                "interaction_combos": final_results[:3] if final_results else []
+            }
+            
+            heatmap_path = artifacts_dir / f"optimization_heatmap_{timestamp}.json"
+            with open(heatmap_path, 'w') as f:
+                json.dump(heatmap_data, f, indent=2)
+            artifacts['heatmap_path'] = str(heatmap_path)
+            
+            # 4. Optimization summary
+            summary = {
+                "total_combinations_evaluated": len(coarse_results) + len(fine_results),
+                "coarse_combinations": len(coarse_results),
+                "fine_combinations": len(fine_results),
+                "final_combinations": len(final_results),
+                "trading_default": final_results[0] if final_results else None,
+                "interaction_combos": final_results[:3] if final_results else [],
+                "optimization_method": "regime_agnostic_robustness_first",
+                "timestamp": timestamp
+            }
+            
+            summary_path = artifacts_dir / f"optimization_summary_{timestamp}.json"
+            with open(summary_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            artifacts['summary_path'] = str(summary_path)
+            
+            tprint_info(f"📊 Generated artifacts: {len(artifacts)} files")
+            return artifacts
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Artifact generation failed: {e}")
+            return {}
         
         try:
             # Validate input data

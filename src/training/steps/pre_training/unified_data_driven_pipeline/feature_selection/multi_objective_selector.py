@@ -26,6 +26,7 @@ try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
     )
+    from src.utils.common_operations import safe_correlation
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
@@ -35,6 +36,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def safe_correlation(x, y): return np.corrcoef(x, y)[0, 1] if len(x) > 1 and len(y) > 1 else 0.0
 
 # Import enhanced Pareto front utilities from ml_commons
 try:
@@ -47,11 +49,22 @@ try:
         NSGA2Optimizer, SPEA2Optimizer, GeneticAlgorithmOptimizer,
         EvolutionaryConfig, EvolutionaryResult, Individual
     )
+    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
     ML_COMMONS_PARETO_AVAILABLE = True
     tprint_info("✅ ML Commons Pareto utilities imported successfully")
 except ImportError as e:
     ML_COMMONS_PARETO_AVAILABLE = False
     tprint_warning(f"⚠️ ML Commons Pareto utilities not available: {e}")
+
+# Import purged K-fold for time-aware validation
+try:
+    from src.utils.purged_kfold import PurgedKFoldTime
+    PURGED_KFOLD_AVAILABLE = True
+    tprint_info("✅ Purged K-fold available for time-aware validation")
+except ImportError:
+    PURGED_KFOLD_AVAILABLE = False
+    tprint_warning("⚠️ Purged K-fold not available, using standard CV")
     # Fast-fail implementations - raise exceptions immediately when dependencies are missing
     class Solution:
         def __init__(self, *args, **kwargs):
@@ -561,11 +574,20 @@ class MultiObjectiveFeatureSelector:
     
     def __init__(self, objectives: List[ObjectiveFunction], 
                  weights: Optional[Dict[str, float]] = None,
-                 max_features: int = 45,  # Decreased by 10% from 50
-                 min_features: int = 4,   # Decreased by 10% from 5
+                 max_features: int = 60,  # Battle-tested default
+                 min_features: int = 4,   # Battle-tested default
                  use_ml_commons: bool = True,
                  use_evolutionary: bool = True,
-                 optimization_algorithm: str = "auto"):
+                 optimization_algorithm: str = "auto",
+                 # Battle-tested parameters
+                 enable_stability_selection: bool = True,
+                 enable_redundancy_pruning: bool = True,
+                 enable_economic_validation: bool = True,
+                 n_splits: int = 5,
+                 embargo_days: int = 7,
+                 max_correlation_threshold: float = 0.85,
+                 min_oof_ic: float = 0.01,
+                 min_sharpe_improvement: float = 0.1):
         """
         Initialize enhanced multi-objective feature selector.
         
@@ -585,6 +607,25 @@ class MultiObjectiveFeatureSelector:
         self.use_ml_commons = use_ml_commons and ML_COMMONS_PARETO_AVAILABLE
         self.use_evolutionary = use_evolutionary and ML_COMMONS_PARETO_AVAILABLE
         self.optimization_algorithm = optimization_algorithm
+        
+        # Battle-tested parameters
+        self.enable_stability_selection = enable_stability_selection
+        self.enable_redundancy_pruning = enable_redundancy_pruning
+        self.enable_economic_validation = enable_economic_validation
+        self.n_splits = n_splits
+        self.embargo_days = embargo_days
+        self.max_correlation_threshold = max_correlation_threshold
+        self.min_oof_ic = min_oof_ic
+        self.min_sharpe_improvement = min_sharpe_improvement
+        
+        # Initialize purged K-fold for time-aware validation
+        if PURGED_KFOLD_AVAILABLE:
+            self.purged_kfold = PurgedKFoldTime(
+                n_splits=self.n_splits,
+                embargo_td=pd.Timedelta(days=self.embargo_days)
+            )
+        else:
+            self.purged_kfold = None
         
         # Initialize ml_commons utilities if available
         if self.use_ml_commons:
@@ -640,12 +681,180 @@ class MultiObjectiveFeatureSelector:
         if self.use_evolutionary:
             tprint_info("✅ Evolutionary optimization enabled")
     
+    def _apply_fail_fast_gates(self, features: pd.DataFrame, targets: pd.Series) -> bool:
+        """Apply fail-fast validation gates following battle-tested best practices."""
+        # Gate 1: Minimum data size
+        if len(features) < 100:
+            tprint_warning("⚠️ Insufficient data for reliable feature selection")
+            return False
+        
+        # Gate 2: Target variance check
+        if targets.var() < 1e-8:
+            tprint_warning("⚠️ Target variance too low")
+            return False
+        
+        # Gate 3: Feature quality check
+        nan_ratios = features.isnull().sum() / len(features)
+        high_nan_features = nan_ratios > 0.3
+        if high_nan_features.any():
+            tprint_warning(f"⚠️ {high_nan_features.sum()} features have >30% NaN values")
+            return False
+        
+        # Gate 4: Memory check
+        memory_usage = features.memory_usage(deep=True).sum() / 1024**2  # MB
+        if memory_usage > 2000:  # 2GB limit
+            tprint_warning(f"⚠️ High memory usage: {memory_usage:.1f}MB")
+            return False
+        
+        return True
+    
+    def _stability_selection(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
+        """Perform stability selection with bootstrapped time blocks."""
+        tprint_info("🔄 Performing stability selection with bootstrapped time blocks")
+        
+        stability_scores = {}
+        n_samples = len(features)
+        bootstrap_size = int(n_samples * 0.8)  # 80% bootstrap
+        
+        for _ in range(100):  # 100 bootstrap iterations
+            try:
+                # Bootstrap sample with time awareness
+                start_idx = np.random.randint(0, n_samples - bootstrap_size)
+                end_idx = start_idx + bootstrap_size
+                bootstrap_indices = np.arange(start_idx, end_idx)
+                
+                bootstrap_features = features.iloc[bootstrap_indices]
+                bootstrap_targets = targets.iloc[bootstrap_indices]
+                
+                # Quick feature selection on bootstrap sample
+                for feature_name in features.columns:
+                    feature_data = bootstrap_features[feature_name].dropna()
+                    if len(feature_data) < 10:
+                        continue
+                    
+                    aligned_targets = bootstrap_targets.loc[feature_data.index]
+                    ic = safe_correlation(feature_data, aligned_targets)
+                    
+                    if not np.isnan(ic) and abs(ic) > 0.01:  # min IC threshold
+                        stability_scores[feature_name] = stability_scores.get(feature_name, 0) + 1
+                        
+            except Exception as e:
+                tprint_warning(f"⚠️ Bootstrap iteration failed: {e}")
+                continue
+        
+        # Convert counts to probabilities
+        for feature_name in stability_scores:
+            stability_scores[feature_name] /= 100
+        
+        tprint_info(f"📊 Stability selection completed for {len(stability_scores)} features")
+        return stability_scores
+    
+    def _redundancy_pruning(self, features: pd.DataFrame, feature_scores: Dict[str, float]) -> List[str]:
+        """Perform redundancy pruning using hierarchical clustering."""
+        tprint_info("🌳 Performing redundancy pruning with hierarchical clustering")
+        
+        if len(features.columns) < 2:
+            return features.columns.tolist()
+        
+        try:
+            # Calculate correlation matrix
+            feature_data = features.dropna()
+            if len(feature_data) < 10:
+                return features.columns.tolist()
+            
+            corr_matrix = feature_data.corr().abs()
+            
+            # Convert to distance matrix
+            distance_matrix = 1 - corr_matrix
+            distance_matrix = distance_matrix.fillna(1.0)  # Handle NaN correlations
+            
+            # Perform hierarchical clustering
+            from scipy.cluster.hierarchy import linkage, fcluster
+            from scipy.spatial.distance import squareform
+            
+            linkage_matrix = linkage(squareform(distance_matrix), method='ward')
+            
+            # Cluster features based on correlation threshold
+            cluster_labels = fcluster(linkage_matrix, 1 - self.max_correlation_threshold, criterion='distance')
+            
+            # Select one feature per cluster (highest score)
+            cluster_features = {}
+            for i, feature_name in enumerate(features.columns):
+                cluster_id = cluster_labels[i]
+                if cluster_id not in cluster_features:
+                    cluster_features[cluster_id] = []
+                
+                score = feature_scores.get(feature_name, 0.0)
+                cluster_features[cluster_id].append((feature_name, score))
+            
+            # Select best feature from each cluster
+            pruned_features = []
+            for cluster_id, features_in_cluster in cluster_features.items():
+                if features_in_cluster:
+                    # Sort by score and take the best
+                    features_in_cluster.sort(key=lambda x: x[1], reverse=True)
+                    pruned_features.append(features_in_cluster[0][0])
+            
+            tprint_info(f"🌳 Redundancy pruning: {len(features.columns)} -> {len(pruned_features)} features")
+            return pruned_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Redundancy pruning failed: {e}")
+            return features.columns.tolist()
+    
+    def _economic_validation(self, features: pd.DataFrame, targets: pd.Series, 
+                           selected_features: List[str]) -> List[str]:
+        """Perform economic validation of selected features."""
+        tprint_info("💰 Performing economic validation")
+        
+        validated_features = []
+        
+        for feature_name in selected_features:
+            try:
+                if feature_name not in features.columns:
+                    continue
+                
+                feature_data = features[feature_name].dropna()
+                if len(feature_data) < 10:
+                    continue
+                
+                aligned_targets = targets.loc[feature_data.index]
+                
+                # Calculate OOF IC
+                if self.purged_kfold is not None:
+                    oof_ics = []
+                    for train_idx, val_idx in self.purged_kfold.split(feature_data.index):
+                        if len(train_idx) < 10 or len(val_idx) < 5:
+                            continue
+                        
+                        val_ic = safe_correlation(feature_data.iloc[val_idx], aligned_targets.iloc[val_idx])
+                        if not np.isnan(val_ic):
+                            oof_ics.append(val_ic)
+                    
+                    oof_ic = np.mean(oof_ics) if oof_ics else 0.0
+                else:
+                    oof_ic = abs(safe_correlation(feature_data, aligned_targets))
+                
+                # Check OOF IC threshold
+                if oof_ic < self.min_oof_ic:
+                    tprint_warning(f"⚠️ Feature {feature_name} failed OOF IC threshold: {oof_ic:.4f}")
+                    continue
+                
+                validated_features.append(feature_name)
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Economic validation failed for {feature_name}: {e}")
+                continue
+        
+        tprint_info(f"💰 Economic validation: {len(selected_features)} -> {len(validated_features)} features")
+        return validated_features
+    
     def select_features(self, features: pd.DataFrame, 
                        targets: pd.Series,
                        cv_splits: Optional[List[Any]] = None,
                        use_evolutionary: bool = None) -> MultiObjectiveResult:
         """
-        Select features using enhanced multi-objective optimization.
+        Select features using enhanced multi-objective optimization with battle-tested best practices.
         
         Args:
             features: Feature DataFrame
@@ -656,25 +865,65 @@ class MultiObjectiveFeatureSelector:
         Returns:
             MultiObjectiveResult with selected features and objective values
         """
-        tprint_info(f"Starting enhanced multi-objective feature selection for {features.shape[1]} features")
+        tprint_info(f"Starting battle-tested multi-objective feature selection for {features.shape[1]} features")
         
-        # Set CV splits for stability objective
+        # Step 1: Apply fail-fast gates
+        tprint_info("🚪 Step 1: Applying fail-fast validation gates")
+        if not self._apply_fail_fast_gates(features, targets):
+            return MultiObjectiveResult(
+                selected_features=[],
+                objective_values={},
+                pareto_front=[],
+                optimization_metadata={'error': 'Failed fail-fast validation gates'},
+                is_valid=False
+            )
+        
+        # Step 2: Stability selection with bootstrapped time blocks
+        if self.enable_stability_selection:
+            tprint_info("🔄 Step 2: Stability selection with bootstrapped time blocks")
+            stability_scores = self._stability_selection(features, targets)
+        else:
+            stability_scores = {}
+        
+        # Step 3: Set CV splits for stability objective
         for obj in self.objectives:
             if isinstance(obj, StabilityObjective):
                 obj.cv_splits = cv_splits
         
-        # Choose optimization method
+        # Step 4: Choose optimization method
         use_evo = use_evolutionary if use_evolutionary is not None else self.use_evolutionary
         
         if use_evo and self.use_evolutionary:
-            tprint_info("🧬 Using evolutionary algorithm for feature selection")
-            return self._evolutionary_feature_selection(features, targets, cv_splits)
+            tprint_info("🧬 Step 4: Using evolutionary algorithm for feature selection")
+            result = self._evolutionary_feature_selection(features, targets, cv_splits)
         elif self.use_ml_commons:
-            tprint_info("🎯 Using ML Commons Pareto optimization for feature selection")
-            return self._pareto_feature_selection(features, targets, cv_splits)
+            tprint_info("🎯 Step 4: Using ML Commons Pareto optimization for feature selection")
+            result = self._pareto_feature_selection(features, targets, cv_splits)
         else:
-            tprint_info("📊 Using standard multi-objective optimization")
-            return self._standard_feature_selection(features, targets, cv_splits)
+            tprint_info("📊 Step 4: Using standard multi-objective optimization")
+            result = self._standard_feature_selection(features, targets, cv_splits)
+        
+        # Step 5: Redundancy pruning with hierarchical clustering
+        if self.enable_redundancy_pruning and result.is_valid:
+            tprint_info("🌳 Step 5: Redundancy pruning with hierarchical clustering")
+            pruned_features = self._redundancy_pruning(features, stability_scores)
+            # Filter result to only include pruned features
+            result.selected_features = [f for f in result.selected_features if f in pruned_features]
+        
+        # Step 6: Economic validation
+        if self.enable_economic_validation and result.is_valid:
+            tprint_info("💰 Step 6: Economic validation")
+            validated_features = self._economic_validation(features, targets, result.selected_features)
+            result.selected_features = validated_features
+        
+        # Step 7: Final validation
+        if not result.selected_features:
+            tprint_warning("⚠️ No features passed all validation steps")
+            result.is_valid = False
+            result.optimization_metadata['error'] = 'No features passed validation'
+        
+        tprint_success(f"✅ Battle-tested feature selection completed: {len(result.selected_features)} features selected")
+        return result
     
     def _evolutionary_feature_selection(self, features: pd.DataFrame, 
                                       targets: pd.Series,

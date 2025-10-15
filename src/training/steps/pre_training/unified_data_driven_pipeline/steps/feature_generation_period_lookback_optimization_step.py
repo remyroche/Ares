@@ -509,11 +509,17 @@ if __name__ == "__main__":
         'volume': np.random.randint(1000, 10000, 1000)
     }, index=dates)
     
-    # Create sample targets (in real usage, these would come from labeling system)
-    targets = pd.Series(np.random.randn(1000), index=dates)
-    
-    # Run optimization
+    # Generate targets using the labeling system
     async def main():
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import ConsolidatedPipelineRunner
+        
+        # Create pipeline runner to generate targets
+        runner = ConsolidatedPipelineRunner()
+        
+        # Generate targets using the labeling system
+        targets = runner._generate_targets(data, "ETHUSDT", "15m", "longs")
+        
+        # Run optimization with real targets
         config = PeriodLookbackOptimizationConfig()
         result = await run_period_lookback_optimization_step(data, targets, config)
         print(f"Optimization result: {result['success']}")

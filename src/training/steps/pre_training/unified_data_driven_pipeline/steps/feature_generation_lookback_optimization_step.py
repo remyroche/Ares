@@ -136,11 +136,17 @@ async def handle_feature_generation_lookback_optimization_step(
         'volume': np.random.randint(1000, 10000, 1000)
     })
     
+    # Generate targets using the labeling system
+    from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import ConsolidatedPipelineRunner
+    runner = ConsolidatedPipelineRunner()
+    targets = runner._generate_targets(sample_data, symbol, timeframe, direction)
+    
     # Create step instance and execute
     step = FeatureGenerationLookbackOptimizationStep()
     
     return await step.execute(
         data=sample_data,
+        targets=targets,
         symbol=symbol,
         timeframe=timeframe,
         direction=direction,

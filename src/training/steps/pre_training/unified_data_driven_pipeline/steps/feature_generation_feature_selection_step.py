@@ -42,6 +42,7 @@ class FeatureGenerationFeatureSelectionStep:
     
     async def execute(self,
                      data: pd.DataFrame,
+                     targets: pd.Series,
                      symbol: str = "ETHUSDT",
                      timeframe: str = "15m",
                      direction: str = "longs",
@@ -59,6 +60,7 @@ class FeatureGenerationFeatureSelectionStep:
             # Call the consolidated pipeline runner
             result = await run_feature_selection_step(
                 data=data,
+                targets=targets,
                 symbol=symbol,
                 timeframe=timeframe,
                 direction=direction,
@@ -139,11 +141,17 @@ async def handle_feature_generation_feature_selection_step(
         'volume': np.random.randint(1000, 10000, 1000)
     })
     
+    # Generate targets using the labeling system
+    from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import ConsolidatedPipelineRunner
+    runner = ConsolidatedPipelineRunner()
+    targets = runner._generate_targets(sample_data, symbol, timeframe, direction)
+    
     # Create step instance and execute
     step = FeatureGenerationFeatureSelectionStep()
     
     return await step.execute(
         data=sample_data,
+        targets=targets,
         symbol=symbol,
         timeframe=timeframe,
         direction=direction,

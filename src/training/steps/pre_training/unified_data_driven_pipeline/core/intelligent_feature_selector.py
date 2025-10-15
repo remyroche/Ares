@@ -47,7 +47,12 @@ ROBUST_STABILITY_AVAILABLE = True
 
 @dataclass
 class FeatureScore:
-    """Score and metadata for a feature."""
+    """
+    Score and metadata for a feature.
+    
+    Represents the evaluation results for a single feature including
+    quality metrics, performance scores, and metadata.
+    """
     feature_name: str
     category: str
     aspect_type: str
@@ -56,12 +61,89 @@ class FeatureScore:
     correlation_with_target: float
     information_content: float
     uniqueness_score: float
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
+    
+    def __post_init__(self) -> None:
+        """Validate feature score after initialization."""
+        self._validate_score()
+    
+    def _validate_score(self) -> None:
+        """
+        Validate the feature score data.
+        
+        Raises:
+            ValueError: If score data is invalid
+        """
+        try:
+            tprint_debug(f"🔍 Validating FeatureScore for {self.feature_name}")
+            
+            # Validate feature name
+            if not isinstance(self.feature_name, str) or not self.feature_name.strip():
+                raise ValueError(f"Invalid feature_name: '{self.feature_name}'. Must be non-empty string.")
+            
+            # Validate category
+            if not isinstance(self.category, str) or not self.category.strip():
+                raise ValueError(f"Invalid category: '{self.category}'. Must be non-empty string.")
+            
+            # Validate aspect type
+            if not isinstance(self.aspect_type, str) or not self.aspect_type.strip():
+                raise ValueError(f"Invalid aspect_type: '{self.aspect_type}'. Must be non-empty string.")
+            
+            # Validate numeric scores
+            if not isinstance(self.score, (int, float)) or not np.isfinite(self.score):
+                raise ValueError(f"Invalid score: {self.score}. Must be finite number.")
+            
+            if not isinstance(self.variance, (int, float)) or self.variance < 0:
+                raise ValueError(f"Invalid variance: {self.variance}. Must be non-negative number.")
+            
+            if not isinstance(self.correlation_with_target, (int, float)) or not -1 <= self.correlation_with_target <= 1:
+                raise ValueError(f"Invalid correlation_with_target: {self.correlation_with_target}. Must be between -1 and 1.")
+            
+            if not isinstance(self.information_content, (int, float)) or self.information_content < 0:
+                raise ValueError(f"Invalid information_content: {self.information_content}. Must be non-negative number.")
+            
+            if not isinstance(self.uniqueness_score, (int, float)) or not 0 <= self.uniqueness_score <= 1:
+                raise ValueError(f"Invalid uniqueness_score: {self.uniqueness_score}. Must be between 0 and 1.")
+            
+            tprint_debug(f"✅ FeatureScore validation passed for {self.feature_name}")
+            
+        except ValueError as e:
+            error_msg = f"FeatureScore validation failed for {self.feature_name}: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error validating FeatureScore for {self.feature_name}: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert FeatureScore to dictionary.
+        
+        Returns:
+            Dictionary representation of the feature score
+        """
+        return {
+            'feature_name': self.feature_name,
+            'category': self.category,
+            'aspect_type': self.aspect_type,
+            'score': self.score,
+            'variance': self.variance,
+            'correlation_with_target': self.correlation_with_target,
+            'information_content': self.information_content,
+            'uniqueness_score': self.uniqueness_score,
+            'metadata': self.metadata or {}
+        }
 
 
 @dataclass
 class FeatureSelectionConfig:
-    """Configuration for intelligent feature selection."""
+    """
+    Configuration for intelligent feature selection.
+    
+    Provides comprehensive configuration for feature pre-selection from
+    a large feature bank with category diversity enforcement and quality thresholds.
+    """
     
     # Target selection parameters
     target_feature_count: int = 40
@@ -79,9 +161,10 @@ class FeatureSelectionConfig:
     enable_vectorbt: bool = True
     
     # Category weights for selection
-    category_weights: Dict[str, float] = None
+    category_weights: Optional[Dict[str, float]] = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Initialize category weights and validate configuration."""
         if self.category_weights is None:
             self.category_weights = {
                 'momentum': 1.0,
@@ -125,7 +208,111 @@ class FeatureSelectionResult:
     cache_misses: int = 0
     
     # Metadata
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
+    
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        self._validate_config()
+    
+    def _validate_config(self) -> None:
+        """
+        Validate the feature selection configuration.
+        
+        Raises:
+            ValueError: If configuration values are invalid
+        """
+        try:
+            tprint_debug("🔍 Validating FeatureSelectionConfig")
+            
+            # Validate target feature count
+            if not isinstance(self.target_feature_count, int) or self.target_feature_count <= 0:
+                raise ValueError(f"Invalid target_feature_count: {self.target_feature_count}. Must be positive integer.")
+            
+            # Validate category constraints
+            if not isinstance(self.min_features_per_category, int) or self.min_features_per_category < 0:
+                raise ValueError(f"Invalid min_features_per_category: {self.min_features_per_category}. Must be non-negative integer.")
+            
+            if not isinstance(self.max_features_per_category, int) or self.max_features_per_category <= 0:
+                raise ValueError(f"Invalid max_features_per_category: {self.max_features_per_category}. Must be positive integer.")
+            
+            if self.min_features_per_category > self.max_features_per_category:
+                raise ValueError(f"min_features_per_category ({self.min_features_per_category}) > max_features_per_category ({self.max_features_per_category})")
+            
+            # Validate quality thresholds
+            if not isinstance(self.min_variance, (int, float)) or self.min_variance < 0:
+                raise ValueError(f"Invalid min_variance: {self.min_variance}. Must be non-negative number.")
+            
+            if not isinstance(self.max_correlation_threshold, (int, float)) or not 0 <= self.max_correlation_threshold <= 1:
+                raise ValueError(f"Invalid max_correlation_threshold: {self.max_correlation_threshold}. Must be between 0 and 1.")
+            
+            if not isinstance(self.min_information_content, (int, float)) or self.min_information_content < 0:
+                raise ValueError(f"Invalid min_information_content: {self.min_information_content}. Must be non-negative number.")
+            
+            # Validate performance settings
+            if not isinstance(self.max_workers, int) or self.max_workers <= 0:
+                raise ValueError(f"Invalid max_workers: {self.max_workers}. Must be positive integer.")
+            
+            # Validate category weights
+            if self.category_weights is not None:
+                if not isinstance(self.category_weights, dict):
+                    raise ValueError(f"Invalid category_weights: {type(self.category_weights)}. Must be dictionary.")
+                
+                for category, weight in self.category_weights.items():
+                    if not isinstance(category, str):
+                        raise ValueError(f"Invalid category key: {category}. Must be string.")
+                    if not isinstance(weight, (int, float)) or weight < 0:
+                        raise ValueError(f"Invalid weight for category '{category}': {weight}. Must be non-negative number.")
+            
+            tprint_success("✅ FeatureSelectionConfig validation passed")
+            
+        except ValueError as e:
+            error_msg = f"FeatureSelectionConfig validation failed: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error validating FeatureSelectionConfig: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def get_category_weight(self, category: str) -> float:
+        """
+        Get weight for a specific category.
+        
+        Args:
+            category: Category name
+            
+        Returns:
+            Weight for the category
+            
+        Raises:
+            KeyError: If category is not found
+        """
+        if self.category_weights is None:
+            raise KeyError("Category weights not initialized")
+        
+        if category not in self.category_weights:
+            raise KeyError(f"Category '{category}' not found in category_weights")
+        
+        return self.category_weights[category]
+    
+    def set_category_weight(self, category: str, weight: float) -> None:
+        """
+        Set weight for a specific category.
+        
+        Args:
+            category: Category name
+            weight: Weight value
+            
+        Raises:
+            ValueError: If weight is invalid
+        """
+        if not isinstance(weight, (int, float)) or weight < 0:
+            raise ValueError(f"Invalid weight: {weight}. Must be non-negative number.")
+        
+        if self.category_weights is None:
+            self.category_weights = {}
+        
+        self.category_weights[category] = weight
 
 
 class IntelligentFeatureSelector:
@@ -139,15 +326,42 @@ class IntelligentFeatureSelector:
     - Parallel processing for large feature banks
     """
     
-    def __init__(self, config: Optional[FeatureSelectionConfig] = None):
+    def __init__(self, config: Optional[FeatureSelectionConfig] = None) -> None:
         """
         Initialize the intelligent feature selector.
         
         Args:
-            config: Configuration for feature selection
+            config: Configuration for feature selection. If None, uses default config.
+            
+        Raises:
+            ValueError: If config is invalid
+            RuntimeError: If initialization fails
         """
-        self.config = config or FeatureSelectionConfig()
-        self.logger = logger
+        try:
+            tprint_step("🧠 Initializing IntelligentFeatureSelector")
+            
+            if config is None:
+                tprint_info("📋 Using default FeatureSelectionConfig")
+                self.config = FeatureSelectionConfig()
+            else:
+                tprint_info("📋 Using provided FeatureSelectionConfig")
+                self.config = config
+            
+            # Validate configuration
+            if not isinstance(self.config, FeatureSelectionConfig):
+                raise ValueError(f"Invalid config type: {type(self.config)}. Expected FeatureSelectionConfig.")
+            
+            self.logger = logger
+            tprint_success("✅ IntelligentFeatureSelector initialized successfully")
+            
+        except ValueError as e:
+            error_msg = f"Invalid configuration for IntelligentFeatureSelector: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Failed to initialize IntelligentFeatureSelector: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
         
         # Performance tracking
         self.performance_stats = {

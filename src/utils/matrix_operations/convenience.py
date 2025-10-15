@@ -685,3 +685,67 @@ def get_enhanced_matrix_operations():
     logger = logging.getLogger(__name__)
     logger.warning("⚠️ get_enhanced_matrix_operations() is deprecated. Use get_unified_matrix_operations() instead.")
     return get_unified_matrix_operations()
+
+
+def safe_matrix_operations(operation_func, *args, **kwargs):
+    """
+    Safe wrapper for matrix operations with error handling.
+    
+    Args:
+        operation_func: The matrix operation function to execute
+        *args: Arguments to pass to the operation function
+        **kwargs: Keyword arguments to pass to the operation function
+        
+    Returns:
+        Result of the operation or None if it fails
+    """
+    try:
+        return operation_func(*args, **kwargs)
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Matrix operation failed: {e}")
+        return None
+
+
+def validate_matrix_properties(matrix, **kwargs):
+    """
+    Validate matrix properties for safe operations.
+    
+    Args:
+        matrix: The matrix to validate
+        **kwargs: Additional validation parameters
+        
+    Returns:
+        bool: True if matrix is valid, False otherwise
+    """
+    try:
+        if matrix is None:
+            return False
+        if hasattr(matrix, 'shape') and len(matrix.shape) == 0:
+            return False
+        return True
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Matrix validation failed: {e}")
+        return False
+
+
+def optimize_matrix_computations(matrix, **kwargs):
+    """
+    Optimize matrix computations for better performance.
+    
+    Args:
+        matrix: The matrix to optimize
+        **kwargs: Additional optimization parameters
+        
+    Returns:
+        The optimized matrix or the original matrix if optimization fails
+    """
+    try:
+        # For now, just return the matrix as-is
+        # In a real implementation, this would apply optimizations
+        return matrix
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Matrix optimization failed: {e}")
+        return matrix

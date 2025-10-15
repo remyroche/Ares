@@ -157,6 +157,11 @@ try:
         # Backwards compatibility
         m1_matrix_multiply,
         
+        # Safe operations
+        safe_matrix_operations,
+        validate_matrix_properties,
+        optimize_matrix_computations,
+        
         # Trading indicators
         compute_trading_indicators,
         compute_moving_averages,
@@ -356,6 +361,9 @@ if CONVENIENCE_FUNCTIONS_AVAILABLE:
         "record_batch_performance",
         "get_batch_optimization_stats",
         "m1_matrix_multiply",  # Add backwards compatibility function
+        "safe_matrix_operations",  # Safe wrapper for matrix operations
+        "validate_matrix_properties",  # Matrix validation function
+        "optimize_matrix_computations",  # Matrix optimization function
     ])
 
 # Add trading indicators and hardware optimization to __all__ if available

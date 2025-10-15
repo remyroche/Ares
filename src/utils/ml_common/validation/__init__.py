@@ -33,6 +33,11 @@ TemporalCrossValidator = UnifiedCrossValidator
 CrossValidator = UnifiedCrossValidator
 
 
+def cross_validation_utils():
+    """Get cross validation utilities instance."""
+    return CrossValidationUtilities()
+
+
 class CrossValidationUtilities:  # minimal shim
     """Backwards-compatible utilities wrapper.
 

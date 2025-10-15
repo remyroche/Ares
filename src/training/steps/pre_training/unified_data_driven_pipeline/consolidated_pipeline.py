@@ -3548,13 +3548,13 @@ class UnifiedDataDrivenPipeline:
             all_interactions.extend(lgb_interactions)
             tprint_success(f"✅ Generated {len(lgb_interactions)} LightGBM interactions")
             
-        # 6. Feature selection to keep only top 100 features
-        tprint_info("🔧 Performing feature selection (target: 100 features)")
-        selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
-        tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 100)")
-            
+            # 6. Feature selection to keep only top 100 features
+            tprint_info("🔧 Performing feature selection (target: 100 features)")
+            selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
+            tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 100)")
+                
             return selected_interactions
-            
+                
         except Exception as e:
             error_msg = f"Enhanced interaction generation with ML failed: {e}"
             tprint_error(f"❌ {error_msg}")

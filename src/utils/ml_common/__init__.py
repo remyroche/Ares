@@ -126,16 +126,6 @@ try:
     from .matrix_cross_validation import (
         MatrixCrossValidator, matrix_cross_validate
     )
-    # Alias for backward compatibility
-    cross_validation_utils = matrix_cross_validate
-    
-    # Import lookahead bias detector
-    from ..lookahead_bias_detector import LookaheadBiasDetector
-    lookahead_bias_detector = LookaheadBiasDetector
-    
-    # Import hyperparameter optimization
-    from .optimization import HyperparameterOptimization
-    hyperparameter_optimization = HyperparameterOptimization
     from .vectorized_backtesting import (
         VectorizedBacktestingEngine, VectorizedBacktestConfig, VectorizedBacktestResults,
         BacktestMode, run_vectorized_backtest

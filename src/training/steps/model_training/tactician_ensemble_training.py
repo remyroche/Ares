@@ -187,9 +187,9 @@ except ImportError as e:
     raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
 
 try:
-    from src.utils.ml_common import (
-        cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
-    )
+    from src.utils.ml_common.matrix_cross_validation import matrix_cross_validate as cross_validation_utils
+    from src.utils.lookahead_bias_detector import LookaheadBiasDetector as lookahead_bias_detector
+    from src.utils.ml_common.optimization import HyperparameterOptimization as hyperparameter_optimization
     tprint_info("✅ ML common utilities loaded for ensemble")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: ML common utilities are required but not available: {e}")

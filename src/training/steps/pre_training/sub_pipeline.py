@@ -4127,8 +4127,30 @@ class PreTrainingSubPipeline:
             if market_data is None or market_data.empty:
                 raise ValueError("Market data is required for unified_data_driven_pipeline but none was loaded")
 
-            # Execute pipeline
-            pipeline_result = await pipeline.run_pipeline(market_data, pipeline_state)
+            # Get labels from previous pipeline steps (analyst_profit_labeler or tactician_entry_labeler)
+            labels = None
+            
+            # Look for labels in various possible artifact structures
+            if 'multi_horizon_labeling_result' in pipeline_state:
+                labeling_result = pipeline_state['multi_horizon_labeling_result']
+                if 'labeled_data' in labeling_result and 'target' in labeling_result['labeled_data'].columns:
+                    labels = labeling_result['labeled_data']['target']
+                    tprint_info(f"✅ Using {len(labels)} labels from multi_horizon_labeling_result")
+                elif 'labels' in labeling_result and isinstance(labeling_result['labels'], pd.DataFrame):
+                    # Extract target column from labels DataFrame
+                    if 'target' in labeling_result['labels'].columns:
+                        labels = labeling_result['labels']['target']
+                        tprint_info(f"✅ Using {len(labels)} labels from multi_horizon_labeling_result.labels")
+                    else:
+                        # Use the first column as target if no 'target' column
+                        labels = labeling_result['labels'].iloc[:, 0]
+                        tprint_info(f"✅ Using {len(labels)} labels from multi_horizon_labeling_result.labels (first column)")
+            
+            if labels is None:
+                raise ValueError("No labels found from previous pipeline steps. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before unified_data_driven_pipeline.")
+            
+            # Execute pipeline with labels
+            pipeline_result = await pipeline.process(market_data, targets=labels, pipeline_state=pipeline_state)
             
             # Process results
             if pipeline_result.success:

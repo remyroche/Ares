@@ -80,6 +80,7 @@ class LauncherMode(Enum):
     BLANK = "blank"        # Minimal execution for testing
     STAGE = "stage"        # Execute specific stage
     SUB_PIPELINE = "sub_pipeline"  # Execute specific sub-pipeline
+    SEQUENTIAL = "sequential"  # Execute multiple sub-pipelines sequentially
 
 class ExecutionModeType(Enum):
     """Execution mode types for stage/sub-pipeline specific execution."""
@@ -94,6 +95,55 @@ class AresLauncher:
     Provides comprehensive control over training pipeline execution with
     granular sub-pipeline management and real-time monitoring.
     """
+    
+    # Feature Generation Pipeline Steps in execution order
+    FEATURE_GENERATION_STEPS = [
+        {
+            "name": "Data Validation",
+            "sub_pipeline": "feature_generation_data_validation_step",
+            "description": "Validates data quality and integrity"
+        },
+        {
+            "name": "Labeling Integration",
+            "sub_pipeline": "feature_generation_labeling_integration_step", 
+            "description": "Integrates labeling for feature generation"
+        },
+        {
+            "name": "Feature Generation",
+            "sub_pipeline": "feature_generation_feature_generation_step",
+            "description": "Generates features from raw data"
+        },
+        {
+            "name": "Feature Selection",
+            "sub_pipeline": "feature_generation_feature_selection_step",
+            "description": "Selects optimal features"
+        },
+        {
+            "name": "Period + Lookback Optimization",
+            "sub_pipeline": "feature_generation_period_lookback_optimization_step",
+            "description": "Optimizes period and lookback parameters"
+        },
+        {
+            "name": "Interaction Generation",
+            "sub_pipeline": "feature_generation_interaction_generation_step",
+            "description": "Generates feature interactions"
+        },
+        {
+            "name": "Vectorization",
+            "sub_pipeline": "feature_generation_vectorization_step",
+            "description": "Vectorizes features for ML models"
+        },
+        {
+            "name": "Labeling Integration (Final)",
+            "sub_pipeline": "feature_generation_labeling_integration_step",
+            "description": "Final labeling integration step"
+        },
+        {
+            "name": "Final Validation",
+            "sub_pipeline": "feature_generation_final_validation_step",
+            "description": "Final validation of generated features"
+        }
+    ]
     
     def __init__(self):
         """Initialize the Ares launcher."""
@@ -522,7 +572,10 @@ class AresLauncher:
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,
         execution_mode: ExecutionModeType = ExecutionModeType.FULL,
-        custom_config: Optional[Dict[str, Any]] = None
+        custom_config: Optional[Dict[str, Any]] = None,
+        pipeline_type: str = "feature_generation",
+        start_from_step: int = 1,
+        stop_at_step: Optional[int] = None
     ) -> MainPipelineResult:
         """
         Execute the training pipeline with granular control.
@@ -576,6 +629,9 @@ class AresLauncher:
         elif mode == LauncherMode.STAGE and stage:
             tprint(f"🚀 [EXECUTE_PIPELINE] Executing stage: {stage.value}")
             return await self._execute_stage(stage, config)
+        elif mode == LauncherMode.SEQUENTIAL:
+            tprint(f"🚀 [EXECUTE_PIPELINE] Executing sequential pipeline")
+            return await self._execute_sequential_pipeline(pipeline_type, config, start_from_step, stop_at_step)
         else:
             tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
             return await self._execute_full_pipeline(config)
@@ -683,6 +739,10 @@ class AresLauncher:
         elif mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
             tprint(f"⚙️ [CREATE_CONFIG] Creating SUB_PIPELINE configuration for: {sub_pipeline}")
             config = self._create_sub_pipeline_config(sub_pipeline, base_config, execution_mode, direction)
+        elif mode == LauncherMode.SEQUENTIAL:
+            tprint(f"⚙️ [CREATE_CONFIG] Creating SEQUENTIAL pipeline configuration")
+            # Use full configuration for sequential mode to ensure all parameters are available
+            config = get_full_pipeline_config(**filtered_config)
         else:
             # Default to full configuration
             tprint("⚙️ [CREATE_CONFIG] Using DEFAULT (FULL) pipeline configuration")
@@ -1247,6 +1307,155 @@ class AresLauncher:
         
         return result
     
+    async def _execute_sequential_pipeline(self, pipeline_type: str, config: MainPipelineConfig, start_from_step: int = 1, stop_at_step: Optional[int] = None) -> MainPipelineResult:
+        """Execute multiple sub-pipelines sequentially with parameter consistency."""
+        tprint(f"🚀 [SEQUENTIAL] Starting sequential pipeline execution: {pipeline_type}")
+        
+        if pipeline_type == "feature_generation":
+            all_steps = self.FEATURE_GENERATION_STEPS
+        else:
+            raise ValueError(f"Unknown pipeline type: {pipeline_type}")
+        
+        # Filter steps based on start/stop parameters
+        steps = [
+            step for i, step in enumerate(all_steps, 1) 
+            if i >= start_from_step and (stop_at_step is None or i <= stop_at_step)
+        ]
+        
+        if not steps:
+            raise ValueError(f"No steps to execute with start_from_step={start_from_step}, stop_at_step={stop_at_step}")
+        
+        # Create result container
+        pipeline_id = f"sequential_{pipeline_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        start_time = datetime.now()
+        
+        result = MainPipelineResult(
+            pipeline_id=pipeline_id,
+            status=PipelineStatus.RUNNING,
+            start_time=start_time,
+            end_time=start_time,
+            duration_seconds=0.0
+        )
+        
+        successful_steps = 0
+        failed_steps = 0
+        total_execution_time = 0.0
+        
+        tprint(f"📋 [SEQUENTIAL] Executing {len(steps)} steps sequentially")
+        tprint(f"   Start from step: {start_from_step}")
+        if stop_at_step:
+            tprint(f"   Stop at step: {stop_at_step}")
+        else:
+            tprint(f"   Stop at step: {len(all_steps)} (all steps)")
+        tprint(f"   Symbol: {config.symbol}")
+        tprint(f"   Execution Mode: {config.execution_mode}")
+        tprint(f"   Exchange: {config.exchange}")
+        tprint(f"   Timeframe: {config.timeframe}")
+        tprint(f"   Direction: {config.direction}")
+        
+        for i, step in enumerate(steps, 1):
+            step_start_time = datetime.now()
+            tprint(f"\n{'='*80}")
+            tprint(f"🔄 [SEQUENTIAL] Step {i}/{len(steps)}: {step['name']}")
+            tprint(f"   Sub-pipeline: {step['sub_pipeline']}")
+            tprint(f"   Description: {step['description']}")
+            tprint(f"{'='*80}")
+            
+            try:
+                # Execute the sub-pipeline step
+                step_result = await self._execute_sub_pipeline(step['sub_pipeline'], config)
+                step_duration = (datetime.now() - step_start_time).total_seconds()
+                total_execution_time += step_duration
+                
+                if step_result.status == PipelineStatus.COMPLETED:
+                    successful_steps += 1
+                    tprint(f"✅ [SEQUENTIAL] Step {i} completed successfully in {step_duration:.2f}s")
+                    
+                    # Add step result to overall result
+                    if not hasattr(result, 'step_results'):
+                        result.step_results = []
+                    result.step_results.append({
+                        'step_name': step['name'],
+                        'sub_pipeline': step['sub_pipeline'],
+                        'success': True,
+                        'execution_time': step_duration,
+                        'result': step_result
+                    })
+                    
+                    # Check if we should continue to next step
+                    if i < len(steps):
+                        next_step = steps[i]
+                        tprint(f"🔄 [SEQUENTIAL] Proceeding to next step: {next_step['name']}")
+                else:
+                    failed_steps += 1
+                    error_msg = step_result.error_message or "Unknown error"
+                    tprint(f"❌ [SEQUENTIAL] Step {i} failed: {error_msg}")
+                    
+                    # Add failed step result
+                    if not hasattr(result, 'step_results'):
+                        result.step_results = []
+                    result.step_results.append({
+                        'step_name': step['name'],
+                        'sub_pipeline': step['sub_pipeline'],
+                        'success': False,
+                        'execution_time': step_duration,
+                        'error_message': error_msg,
+                        'result': step_result
+                    })
+                    
+                    tprint(f"🛑 [SEQUENTIAL] Pipeline execution stopped due to step failure")
+                    break
+                    
+            except Exception as e:
+                step_duration = (datetime.now() - step_start_time).total_seconds()
+                total_execution_time += step_duration
+                failed_steps += 1
+                error_msg = f"Exception during step execution: {str(e)}"
+                tprint(f"❌ [SEQUENTIAL] Step {i} failed with exception: {error_msg}")
+                
+                # Add failed step result
+                if not hasattr(result, 'step_results'):
+                    result.step_results = []
+                result.step_results.append({
+                    'step_name': step['name'],
+                    'sub_pipeline': step['sub_pipeline'],
+                    'success': False,
+                    'execution_time': step_duration,
+                    'error_message': error_msg
+                })
+                
+                tprint(f"🛑 [SEQUENTIAL] Pipeline execution stopped due to exception")
+                break
+        
+        # Finalize result
+        end_time = datetime.now()
+        result.end_time = end_time
+        result.duration_seconds = total_execution_time
+        
+        if failed_steps == 0:
+            result.status = PipelineStatus.COMPLETED
+            tprint(f"🎉 [SEQUENTIAL] All {successful_steps} steps completed successfully!")
+        else:
+            result.status = PipelineStatus.FAILED
+            result.error_message = f"Pipeline failed: {failed_steps} steps failed, {successful_steps} succeeded"
+            tprint(f"💥 [SEQUENTIAL] Pipeline failed: {failed_steps} steps failed, {successful_steps} succeeded")
+        
+        # Summary
+        tprint(f"\n{'='*80}")
+        tprint(f"📊 [SEQUENTIAL] PIPELINE EXECUTION SUMMARY")
+        tprint(f"{'='*80}")
+        tprint(f"   Total steps: {len(steps)}")
+        tprint(f"   Successful: {successful_steps}")
+        tprint(f"   Failed: {failed_steps}")
+        tprint(f"   Total execution time: {total_execution_time:.2f}s")
+        tprint(f"   Status: {result.status.value}")
+        
+        # Store execution
+        self.current_execution = result
+        self.execution_history.append(result)
+        
+        return result
+    
     async def _create_mid_function_artifacts(self, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for full pipeline execution."""
         self.logger.info("🔧 Creating mid-function artifacts for full pipeline")
@@ -1624,6 +1833,16 @@ class AresLauncher:
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all executions."""
         return self.pipeline.get_execution_summary()
+    
+    def list_feature_generation_steps(self) -> None:
+        """List all available feature generation pipeline steps."""
+        tprint("📋 [FEATURE_GENERATION] Available Pipeline Steps:")
+        tprint("=" * 80)
+        for i, step in enumerate(self.FEATURE_GENERATION_STEPS, 1):
+            tprint(f"   {i}. {step['name']}")
+            tprint(f"      Sub-pipeline: {step['sub_pipeline']}")
+            tprint(f"      Description: {step['description']}")
+            tprint()
 
 # CLI Interface
 def create_cli_parser() -> argparse.ArgumentParser:
@@ -1715,7 +1934,7 @@ Examples:
     
     parser.add_argument(
         '--mode', 
-        choices=['full', 'light', 'blank', 'stage', 'sub_pipeline'],
+        choices=['full', 'light', 'blank', 'stage', 'sub_pipeline', 'sequential'],
         default='full',
         help='Launcher execution mode (default: full)'
     )
@@ -1872,6 +2091,26 @@ Examples:
     )
     
     parser.add_argument(
+        '--pipeline-type',
+        choices=['feature_generation'],
+        default='feature_generation',
+        help='Type of pipeline to execute sequentially (for sequential mode). Default: feature_generation'
+    )
+    
+    parser.add_argument(
+        '--start-from-step',
+        type=int,
+        default=1,
+        help='Start sequential execution from this step number (1-based). Default: 1'
+    )
+    
+    parser.add_argument(
+        '--stop-at-step',
+        type=int,
+        help='Stop sequential execution at this step number (1-based). If not specified, runs all steps.'
+    )
+    
+    parser.add_argument(
         '--config',
         help='Path to custom configuration file (JSON)'
     )
@@ -1885,6 +2124,12 @@ Examples:
     parser.add_argument(
         '--list-sub-pipelines',
         help='List available sub-pipelines for a stage. Use with --stage to see sub-pipelines for that stage.'
+    )
+    
+    parser.add_argument(
+        '--list-feature-generation-steps',
+        action='store_true',
+        help='List all available feature generation pipeline steps for sequential execution.'
     )
     
     return parser
@@ -1940,6 +2185,12 @@ async def main():
         tprint("✅ [MAIN] Sub-pipeline listing completed")
         return
     
+    if args.list_feature_generation_steps:
+        tprint("📋 [MAIN] Listing available feature generation pipeline steps...")
+        launcher.list_feature_generation_steps()
+        tprint("✅ [MAIN] Feature generation steps listing completed")
+        return
+    
     # Load custom configuration if provided
     custom_config = None
     if args.config:
@@ -1957,7 +2208,8 @@ async def main():
         'light': LauncherMode.LIGHT,
         'blank': LauncherMode.BLANK,
         'stage': LauncherMode.STAGE,
-        'sub_pipeline': LauncherMode.SUB_PIPELINE
+        'sub_pipeline': LauncherMode.SUB_PIPELINE,
+        'sequential': LauncherMode.SEQUENTIAL
     }
     mode = mode_map[args.mode]
 
@@ -2010,7 +2262,10 @@ async def main():
             stage=stage,
             sub_pipeline=selected_sub_pipeline,
             execution_mode=execution_mode,
-            custom_config=custom_config
+            custom_config=custom_config,
+            pipeline_type=args.pipeline_type if hasattr(args, 'pipeline_type') else 'feature_generation',
+            start_from_step=args.start_from_step if hasattr(args, 'start_from_step') else 1,
+            stop_at_step=args.stop_at_step if hasattr(args, 'stop_at_step') else None
         )
         tprint("✅ [MAIN] Pipeline execution completed successfully")
         

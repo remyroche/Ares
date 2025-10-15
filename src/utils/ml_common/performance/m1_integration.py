@@ -29,17 +29,21 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-# M1 hardware imports
+# M1 hardware imports - use existing hardware infrastructure
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    from src.utils.hardware import (
+        get_unified_hardware_manager, get_advanced_cpu_optimizer, 
+        get_enhanced_gpu_manager, get_advanced_memory_optimizer,
+        get_adaptive_optimization_engine, WorkloadType, OptimizationLevel
+    )
     M1_HARDWARE_AVAILABLE = True
 except ImportError:
     M1_HARDWARE_AVAILABLE = False
-    get_m1_memory_optimizer = None
-    get_m1_cpu_optimizer = None
-    get_m1_gpu_manager = None
+    get_unified_hardware_manager = None
+    get_advanced_cpu_optimizer = None
+    get_enhanced_gpu_manager = None
+    get_advanced_memory_optimizer = None
+    get_adaptive_optimization_engine = None
 
 # Import performance modules
 try:
@@ -100,30 +104,23 @@ class M1PerformanceConfig:
     operation_timeout: float = 30.0
 
 class M1PerformanceOptimizer:
-    """M1 performance optimizer with hardware-specific optimizations."""
+    """M1 performance optimizer leveraging existing hardware infrastructure."""
     
     def __init__(self, config: Optional[M1PerformanceConfig] = None):
         self.config = config or M1PerformanceConfig()
         self.logger = logger.getChild('M1PerformanceOptimizer')
         
-        # Initialize M1 hardware optimizers
-        self._memory_optimizer = None
-        self._cpu_optimizer = None
-        self._gpu_manager = None
+        # Use existing unified hardware manager instead of individual components
+        self._hardware_manager = None
+        self._adaptive_engine = None
         
         if M1_HARDWARE_AVAILABLE and self.config.enable_m1_optimizations:
-            if self.config.enable_memory_optimization:
-                self._memory_optimizer = get_m1_memory_optimizer(
-                    memory_limit_gb=self.config.memory_limit_gb
-                )
+            # Use the existing unified hardware manager
+            self._hardware_manager = get_unified_hardware_manager()
             
-            if self.config.enable_cpu_optimization:
-                self._cpu_optimizer = get_m1_cpu_optimizer()
-                if self.config.enable_conservative_mode:
-                    self._cpu_optimizer.set_conservative_mode()
-            
-            if self.config.enable_gpu_optimization:
-                self._gpu_manager = get_m1_gpu_manager()
+            # Use the existing adaptive optimization engine
+            if self.config.enable_adaptive_optimization:
+                self._adaptive_engine = get_adaptive_optimization_engine()
         
         # Initialize performance modules
         self._cache = None
@@ -163,26 +160,24 @@ class M1PerformanceOptimizer:
         if self._async_manager:
             await self._async_manager.initialize()
         
-        if self._memory_optimizer:
-            self._memory_optimizer.start_monitoring()
+        # Initialize hardware manager if available
+        if self._hardware_manager:
+            # The hardware manager handles its own initialization
+            pass
         
         self.logger.info("M1 performance optimizer initialized")
     
     def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for M1 hardware."""
+        """Optimize DataFrame for M1 hardware using existing infrastructure."""
         if not PANDAS_AVAILABLE:
             return df
         
         try:
-            # Apply M1 memory optimization
-            if self._memory_optimizer:
-                df = self._memory_optimizer.optimize_dataframe_memory(df)
-            
-            # Apply M1 GPU optimization if data is large enough
-            if (self._gpu_manager and 
-                self.config.use_gpu_for_large_arrays and 
-                df.size > self.config.gpu_threshold_elements):
-                df = self._gpu_manager.optimize_dataframe_for_m1(df)
+            # Use existing advanced memory optimizer
+            if self._hardware_manager:
+                # Use the unified hardware manager's memory optimization
+                from src.utils.hardware import optimize_dataframe_advanced
+                df = optimize_dataframe_advanced(df)
             
             return df
             

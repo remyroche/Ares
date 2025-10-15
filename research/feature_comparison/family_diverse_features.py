@@ -354,16 +354,39 @@ class FamilyDiverseFeatureGenerator:
         """Generate statistical features."""
         df = data.copy()
         
-        # Higher moments
-        for period in [5, 10, 20, 50]:
-            returns = data['close'].pct_change()
-            df[f'skewness_{period}'] = returns.rolling(period).skew()
-            df[f'kurtosis_{period}'] = returns.rolling(period).kurt()
+        # Higher moments using VectorBT
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_apply
+            
+            for period in [5, 10, 20, 50]:
+                returns = data['close'].pct_change()
+                df[f'skewness_{period}'] = rolling_apply(returns, window=period, func=lambda x: x.skew())
+                df[f'kurtosis_{period}'] = rolling_apply(returns, window=period, func=lambda x: x.kurt())
+                
+        except Exception as e:
+            logger.warning(f"VectorBT statistical calculations failed, using pandas: {e}")
+            # Fallback to pandas
+            for period in [5, 10, 20, 50]:
+                returns = data['close'].pct_change()
+                df[f'skewness_{period}'] = returns.rolling(period).skew()
+                df[f'kurtosis_{period}'] = returns.rolling(period).kurt()
         
-        # Autocorrelation
-        for period in [5, 10, 20]:
-            returns = data['close'].pct_change()
-            df[f'autocorr_{period}'] = returns.rolling(period).apply(lambda x: x.autocorr(lag=1))
+        # Autocorrelation using VectorBT
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_corr
+            
+            for period in [5, 10, 20]:
+                returns = data['close'].pct_change()
+                df[f'autocorr_{period}'] = rolling_corr(returns, returns.shift(1), window=period)
+                
+        except Exception as e:
+            logger.warning(f"VectorBT rolling correlation failed, using pandas: {e}")
+            # Fallback to pandas
+            for period in [5, 10, 20]:
+                returns = data['close'].pct_change()
+                df[f'autocorr_{period}'] = returns.rolling(period).apply(lambda x: x.autocorr(lag=1))
         
         # Hurst exponent (simplified)
         for period in [20, 50]:

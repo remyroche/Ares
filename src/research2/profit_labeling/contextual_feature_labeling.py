@@ -267,30 +267,67 @@ class ContextualFeatureEngineer:
         low = market_data.get('low', close)
         volume = market_data.get('volume', pd.Series(1, index=market_data.index))
         
-        # Moving averages
-        for period in self.config.ma_periods:
-            if len(close) > period:
-                ma = close.rolling(period).mean()
-                features[f'ma_{period}'] = ma
-                features[f'ma_ratio_{period}'] = close / ma
-                features[f'ma_distance_{period}'] = (close - ma) / ma
+        # Moving averages using VectorBT batch processor
+        try:
+            from src.utils.vectorbt_batch_processor import VectorBTBatchProcessor
+            
+            batch_processor = VectorBTBatchProcessor()
+            ma_features = batch_processor.batch_rolling_operations(
+                close, 
+                windows=self.config.ma_periods, 
+                operations=['mean']
+            )
+            
+            for period in self.config.ma_periods:
+                if f'mean_{period}' in ma_features.columns:
+                    ma = ma_features[f'mean_{period}']
+                    features[f'ma_{period}'] = ma
+                    features[f'ma_ratio_{period}'] = close / ma
+                    features[f'ma_distance_{period}'] = (close - ma) / ma
+                    
+        except Exception as e:
+            logger.warning(f"VectorBT batch processor failed, using manual calculation: {e}")
+            # Fallback to manual calculation
+            for period in self.config.ma_periods:
+                if len(close) > period:
+                    ma = close.rolling(period).mean()
+                    features[f'ma_{period}'] = ma
+                    features[f'ma_ratio_{period}'] = close / ma
+                    features[f'ma_distance_{period}'] = (close - ma) / ma
         
-        # RSI
-        if TALIB_AVAILABLE:
+        # RSI using VectorBT batch processor
+        try:
+            from src.utils.vectorbt_batch_processor import VectorBTBatchProcessor
+            
+            batch_processor = VectorBTBatchProcessor()
+            rsi_features = batch_processor.batch_technical_indicators(
+                market_data[['close']], 
+                indicators=['rsi'], 
+                periods=self.config.rsi_periods
+            )
+            
             for period in self.config.rsi_periods:
-                if len(close) > period * 2:
-                    rsi = talib.RSI(close.values, timeperiod=period)
-                    features[f'rsi_{period}'] = pd.Series(rsi, index=close.index)
-        else:
-            # Simple RSI calculation
-            for period in self.config.rsi_periods:
-                if len(close) > period * 2:
-                    delta = close.diff()
-                    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-                    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-                    rs = gain / loss
-                    rsi = 100 - (100 / (1 + rs))
-                    features[f'rsi_{period}'] = rsi
+                if f'rsi_{period}' in rsi_features.columns:
+                    features[f'rsi_{period}'] = rsi_features[f'rsi_{period}']
+                    
+        except Exception as e:
+            logger.warning(f"VectorBT RSI calculation failed, using TALIB/pandas: {e}")
+            # Fallback to TALIB or manual calculation
+            if TALIB_AVAILABLE:
+                for period in self.config.rsi_periods:
+                    if len(close) > period * 2:
+                        rsi = talib.RSI(close.values, timeperiod=period)
+                        features[f'rsi_{period}'] = pd.Series(rsi, index=close.index)
+            else:
+                # Simple RSI calculation
+                for period in self.config.rsi_periods:
+                    if len(close) > period * 2:
+                        delta = close.diff()
+                        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+                        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+                        rs = gain / loss
+                        rsi = 100 - (100 / (1 + rs))
+                        features[f'rsi_{period}'] = rsi
         
         # Bollinger Bands
         if len(close) > self.config.bollinger_period:
@@ -332,78 +369,152 @@ class ContextualFeatureEngineer:
             williams_r = -100 * (highest_high - close) / (highest_high - lowest_low)
             features['williams_r'] = williams_r
         
-        # Average True Range (ATR)
+        # Average True Range (ATR) using VectorBT
         if all(col in market_data.columns for col in ['high', 'low', 'close']):
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            features['atr'] = true_range.rolling(14).mean()
-            features['atr_ratio'] = features['atr'] / close
+            try:
+                import vectorbt as vbt
+                from vectorbt.indicators.basic import ATR
+                
+                # Use VectorBT ATR indicator
+                atr_result = ATR.run(high, low, close, window=14)
+                features['atr'] = atr_result.atr
+                features['atr_ratio'] = features['atr'] / close
+                
+            except Exception as e:
+                logger.warning(f"VectorBT ATR failed, using manual calculation: {e}")
+                # Fallback to manual calculation
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                features['atr'] = true_range.rolling(14).mean()
+                features['atr_ratio'] = features['atr'] / close
         
         return features
     
     def _engineer_volatility_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Engineer volatility-based features."""
-        features = pd.DataFrame(index=market_data.index)
-        
-        if 'close' not in market_data.columns:
+        """Engineer volatility-based features using VectorBT."""
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_std, rolling_rank, rolling_quantile
+            from vectorbt.indicators.basic import ATR
+            
+            features = pd.DataFrame(index=market_data.index)
+            
+            if 'close' not in market_data.columns:
+                return features
+            
+            close = market_data['close']
+            returns = close.pct_change()
+            
+            # Rolling volatility for different windows using VectorBT
+            for window in self.config.volatility_windows:
+                if len(returns) > window:
+                    vol = rolling_std(returns, window=window)
+                    features[f'volatility_{window}'] = vol
+                    features[f'volatility_rank_{window}'] = rolling_rank(vol, window=100, pct=True)
+            
+            # Realized volatility using VectorBT
+            if len(returns) > self.config.realized_vol_window:
+                realized_vol = np.sqrt(252) * rolling_std(returns, window=self.config.realized_vol_window)
+                features['realized_volatility'] = realized_vol
+            
+            # GARCH-like volatility using VectorBT
+            if len(returns) > 50:
+                # Simple EWMA volatility (GARCH approximation)
+                ewma_vol = returns.ewm(span=20).std()
+                features['ewma_volatility'] = ewma_vol
+                
+                # Volatility of volatility using VectorBT
+                vol_20 = rolling_std(returns, window=20)
+                features['vol_of_vol'] = rolling_std(vol_20, window=20)
+            
+            # Parkinson volatility using VectorBT (if OHLC available)
+            if all(col in market_data.columns for col in ['high', 'low']):
+                high = market_data['high']
+                low = market_data['low']
+                
+                # Parkinson estimator using VectorBT
+                parkinson_vol = np.sqrt(np.log(high / low) ** 2 / (4 * np.log(2)))
+                features['parkinson_volatility'] = rolling_mean(parkinson_vol, window=20)
+            
+            # Garman-Klass volatility using VectorBT (if OHLCV available)
+            if all(col in market_data.columns for col in ['open', 'high', 'low', 'close']):
+                open_price = market_data['open']
+                high = market_data['high']
+                low = market_data['low']
+                
+                # Garman-Klass estimator using VectorBT
+                gk_vol = np.log(high / low) * np.log(high / close) + np.log(low / close) * np.log(low / open_price)
+                features['garman_klass_volatility'] = rolling_mean(np.sqrt(gk_vol), window=20)
+            
+            # Volatility regime features using VectorBT
+            if len(returns) > 100:
+                vol_20 = rolling_std(returns, window=20)
+                vol_quantiles = rolling_quantile(vol_20, window=100, q=[0.25, 0.5, 0.75])
+                
+                features['vol_regime_low'] = (vol_20 < vol_quantiles[0.25]).astype(int)
+                features['vol_regime_high'] = (vol_20 > vol_quantiles[0.75]).astype(int)
+                features['vol_percentile'] = rolling_rank(vol_20, window=100, pct=True)
+            
             return features
-        
-        close = market_data['close']
-        returns = close.pct_change()
-        
-        # Rolling volatility for different windows
-        for window in self.config.volatility_windows:
-            if len(returns) > window:
-                vol = returns.rolling(window).std()
-                features[f'volatility_{window}'] = vol
-                features[f'volatility_rank_{window}'] = vol.rolling(100).rank(pct=True)
-        
-        # Realized volatility (if high-frequency data)
-        if len(returns) > self.config.realized_vol_window:
-            realized_vol = np.sqrt(252) * returns.rolling(self.config.realized_vol_window).std()
-            features['realized_volatility'] = realized_vol
-        
-        # GARCH-like volatility
-        if len(returns) > 50:
-            # Simple EWMA volatility (GARCH approximation)
-            ewma_vol = returns.ewm(span=20).std()
-            features['ewma_volatility'] = ewma_vol
             
-            # Volatility of volatility
-            vol_20 = returns.rolling(20).std()
-            features['vol_of_vol'] = vol_20.rolling(20).std()
-        
-        # Parkinson volatility (if OHLC available)
-        if all(col in market_data.columns for col in ['high', 'low']):
-            high = market_data['high']
-            low = market_data['low']
+        except Exception as e:
+            logger.warning(f"VectorBT operations failed, falling back to pandas: {e}")
+            # Fallback to pandas operations
+            features = pd.DataFrame(index=market_data.index)
             
-            # Parkinson estimator
-            parkinson_vol = np.sqrt(np.log(high / low) ** 2 / (4 * np.log(2)))
-            features['parkinson_volatility'] = parkinson_vol.rolling(20).mean()
-        
-        # Garman-Klass volatility (if OHLCV available)
-        if all(col in market_data.columns for col in ['open', 'high', 'low', 'close']):
-            open_price = market_data['open']
-            high = market_data['high']
-            low = market_data['low']
+            if 'close' not in market_data.columns:
+                return features
             
-            # Garman-Klass estimator
-            gk_vol = np.log(high / low) * np.log(high / close) + np.log(low / close) * np.log(low / open_price)
-            features['garman_klass_volatility'] = np.sqrt(gk_vol).rolling(20).mean()
-        
-        # Volatility regime features
-        if len(returns) > 100:
-            vol_20 = returns.rolling(20).std()
-            vol_quantiles = vol_20.rolling(100).quantile([0.25, 0.5, 0.75])
+            close = market_data['close']
+            returns = close.pct_change()
             
-            features['vol_regime_low'] = (vol_20 < vol_quantiles[0.25]).astype(int)
-            features['vol_regime_high'] = (vol_20 > vol_quantiles[0.75]).astype(int)
-            features['vol_percentile'] = vol_20.rolling(100).rank(pct=True)
-        
-        return features
+            # Rolling volatility for different windows
+            for window in self.config.volatility_windows:
+                if len(returns) > window:
+                    vol = returns.rolling(window).std()
+                    features[f'volatility_{window}'] = vol
+                    features[f'volatility_rank_{window}'] = rolling_rank(vol, window=100, pct=True)
+            
+            # Realized volatility
+            if len(returns) > self.config.realized_vol_window:
+                realized_vol = np.sqrt(252) * returns.rolling(self.config.realized_vol_window).std()
+                features['realized_volatility'] = realized_vol
+            
+            # GARCH-like volatility
+            if len(returns) > 50:
+                ewma_vol = returns.ewm(span=20).std()
+                features['ewma_volatility'] = ewma_vol
+                
+                vol_20 = returns.rolling(20).std()
+                features['vol_of_vol'] = vol_20.rolling(20).std()
+            
+            # Parkinson volatility
+            if all(col in market_data.columns for col in ['high', 'low']):
+                high = market_data['high']
+                low = market_data['low']
+                parkinson_vol = np.sqrt(np.log(high / low) ** 2 / (4 * np.log(2)))
+                features['parkinson_volatility'] = parkinson_vol.rolling(20).mean()
+            
+            # Garman-Klass volatility
+            if all(col in market_data.columns for col in ['open', 'high', 'low', 'close']):
+                open_price = market_data['open']
+                high = market_data['high']
+                low = market_data['low']
+                gk_vol = np.log(high / low) * np.log(high / close) + np.log(low / close) * np.log(low / open_price)
+                features['garman_klass_volatility'] = np.sqrt(gk_vol).rolling(20).mean()
+            
+            # Volatility regime features
+            if len(returns) > 100:
+                vol_20 = returns.rolling(20).std()
+                vol_quantiles = rolling_quantile(vol_20, window=100, q=[0.25, 0.5, 0.75])
+                
+                features['vol_regime_low'] = (vol_20 < vol_quantiles[0.25]).astype(int)
+                features['vol_regime_high'] = (vol_20 > vol_quantiles[0.75]).astype(int)
+                features['vol_percentile'] = rolling_rank(vol_20, window=100, pct=True)
+            
+            return features
     
     def _engineer_regime_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Engineer market regime features."""
@@ -480,7 +591,7 @@ class ContextualFeatureEngineer:
         # Market stress indicators
         if len(returns) > 50:
             # Tail risk measure
-            rolling_var_95 = returns.rolling(50).quantile(0.05)  # 5% VaR
+            rolling_var_95 = rolling_quantile(returns, window=50, q=0.05)  # 5% VaR
             features['tail_risk'] = abs(rolling_var_95)
             
             # Skewness and kurtosis
@@ -569,12 +680,31 @@ class ContextualFeatureEngineer:
         features['volume_change'] = volume.pct_change()
         features['volume_ratio'] = volume / volume.rolling(20).mean()
         
-        # Volume moving averages
-        for period in [5, 10, 20, 50]:
-            if len(volume) > period:
-                vol_ma = volume.rolling(period).mean()
-                features[f'volume_ma_{period}'] = vol_ma
-                features[f'volume_vs_ma_{period}'] = volume / vol_ma
+        # Volume moving averages using VectorBT batch processor
+        try:
+            from src.utils.vectorbt_batch_processor import VectorBTBatchProcessor
+            
+            batch_processor = VectorBTBatchProcessor()
+            vol_features = batch_processor.batch_rolling_operations(
+                volume, 
+                windows=[5, 10, 20, 50], 
+                operations=['mean']
+            )
+            
+            for period in [5, 10, 20, 50]:
+                if f'mean_{period}' in vol_features.columns:
+                    vol_ma = vol_features[f'mean_{period}']
+                    features[f'volume_ma_{period}'] = vol_ma
+                    features[f'volume_vs_ma_{period}'] = volume / vol_ma
+                    
+        except Exception as e:
+            logger.warning(f"VectorBT volume features failed, using manual calculation: {e}")
+            # Fallback to manual calculation
+            for period in [5, 10, 20, 50]:
+                if len(volume) > period:
+                    vol_ma = volume.rolling(period).mean()
+                    features[f'volume_ma_{period}'] = vol_ma
+                    features[f'volume_vs_ma_{period}'] = volume / vol_ma
         
         # On-Balance Volume (OBV)
         if 'close' in market_data.columns:

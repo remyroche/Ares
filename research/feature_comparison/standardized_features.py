@@ -122,10 +122,22 @@ class StandardizedFeatureGenerator:
         # Acceleration: Δ momentum
         df['ret_acc_k1'] = df['ret_mom_k1'].diff()
         
-        # Autocorrelation features
-        for w in [10, 20]:
-            df[f'ret_ac1_w{w}'] = df['ret_t1'].rolling(w).apply(lambda x: x.autocorr(lag=1))
-            df[f'ret_pac1_w{w}'] = self._calculate_partial_autocorr(df['ret_t1'], w)
+        # Autocorrelation features using VectorBT
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_corr
+            
+            for w in [10, 20]:
+                # Use VectorBT for rolling autocorrelation
+                df[f'ret_ac1_w{w}'] = rolling_corr(df['ret_t1'], df['ret_t1'].shift(1), window=w)
+                df[f'ret_pac1_w{w}'] = self._calculate_partial_autocorr(df['ret_t1'], w)
+                
+        except Exception as e:
+            logger.warning(f"VectorBT rolling correlation failed, using pandas: {e}")
+            # Fallback to pandas
+            for w in [10, 20]:
+                df[f'ret_ac1_w{w}'] = df['ret_t1'].rolling(w).apply(lambda x: x.autocorr(lag=1))
+                df[f'ret_pac1_w{w}'] = self._calculate_partial_autocorr(df['ret_t1'], w)
         
         # Volume features (if available)
         if 'volume' in df.columns:
@@ -158,9 +170,19 @@ class StandardizedFeatureGenerator:
             df[f'vwap_ret_ma_w{w}'] = df['vwap_ret_w20'].rolling(w).mean()
             df[f'vwap_ret_std_w{w}'] = df['vwap_ret_w20'].rolling(w).std()
         
-        # Rolling correlation with VWAP basis
-        for w in [10, 20]:
-            df[f'ret_vwap_corr_w{w}'] = df['ret_t1'].rolling(w).corr(df['vwap_basis_w20'])
+        # Rolling correlation with VWAP basis using VectorBT
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_corr
+            
+            for w in [10, 20]:
+                df[f'ret_vwap_corr_w{w}'] = rolling_corr(df['ret_t1'], df['vwap_basis_w20'], window=w)
+                
+        except Exception as e:
+            logger.warning(f"VectorBT rolling correlation failed, using pandas: {e}")
+            # Fallback to pandas
+            for w in [10, 20]:
+                df[f'ret_vwap_corr_w{w}'] = df['ret_t1'].rolling(w).corr(df['vwap_basis_w20'])
         
         return df
     

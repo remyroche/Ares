@@ -331,36 +331,64 @@ class ComputeAwareOptimizer:
         return top_features['feature'].tolist()
     
     def _setup_cached_rolling_cores(self, X: pd.DataFrame) -> Dict[str, Any]:
-        """Set up cached rolling cores for efficient computation."""
-        rolling_cores = {}
-        
-        # Precompute common rolling operations
-        if 'close' in X.columns:
-            close_prices = X['close']
+        """Set up cached rolling cores using VectorBT for efficient computation."""
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_mean, rolling_std
             
-            # Rolling returns
-            rolling_cores['returns'] = close_prices.pct_change()
+            rolling_cores = {}
             
-            # Rolling means
-            rolling_cores['ma_5'] = close_prices.rolling(5).mean()
-            rolling_cores['ma_10'] = close_prices.rolling(10).mean()
-            rolling_cores['ma_20'] = close_prices.rolling(20).mean()
+            # Precompute common rolling operations using VectorBT
+            if 'close' in X.columns:
+                close_prices = X['close']
+                
+                # Rolling returns
+                rolling_cores['returns'] = close_prices.pct_change()
+                
+                # Rolling means using VectorBT
+                rolling_cores['ma_5'] = rolling_mean(close_prices, window=5)
+                rolling_cores['ma_10'] = rolling_mean(close_prices, window=10)
+                rolling_cores['ma_20'] = rolling_mean(close_prices, window=20)
+                
+                # Rolling std using VectorBT
+                rolling_cores['std_5'] = rolling_std(close_prices, window=5)
+                rolling_cores['std_10'] = rolling_std(close_prices, window=10)
+                rolling_cores['std_20'] = rolling_std(close_prices, window=20)
+                
+                # EWMA using VectorBT
+                rolling_cores['ewma_5'] = close_prices.ewm(span=5).mean()
+                rolling_cores['ewma_10'] = close_prices.ewm(span=10).mean()
+                rolling_cores['ewma_20'] = close_prices.ewm(span=20).mean()
             
-            # Rolling std
-            rolling_cores['std_5'] = close_prices.rolling(5).std()
-            rolling_cores['std_10'] = close_prices.rolling(10).std()
-            rolling_cores['std_20'] = close_prices.rolling(20).std()
+            # Store in cache
+            if self.cache is not None:
+                self.cache['rolling_cores'] = rolling_cores
             
-            # EWMA
-            rolling_cores['ewma_5'] = close_prices.ewm(span=5).mean()
-            rolling_cores['ewma_10'] = close_prices.ewm(span=10).mean()
-            rolling_cores['ewma_20'] = close_prices.ewm(span=20).mean()
-        
-        # Store in cache
-        if self.cache is not None:
-            self.cache['rolling_cores'] = rolling_cores
-        
-        return rolling_cores
+            return rolling_cores
+            
+        except Exception as e:
+            logger.warning(f"VectorBT operations failed, falling back to pandas: {e}")
+            # Fallback to pandas operations
+            rolling_cores = {}
+            
+            if 'close' in X.columns:
+                close_prices = X['close']
+                
+                rolling_cores['returns'] = close_prices.pct_change()
+                rolling_cores['ma_5'] = close_prices.rolling(5).mean()
+                rolling_cores['ma_10'] = close_prices.rolling(10).mean()
+                rolling_cores['ma_20'] = close_prices.rolling(20).mean()
+                rolling_cores['std_5'] = close_prices.rolling(5).std()
+                rolling_cores['std_10'] = close_prices.rolling(10).std()
+                rolling_cores['std_20'] = close_prices.rolling(20).std()
+                rolling_cores['ewma_5'] = close_prices.ewm(span=5).mean()
+                rolling_cores['ewma_10'] = close_prices.ewm(span=10).mean()
+                rolling_cores['ewma_20'] = close_prices.ewm(span=20).mean()
+            
+            if self.cache is not None:
+                self.cache['rolling_cores'] = rolling_cores
+            
+            return rolling_cores
     
     def _vectorized_operations(self, X: pd.DataFrame, y: pd.Series, 
                               selected_features: List[str]) -> Dict[str, Any]:

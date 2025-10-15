@@ -188,30 +188,60 @@ class EconomicValidator:
         return results
     
     def _calculate_sharpe_ratio_difference(self, regime_returns: Dict[int, pd.Series]) -> EconomicValidationResult:
-        """Calculate Sharpe ratio differences between regimes."""
+        """Calculate Sharpe ratio differences between regimes using VectorBT."""
         regime_sharpe_ratios = {}
         
-        for regime, returns in regime_returns.items():
-            if len(returns) > 0:
-                excess_returns = returns - self.config.risk_free_rate / 252  # Daily risk-free rate
-                sharpe_ratio = excess_returns.mean() / returns.std() * np.sqrt(252) if returns.std() > 0 else 0
-                regime_sharpe_ratios[regime] = float(sharpe_ratio)
-            else:
-                regime_sharpe_ratios[regime] = 0.0
-        
-        # Calculate maximum difference
-        if len(regime_sharpe_ratios) > 1:
-            sharpe_values = list(regime_sharpe_ratios.values())
-            max_diff = max(sharpe_values) - min(sharpe_values)
+        try:
+            import vectorbt as vbt
+            from vectorbt.returns import Returns
             
-            # Economic significance: >0.5 Sharpe ratio difference is meaningful
-            economically_significant = max_diff > 0.5
+            for regime, returns in regime_returns.items():
+                if len(returns) > 0:
+                    # Use VectorBT for Sharpe ratio calculation
+                    returns_obj = Returns(returns)
+                    sharpe_ratio = returns_obj.sharpe_ratio()
+                    regime_sharpe_ratios[regime] = float(sharpe_ratio)
+                else:
+                    regime_sharpe_ratios[regime] = 0.0
             
-            # Statistical significance (t-test between best and worst regimes)
-            best_regime = max(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
-            worst_regime = min(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
+            # Calculate maximum difference
+            if len(regime_sharpe_ratios) > 1:
+                sharpe_values = list(regime_sharpe_ratios.values())
+                max_diff = max(sharpe_values) - min(sharpe_values)
+                
+                # Economic significance: >0.5 Sharpe ratio difference is meaningful
+                economically_significant = max_diff > 0.5
+                
+                # Statistical significance (t-test between best and worst regimes)
+                best_regime = max(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
+                worst_regime = min(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
+                
+                best_returns = regime_returns[best_regime]
+                
+        except Exception as e:
+            logger.warning(f"VectorBT Sharpe ratio calculation failed, using manual calculation: {e}")
+            # Fallback to manual calculation
+            for regime, returns in regime_returns.items():
+                if len(returns) > 0:
+                    excess_returns = returns - self.config.risk_free_rate / 252  # Daily risk-free rate
+                    sharpe_ratio = excess_returns.mean() / returns.std() * np.sqrt(252) if returns.std() > 0 else 0
+                    regime_sharpe_ratios[regime] = float(sharpe_ratio)
+                else:
+                    regime_sharpe_ratios[regime] = 0.0
             
-            best_returns = regime_returns[best_regime]
+            # Calculate maximum difference
+            if len(regime_sharpe_ratios) > 1:
+                sharpe_values = list(regime_sharpe_ratios.values())
+                max_diff = max(sharpe_values) - min(sharpe_values)
+                
+                # Economic significance: >0.5 Sharpe ratio difference is meaningful
+                economically_significant = max_diff > 0.5
+                
+                # Statistical significance (t-test between best and worst regimes)
+                best_regime = max(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
+                worst_regime = min(regime_sharpe_ratios, key=regime_sharpe_ratios.get)
+                
+                best_returns = regime_returns[best_regime]
             worst_returns = regime_returns[worst_regime]
             
             if len(best_returns) > 10 and len(worst_returns) > 10:

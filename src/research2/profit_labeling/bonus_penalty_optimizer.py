@@ -672,7 +672,7 @@ class BonusPenaltyOptimizer:
         return max(0.0, min(1.0, 0.5 + abs(corr) / 2))
     
     def _calculate_sharpe_ratio(self, labeled_data: pd.DataFrame, market_data: pd.DataFrame) -> float:
-        """Calculate Sharpe ratio based on labeling strategy."""
+        """Calculate Sharpe ratio using VectorBT."""
         if 'overall_opportunity' not in labeled_data.columns or 'close' not in market_data.columns:
             return 0.0
         
@@ -683,17 +683,46 @@ class BonusPenaltyOptimizer:
         if len(common_idx) < 50:
             return 0.0
         
-        # Create simple strategy: go long when opportunity > 70th percentile
-        threshold = opportunity.quantile(0.7)
-        signals = (opportunity.loc[common_idx] > threshold).astype(int)
-        strategy_returns = signals * returns.loc[common_idx]
-        
-        # Calculate Sharpe ratio
-        if strategy_returns.std() > 0:
-            sharpe = strategy_returns.mean() / strategy_returns.std()
+        try:
+            import vectorbt as vbt
+            from vectorbt.portfolio import Portfolio
+            from vectorbt.returns import Returns
+            
+            # Create signals using VectorBT
+            threshold = opportunity.quantile(0.7)
+            signals = (opportunity.loc[common_idx] > threshold).astype(int)
+            
+            # Use VectorBT for portfolio analysis
+            portfolio = Portfolio.from_signals(
+                close=returns.loc[common_idx],
+                entries=signals,
+                exits=None,
+                freq='1D'
+            )
+            
+            # Get strategy returns from VectorBT portfolio
+            strategy_returns = portfolio.returns()
+            
+            # Use VectorBT for Sharpe ratio calculation
+            returns_obj = Returns(strategy_returns)
+            sharpe = returns_obj.sharpe_ratio()
+            
             return max(0.0, min(2.0, sharpe + 1.0)) / 2.0  # Normalize to 0-1
-        
-        return 0.0
+            
+        except Exception as e:
+            logger.warning(f"VectorBT Sharpe ratio calculation failed, using manual calculation: {e}")
+            # Fallback to manual calculation
+            # Create simple strategy: go long when opportunity > 70th percentile
+            threshold = opportunity.quantile(0.7)
+            signals = (opportunity.loc[common_idx] > threshold).astype(int)
+            strategy_returns = signals * returns.loc[common_idx]
+            
+            # Calculate Sharpe ratio manually
+            if strategy_returns.std() > 0:
+                sharpe = strategy_returns.mean() / strategy_returns.std()
+                return max(0.0, min(2.0, sharpe + 1.0)) / 2.0  # Normalize to 0-1
+            
+            return 0.0
     
     def _calculate_hit_rate_balance(self, labeled_data: pd.DataFrame) -> float:
         """Calculate balanced hit rate score."""

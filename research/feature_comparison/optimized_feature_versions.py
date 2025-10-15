@@ -155,63 +155,78 @@ class OptimizedFeatureVersions:
         return df
     
     def _add_rolling_features_matrix(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add rolling features using matrix operations."""
+        """Add rolling features using VectorBT operations."""
         try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_mean, rolling_std, rolling_apply
+            from vectorbt.indicators.basic import RSI
+            
             # Get returns data
-            returns_data = df['returns'].dropna().values.reshape(-1, 1)
+            returns_data = df['returns'].dropna()
             
             # Rolling windows
             windows = [5, 10, 20, 50]
             
+            # Use VectorBT for rolling operations
             for window in windows:
                 if len(returns_data) >= window:
-                    # Rolling mean using matrix operations
-                    rolling_mean = self.matrix_ops.rolling_mean(returns_data, window)
-                    df[f'returns_ma_{window}'] = pd.Series(
-                        rolling_mean.flatten(), index=df.index
-                    )
+                    # Rolling mean using VectorBT
+                    df[f'returns_ma_{window}'] = rolling_mean(returns_data, window=window)
                     
-                    # Rolling std using matrix operations
-                    rolling_std = self.matrix_ops.rolling_std(returns_data, window)
-                    df[f'returns_std_{window}'] = pd.Series(
-                        rolling_std.flatten(), index=df.index
-                    )
+                    # Rolling std using VectorBT
+                    df[f'returns_std_{window}'] = rolling_std(returns_data, window=window)
                     
-                    # EWMA using matrix operations
-                    ewma = self.matrix_ops.ewma(returns_data, alpha=2/(window+1))
-                    df[f'returns_ewma_{window}'] = pd.Series(
-                        ewma.flatten(), index=df.index
-                    )
+                    # EWMA using VectorBT
+                    df[f'returns_ewma_{window}'] = returns_data.ewm(span=window).mean()
             
-            # RSI using matrix operations
-            df['rsi_14'] = self._calculate_rsi_matrix(df['returns'])
+            # RSI using VectorBT
+            df['rsi_14'] = RSI.run(returns_data, window=14).rsi
             
         except Exception as e:
-            logger.warning(f"Matrix operations failed, falling back to standard: {e}")
+            logger.warning(f"VectorBT operations failed, falling back to standard: {e}")
             df = self._add_rolling_features_standard(df)
         
         return df
     
     def _add_rolling_features_standard(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add rolling features using standard pandas operations."""
-        windows = [5, 10, 20, 50]
-        
-        for window in windows:
-            # Rolling mean
-            df[f'returns_ma_{window}'] = df['returns'].rolling(window).mean()
+        """Add rolling features using VectorBT operations."""
+        try:
+            import vectorbt as vbt
+            from vectorbt.generic import rolling_mean, rolling_std, rolling_apply
+            from vectorbt.indicators.basic import RSI
             
-            # Rolling std
-            df[f'returns_std_{window}'] = df['returns'].rolling(window).std()
+            windows = [5, 10, 20, 50]
             
-            # EWMA
-            df[f'returns_ewma_{window}'] = df['returns'].ewm(span=window).mean()
+            for window in windows:
+                # Rolling mean using VectorBT
+                df[f'returns_ma_{window}'] = rolling_mean(df['returns'], window=window)
+                
+                # Rolling std using VectorBT
+                df[f'returns_std_{window}'] = rolling_std(df['returns'], window=window)
+                
+                # EWMA using VectorBT
+                df[f'returns_ewma_{window}'] = df['returns'].ewm(span=window).mean()
+                
+                # Rolling skewness and kurtosis using VectorBT
+                df[f'returns_skew_{window}'] = rolling_apply(df['returns'], window=window, func=lambda x: x.skew())
+                df[f'returns_kurt_{window}'] = rolling_apply(df['returns'], window=window, func=lambda x: x.kurt())
             
-            # Rolling skewness and kurtosis
-            df[f'returns_skew_{window}'] = df['returns'].rolling(window).skew()
-            df[f'returns_kurt_{window}'] = df['returns'].rolling(window).kurt()
-        
-        # RSI
-        df['rsi_14'] = self._calculate_rsi_standard(df['returns'])
+            # RSI using VectorBT
+            df['rsi_14'] = RSI.run(df['returns'], window=14).rsi
+            
+        except Exception as e:
+            logger.warning(f"VectorBT operations failed, using pandas fallback: {e}")
+            # Fallback to pandas if VectorBT fails
+            windows = [5, 10, 20, 50]
+            
+            for window in windows:
+                df[f'returns_ma_{window}'] = df['returns'].rolling(window).mean()
+                df[f'returns_std_{window}'] = df['returns'].rolling(window).std()
+                df[f'returns_ewma_{window}'] = df['returns'].ewm(span=window).mean()
+                df[f'returns_skew_{window}'] = df['returns'].rolling(window).skew()
+                df[f'returns_kurt_{window}'] = df['returns'].rolling(window).kurt()
+            
+            df['rsi_14'] = self._calculate_rsi_standard(df['returns'])
         
         return df
     

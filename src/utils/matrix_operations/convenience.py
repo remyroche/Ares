@@ -571,6 +571,115 @@ class MatrixConvenience:
         return svd_decomposition(matrix, k, use_gpu=use_gpu)
 
 
+def safe_matrix_operations(operation: str, *args, **kwargs):
+    """
+    Unified safe matrix operations interface.
+    
+    Args:
+        operation: The operation to perform ('multiply', 'correlation', 'inverse')
+        *args: Arguments for the operation
+        **kwargs: Keyword arguments for the operation
+    
+    Returns:
+        Result of the matrix operation
+    """
+    if operation == 'multiply':
+        return safe_matrix_multiply(*args, **kwargs)
+    elif operation == 'correlation':
+        return safe_correlation_matrix(*args, **kwargs)
+    elif operation == 'inverse':
+        return safe_matrix_inverse(*args, **kwargs)
+    else:
+        raise ValueError(f"Unknown operation: {operation}. Supported operations: 'multiply', 'correlation', 'inverse'")
+
+
+def validate_matrix_properties(matrix: 'np.ndarray') -> Dict[str, Any]:
+    """
+    Validate matrix properties for machine learning operations.
+    
+    Args:
+        matrix: Input matrix to validate
+    
+    Returns:
+        Dictionary containing validation results
+    """
+    if not NUMPY_AVAILABLE:
+        raise ImportError("NumPy is required for matrix validation")
+    
+    validation_results = {
+        'is_finite': np.all(np.isfinite(matrix)),
+        'has_nan': np.any(np.isnan(matrix)),
+        'has_inf': np.any(np.isinf(matrix)),
+        'shape': matrix.shape,
+        'dtype': matrix.dtype,
+        'memory_usage': matrix.nbytes,
+        'is_square': matrix.shape[0] == matrix.shape[1] if len(matrix.shape) == 2 else False,
+        'is_symmetric': False,
+        'condition_number': None,
+        'rank': None
+    }
+    
+    if len(matrix.shape) == 2:
+        validation_results['is_symmetric'] = np.allclose(matrix, matrix.T)
+        try:
+            validation_results['condition_number'] = np.linalg.cond(matrix)
+            validation_results['rank'] = np.linalg.matrix_rank(matrix)
+        except np.linalg.LinAlgError:
+            validation_results['condition_number'] = float('inf')
+            validation_results['rank'] = 0
+    
+    return validation_results
+
+
+def optimize_matrix_computations(matrix: 'np.ndarray', operation: str = 'multiply') -> Dict[str, Any]:
+    """
+    Optimize matrix computations based on matrix properties.
+    
+    Args:
+        matrix: Input matrix
+        operation: Type of operation to optimize for
+    
+    Returns:
+        Dictionary containing optimization recommendations
+    """
+    if not NUMPY_AVAILABLE:
+        raise ImportError("NumPy is required for matrix optimization")
+    
+    validation = validate_matrix_properties(matrix)
+    
+    optimization_results = {
+        'use_sparse': False,
+        'use_gpu': False,
+        'chunk_size': None,
+        'memory_efficient': False,
+        'recommended_dtype': matrix.dtype,
+        'warnings': []
+    }
+    
+    # Check for sparsity
+    if len(matrix.shape) == 2:
+        sparsity = np.count_nonzero(matrix) / matrix.size
+        if sparsity < 0.1:  # Less than 10% non-zero elements
+            optimization_results['use_sparse'] = True
+            optimization_results['warnings'].append("Matrix is sparse - consider using sparse operations")
+    
+    # Check memory usage
+    if validation['memory_usage'] > 100 * 1024 * 1024:  # 100MB
+        optimization_results['memory_efficient'] = True
+        optimization_results['chunk_size'] = min(1000, matrix.shape[0] // 4)
+        optimization_results['warnings'].append("Large matrix detected - consider chunked processing")
+    
+    # Check condition number
+    if validation['condition_number'] and validation['condition_number'] > 1e12:
+        optimization_results['warnings'].append("Matrix is ill-conditioned - numerical stability issues possible")
+    
+    # Check for NaN/Inf
+    if validation['has_nan'] or validation['has_inf']:
+        optimization_results['warnings'].append("Matrix contains NaN or Inf values - clean data before processing")
+    
+    return optimization_results
+
+
 def get_enhanced_matrix_operations():
     """Legacy function for backward compatibility."""
     logger = logging.getLogger(__name__)

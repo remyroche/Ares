@@ -133,9 +133,9 @@ except ImportError as e:
     raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
 
 try:
-    from src.utils.ml_common import (
-        cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
-    )
+    from src.utils.ml_common.matrix_cross_validation import matrix_cross_validate as cross_validation_utils
+    from src.utils.lookahead_bias_detector import LookaheadBiasDetector as lookahead_bias_detector
+    from src.utils.ml_common.optimization import HyperparameterOptimization as hyperparameter_optimization
     ML_COMMON_AVAILABLE = True
     tprint_info("✅ ML common utilities loaded")
 except ImportError as e:
@@ -756,14 +756,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     
     def _validate_configuration(self, config: PerRegimeTrainingConfig) -> None:
         """Validate configuration - delegates to consolidated method."""
-        self._validate_config_consolidated(config)
-        
-        # Tactician-specific critical validation
-        if config.min_samples_per_regime < 100:
-            error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
-            tprint_error(f"❌ {error_msg}")
-            raise ValueError(error_msg)
+        try:
+            self._validate_config_consolidated(config)
             
+            # Tactician-specific critical validation
+            if config.min_samples_per_regime < 100:
+                error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+                
             # Validate HPO settings - CRITICAL: Fast fail on invalid config
             if config.enable_hpo and config.hpo_n_trials < 10:
                 error_msg = f"CRITICAL: Very low HPO trials: {config.hpo_n_trials} (minimum: 10)"

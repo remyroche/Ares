@@ -21,6 +21,14 @@ except ImportError:
     TORCH_AVAILABLE = False
     torch = None
 
+# Import tprint with fallback
+try:
+    from ..tprint import tprint
+except ImportError:
+    def tprint(*args, **kwargs):
+        """Fallback tprint function when tprint is not available."""
+        print(*args, **kwargs)
+
 logger = logging.getLogger(__name__)
 
 
@@ -58,6 +66,25 @@ class OptimizationStrategy(Enum):
 
 
 @dataclass
+class StrategySelectionConfig:
+    """Configuration for strategy selection thresholds."""
+    # Data size thresholds
+    gpu_data_size_threshold: int = 10000
+    parallel_data_size_threshold: int = 5000
+    vectorbt_data_size_threshold: int = 100
+    vectorbt_gpu_threshold: int = 5000
+    vectorbt_parallel_threshold: int = 1000
+    
+    # Memory thresholds
+    memory_optimization_threshold_mb: float = 512.0
+    chunking_data_size_threshold: int = 1000
+    
+    # CPU core thresholds
+    parallel_cpu_cores_threshold: int = 4
+    vectorbt_parallel_cpu_cores_threshold: int = 2
+
+
+@dataclass
 class OperationConfig:
     """Configuration for operation optimization."""
     operation_type: OperationType
@@ -67,6 +94,10 @@ class OperationConfig:
     time_budget_seconds: float = 300.0
     precision_requirement: str = "medium"  # "low", "medium", "high"
     parallel_workers: Optional[int] = None
+    # Performance baselines (in seconds)
+    baseline_times: Optional[Dict[OperationType, float]] = None
+    # Strategy selection configuration
+    strategy_config: Optional[StrategySelectionConfig] = None
 
 
 @dataclass
@@ -88,10 +119,13 @@ class UnifiedVectorizationManager:
     for various machine learning and trading operations.
     """
 
-    def __init__(self):
+    def __init__(self, strategy_config: Optional[StrategySelectionConfig] = None):
         """Initialize the unified vectorization manager."""
         tprint("🚀 Initializing Unified Vectorization Manager...")
         self.logger = logging.getLogger(__name__)
+
+        # Initialize strategy selection configuration
+        self.strategy_config = strategy_config or StrategySelectionConfig()
 
         # Initialize optimization components
         tprint("🔄 Initializing optimization components...")
@@ -265,9 +299,13 @@ class UnifiedVectorizationManager:
 
         # Detect memory
         tprint("🔄 Detecting system memory...")
-        import psutil
-        self.hardware_caps['memory_gb'] = psutil.virtual_memory().total / (1024**3)
-        tprint(f"📊 System memory: {self.hardware_caps['memory_gb']:.1f}GB")
+        try:
+            import psutil
+            self.hardware_caps['memory_gb'] = psutil.virtual_memory().total / (1024**3)
+            tprint(f"📊 System memory: {self.hardware_caps['memory_gb']:.1f}GB")
+        except ImportError:
+            tprint("⚠️ psutil not available, using default memory estimate")
+            self.hardware_caps['memory_gb'] = 4.0  # Default estimate
 
         tprint(f"🖥️ Hardware capabilities: {self.hardware_caps}")
         self.logger.info(f"🖥️ Hardware detected: {self.hardware_caps}")
@@ -275,6 +313,7 @@ class UnifiedVectorizationManager:
     def optimize_operation(self, operation_type: OperationType,
                           data: Any,
                           config: Optional[OperationConfig] = None,
+                          force_strategy: Optional[OptimizationStrategy] = None,
                           **kwargs) -> OptimizationResult:
         """
         Optimize and execute an operation using the best available strategy.
@@ -299,8 +338,12 @@ class UnifiedVectorizationManager:
 
         # Select optimal strategy
         tprint("🔄 Selecting optimal strategy...")
-        strategy = self._select_optimal_strategy(operation_type, config)
-        tprint(f"📊 Selected strategy: {strategy.value}")
+        if force_strategy is not None:
+            strategy = force_strategy
+            tprint(f"📊 Forced strategy: {strategy.value}")
+        else:
+            strategy = self._select_optimal_strategy(operation_type, config, **kwargs)
+            tprint(f"📊 Selected strategy: {strategy.value}")
 
         # Execute operation with selected strategy
         tprint("🔄 Executing operation with selected strategy...")
@@ -312,7 +355,7 @@ class UnifiedVectorizationManager:
         tprint(f"⏱️ Computation time: {computation_time:.3f}s")
         memory_used = self._estimate_memory_usage(data, operation_type)
         tprint(f"🧠 Memory used: {memory_used:.1f}MB")
-        performance_gain = self._calculate_performance_gain(operation_type, computation_time, metadata)
+        performance_gain = self._calculate_performance_gain(operation_type, computation_time, metadata, config)
         tprint(f"📈 Performance gain: {performance_gain:.2f}x")
 
         # Update statistics
@@ -333,19 +376,24 @@ class UnifiedVectorizationManager:
         return optimization_result
 
     def _select_optimal_strategy(self, operation_type: OperationType,
-                               config: OperationConfig) -> OptimizationStrategy:
+                               config: OperationConfig, **kwargs) -> OptimizationStrategy:
         """
         Select the optimal optimization strategy based on operation type and constraints.
         Enhanced with VectorBT prioritization for financial operations.
         """
+        # Check for prefer_vectorbt flag
+        prefer_vectorbt = kwargs.get('prefer_vectorbt', False)
+        
         # VectorBT operations - prioritize VectorBT for financial operations
         if operation_type in [OperationType.VECTORBT_BACKTESTING,
                             OperationType.VECTORBT_METRICS,
                             OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION,
                             OperationType.VECTORBT_TECHNICAL_ANALYSIS]:
-            if self.hardware_caps['gpu_available'] and config.data_size > 10000:
+            if (self.hardware_caps['gpu_available'] and 
+                config.data_size > self.strategy_config.gpu_data_size_threshold):
                 return OptimizationStrategy.VECTORBT_GPU
-            elif self.hardware_caps['cpu_cores'] >= 4 and config.data_size > 5000:
+            elif (self.hardware_caps['cpu_cores'] >= self.strategy_config.parallel_cpu_cores_threshold and 
+                  config.data_size > self.strategy_config.parallel_data_size_threshold):
                 return OptimizationStrategy.VECTORBT_PARALLEL
             else:
                 return OptimizationStrategy.VECTORBT_CPU
@@ -355,10 +403,12 @@ class UnifiedVectorizationManager:
             # Use VectorBT for backtesting if available (lower threshold for default usage)
             if (hasattr(self, 'vectorbt_backtesting_available') and 
                 self.vectorbt_backtesting_available and 
-                config.data_size > 100):  # Lowered threshold to use VectorBT by default
-                if self.hardware_caps['gpu_available'] and config.data_size > 5000:  # Lowered threshold
+                (config.data_size > self.strategy_config.vectorbt_data_size_threshold or prefer_vectorbt)):
+                if (self.hardware_caps['gpu_available'] and 
+                    config.data_size > self.strategy_config.vectorbt_gpu_threshold):
                     return OptimizationStrategy.VECTORBT_GPU
-                elif self.hardware_caps['cpu_cores'] >= 2 and config.data_size > 1000:  # Lowered threshold
+                elif (self.hardware_caps['cpu_cores'] >= self.strategy_config.vectorbt_parallel_cpu_cores_threshold and 
+                      config.data_size > self.strategy_config.vectorbt_parallel_threshold):
                     return OptimizationStrategy.VECTORBT_PARALLEL
                 else:
                     return OptimizationStrategy.VECTORBT_CPU
@@ -368,29 +418,57 @@ class UnifiedVectorizationManager:
             if operation_type in [OperationType.MATRIX_MULTIPLICATION,
                                 OperationType.HMM_TRAINING,
                                 OperationType.FEATURE_ENGINEERING]:
-                if config.data_size > 10000:  # Large datasets benefit from GPU
+                if config.data_size > self.strategy_config.gpu_data_size_threshold:
                     return OptimizationStrategy.GPU_ACCELERATED
 
         # Parallel processing for CPU-bound operations
-        if self.hardware_caps['cpu_cores'] >= 4:
+        if self.hardware_caps['cpu_cores'] >= self.strategy_config.parallel_cpu_cores_threshold:
             if operation_type in [OperationType.MODEL_TRAINING,
                                 OperationType.FEATURE_SELECTION]:
-                if config.data_size > 5000:
+                if config.data_size > self.strategy_config.parallel_data_size_threshold:
                     return OptimizationStrategy.PARALLEL_PROCESSING
 
         # Hybrid optimization for complex operations
         if operation_type in [OperationType.CROSS_VALIDATION]:
-            if self.hardware_caps['gpu_available'] and self.hardware_caps['cpu_cores'] >= 4:
+            if (self.hardware_caps['gpu_available'] and 
+                self.hardware_caps['cpu_cores'] >= self.strategy_config.parallel_cpu_cores_threshold):
                 return OptimizationStrategy.HYBRID_OPTIMIZATION
+
+        # Handle portfolio optimization
+        if operation_type == OperationType.PORTFOLIO_OPTIMIZATION:
+            # Use VectorBT portfolio optimization if available, otherwise fallback
+            if (hasattr(self, 'vectorbt_portfolio_optimization_available') and 
+                self.vectorbt_portfolio_optimization_available):
+                if (self.hardware_caps['gpu_available'] and 
+                    config.data_size > self.strategy_config.vectorbt_gpu_threshold):
+                    return OptimizationStrategy.VECTORBT_GPU
+                elif (self.hardware_caps['cpu_cores'] >= self.strategy_config.vectorbt_parallel_cpu_cores_threshold and 
+                      config.data_size > self.strategy_config.vectorbt_parallel_threshold):
+                    return OptimizationStrategy.VECTORBT_PARALLEL
+                else:
+                    return OptimizationStrategy.VECTORBT_CPU
+            else:
+                # Fallback to vectorized CPU for basic portfolio optimization
+                return OptimizationStrategy.VECTORIZED_CPU
+
+        # Handle statistical computation
+        if operation_type == OperationType.STATISTICAL_COMPUTATION:
+            if (self.hardware_caps['gpu_available'] and 
+                config.data_size > self.strategy_config.gpu_data_size_threshold):
+                return OptimizationStrategy.GPU_ACCELERATED
+            elif (self.hardware_caps['cpu_cores'] >= self.strategy_config.parallel_cpu_cores_threshold and 
+                  config.data_size > self.strategy_config.parallel_data_size_threshold):
+                return OptimizationStrategy.PARALLEL_PROCESSING
+            else:
+                return OptimizationStrategy.VECTORIZED_CPU
 
         # Default to vectorized CPU for most operations
         if operation_type in [OperationType.FEATURE_ENGINEERING,
-                            OperationType.TECHNICAL_INDICATORS,
-                            OperationType.STATISTICAL_COMPUTATION]:
+                            OperationType.TECHNICAL_INDICATORS]:
             return OptimizationStrategy.VECTORIZED_CPU
 
         # Memory optimization for large datasets
-        if config.memory_budget_mb < 512:  # Limited memory
+        if config.memory_budget_mb < self.strategy_config.memory_optimization_threshold_mb:
             return OptimizationStrategy.MEMORY_OPTIMIZED
 
         # Fallback to vectorized CPU
@@ -608,9 +686,12 @@ class UnifiedVectorizationManager:
         metadata = {'memory_optimized': True}
 
         # Use chunked processing for memory efficiency
-        if hasattr(data, '__len__') and len(data) > config.data_size // 4:
+        # Only chunk if memory budget is actually constrained
+        if (config.memory_budget_mb < self.strategy_config.memory_optimization_threshold_mb and 
+            hasattr(data, '__len__') and 
+            len(data) > self.strategy_config.chunking_data_size_threshold):
             # Split data into chunks
-            chunk_size = config.data_size // 4
+            chunk_size = max(100, config.data_size // 4)  # Minimum chunk size
             chunks = self._split_data_into_chunks(data, chunk_size)
 
             # Process chunks and combine results
@@ -663,6 +744,51 @@ class UnifiedVectorizationManager:
             )
             metadata['vectorized_backtesting_used'] = True
 
+        elif operation_type == OperationType.PORTFOLIO_OPTIMIZATION:
+            # Basic portfolio optimization using numpy
+            returns = data.get('returns')
+            if returns is not None:
+                # Simple mean-variance optimization
+                mean_returns = np.mean(returns, axis=0)
+                cov_matrix = np.cov(returns.T)
+                
+                # Equal weight portfolio as baseline
+                n_assets = len(mean_returns)
+                equal_weights = np.ones(n_assets) / n_assets
+                
+                # Calculate portfolio metrics
+                portfolio_return = np.dot(equal_weights, mean_returns)
+                portfolio_variance = np.dot(equal_weights, np.dot(cov_matrix, equal_weights))
+                portfolio_volatility = np.sqrt(portfolio_variance)
+                
+                result = {
+                    'weights': equal_weights,
+                    'expected_return': portfolio_return,
+                    'volatility': portfolio_volatility,
+                    'sharpe_ratio': portfolio_return / portfolio_volatility if portfolio_volatility > 0 else 0
+                }
+                metadata['basic_portfolio_optimization_used'] = True
+            else:
+                result = self._execute_generic_operation(operation_type, data, **kwargs)
+                metadata['generic_fallback'] = True
+
+        elif operation_type == OperationType.STATISTICAL_COMPUTATION:
+            # Basic statistical computations
+            if isinstance(data, np.ndarray):
+                result = {
+                    'mean': np.mean(data),
+                    'std': np.std(data),
+                    'min': np.min(data),
+                    'max': np.max(data),
+                    'median': np.median(data),
+                    'skewness': self._calculate_skewness(data),
+                    'kurtosis': self._calculate_kurtosis(data)
+                }
+                metadata['basic_statistical_computation_used'] = True
+            else:
+                result = self._execute_generic_operation(operation_type, data, **kwargs)
+                metadata['generic_fallback'] = True
+
         else:
             # Generic fallback
             self.logger.warning(f"⚠️ No specific optimization available for {operation_type.value}")
@@ -682,6 +808,26 @@ class UnifiedVectorizationManager:
                 return np.mean(data_array), np.std(data_array), np.min(data_array), np.max(data_array)
 
         return data  # Return as-is if no optimization possible
+
+    def _calculate_skewness(self, data: np.ndarray) -> float:
+        """Calculate skewness of the data."""
+        if len(data) < 3:
+            return 0.0
+        mean = np.mean(data)
+        std = np.std(data)
+        if std == 0:
+            return 0.0
+        return np.mean(((data - mean) / std) ** 3)
+
+    def _calculate_kurtosis(self, data: np.ndarray) -> float:
+        """Calculate kurtosis of the data."""
+        if len(data) < 4:
+            return 0.0
+        mean = np.mean(data)
+        std = np.std(data)
+        if std == 0:
+            return 0.0
+        return np.mean(((data - mean) / std) ** 4) - 3
 
     def _create_default_config(self, operation_type: OperationType, data: Any) -> OperationConfig:
         """Create default configuration for an operation."""
@@ -727,19 +873,26 @@ class UnifiedVectorizationManager:
 
     def _calculate_performance_gain(self, operation_type: OperationType,
                                   computation_time: float,
-                                  metadata: Dict[str, Any]) -> float:
+                                  metadata: Dict[str, Any],
+                                  config: Optional[OperationConfig] = None) -> float:
         """Calculate performance gain compared to baseline."""
-        # Baseline times (estimated) for different operations
-        baseline_times = {
-            OperationType.MATRIX_MULTIPLICATION: 10.0,
-            OperationType.HMM_TRAINING: 50.0,
-            OperationType.BACKTESTING: 30.0,
-            OperationType.CROSS_VALIDATION: 20.0,
-            OperationType.FEATURE_ENGINEERING: 15.0,
-            OperationType.TECHNICAL_INDICATORS: 25.0
-        }
+        # Use config baselines if available, otherwise use defaults
+        if config and config.baseline_times:
+            baseline_time = config.baseline_times.get(operation_type, 10.0)
+        else:
+            # Default baseline times (estimated) for different operations
+            baseline_times = {
+                OperationType.MATRIX_MULTIPLICATION: 10.0,
+                OperationType.HMM_TRAINING: 50.0,
+                OperationType.BACKTESTING: 30.0,
+                OperationType.CROSS_VALIDATION: 20.0,
+                OperationType.FEATURE_ENGINEERING: 15.0,
+                OperationType.TECHNICAL_INDICATORS: 25.0,
+                OperationType.PORTFOLIO_OPTIMIZATION: 20.0,
+                OperationType.STATISTICAL_COMPUTATION: 5.0
+            }
+            baseline_time = baseline_times.get(operation_type, 10.0)
 
-        baseline_time = baseline_times.get(operation_type, 10.0)
         if computation_time > 0:
             return baseline_time / computation_time
         return 1.0
@@ -751,6 +904,14 @@ class UnifiedVectorizationManager:
         self.optimization_stats['strategy_usage'][strategy] += 1
         self.optimization_stats['total_computation_time'] += computation_time
 
+        # Update performance history
+        self.performance_history.append({
+            'strategy': strategy.value,
+            'computation_time': computation_time,
+            'performance_gain': performance_gain,
+            'timestamp': time.time()
+        })
+
         # Update average speedup
         total_operations = self.optimization_stats['total_operations']
         current_avg = self.optimization_stats['average_speedup']
@@ -760,7 +921,36 @@ class UnifiedVectorizationManager:
 
     def _split_data_into_chunks(self, data: Any, chunk_size: int) -> List[Any]:
         """Split data into chunks for memory-efficient processing."""
-        if isinstance(data, np.ndarray):
+        if isinstance(data, dict):
+            # Handle dictionary of arrays (e.g., for backtesting with signals and prices)
+            chunks = []
+            keys = list(data.keys())
+            if not keys:
+                return [data]
+            
+            # Get the length from the first array
+            first_key = keys[0]
+            first_array = data[first_key]
+            if not hasattr(first_array, '__len__'):
+                return [data]
+            
+            total_length = len(first_array)
+            for i in range(0, total_length, chunk_size):
+                chunk = {}
+                for key in keys:
+                    array = data[key]
+                    if hasattr(array, '__len__') and len(array) == total_length:
+                        if isinstance(array, np.ndarray):
+                            chunk[key] = array[i:i+chunk_size]
+                        elif isinstance(array, pd.DataFrame):
+                            chunk[key] = array.iloc[i:i+chunk_size]
+                        else:
+                            chunk[key] = array[i:i+chunk_size]
+                    else:
+                        chunk[key] = array  # Keep non-matching arrays as-is
+                chunks.append(chunk)
+            return chunks
+        elif isinstance(data, np.ndarray):
             return [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
         elif isinstance(data, pd.DataFrame):
             return [data.iloc[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
@@ -776,7 +966,7 @@ class UnifiedVectorizationManager:
             # Return appropriate empty result based on operation type
             if operation_type == OperationType.FEATURE_ENGINEERING:
                 return pd.DataFrame()
-            elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING]:
+            elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING, OperationType.PORTFOLIO_OPTIMIZATION, OperationType.STATISTICAL_COMPUTATION]:
                 return {}
             else:
                 return []
@@ -785,8 +975,10 @@ class UnifiedVectorizationManager:
             # Concatenate DataFrames
             if all(isinstance(result, pd.DataFrame) for result in chunk_results):
                 return pd.concat(chunk_results, ignore_index=True)
+            elif all(isinstance(result, np.ndarray) for result in chunk_results):
+                return np.concatenate(chunk_results)
 
-        elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING]:
+        elif operation_type in [OperationType.CROSS_VALIDATION, OperationType.BACKTESTING, OperationType.PORTFOLIO_OPTIMIZATION, OperationType.STATISTICAL_COMPUTATION]:
             # Average results across chunks
             if all(isinstance(result, dict) for result in chunk_results):
                 combined = {}
@@ -795,9 +987,22 @@ class UnifiedVectorizationManager:
                         combined[key] = np.mean([result[key] for result in chunk_results])
                     elif isinstance(chunk_results[0][key], np.ndarray):
                         combined[key] = np.concatenate([result[key] for result in chunk_results])
+                    elif isinstance(chunk_results[0][key], list):
+                        # Concatenate lists
+                        combined[key] = []
+                        for result in chunk_results:
+                            combined[key].extend(result[key])
                     else:
                         combined[key] = chunk_results[0][key]  # Take first one
                 return combined
+
+        # Handle single values (e.g., from statistical computations)
+        elif operation_type == OperationType.STATISTICAL_COMPUTATION:
+            if all(isinstance(result, (int, float)) for result in chunk_results):
+                return np.mean(chunk_results)
+            elif all(isinstance(result, dict) for result in chunk_results):
+                # Already handled above
+                pass
 
         # Default: return first result
         return chunk_results[0]
@@ -859,7 +1064,7 @@ class UnifiedVectorizationManager:
                 try:
                     result = self.optimize_operation(
                         operation_type, data, config,
-                        force_strategy=strategy  # This would need to be added to optimize_operation
+                        force_strategy=strategy
                     )
                     strategy_times.append(result.computation_time)
                     strategy_gains.append(result.performance_gain)
@@ -881,9 +1086,10 @@ class UnifiedVectorizationManager:
 # Convenience functions for common operations
 def optimize_feature_engineering(data: pd.DataFrame,
                                indicator_configs: Dict[str, List[int]],
+                               strategy_config: Optional[StrategySelectionConfig] = None,
                                **kwargs) -> OptimizationResult:
     """Convenience function for optimized feature engineering."""
-    manager = UnifiedVectorizationManager()
+    manager = UnifiedVectorizationManager(strategy_config)
     config = OperationConfig(
         operation_type=OperationType.TECHNICAL_INDICATORS,
         data_size=len(data),
@@ -901,9 +1107,10 @@ def optimize_feature_engineering(data: pd.DataFrame,
 def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
                            y: Union[np.ndarray, pd.Series],
                            model_class: Any,
+                           strategy_config: Optional[StrategySelectionConfig] = None,
                            **kwargs) -> OptimizationResult:
     """Convenience function for optimized cross-validation with VectorBT by default."""
-    manager = UnifiedVectorizationManager()
+    manager = UnifiedVectorizationManager(strategy_config)
     data_size = len(X) if hasattr(X, '__len__') else 1
     data_dimensions = X.shape if hasattr(X, 'shape') else (data_size,)
     config = OperationConfig(
@@ -920,9 +1127,10 @@ def optimize_cross_validation(X: Union[np.ndarray, pd.DataFrame],
 def optimize_backtesting(signals: Union[np.ndarray, pd.DataFrame],
                        prices: Union[np.ndarray, pd.DataFrame],
                        timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
+                       strategy_config: Optional[StrategySelectionConfig] = None,
                        **kwargs) -> OptimizationResult:
     """Convenience function for optimized backtesting with VectorBT by default."""
-    manager = UnifiedVectorizationManager()
+    manager = UnifiedVectorizationManager(strategy_config)
     data_size = len(signals) if hasattr(signals, '__len__') else 1
     data_dimensions = signals.shape if hasattr(signals, 'shape') else (data_size,)
     config = OperationConfig(
@@ -1064,11 +1272,11 @@ def optimize_financial_operation(operation_type: str,
 # Global instance for easy access
 _unified_manager = None
 
-def get_unified_vectorization_manager() -> UnifiedVectorizationManager:
+def get_unified_vectorization_manager(strategy_config: Optional[StrategySelectionConfig] = None) -> UnifiedVectorizationManager:
     """Get global unified vectorization manager instance."""
     global _unified_manager
-    if _unified_manager is None:
-        _unified_manager = UnifiedVectorizationManager()
+    if _unified_manager is None or strategy_config is not None:
+        _unified_manager = UnifiedVectorizationManager(strategy_config)
     return _unified_manager
 
 

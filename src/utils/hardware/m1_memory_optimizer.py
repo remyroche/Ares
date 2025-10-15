@@ -3,6 +3,9 @@ M1 Memory Optimizer for Apple Silicon.
 
 This module provides memory optimization techniques specifically
 designed for Apple Silicon's unified memory architecture.
+
+Version: 2.0.0
+Backwards Compatibility: Yes (maintains API compatibility with v1.x)
 """
 
 import logging
@@ -11,6 +14,8 @@ from typing import Any, Dict, List, Optional, Set
 import sys
 import threading
 import time
+import warnings
+from functools import wraps
 
 # Optional dependencies
 try:
@@ -28,6 +33,24 @@ except ImportError:
     pd = None
 
 logger = logging.getLogger(__name__)
+
+# Version information
+__version__ = "2.0.0"
+__compatible_versions__ = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
+
+def deprecated(reason: str, version: str = "2.0.0"):
+    """Decorator to mark functions as deprecated."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{func.__name__} is deprecated since version {version}. {reason}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 class M1MemoryOptimizer:
     """Memory optimizer for M1 unified memory architecture."""

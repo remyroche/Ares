@@ -2,7 +2,7 @@
 Scaling and Normalization for Unified Data-Driven Pipeline.
 
 This module provides comprehensive scaling and normalization capabilities
-for consistent feature preprocessing across the pipeline.
+for consistent feature preprocessing across the pipeline with VectorBT integration.
 """
 
 import pandas as pd
@@ -14,6 +14,14 @@ from sklearn.preprocessing import (
 )
 from sklearn.compose import ColumnTransformer
 import logging
+
+# Import VectorBT components
+try:
+    from src.features_common.vectorbt.unified_manager import UnifiedVectorizationManager
+    from src.features_common.transforms.vectorbt_scaler import VectorBTScaler
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
 
 try:
     from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
@@ -32,7 +40,8 @@ class ScalingNormalizer:
     Comprehensive scaling and normalization for the unified pipeline.
     
     Provides multiple scaling strategies with automatic selection based on
-    data characteristics and feature types.
+    data characteristics and feature types. Integrates with VectorBT for
+    optimized performance when available.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -40,7 +49,19 @@ class ScalingNormalizer:
         self.config = config or {}
         self.logger = logging.getLogger(__name__)
         
-        # Scaling strategies
+        # Initialize VectorBT components if available
+        self.vectorbt_manager = None
+        self.vectorbt_scaler = None
+        
+        if VECTORBT_AVAILABLE:
+            try:
+                self.vectorbt_manager = UnifiedVectorizationManager()
+                self.vectorbt_scaler = VectorBTScaler()
+                tprint_success("✅ VectorBT components initialized for scaling")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
+        
+        # Traditional scaling strategies
         self.scalers = {
             'standard': StandardScaler(),
             'robust': RobustScaler(),
@@ -56,6 +77,7 @@ class ScalingNormalizer:
         self.auto_select = self.config.get('auto_select', True)
         self.handle_outliers = self.config.get('handle_outliers', True)
         self.outlier_threshold = self.config.get('outlier_threshold', 3.0)
+        self.use_vectorbt = self.config.get('use_vectorbt', VECTORBT_AVAILABLE)
         
         # Fitted scalers and feature mappings
         self.fitted_scalers = {}
@@ -80,7 +102,8 @@ class ScalingNormalizer:
             'outlier_features': [],
             'skewed_features': [],
             'recommended_strategy': self.default_strategy,
-            'feature_stats': {}
+            'feature_stats': {},
+            'vectorbt_suitable': False
         }
         
         for col in data.columns:
@@ -97,7 +120,8 @@ class ScalingNormalizer:
                         'max': col_data.max(),
                         'skewness': col_data.skew(),
                         'kurtosis': col_data.kurtosis(),
-                        'outlier_count': self._count_outliers(col_data)
+                        'outlier_count': self._count_outliers(col_data),
+                        'total_count': len(col_data)
                     }
                     characteristics['feature_stats'][col] = stats
                     
@@ -111,6 +135,12 @@ class ScalingNormalizer:
             else:
                 characteristics['categorical_features'].append(col)
         
+        # Check if data is suitable for VectorBT optimization
+        if (self.use_vectorbt and VECTORBT_AVAILABLE and 
+            len(characteristics['numeric_features']) > 0 and
+            len(data) > 1000):  # VectorBT is more efficient for larger datasets
+            characteristics['vectorbt_suitable'] = True
+        
         # Recommend scaling strategy based on characteristics
         if characteristics['outlier_features']:
             characteristics['recommended_strategy'] = 'robust'
@@ -121,7 +151,8 @@ class ScalingNormalizer:
         
         tprint_info(f"📊 Data analysis: {len(characteristics['numeric_features'])} numeric, "
                    f"{len(characteristics['outlier_features'])} with outliers, "
-                   f"{len(characteristics['skewed_features'])} skewed")
+                   f"{len(characteristics['skewed_features'])} skewed, "
+                   f"VectorBT suitable: {characteristics['vectorbt_suitable']}")
         
         return characteristics
 
@@ -193,7 +224,23 @@ class ScalingNormalizer:
             tprint_info("ℹ️ No numeric features to scale")
             return data
         
-        # Create a copy to avoid modifying original data
+        # Try VectorBT optimization if suitable
+        if (characteristics['vectorbt_suitable'] and 
+            self.vectorbt_scaler is not None and 
+            strategy in ['standard', 'robust', 'minmax']):
+            
+            try:
+                tprint_info("🚀 Using VectorBT for optimized scaling")
+                scaled_data = self._vectorbt_fit_transform(data, feature_list, strategy)
+                if scaled_data is not None:
+                    tprint_success("✅ VectorBT scaling completed")
+                    return scaled_data
+                else:
+                    tprint_warning("⚠️ VectorBT scaling failed, falling back to traditional methods")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT scaling error: {e}, using traditional methods")
+        
+        # Traditional scaling approach
         scaled_data = data.copy()
         
         # Process each feature
@@ -226,6 +273,45 @@ class ScalingNormalizer:
         tprint_success(f"✅ Scaling completed: {len(feature_list)} features processed")
         return scaled_data
 
+    def _vectorbt_fit_transform(self, data: pd.DataFrame, 
+                               feature_list: List[str], 
+                               strategy: str) -> Optional[pd.DataFrame]:
+        """Use VectorBT for optimized scaling."""
+        try:
+            if not self.vectorbt_scaler:
+                return None
+            
+            # Prepare data for VectorBT
+            numeric_data = data[feature_list].copy()
+            
+            # Apply VectorBT scaling
+            if strategy == 'standard':
+                scaled_data = self.vectorbt_scaler.zscore_normalize(numeric_data)
+            elif strategy == 'robust':
+                scaled_data = self.vectorbt_scaler.robust_normalize(numeric_data)
+            elif strategy == 'minmax':
+                scaled_data = self.vectorbt_scaler.minmax_normalize(numeric_data)
+            else:
+                return None
+            
+            # Store fitted scalers for inverse transform
+            for feature in feature_list:
+                self.fitted_scalers[feature] = {
+                    'scaler': self.vectorbt_scaler,
+                    'strategy': strategy,
+                    'vectorbt': True
+                }
+            
+            # Create result DataFrame with original structure
+            result = data.copy()
+            result[feature_list] = scaled_data
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ VectorBT scaling failed: {e}")
+            return None
+
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Transform data using previously fitted scalers.
@@ -253,15 +339,23 @@ class ScalingNormalizer:
             try:
                 scaler = scaler_info['scaler']
                 strategy = scaler_info['strategy']
+                is_vectorbt = scaler_info.get('vectorbt', False)
                 
                 # Apply transformation
-                transformed_feature = self._apply_scaling(
-                    data[feature], feature, strategy, fit=False
-                )
+                if is_vectorbt and hasattr(scaler, f'{strategy}_normalize'):
+                    # Use VectorBT transformation
+                    feature_data = data[[feature]].copy()
+                    transformed_feature = getattr(scaler, f'{strategy}_normalize')(feature_data)
+                    transformed_data[feature] = transformed_feature[feature]
+                else:
+                    # Use traditional transformation
+                    transformed_feature = self._apply_scaling(
+                        data[feature], feature, strategy, fit=False
+                    )
+                    if transformed_feature is not None:
+                        transformed_data[feature] = transformed_feature
                 
-                if transformed_feature is not None:
-                    transformed_data[feature] = transformed_feature
-                    tprint_debug(f"✅ Transformed {feature} using {strategy}")
+                tprint_debug(f"✅ Transformed {feature} using {strategy}")
                 
             except Exception as e:
                 tprint_error(f"❌ Error transforming feature {feature}: {e}")
@@ -293,7 +387,8 @@ class ScalingNormalizer:
                 # Store fitted scaler
                 self.fitted_scalers[feature_name] = {
                     'scaler': scaler,
-                    'strategy': strategy
+                    'strategy': strategy,
+                    'vectorbt': False
                 }
             else:
                 # Use previously fitted scaler
@@ -323,6 +418,7 @@ class ScalingNormalizer:
         try:
             scaler_info = self.fitted_scalers[feature_name]
             scaler = scaler_info['scaler']
+            is_vectorbt = scaler_info.get('vectorbt', False)
             
             # Handle missing values
             data_clean = data[feature_name].dropna()
@@ -330,7 +426,13 @@ class ScalingNormalizer:
                 return data[feature_name]
             
             # Inverse transform
-            original_values = scaler.inverse_transform(data_clean.values.reshape(-1, 1)).flatten()
+            if is_vectorbt and hasattr(scaler, 'inverse_transform'):
+                # Use VectorBT inverse transform
+                feature_data = data_clean.values.reshape(-1, 1)
+                original_values = scaler.inverse_transform(feature_data).flatten()
+            else:
+                # Use traditional inverse transform
+                original_values = scaler.inverse_transform(data_clean.values.reshape(-1, 1)).flatten()
             
             # Create Series with original index
             original_series = pd.Series(index=data[feature_name].index, dtype=float)
@@ -347,16 +449,26 @@ class ScalingNormalizer:
         summary = {
             'total_features_scaled': len(self.fitted_scalers),
             'scaling_strategies_used': {},
-            'feature_details': {}
+            'feature_details': {},
+            'vectorbt_usage': 0,
+            'traditional_usage': 0
         }
         
         for feature, scaler_info in self.fitted_scalers.items():
             strategy = scaler_info['strategy']
+            is_vectorbt = scaler_info.get('vectorbt', False)
+            
             summary['scaling_strategies_used'][strategy] = summary['scaling_strategies_used'].get(strategy, 0) + 1
+            
+            if is_vectorbt:
+                summary['vectorbt_usage'] += 1
+            else:
+                summary['traditional_usage'] += 1
             
             summary['feature_details'][feature] = {
                 'strategy': strategy,
-                'scaler_type': type(scaler_info['scaler']).__name__
+                'scaler_type': type(scaler_info['scaler']).__name__,
+                'vectorbt': is_vectorbt
             }
         
         return summary

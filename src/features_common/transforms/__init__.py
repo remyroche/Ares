@@ -9,6 +9,8 @@ from ..utils import (
 
 from .base_scaler import BaseScaler, create_optimized_scaler, create_optimized_batch_scaler
 from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler
+from .scaling_normalization import ScalingNormalizer
+from .categorical_encoding import CategoricalEncoder
 
 __all__ = [
     'BaseScaler',
@@ -16,6 +18,8 @@ __all__ = [
     'VectorBTBatchScaler',
     'create_optimized_scaler',
     'create_optimized_batch_scaler',
+    'ScalingNormalizer',
+    'CategoricalEncoder',
 ]
 
 # Add VectorBT optimization components to __all__ if available

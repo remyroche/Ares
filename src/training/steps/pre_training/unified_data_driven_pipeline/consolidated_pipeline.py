@@ -162,8 +162,8 @@ from .enhanced_components.gpu_optimizations import (
 from .enhanced_components.advanced_feature_selection import (
     AdvancedFeatureSelector, FeatureSelectionConfig as AdvancedFeatureSelectionConfig
 )
-from .enhanced_components.categorical_encoding import CategoricalEncoder
-from .enhanced_components.scaling_normalization import ScalingNormalizer
+from src.features_common.transforms.categorical_encoding import CategoricalEncoder
+from src.features_common.transforms.scaling_normalization import ScalingNormalizer
 from .enhanced_components.random_seed_manager import RandomSeedManager
 from .enhanced_components.lightgbm_featuretools_generator import (
     LightGBMFeatureToolsGenerator, LightGBMFeatureToolsConfig
@@ -319,8 +319,9 @@ except ImportError as e:
 
 # Import VectorBT utilities
 try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, VectorizationConfig
+    from src.features_common.utils import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.features_common.vectorbt.unified_manager import UnifiedVectorizationManager
+    from src.features_common.config.vectorbt_config import VectorizationConfig
     VECTORBT_UTILITIES_AVAILABLE = True
     VECTORBT_AVAILABLE = True
     tprint_info("✅ VectorBT utilities imported successfully")

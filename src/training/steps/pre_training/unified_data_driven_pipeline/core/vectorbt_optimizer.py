@@ -709,7 +709,8 @@ class VectorBTOptimizer:
                 return rolling_mean(df, window=window)
             else:
                 return df.rolling(window=window).mean()
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT rolling mean failed: {e}, using pandas fallback")
             return df.rolling(window=window).mean()
     
     def _apply_rolling_std(self, df: pd.DataFrame, window: int) -> pd.DataFrame:

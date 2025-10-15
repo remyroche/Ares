@@ -2,7 +2,7 @@
 Categorical Feature Encoding for Unified Data-Driven Pipeline.
 
 This module provides comprehensive categorical feature encoding capabilities
-including one-hot encoding, ordinal encoding, and target encoding.
+including one-hot encoding, ordinal encoding, and target encoding with VectorBT integration.
 """
 
 import pandas as pd
@@ -14,6 +14,13 @@ from sklearn.preprocessing import (
 )
 from sklearn.model_selection import KFold
 import logging
+
+# Import VectorBT components
+try:
+    from src.features_common.vectorbt.unified_manager import UnifiedVectorizationManager
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
 
 try:
     from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
@@ -32,13 +39,23 @@ class CategoricalEncoder:
     Comprehensive categorical feature encoder for the unified pipeline.
     
     Supports multiple encoding strategies with automatic detection of
-    categorical features and appropriate encoding selection.
+    categorical features and appropriate encoding selection. Integrates
+    with VectorBT for optimized performance when available.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the categorical encoder."""
         self.config = config or {}
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize VectorBT components if available
+        self.vectorbt_manager = None
+        if VECTORBT_AVAILABLE:
+            try:
+                self.vectorbt_manager = UnifiedVectorizationManager()
+                tprint_success("✅ VectorBT components initialized for categorical encoding")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT initialization failed: {e}")
         
         # Encoding strategies configuration
         self.encoding_strategies = {
@@ -53,6 +70,7 @@ class CategoricalEncoder:
         self.categorical_threshold = self.config.get('categorical_threshold', 0.05)  # 5% unique values
         self.max_categories = self.config.get('max_categories', 50)
         self.min_frequency = self.config.get('min_frequency', 10)
+        self.use_vectorbt = self.config.get('use_vectorbt', VECTORBT_AVAILABLE)
         
         # Encoding results tracking
         self.encoding_results = {}
@@ -161,7 +179,21 @@ class CategoricalEncoder:
             tprint_info("ℹ️ No categorical features found")
             return data
         
-        # Create a copy to avoid modifying original data
+        # Try VectorBT optimization for large datasets
+        if (self.use_vectorbt and VECTORBT_AVAILABLE and 
+            len(data) > 1000 and len(feature_list) > 1):
+            try:
+                tprint_info("🚀 Using VectorBT for optimized categorical encoding")
+                encoded_data = self._vectorbt_encode_features(data, feature_list, target)
+                if encoded_data is not None:
+                    tprint_success("✅ VectorBT categorical encoding completed")
+                    return encoded_data
+                else:
+                    tprint_warning("⚠️ VectorBT encoding failed, falling back to traditional methods")
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT encoding error: {e}, using traditional methods")
+        
+        # Traditional encoding approach
         encoded_data = data.copy()
         
         for feature in feature_list:
@@ -202,6 +234,61 @@ class CategoricalEncoder:
         
         tprint_success(f"✅ Categorical encoding completed: {len(feature_list)} features processed")
         return encoded_data
+
+    def _vectorbt_encode_features(self, data: pd.DataFrame, 
+                                 feature_list: List[str], 
+                                 target: Optional[pd.Series] = None) -> Optional[pd.DataFrame]:
+        """Use VectorBT for optimized categorical encoding."""
+        try:
+            if not self.vectorbt_manager:
+                return None
+            
+            # Prepare categorical data
+            categorical_data = data[feature_list].copy()
+            
+            # Use VectorBT for one-hot encoding (most common case)
+            encoded_data = data.copy()
+            
+            for feature in feature_list:
+                if categorical_data[feature].nunique() <= 10:  # Suitable for one-hot
+                    # Use VectorBT's optimized one-hot encoding
+                    one_hot_result = self.vectorbt_manager.one_hot_encode(
+                        categorical_data[feature], 
+                        feature_name=feature
+                    )
+                    
+                    if one_hot_result is not None:
+                        # Drop original feature and add encoded columns
+                        encoded_data = encoded_data.drop(columns=[feature])
+                        encoded_data = pd.concat([encoded_data, one_hot_result], axis=1)
+                        
+                        # Store mapping
+                        self.feature_mappings[feature] = {
+                            'strategy': 'one_hot_vectorbt',
+                            'vectorbt': True,
+                            'columns': list(one_hot_result.columns)
+                        }
+                else:
+                    # Use ordinal encoding for high cardinality
+                    ordinal_result = self.vectorbt_manager.ordinal_encode(
+                        categorical_data[feature], 
+                        feature_name=feature
+                    )
+                    
+                    if ordinal_result is not None:
+                        encoded_data[feature] = ordinal_result
+                        
+                        # Store mapping
+                        self.feature_mappings[feature] = {
+                            'strategy': 'ordinal_vectorbt',
+                            'vectorbt': True
+                        }
+            
+            return encoded_data
+            
+        except Exception as e:
+            tprint_error(f"❌ VectorBT categorical encoding failed: {e}")
+            return None
 
     def _apply_encoding(self, data: pd.Series, strategy: str, 
                        feature_name: str, target: Optional[pd.Series] = None) -> Union[pd.Series, pd.DataFrame, None]:
@@ -244,7 +331,8 @@ class CategoricalEncoder:
         self.feature_mappings[feature_name] = {
             'strategy': 'one_hot',
             'encoder': encoder,
-            'categories': categories
+            'categories': categories,
+            'vectorbt': False
         }
         
         return encoded_df
@@ -266,7 +354,8 @@ class CategoricalEncoder:
         self.feature_mappings[feature_name] = {
             'strategy': 'ordinal',
             'encoder': encoder,
-            'categories': encoder.categories_[0]
+            'categories': encoder.categories_[0],
+            'vectorbt': False
         }
         
         return encoded_series
@@ -288,7 +377,8 @@ class CategoricalEncoder:
         self.feature_mappings[feature_name] = {
             'strategy': 'binary',
             'encoder': encoder,
-            'classes': encoder.classes_
+            'classes': encoder.classes_,
+            'vectorbt': False
         }
         
         return encoded_series
@@ -310,7 +400,8 @@ class CategoricalEncoder:
         # Store mapping for later use
         self.feature_mappings[feature_name] = {
             'strategy': 'target',
-            'encoder': encoder
+            'encoder': encoder,
+            'vectorbt': False
         }
         
         return encoded_series
@@ -320,16 +411,26 @@ class CategoricalEncoder:
         summary = {
             'total_features_encoded': len(self.feature_mappings),
             'encoding_strategies_used': {},
-            'feature_details': {}
+            'feature_details': {},
+            'vectorbt_usage': 0,
+            'traditional_usage': 0
         }
         
         for feature, mapping in self.feature_mappings.items():
             strategy = mapping['strategy']
+            is_vectorbt = mapping.get('vectorbt', False)
+            
             summary['encoding_strategies_used'][strategy] = summary['encoding_strategies_used'].get(strategy, 0) + 1
+            
+            if is_vectorbt:
+                summary['vectorbt_usage'] += 1
+            else:
+                summary['traditional_usage'] += 1
             
             summary['feature_details'][feature] = {
                 'strategy': strategy,
-                'categories_count': len(mapping.get('categories', mapping.get('classes', [])))
+                'categories_count': len(mapping.get('categories', mapping.get('classes', []))),
+                'vectorbt': is_vectorbt
             }
         
         return summary
@@ -341,11 +442,14 @@ class CategoricalEncoder:
             return data[feature_name]
         
         mapping = self.feature_mappings[feature_name]
-        encoder = mapping['encoder']
         strategy = mapping['strategy']
+        is_vectorbt = mapping.get('vectorbt', False)
         
         try:
-            if strategy == 'one_hot':
+            if is_vectorbt:
+                tprint_warning("⚠️ Inverse transform for VectorBT encoding not implemented")
+                return data[feature_name]
+            elif strategy == 'one_hot':
                 # For one-hot encoding, find the original column
                 original_categories = mapping['categories']
                 # This is complex for one-hot, would need to reconstruct
@@ -353,6 +457,7 @@ class CategoricalEncoder:
                 return data[feature_name]
             else:
                 # For ordinal, binary, and target encoding
+                encoder = mapping['encoder']
                 encoded_values = data[feature_name].values.reshape(-1, 1)
                 inverse_encoded = encoder.inverse_transform(encoded_values)
                 return pd.Series(inverse_encoded.flatten(), index=data.index, name=feature_name)

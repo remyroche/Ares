@@ -1758,7 +1758,7 @@ class UnifiedDataDrivenPipeline:
         tprint_info("📊 Detailed pipeline reporter initialized")
     
     async def process(self, data: pd.DataFrame, 
-                targets: Optional[pd.Series] = None,
+                targets: pd.Series,
                 feature_columns: Optional[List[str]] = None,
                 timeframe: str = "15m",
                 pipeline_state: Optional[Dict[str, Any]] = None) -> ConsolidatedPipelineResult:
@@ -1767,7 +1767,7 @@ class UnifiedDataDrivenPipeline:
         
         Args:
             data: Input data with OHLCV columns
-            targets: Optional target series for supervised learning
+            targets: Required target series for supervised learning and optimization
             feature_columns: Optional list of feature columns to use
             timeframe: Target timeframe (e.g., "15m", "5m", "1h")
             pipeline_state: Optional pipeline state dictionary
@@ -1788,6 +1788,10 @@ class UnifiedDataDrivenPipeline:
         try:
             # Fast fail validation - check critical requirements first
             self._validate_critical_requirements(data, targets, timeframe, pipeline_state)
+            
+            # Validate that targets are provided (required for target-driven optimization)
+            if targets is None:
+                raise ValueError("Targets are required for target-driven optimization. Please provide target series.")
             
             # Enhanced data processing and validation using unified utilities
             tprint_info("🔍 Performing comprehensive data validation and processing...")
@@ -1827,47 +1831,40 @@ class UnifiedDataDrivenPipeline:
                     f"data_quality_issues_{len(quality_result.issues)}"
                 )
             
-            # Step 2: Labeling Integration (moved from later in pipeline)
-            tprint_info("Step 2: Labeling Integration (Analyst/Tactician labeling)")
+            # Step 2: Use labels from previous pipeline steps
+            tprint_info("Step 2: Using labels from previous pipeline steps")
             self.detailed_reporter.start_step("labeling_integration", len(data.columns))
             
-            # Generate labels using the tactician/analyst labeling system
-            tprint_info(f"🏷️ Generating labels using {self.config.labeling_type} labeling system")
-            
-            # Initialize processed_targets early to avoid undefined variable error
+            # Labels should come from previous steps (analyst_profit_labeler or tactician_entry_labeler)
             processed_targets = targets
             
-            # Check for existing labeling artifacts in pipeline state
-            existing_artifacts = None
-            if pipeline_state and 'labeling_artifacts' in pipeline_state:
-                existing_artifacts = pipeline_state['labeling_artifacts']
-                tprint_info("📦 Found existing labeling artifacts in pipeline state")
-            
-            labeling_result = self.labeling_adapter.generate_labels(data, processed_targets, existing_artifacts)
-            
-            if labeling_result.get('success', False):
-                tprint_success(f"✅ Labels generated successfully using {labeling_result.get('labeling_type', 'unknown')} system")
-                labeling_data = labeling_result.get('labeled_data', pd.DataFrame())
-                labeling_metadata = labeling_result.get('labeling_metadata', {})
-                labeling_quality = labeling_result.get('quality_score', 0.0)
-                
-                # Store labeling results in pipeline state
-                if pipeline_state:
-                    pipeline_state['labeling_result'] = labeling_result
-                    pipeline_state['labeling_quality'] = labeling_quality
-                    pipeline_state['labeling_metadata'] = labeling_metadata
-                
-                tprint_info(f"📊 Labeling quality score: {labeling_quality:.3f}")
-            else:
-                error_msg = f"Labeling failed: {labeling_result.get('error', 'Unknown error')}"
+            # Validate that targets are provided from previous steps
+            if processed_targets is None or processed_targets.empty:
+                error_msg = "No labels provided from previous pipeline steps. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step."
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
             
+            tprint_success(f"✅ Using {len(processed_targets)} labels from previous pipeline steps")
+            
+            # Store labeling results in pipeline state for reference
+            if pipeline_state:
+                pipeline_state['labeling_result'] = {
+                    'success': True,
+                    'labeling_type': pipeline_state.get('labeling_type', 'unknown'),
+                    'direction': pipeline_state.get('direction', 'unknown'),
+                    'targets_count': len(processed_targets)
+                }
+                pipeline_state['labeling_quality'] = 1.0  # Assume high quality from previous steps
+                pipeline_state['labeling_metadata'] = {
+                    'source': 'previous_pipeline_step',
+                    'targets_shape': processed_targets.shape
+                }
+            
             # End labeling integration step reporting
             self.detailed_reporter.end_step("labeling_integration", 
-                                          len(labeling_data.columns) if not labeling_data.empty else 0,
-                                          0.0,  # Labeling execution time
-                                          0.0,  # Labeling memory usage
+                                          len(processed_targets),
+                                          0.0,  # No execution time needed
+                                          0.0,  # No memory usage
                                           True)
             
             # Step 3: Process and validate data using unified utilities with enhanced common operations
@@ -4568,13 +4565,7 @@ class UnifiedDataDrivenPipeline:
         
         try:
             # Prepare data for optimization
-            if targets is None:
-                # Create synthetic targets if none provided
-                if 'close' in data.columns:
-                    targets = data['close'].pct_change().dropna()
-                else:
-                    tprint_warning("⚠️ No targets provided and no close price available")
-                    return {}
+            # Targets are now required and should be provided by the pipeline runner
             
             # Align data and targets
             aligned_data = data.copy()
@@ -5039,13 +5030,7 @@ class UnifiedDataDrivenPipeline:
         
         try:
             # Prepare data for feature generation
-            if targets is None:
-                # Create synthetic targets if none provided
-                if 'close' in data.columns:
-                    targets = data['close'].pct_change().dropna()
-                else:
-                    tprint_warning("⚠️ No targets provided and no close price available")
-                    return self._create_empty_enhanced_feature_result()
+            # Targets are now required and should be provided by the pipeline runner
             
             # Align data and targets
             aligned_data = data.copy()
@@ -6610,7 +6595,7 @@ def create_unified_pipeline(config: Optional[UnifiedPipelineConfig] = None) -> U
 
 
 async def process_with_unified_pipeline(data: pd.DataFrame,
-                                targets: Optional[pd.Series] = None,
+                                targets: pd.Series,
                                 feature_columns: Optional[List[str]] = None,
                                 timeframe: str = "15m",
                                 config: Optional[UnifiedPipelineConfig] = None,
@@ -6620,7 +6605,7 @@ async def process_with_unified_pipeline(data: pd.DataFrame,
     
     Args:
         data: Input data with features
-        targets: Target variable
+        targets: Required target variable for optimization
         feature_columns: Optional list of feature columns to use
         timeframe: Target timeframe
         config: Optional pipeline configuration
@@ -6629,7 +6614,7 @@ async def process_with_unified_pipeline(data: pd.DataFrame,
         ConsolidatedPipelineResult with selected features and performance metrics
     """
     pipeline = create_unified_pipeline(config)
-    return pipeline.process(data, targets, feature_columns, timeframe, pipeline_state)
+    return await pipeline.process(data, targets, feature_columns, timeframe, pipeline_state)
 
 
 # Export main classes and functions

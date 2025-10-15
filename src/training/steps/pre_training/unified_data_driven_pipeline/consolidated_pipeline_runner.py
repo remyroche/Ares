@@ -148,6 +148,12 @@ class ConsolidatedPipelineRunner:
             if self.pipeline is None:
                 raise RuntimeError("Failed to create unified pipeline with new configuration")
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -162,7 +168,7 @@ class ConsolidatedPipelineRunner:
             
             tprint_info("🚀 Executing pipeline up to data validation")
             # Run pipeline up to data validation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             if result is None:
                 raise RuntimeError("Pipeline returned None result")
@@ -241,6 +247,12 @@ class ConsolidatedPipelineRunner:
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -254,7 +266,7 @@ class ConsolidatedPipelineRunner:
             }
             
             # Run pipeline up to feature generation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract feature generation results
             feature_result = {
@@ -311,8 +323,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'feature_selection'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to feature selection
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract feature selection results
             selection_result = {
@@ -369,8 +387,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'period_optimization'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to period optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract period optimization results
             optimization_result = {
@@ -425,8 +449,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'lookback_optimization'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to lookback optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract lookback optimization results
             optimization_result = {
@@ -481,8 +511,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'period_lookback_optimization'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to concurrent period + lookback optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract period + lookback optimization results
             optimization_result = {
@@ -543,8 +579,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'interaction_generation'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to interaction generation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract interaction generation results
             interaction_result = {
@@ -601,8 +643,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'vectorization'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to vectorization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract vectorization results
             vectorization_result = {
@@ -659,8 +707,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'labeling_integration'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to labeling integration
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract labeling integration results
             labeling_result = {
@@ -717,8 +771,14 @@ class ConsolidatedPipelineRunner:
                 'step': 'final_validation'
             }
             
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+            
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+            
             # Run pipeline up to final validation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract final validation results
             validation_result = {
@@ -748,6 +808,29 @@ class ConsolidatedPipelineRunner:
                 'pipeline_summary': {}
             }
     
+    def _get_labels_from_pipeline_state(self, pipeline_state: Optional[Dict[str, Any]]) -> Optional[pd.Series]:
+        """
+        Extract labels from pipeline state (from previous labeling steps).
+        
+        Args:
+            pipeline_state: Pipeline state dictionary containing labels from previous steps
+            
+        Returns:
+            Target series from previous steps, or None if not found
+        """
+        if not pipeline_state:
+            return None
+            
+        # Try to get labels from various possible sources in pipeline state
+        if 'labeled_data' in pipeline_state and 'target' in pipeline_state['labeled_data'].columns:
+            return pipeline_state['labeled_data']['target']
+        elif 'targets' in pipeline_state:
+            return pipeline_state['targets']
+        elif 'labels' in pipeline_state:
+            return pipeline_state['labels']
+        else:
+            return None
+
     def _create_config_from_intensity(self, intensity: str, custom_overrides: Optional[Dict[str, Any]] = None) -> UnifiedPipelineConfig:
         """
         Create configuration based on intensity level.

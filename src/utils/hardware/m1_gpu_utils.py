@@ -403,8 +403,8 @@ class M1GPUManager:
             return np.matmul(array1, array2)
 
 
-# Global instance
-m1_gpu_manager = M1GPUManager()
+# Global instance with M1-specific initialization
+m1_gpu_manager = M1GPUManager(version_check=True)
 
 
 def get_m1_gpu_manager() -> M1GPUManager:

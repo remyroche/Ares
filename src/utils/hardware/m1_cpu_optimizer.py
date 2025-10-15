@@ -3,6 +3,10 @@ M1 CPU Optimizer for Apple Silicon.
 
 This module provides CPU optimization techniques specifically
 designed for Apple Silicon's performance cores and efficiency cores.
+
+Version: 2.0.0
+Backwards Compatibility: Yes (maintains API compatibility with v1.x)
+M1-Specific: Yes (optimized for M1/M2/M3/M4 chips)
 """
 
 import logging
@@ -15,6 +19,8 @@ import asyncio
 from typing import Any, Dict, List, Optional, Callable, Union
 import sys
 import platform
+import warnings
+from functools import wraps
 
 # Optional dependencies
 try:
@@ -26,41 +32,149 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-class M1CPUOptimizer:
-    """CPU optimizer for M1/M2/M3 performance and efficiency cores."""
+# Version information
+__version__ = "2.0.0"
+__compatible_versions__ = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
 
-    def __init__(self):
+def deprecated(reason: str, version: str = "2.0.0"):
+    """Decorator to mark functions as deprecated."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{func.__name__} is deprecated since version {version}. {reason}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+class M1CPUOptimizer:
+    """CPU optimizer for M1/M2/M3/M4 performance and efficiency cores with enhanced backwards compatibility."""
+
+    def __init__(self, compatibility_mode: str = "auto"):
         self.logger = logger.getChild('M1CPUOptimizer')
-        self.cpu_count = self._get_optimal_cpu_count()
+        self.version = __version__
+        self.compatibility_mode = compatibility_mode
+        
+        # M1 detection and generation
         self.is_m1 = self._detect_m1()
+        self.m1_generation = self._detect_m1_generation()
+        
+        if not self.is_m1:
+            self.logger.warning("⚠️ Non-M1 system detected - M1-specific optimizations disabled")
+        
+        # CPU configuration
+        self.cpu_count = self._get_optimal_cpu_count()
         self.performance_cores = self._get_performance_cores()
         self.efficiency_cores = self._get_efficiency_cores()
         self.conservative_mode = False
+        
+        # M1-specific optimization flags
+        self._legacy_mode = False
+        self._m1_optimizations_enabled = self.is_m1
+        
+        # Initialize M1-specific features
+        self._initialize_m1_cpu_features()
 
     def _detect_m1(self) -> bool:
-        """Detect if running on Apple Silicon."""
+        """Detect if running on Apple Silicon M1/M2/M3/M4."""
         try:
             if platform.system() != 'Darwin':
                 return False
 
             import subprocess
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                brand = result.stdout.strip()
-                return 'Apple' in brand or 'M1' in brand or 'M2' in brand or 'M3' in brand
+                brand = result.stdout.strip().lower()
+                m1_indicators = ['apple', 'm1', 'm2', 'm3', 'm4', 'silicon']
+                return any(indicator in brand for indicator in m1_indicators)
 
             return False
         except Exception as e:
             self.logger.warning(f"Could not detect M1 hardware: {e}")
             return False
 
-    def _get_optimal_cpu_count(self) -> int:
-        """Get optimal CPU count for M1."""
+    def _detect_m1_generation(self) -> str:
+        """Detect M1 chip generation for optimization purposes."""
+        if not self.is_m1:
+            return "none"
+            
         try:
-            # Use physical cores for M1 optimization
-            return max(1, multiprocessing.cpu_count() // 2)  # Use half cores for efficiency
-        except Exception:
+            import subprocess
+            result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                brand = result.stdout.strip().lower()
+                if 'm4' in brand:
+                    return "m4"
+                elif 'm3' in brand:
+                    return "m3"
+                elif 'm2' in brand:
+                    return "m2"
+                elif 'm1' in brand:
+                    return "m1"
+                elif 'apple' in brand:
+                    return "apple_silicon"
+            return "unknown"
+        except Exception as e:
+            self.logger.warning(f"Could not detect M1 generation: {e}")
+            return "unknown"
+
+    def _initialize_m1_cpu_features(self):
+        """Initialize M1-specific CPU optimization features."""
+        if self.is_m1:
+            # M1-specific CPU core configuration
+            if self.m1_generation in ["m3", "m4"]:
+                # Newer M1 chips have more cores and better performance
+                self.performance_cores = 6  # M3/M4 have 6 performance cores
+                self.efficiency_cores = 6   # M3/M4 have 6 efficiency cores
+                self.logger.info(f"🧠 M1 CPU Optimizer initialized for {self.m1_generation.upper()} (6P+6E cores)")
+            elif self.m1_generation in ["m2"]:
+                # M2 has 4 performance + 4 efficiency cores
+                self.performance_cores = 4
+                self.efficiency_cores = 4
+                self.logger.info(f"🧠 M1 CPU Optimizer initialized for {self.m1_generation.upper()} (4P+4E cores)")
+            elif self.m1_generation in ["m1"]:
+                # Original M1 has 4 performance + 4 efficiency cores
+                self.performance_cores = 4
+                self.efficiency_cores = 4
+                self.logger.info(f"🧠 M1 CPU Optimizer initialized for {self.m1_generation.upper()} (4P+4E cores)")
+            else:
+                # Generic Apple Silicon - use conservative defaults
+                self.performance_cores = 4
+                self.efficiency_cores = 4
+                self.logger.info(f"🧠 M1 CPU Optimizer initialized for {self.m1_generation.upper()} (generic)")
+        else:
+            self.logger.warning("⚠️ M1-specific CPU optimizations disabled - non-M1 system detected")
+
+    def _get_optimal_cpu_count(self) -> int:
+        """Get optimal CPU count for M1 with generation-specific optimization."""
+        if not self.is_m1:
+            # Non-M1 systems - use standard approach
+            return max(1, multiprocessing.cpu_count() // 2)
+            
+        try:
+            total_cores = multiprocessing.cpu_count()
+            
+            # M1-specific core optimization based on generation
+            if self.m1_generation in ["m3", "m4"]:
+                # M3/M4: Use more cores due to better performance
+                return max(1, int(total_cores * 0.75))  # Use 75% of cores
+            elif self.m1_generation in ["m2"]:
+                # M2: Balanced approach
+                return max(1, int(total_cores * 0.6))   # Use 60% of cores
+            elif self.m1_generation in ["m1"]:
+                # M1: Conservative approach
+                return max(1, int(total_cores * 0.5))   # Use 50% of cores
+            else:
+                # Generic Apple Silicon - conservative
+                return max(1, int(total_cores * 0.4))   # Use 40% of cores
+                
+        except Exception as e:
+            self.logger.warning(f"Could not determine optimal CPU count: {e}")
             return max(1, multiprocessing.cpu_count() // 4)  # Conservative fallback
 
     def get_optimal_worker_count(self) -> int:
@@ -70,18 +184,34 @@ class M1CPUOptimizer:
         return self._get_optimal_cpu_count()
 
     def _get_performance_cores(self) -> int:
-        """Get number of performance cores."""
-        # M1 has 4 performance cores, M2 has 4-8, M3 has 4-12
-        # For simplicity, assume 4 performance cores
-        return 4
+        """Get number of performance cores based on M1 generation."""
+        if not self.is_m1:
+            return 0
+            
+        # M1 generation-specific performance core counts
+        if self.m1_generation in ["m3", "m4"]:
+            return 6  # M3/M4 have 6 performance cores
+        elif self.m1_generation in ["m2"]:
+            return 4  # M2 has 4 performance cores
+        elif self.m1_generation in ["m1"]:
+            return 4  # M1 has 4 performance cores
+        else:
+            return 4  # Default assumption
 
     def _get_efficiency_cores(self) -> int:
-        """Get number of efficiency cores."""
-        try:
-            total_cores = multiprocessing.cpu_count()
-            return max(0, total_cores - self.performance_cores)
-        except Exception:
+        """Get number of efficiency cores based on M1 generation."""
+        if not self.is_m1:
             return 0
+            
+        # M1 generation-specific efficiency core counts
+        if self.m1_generation in ["m3", "m4"]:
+            return 6  # M3/M4 have 6 efficiency cores
+        elif self.m1_generation in ["m2"]:
+            return 4  # M2 has 4 efficiency cores
+        elif self.m1_generation in ["m1"]:
+            return 4  # M1 has 4 efficiency cores
+        else:
+            return 4  # Default assumption
 
     def create_optimized_thread_pool(self, max_workers: Optional[int] = None) -> concurrent.futures.ThreadPoolExecutor:
         """Create thread pool optimized for M1."""
@@ -153,15 +283,45 @@ class M1CPUOptimizer:
         return optimized_func(*args, **kwargs)
 
     def get_cpu_info(self) -> Dict[str, Any]:
-        """Get CPU information."""
+        """Get CPU information with M1-specific details."""
         return {
             'is_m1': self.is_m1,
+            'm1_generation': self.m1_generation,
             'total_cores': multiprocessing.cpu_count(),
             'performance_cores': self.performance_cores,
             'efficiency_cores': self.efficiency_cores,
             'optimal_workers': self.cpu_count,
-            'architecture': platform.machine()
+            'architecture': platform.machine(),
+            'm1_optimizations_enabled': self._m1_optimizations_enabled,
+            'legacy_mode': self._legacy_mode,
+            'compatibility_mode': self.compatibility_mode,
+            'version': self.version
         }
+
+    def enable_legacy_mode(self):
+        """Enable legacy mode for backwards compatibility."""
+        self._legacy_mode = True
+        self.logger.info("Legacy mode enabled for backwards compatibility")
+
+    def get_m1_compatibility_info(self) -> Dict[str, Any]:
+        """Get detailed M1 compatibility information."""
+        return {
+            'm1_detected': self.is_m1,
+            'm1_generation': self.m1_generation,
+            'performance_cores': self.performance_cores,
+            'efficiency_cores': self.efficiency_cores,
+            'optimal_workers': self.cpu_count,
+            'm1_optimizations_enabled': self._m1_optimizations_enabled,
+            'legacy_mode': self._legacy_mode,
+            'compatibility_mode': self.compatibility_mode,
+            'numpy_available': NUMPY_AVAILABLE,
+            'version': self.version
+        }
+
+    @deprecated("Use get_m1_compatibility_info() instead", "2.0.0")
+    def get_compatibility_info(self) -> Dict[str, Any]:
+        """Legacy method for getting compatibility info."""
+        return self.get_m1_compatibility_info()
 
     def optimize_numpy_operations(self):
         """Optimize numpy operations for M1."""
@@ -299,12 +459,46 @@ class M1CPUOptimizer:
 _m1_cpu_optimizer_instance = None
 
 
-def get_m1_cpu_optimizer() -> M1CPUOptimizer:
-    """Get the global M1 CPU optimizer instance."""
+def get_m1_cpu_optimizer(compatibility_mode: str = "auto") -> M1CPUOptimizer:
+    """Get the global M1 CPU optimizer instance with enhanced backwards compatibility."""
     global _m1_cpu_optimizer_instance
     if _m1_cpu_optimizer_instance is None:
-        _m1_cpu_optimizer_instance = M1CPUOptimizer()
+        _m1_cpu_optimizer_instance = M1CPUOptimizer(compatibility_mode=compatibility_mode)
     return _m1_cpu_optimizer_instance
+
+
+def is_m1_system() -> bool:
+    """Check if running on M1 system."""
+    return get_m1_cpu_optimizer().is_m1
+
+
+def get_m1_generation() -> str:
+    """Get M1 chip generation."""
+    return get_m1_cpu_optimizer().m1_generation
+
+
+def get_m1_core_info() -> Dict[str, Any]:
+    """Get M1-specific core information."""
+    optimizer = get_m1_cpu_optimizer()
+    return {
+        'performance_cores': optimizer.performance_cores,
+        'efficiency_cores': optimizer.efficiency_cores,
+        'total_cores': multiprocessing.cpu_count(),
+        'm1_generation': optimizer.m1_generation,
+        'is_m1': optimizer.is_m1
+    }
+
+
+def check_m1_compatibility() -> Dict[str, Any]:
+    """Check M1 compatibility and available features."""
+    optimizer = get_m1_cpu_optimizer()
+    return optimizer.get_m1_compatibility_info()
+
+
+@deprecated("Use get_m1_core_info() instead", "2.0.0")
+def get_cpu_core_info() -> Dict[str, Any]:
+    """Legacy method for getting CPU core info."""
+    return get_m1_core_info()
 
 
 def optimize_function_for_m1(func: Callable) -> Callable:

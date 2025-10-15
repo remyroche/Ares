@@ -176,7 +176,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         tprint_success("   ✅ Utility managers initialized")
 
     def _initialize_vectorbt_tools(self):
-        """Initialize VectorBT optimization tools."""
+        """Initialize VectorBT optimization tools with enhanced optimizations."""
         try:
             vectorbt_config = VectorBTConfig(
                 enable_gpu=False,  # Conservative for feature selection
@@ -197,6 +197,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         except Exception as e:
             self.vectorbt_optimizer = None
             self.vectorization_manager = None
+        
+        # Initialize enhanced VectorBT optimization tools
+        try:
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            from src.utils.matrix_operations.vectorbt_optimizations import get_unified_matrix_operations
+            
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+            self.enhanced_vectorization_manager = get_unified_matrix_operations()
+            tprint_success("   ✅ Enhanced VectorBT optimization tools initialized")
+        except Exception as e:
+            self.rolling_optimizer = None
+            self.enhanced_vectorization_manager = None
+            tprint_warning(f"   ⚠️ Enhanced VectorBT tools not available: {e}")
             self.vectorbt_enabled = False
             tprint_warning(f"   ⚠️ VectorBT optimization tools not available: {e}")
 
@@ -456,7 +469,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             'min_features': model_config.get('min_features', 60),
                             'max_features': model_config.get('max_features', 100),
                             'stage_targets': stage_targets,
-                            'priority_categories': model_config.get('priority_categories', ['momentum', 'volatility', 'microstructure'])
+                            'priority_categories': model_config.get('priority_categories', ['momentum', 'volatility', 'microstructure']),
+                            'enable_early_pruning': model_config.get('enable_early_pruning', True),
+                            'pruning_thresholds': model_config.get('pruning_thresholds', [0.1, 0.2, 0.3])
                         }
 
                     # Use default settings if no model profile found
@@ -467,7 +482,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             'min_features': fs_config.get('min_features', 60),
                             'max_features': fs_config.get('max_features', 100),
                             'stage_targets': [95, 75, 65],
-                            'priority_categories': ['momentum', 'volatility', 'microstructure']
+                            'priority_categories': ['momentum', 'volatility', 'microstructure'],
+                            'enable_early_pruning': fs_config.get('enable_early_pruning', True),
+                            'pruning_thresholds': fs_config.get('pruning_thresholds', [0.1, 0.2, 0.3])
                         }
 
             # Fallback to hardcoded defaults if YAML loading fails
@@ -477,7 +494,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 'min_features': 60,
                 'max_features': 100,
                 'stage_targets': [95, 75, 65],
-                'priority_categories': ['momentum', 'volatility', 'microstructure']
+                'priority_categories': ['momentum', 'volatility', 'microstructure'],
+                'enable_early_pruning': True,
+                'pruning_thresholds': [0.1, 0.2, 0.3]
             }
 
         except Exception as e:

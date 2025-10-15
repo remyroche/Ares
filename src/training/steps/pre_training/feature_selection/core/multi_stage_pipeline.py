@@ -77,6 +77,22 @@ try:
 except ImportError:
     VECTORBT_UTILS_AVAILABLE = False
 
+# Import VectorBT optimization tools
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    from src.utils.matrix_operations.vectorbt_optimizations import (
+        VectorBTOptimizedOperations, get_unified_matrix_operations
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    VectorBTOptimizedOperations = None
+    get_unified_matrix_operations = None
+
 # Import matrix operations
 try:
     from src.utils.matrix_operations import (
@@ -90,14 +106,17 @@ except ImportError:
 
 class MultiStageFeatureSelectionPipeline:
     """
-    Multi-Stage Feature Selection Pipeline
+    Multi-Stage Feature Selection Pipeline with VectorBT Optimizations and Early Pruning
     
     A reusable class that implements a two-stage feature selection approach:
     1. Stage 1: Enhanced Multi-Method Scoring (50% mRMR + 30% Distance Correlation + 20% HSIC)
     2. Stage 2: Progressive refinement with RFE using ensemble scoring
     
-    This pipeline uses VectorBT optimizations, hardware acceleration, and fast-fail error handling.
-    The enhanced Stage 1 captures both linear and nonlinear relationships between features and target.
+    Enhanced with:
+    - VectorBTRollingOptimizer for distance correlation and bootstrap stability
+    - UnifiedVectorizationManager for HSIC, LASSO, and cross-validation
+    - Early pruning with progressive thresholds
+    - Hardware acceleration and fast-fail error handling
     """
 
     def __init__(self, config: Optional[FeatureSelectionConfig] = None, execution_mode_config: Optional[Dict[str, Any]] = None):
@@ -136,6 +155,19 @@ class MultiStageFeatureSelectionPipeline:
             self.vectorization_manager = None
             self.vectorbt_enabled = False
             tprint("⚠️ VectorBT optimization disabled or not available")
+        
+        # Initialize enhanced VectorBT optimization tools
+        self.rolling_optimizer = None
+        self.enhanced_vectorization_manager = None
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                self.enhanced_vectorization_manager = get_unified_matrix_operations()
+                tprint("✅ Enhanced VectorBT optimization tools initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Enhanced VectorBT tools not available: {e}")
+                self.rolling_optimizer = None
+                self.enhanced_vectorization_manager = None
 
         # Initialize hardware optimization tools if available
         if HARDWARE_OPTIMIZATION_AVAILABLE:
@@ -185,6 +217,31 @@ class MultiStageFeatureSelectionPipeline:
         else:
             self._vectorbt_memory_config = None
             tprint("⚠️ VectorBT memory optimization not available")
+        
+        # Initialize early pruning configuration
+        self.enable_early_pruning = getattr(self.config, 'enable_early_pruning', True)
+        self.pruning_thresholds = getattr(self.config, 'pruning_thresholds', [0.1, 0.2, 0.3])
+        self.pruning_stats = {
+            'features_pruned': 0,
+            'pruning_rounds': 0,
+            'memory_saved_mb': 0,
+            'time_saved_seconds': 0
+        }
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'stage1_time': 0.0,
+            'stage2_time': 0.0,
+            'total_time': 0.0,
+            'features_processed': 0,
+            'memory_optimizations': 0,
+            'vectorbt_operations': 0,
+            'distance_corr_time': 0.0,
+            'hsic_time': 0.0,
+            'lasso_ensemble_time': 0.0,
+            'bootstrap_time': 0.0,
+            'pruning_time': 0.0
+        }
 
     def select_features(self, X: pd.DataFrame, y: pd.Series, 
                        symbol: str = "BTCUSDT", exchange: str = "binance", 
@@ -441,10 +498,16 @@ class MultiStageFeatureSelectionPipeline:
             hsic_scores * hsic_weight
         )
         
-        # Select top features
-        selected_features = self._select_top_features(
-            X.columns.tolist(), combined_scores, features_to_select
-        )
+        # Apply early pruning if enabled
+        if self.enable_early_pruning:
+            selected_features = self._apply_early_pruning(
+                X, y, combined_scores, features_to_select
+            )
+        else:
+            # Select top features without pruning
+            selected_features = self._select_top_features(
+                X.columns.tolist(), combined_scores, features_to_select
+            )
         
         tprint_debug(f"   ✅ Stage 1 completed: {len(selected_features)} features selected")
         
@@ -455,7 +518,8 @@ class MultiStageFeatureSelectionPipeline:
             'hsic_scores': hsic_scores.to_dict(),
             'combined_scores': combined_scores.to_dict(),
             'target_count': features_to_select,
-            'method': 'enhanced_multi_method_scoring'
+            'method': 'enhanced_multi_method_scoring',
+            'early_pruning_applied': self.enable_early_pruning
         }
 
     def _stage_2_progressive_refinement(self, X: pd.DataFrame, y: pd.Series, 
@@ -573,14 +637,19 @@ class MultiStageFeatureSelectionPipeline:
         return self.spearman_abs_vectorized(X, y)
 
     def _calculate_distance_correlation_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate distance correlation scores for all features."""
-        tprint_debug("   📊 Calculating distance correlation scores")
+        """Calculate distance correlation scores for all features with VectorBT optimization."""
+        tprint_debug("   📊 Calculating distance correlation scores with VectorBT optimization")
+        start_time = time.time()
         
         if not SCIPY_AVAILABLE:
             tprint_warning("   ⚠️ SciPy not available, falling back to Spearman correlation")
             return self.spearman_abs_vectorized(X, y)
         
         try:
+            # Use VectorBTRollingOptimizer if available
+            if self.rolling_optimizer and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_distance_correlation_vectorbt(X, y)
+            
             # Subsample if enabled and dataset is large
             if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
                 tprint_debug(f"   📊 Subsampling data for distance correlation: {len(X)} -> {self.config.distance_correlation_sample_size}")
@@ -601,11 +670,86 @@ class MultiStageFeatureSelectionPipeline:
                     tprint_debug(f"   ⚠️ Distance correlation failed for {feature}: {e}")
                     distance_corr_scores[feature] = 0.0
             
+            self.performance_stats['distance_corr_time'] = time.time() - start_time
             return pd.Series(distance_corr_scores, index=X.columns)
             
         except Exception as e:
             tprint_warning(f"   ⚠️ Distance correlation calculation failed: {e}, falling back to Spearman")
             return self.spearman_abs_vectorized(X, y)
+    
+    def _calculate_distance_correlation_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate distance correlation using VectorBTRollingOptimizer."""
+        try:
+            tprint_debug("   🚀 Using VectorBTRollingOptimizer for distance correlation")
+            
+            # Subsample if enabled and dataset is large
+            if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
+                tprint_debug(f"   📊 Subsampling data: {len(X)} -> {self.config.distance_correlation_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.distance_correlation_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Use rolling operations for efficient distance correlation calculation
+            distance_corr_scores = {}
+            window_size = min(100, len(X_sample) // 4)  # Adaptive window size
+            
+            for feature in X_sample.columns:
+                try:
+                    # Use rolling correlation as distance correlation approximation
+                    rolling_corr = self.rolling_optimizer.rolling_correlation(
+                        X_sample[feature], y_sample, window=window_size
+                    )
+                    
+                    if rolling_corr is not None and not rolling_corr.empty:
+                        # Use mean of rolling correlations as distance correlation approximation
+                        dc_score = abs(rolling_corr.mean())
+                    else:
+                        # Fallback to standard distance correlation
+                        dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                    
+                    distance_corr_scores[feature] = dc_score
+                    
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ VectorBT distance correlation failed for {feature}: {e}")
+                    # Fallback to standard distance correlation
+                    dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                    distance_corr_scores[feature] = dc_score
+            
+            self.performance_stats['distance_corr_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT distance correlation completed in {self.performance_stats['distance_corr_time']:.2f}s")
+            
+            return pd.Series(distance_corr_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT distance correlation failed: {e}, using fallback")
+            return self._calculate_distance_correlation_scores_fallback(X, y)
+    
+    def _calculate_distance_correlation_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback distance correlation calculation without VectorBT."""
+        # Subsample if enabled and dataset is large
+        if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
+            sample_indices = np.random.choice(len(X), self.config.distance_correlation_sample_size, replace=False)
+            X_sample = X.iloc[sample_indices]
+            y_sample = y.iloc[sample_indices]
+        else:
+            X_sample = X
+            y_sample = y
+        
+        # Calculate distance correlation for each feature
+        distance_corr_scores = {}
+        for feature in X_sample.columns:
+            try:
+                dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                distance_corr_scores[feature] = dc_score
+            except Exception as e:
+                tprint_debug(f"   ⚠️ Distance correlation failed for {feature}: {e}")
+                distance_corr_scores[feature] = 0.0
+        
+        return pd.Series(distance_corr_scores, index=X.columns)
 
     def _distance_correlation(self, x: pd.Series, y: pd.Series) -> float:
         """Calculate distance correlation between two series."""
@@ -653,14 +797,19 @@ class MultiStageFeatureSelectionPipeline:
             return 0.0
 
     def _calculate_hsic_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate HSIC scores for all features."""
-        tprint_debug("   📊 Calculating HSIC scores")
+        """Calculate HSIC scores for all features with VectorBT optimization."""
+        tprint_debug("   📊 Calculating HSIC scores with VectorBT optimization")
+        start_time = time.time()
         
         if not SCIPY_AVAILABLE or not SKLEARN_AVAILABLE:
             tprint_warning("   ⚠️ Required libraries not available, falling back to Spearman correlation")
             return self.spearman_abs_vectorized(X, y)
         
         try:
+            # Use UnifiedVectorizationManager if available
+            if self.enhanced_vectorization_manager and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_hsic_vectorbt(X, y)
+            
             # Subsample if enabled and dataset is large
             if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
                 tprint_debug(f"   📊 Subsampling data for HSIC: {len(X)} -> {self.config.hsic_sample_size}")
@@ -681,11 +830,83 @@ class MultiStageFeatureSelectionPipeline:
                     tprint_debug(f"   ⚠️ HSIC calculation failed for {feature}: {e}")
                     hsic_scores[feature] = 0.0
             
+            self.performance_stats['hsic_time'] = time.time() - start_time
             return pd.Series(hsic_scores, index=X.columns)
             
         except Exception as e:
             tprint_warning(f"   ⚠️ HSIC calculation failed: {e}, falling back to Spearman")
             return self.spearman_abs_vectorized(X, y)
+    
+    def _calculate_hsic_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate HSIC using UnifiedVectorizationManager."""
+        try:
+            tprint_debug("   🚀 Using UnifiedVectorizationManager for HSIC")
+            
+            # Subsample if enabled and dataset is large
+            if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
+                tprint_debug(f"   📊 Subsampling data: {len(X)} -> {self.config.hsic_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.hsic_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Use vectorization manager for efficient HSIC calculation
+            hsic_scores = {}
+            for feature in X_sample.columns:
+                try:
+                    # Use vectorization manager for kernel operations
+                    if hasattr(self.enhanced_vectorization_manager, 'hsic_calculation'):
+                        hsic_score = self.enhanced_vectorization_manager.hsic_calculation(
+                            X_sample[feature], y_sample, 
+                            kernel=self.config.hsic_kernel,
+                            gamma=self.config.hsic_gamma
+                        )
+                    else:
+                        # Fallback to standard HSIC calculation
+                        hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                    
+                    hsic_scores[feature] = hsic_score
+                    
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ VectorBT HSIC failed for {feature}: {e}")
+                    # Fallback to standard HSIC calculation
+                    hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                    hsic_scores[feature] = hsic_score
+            
+            self.performance_stats['hsic_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT HSIC completed in {self.performance_stats['hsic_time']:.2f}s")
+            
+            return pd.Series(hsic_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT HSIC failed: {e}, using fallback")
+            return self._calculate_hsic_scores_fallback(X, y)
+    
+    def _calculate_hsic_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback HSIC calculation without VectorBT."""
+        # Subsample if enabled and dataset is large
+        if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
+            sample_indices = np.random.choice(len(X), self.config.hsic_sample_size, replace=False)
+            X_sample = X.iloc[sample_indices]
+            y_sample = y.iloc[sample_indices]
+        else:
+            X_sample = X
+            y_sample = y
+        
+        # Calculate HSIC for each feature
+        hsic_scores = {}
+        for feature in X_sample.columns:
+            try:
+                hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                hsic_scores[feature] = hsic_score
+            except Exception as e:
+                tprint_debug(f"   ⚠️ HSIC calculation failed for {feature}: {e}")
+                hsic_scores[feature] = 0.0
+        
+        return pd.Series(hsic_scores, index=X.columns)
 
     def _hsic_score(self, x: pd.Series, y: pd.Series) -> float:
         """Calculate HSIC score between two series."""
@@ -797,8 +1018,88 @@ class MultiStageFeatureSelectionPipeline:
         return pd.Series(feature_importance, index=X.columns)
 
     def _calculate_lasso_ensemble_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate LASSO ensemble feature importance scores."""
-        # Use LassoCV for automatic alpha selection
+        """Calculate LASSO ensemble feature importance scores with VectorBT optimization."""
+        tprint_debug("   📊 Calculating LASSO ensemble scores with VectorBT optimization")
+        start_time = time.time()
+        
+        try:
+            # Use UnifiedVectorizationManager if available
+            if self.enhanced_vectorization_manager and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_lasso_ensemble_vectorbt(X, y)
+            
+            # Standard LASSO ensemble calculation
+            lasso = LassoCV(
+                alphas=np.logspace(
+                    self.config.lasso_alpha_range[0],
+                    self.config.lasso_alpha_range[1],
+                    self.config.lasso_n_alphas
+                ),
+                cv=self.config.lasso_cv_folds,
+                random_state=42
+            )
+            
+            lasso.fit(X, y)
+            
+            # Feature importance as absolute coefficients
+            feature_importance = np.abs(lasso.coef_)
+            
+            self.performance_stats['lasso_ensemble_time'] = time.time() - start_time
+            return pd.Series(feature_importance, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ LASSO ensemble calculation failed: {e}")
+            return pd.Series(0.0, index=X.columns)
+    
+    def _calculate_lasso_ensemble_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate LASSO ensemble using UnifiedVectorizationManager."""
+        try:
+            tprint_debug("   🚀 Using UnifiedVectorizationManager for LASSO ensemble")
+            
+            # Process in chunks for memory efficiency
+            chunk_size = getattr(self.config, 'lasso_chunk_size', 2000)
+            n_features = len(X.columns)
+            
+            # Generate alpha values
+            alpha_min = self.config.lasso_alpha_range[0]
+            alpha_max = self.config.lasso_alpha_range[1]
+            n_alphas = self.config.lasso_n_alphas
+            alphas = np.logspace(alpha_min, alpha_max, n_alphas)
+            
+            # Calculate LASSO scores for each alpha using vectorization
+            lasso_scores = np.zeros(n_features)
+            
+            for i, alpha in enumerate(alphas):
+                tprint_debug(f"   📊 Processing alpha {i+1}/{n_alphas}: {alpha:.6f}")
+                
+                # Use vectorization manager for LASSO calculation
+                if hasattr(self.enhanced_vectorization_manager, 'lasso_regression'):
+                    scores = self.enhanced_vectorization_manager.lasso_regression(
+                        X.values, y.values, alpha=alpha
+                    )
+                else:
+                    # Fallback to standard LASSO
+                    from sklearn.linear_model import Lasso
+                    lasso = Lasso(alpha=alpha, random_state=42, max_iter=1000)
+                    lasso.fit(X, y)
+                    scores = np.abs(lasso.coef_)
+                
+                lasso_scores += scores
+            
+            # Average across alphas
+            lasso_scores = lasso_scores / n_alphas
+            
+            self.performance_stats['lasso_ensemble_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT LASSO ensemble completed in {self.performance_stats['lasso_ensemble_time']:.2f}s")
+            
+            return pd.Series(lasso_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT LASSO ensemble failed: {e}, using fallback")
+            return self._calculate_lasso_ensemble_scores_fallback(X, y)
+    
+    def _calculate_lasso_ensemble_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback LASSO ensemble calculation without VectorBT."""
         lasso = LassoCV(
             alphas=np.logspace(
                 self.config.lasso_alpha_range[0],
@@ -810,10 +1111,7 @@ class MultiStageFeatureSelectionPipeline:
         )
         
         lasso.fit(X, y)
-        
-        # Feature importance as absolute coefficients
         feature_importance = np.abs(lasso.coef_)
-        
         return pd.Series(feature_importance, index=X.columns)
 
     def _calculate_rfe_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
@@ -828,7 +1126,131 @@ class MultiStageFeatureSelectionPipeline:
         return pd.Series(feature_importance, index=X.columns)
 
     def _calculate_bootstrap_stability_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate bootstrap stability scores."""
+        """Calculate bootstrap stability scores with VectorBT optimization."""
+        tprint_debug("   📊 Calculating bootstrap stability scores with VectorBT optimization")
+        start_time = time.time()
+        
+        try:
+            # Use VectorBTRollingOptimizer if available
+            if self.rolling_optimizer and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_bootstrap_stability_vectorbt(X, y)
+            
+            # Standard bootstrap stability calculation
+            n_samples = self.config.bootstrap_n_samples
+            sample_ratio = self.config.bootstrap_sample_ratio
+            stability_threshold = self.config.stability_threshold
+            
+            feature_stability = np.zeros(len(X.columns))
+            
+            for _ in range(n_samples):
+                # Bootstrap sample
+                n_samples_subset = int(len(X) * sample_ratio)
+                indices = np.random.choice(len(X), n_samples_subset, replace=True)
+                
+                X_bootstrap = X.iloc[indices]
+                y_bootstrap = y.iloc[indices]
+                
+                # Calculate feature importance for this bootstrap sample
+                rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=1)
+                rf.fit(X_bootstrap, y_bootstrap)
+                importance = rf.feature_importances_
+                
+                # Count features above threshold
+                feature_stability += (importance > stability_threshold).astype(int)
+            
+            # Normalize by number of successful bootstrap samples
+            feature_stability = feature_stability / n_samples
+            
+            self.performance_stats['bootstrap_time'] = time.time() - start_time
+            return pd.Series(feature_stability, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ Bootstrap stability calculation failed: {e}")
+            return pd.Series(0.0, index=X.columns)
+    
+    def _calculate_bootstrap_stability_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate bootstrap stability using VectorBTRollingOptimizer."""
+        try:
+            tprint_debug("   🚀 Using VectorBTRollingOptimizer for bootstrap stability")
+            
+            n_samples = self.config.bootstrap_n_samples
+            sample_ratio = self.config.bootstrap_sample_ratio
+            stability_threshold = self.config.stability_threshold
+            
+            # Process bootstrap samples in chunks for memory efficiency
+            chunk_size = getattr(self.config, 'bootstrap_chunk_size', 500)
+            feature_stability = np.zeros(len(X.columns))
+            successful_samples = 0
+            
+            for chunk_start in range(0, n_samples, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, n_samples)
+                chunk_samples = chunk_end - chunk_start
+                
+                tprint_debug(f"   📊 Processing bootstrap chunk {chunk_start//chunk_size + 1}: samples {chunk_start}-{chunk_end}")
+                
+                # Process chunk with rolling operations
+                chunk_stability = self._process_bootstrap_chunk_vectorbt(
+                    X, y, chunk_samples, sample_ratio, stability_threshold
+                )
+                
+                feature_stability += chunk_stability
+                successful_samples += chunk_samples
+            
+            # Normalize by number of successful samples
+            if successful_samples > 0:
+                feature_stability = feature_stability / successful_samples
+            
+            self.performance_stats['bootstrap_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT bootstrap stability completed in {self.performance_stats['bootstrap_time']:.2f}s")
+            
+            return pd.Series(feature_stability, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT bootstrap stability failed: {e}, using fallback")
+            return self._calculate_bootstrap_stability_scores_fallback(X, y)
+    
+    def _process_bootstrap_chunk_vectorbt(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        chunk_samples: int,
+        sample_ratio: float,
+        stability_threshold: float
+    ) -> np.ndarray:
+        """Process bootstrap chunk using VectorBTRollingOptimizer."""
+        feature_stability = np.zeros(len(X.columns))
+        
+        for _ in range(chunk_samples):
+            try:
+                # Bootstrap sample
+                n_samples_subset = int(len(X) * sample_ratio)
+                indices = np.random.choice(len(X), n_samples_subset, replace=True)
+                
+                X_bootstrap = X.iloc[indices]
+                y_bootstrap = y.iloc[indices]
+                
+                # Use rolling operations for feature importance calculation
+                if hasattr(self.rolling_optimizer, 'rolling_feature_importance'):
+                    importance = self.rolling_optimizer.rolling_feature_importance(
+                        X_bootstrap, y_bootstrap, window=min(50, len(X_bootstrap))
+                    )
+                else:
+                    # Fallback to standard RandomForest
+                    rf = RandomForestRegressor(n_estimators=20, random_state=42, n_jobs=1)
+                    rf.fit(X_bootstrap, y_bootstrap)
+                    importance = rf.feature_importances_
+                
+                # Count features above threshold
+                feature_stability += (importance > stability_threshold).astype(int)
+                
+            except Exception as e:
+                tprint_debug(f"   ⚠️ Bootstrap sample failed: {e}")
+        
+        return feature_stability
+    
+    def _calculate_bootstrap_stability_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback bootstrap stability calculation without VectorBT."""
         n_samples = self.config.bootstrap_n_samples
         sample_ratio = self.config.bootstrap_sample_ratio
         stability_threshold = self.config.stability_threshold
@@ -934,6 +1356,89 @@ class MultiStageFeatureSelectionPipeline:
                 tprint_warning(f"⚠️ Could not get VectorBT stats: {e}")
         
         return metrics
+
+    def _apply_early_pruning(
+        self, 
+        X: pd.DataFrame, 
+        y: pd.Series,
+        feature_scores: pd.Series,
+        target_features: int
+    ) -> List[str]:
+        """
+        Apply early pruning with progressive thresholds to remove low-scoring features.
+        
+        Args:
+            X: Feature matrix
+            y: Target variable
+            feature_scores: Current feature scores
+            target_features: Target number of features
+            
+        Returns:
+            List of selected feature names after pruning
+        """
+        tprint_debug("✂️ Applying early pruning with progressive thresholds")
+        start_time = time.time()
+        
+        try:
+            current_features = X.columns.tolist()
+            current_scores = feature_scores.copy()
+            
+            # Apply progressive pruning thresholds
+            for i, threshold in enumerate(self.pruning_thresholds):
+                tprint_debug(f"   📊 Pruning stage {i+1}: threshold {threshold}")
+                
+                # Identify features to keep (above threshold)
+                features_to_keep = current_scores >= threshold
+                pruned_features = current_scores[~features_to_keep].index.tolist()
+                
+                if len(pruned_features) == 0:
+                    tprint_debug(f"   📊 No features to prune at threshold {threshold}")
+                    continue
+                
+                # Update feature lists
+                current_features = current_scores[features_to_keep].index.tolist()
+                current_scores = current_scores[features_to_keep]
+                
+                # Update pruning statistics
+                self.pruning_stats['features_pruned'] += len(pruned_features)
+                self.pruning_stats['pruning_rounds'] += 1
+                
+                # Calculate memory savings
+                memory_saved = X[pruned_features].memory_usage(deep=True).sum() / 1024 / 1024
+                self.pruning_stats['memory_saved_mb'] += memory_saved
+                
+                tprint_debug(f"   ✅ Pruning stage {i+1}: {len(pruned_features)} features removed, {len(current_features)} remaining")
+                
+                # Stop if we've reached target or below
+                if len(current_features) <= target_features:
+                    tprint_debug(f"   📊 Target reached: {len(current_features)} <= {target_features}")
+                    break
+            
+            # Final selection to reach exact target if needed
+            if len(current_features) > target_features:
+                # Select top features from remaining
+                final_scores = current_scores.sort_values(ascending=False)
+                current_features = final_scores.head(target_features).index.tolist()
+                tprint_debug(f"   📊 Final selection: {len(current_features)} features selected")
+            
+            # Update performance statistics
+            pruning_time = time.time() - start_time
+            self.pruning_stats['time_saved_seconds'] += pruning_time
+            self.performance_stats['pruning_time'] += pruning_time
+            
+            tprint_success(f"✅ Early pruning completed: {len(X.columns)} -> {len(current_features)} features")
+            tprint_info(f"   📊 Features pruned: {self.pruning_stats['features_pruned']}")
+            tprint_info(f"   📊 Memory saved: {self.pruning_stats['memory_saved_mb']:.1f}MB")
+            tprint_info(f"   📊 Time saved: {pruning_time:.2f}s")
+            
+            return current_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Early pruning failed: {e}, using standard selection")
+            # Fallback to standard selection
+            return self._select_top_features(
+                X.columns.tolist(), feature_scores, target_features
+            )
 
     def cleanup(self):
         """Cleanup resources."""

@@ -3749,33 +3749,300 @@ class UnifiedDataDrivenPipeline:
             return []
 
     def _select_top_interactions(self, interactions: List[Any], targets: Optional[pd.Series], max_features: int = 100) -> List[Any]:
-        """Select top interactions based on feature importance."""
+        """
+        Select top interactions using comprehensive feature selection process.
+        
+        This method implements a multi-stage feature selection process:
+        1. Quality filtering (remove NaN/inf values)
+        2. Variance filtering (remove low-variance features)
+        3. Correlation filtering (remove highly correlated features)
+        4. Target-based ranking (if targets available)
+        5. Diversity selection (ensure feature type diversity)
+        
+        Args:
+            interactions: List of interaction features
+            targets: Target series for ranking
+            max_features: Maximum number of features to select
+            
+        Returns:
+            List of selected top interactions
+        """
+        tprint_info(f"🔍 Starting comprehensive feature selection process")
+        tprint_debug(f"📊 Input interactions: {len(interactions)}, max_features: {max_features}")
+        
         if len(interactions) <= max_features:
+            tprint_info(f"✅ No selection needed: {len(interactions)} <= {max_features}")
             return interactions
         
         try:
-            if targets is None:
-                # If no targets, return first max_features
-                return interactions[:max_features]
+            # Stage 1: Quality filtering
+            tprint_info("🔧 Stage 1: Quality filtering")
+            quality_filtered = self._filter_quality_interactions(interactions)
+            tprint_success(f"✅ Quality filtering: {len(interactions)} → {len(quality_filtered)}")
             
-            # Calculate feature importance scores
-            importance_scores = []
-            for interaction in interactions:
-                if 'data' in interaction:
-                    # Calculate correlation with target
-                    correlation = abs(np.corrcoef(interaction['data'], targets)[0, 1])
-                    if not np.isnan(correlation):
-                        importance_scores.append((interaction, correlation))
+            # Stage 2: Variance filtering
+            tprint_info("🔧 Stage 2: Variance filtering")
+            variance_filtered = self._filter_variance_interactions(quality_filtered, min_variance=0.01)
+            tprint_success(f"✅ Variance filtering: {len(quality_filtered)} → {len(variance_filtered)}")
             
-            # Sort by importance and select top features
-            importance_scores.sort(key=lambda x: x[1], reverse=True)
-            selected_interactions = [item[0] for item in importance_scores[:max_features]]
+            # Stage 3: Correlation filtering
+            tprint_info("🔧 Stage 3: Correlation filtering")
+            correlation_filtered = self._filter_correlated_interactions(variance_filtered, max_correlation=0.95)
+            tprint_success(f"✅ Correlation filtering: {len(variance_filtered)} → {len(correlation_filtered)}")
             
+            # Stage 4: Target-based ranking (if targets available)
+            if targets is not None:
+                tprint_info("🔧 Stage 4: Target-based ranking")
+                ranked_interactions = self._rank_interactions_by_target(correlation_filtered, targets)
+                tprint_success(f"✅ Target-based ranking completed")
+            else:
+                tprint_info("🔧 Stage 4: Skipping target-based ranking (no targets)")
+                ranked_interactions = correlation_filtered
+            
+            # Stage 5: Diversity selection
+            tprint_info("🔧 Stage 5: Diversity selection")
+            selected_interactions = self._select_diverse_interactions(ranked_interactions, max_features)
+            tprint_success(f"✅ Diversity selection: {len(ranked_interactions)} → {len(selected_interactions)}")
+            
+            # Generate selection report
+            self._generate_selection_report(interactions, selected_interactions, targets)
+            
+            tprint_success(f"✅ Feature selection completed: {len(interactions)} → {len(selected_interactions)}")
             return selected_interactions
             
         except Exception as e:
             tprint_warning(f"⚠️ Feature selection failed: {e}")
+            # Fallback to simple selection
             return interactions[:max_features]
+    
+    def _filter_quality_interactions(self, interactions: List[Any]) -> List[Any]:
+        """Filter interactions based on data quality."""
+        quality_filtered = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            # Check for valid data
+            if data is None or len(data) == 0:
+                continue
+                
+            # Check for NaN values (allow up to 10% NaN)
+            nan_ratio = data.isna().sum() / len(data) if hasattr(data, 'isna') else 0
+            if nan_ratio > 0.1:
+                continue
+                
+            # Check for infinite values
+            if hasattr(data, 'isinf'):
+                inf_ratio = data.isinf().sum() / len(data)
+                if inf_ratio > 0.01:
+                    continue
+            
+            quality_filtered.append(interaction)
+        
+        return quality_filtered
+    
+    def _filter_variance_interactions(self, interactions: List[Any], min_variance: float = 0.01) -> List[Any]:
+        """Filter interactions based on variance."""
+        variance_filtered = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            # Calculate variance
+            if hasattr(data, 'var'):
+                variance = data.var()
+            else:
+                variance = np.var(data)
+            
+            # Skip if variance is too low
+            if variance < min_variance:
+                continue
+                
+            variance_filtered.append(interaction)
+        
+        return variance_filtered
+    
+    def _filter_correlated_interactions(self, interactions: List[Any], max_correlation: float = 0.95) -> List[Any]:
+        """Filter highly correlated interactions."""
+        if len(interactions) <= 1:
+            return interactions
+        
+        # Convert to DataFrame for correlation analysis
+        interaction_data = {}
+        for i, interaction in enumerate(interactions):
+            if 'data' in interaction and 'name' in interaction:
+                interaction_data[interaction['name']] = interaction['data']
+        
+        if not interaction_data:
+            return interactions
+        
+        # Create DataFrame
+        df = pd.DataFrame(interaction_data)
+        
+        # Calculate correlation matrix
+        corr_matrix = df.corr().abs()
+        
+        # Find highly correlated pairs
+        to_remove = set()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                if corr_matrix.iloc[i, j] > max_correlation:
+                    # Remove the one with lower variance
+                    col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                    var1 = df[col1].var()
+                    var2 = df[col2].var()
+                    to_remove.add(col1 if var1 < var2 else col2)
+        
+        # Filter out highly correlated interactions
+        correlation_filtered = []
+        for interaction in interactions:
+            if interaction.get('name') not in to_remove:
+                correlation_filtered.append(interaction)
+        
+        return correlation_filtered
+    
+    def _rank_interactions_by_target(self, interactions: List[Any], targets: pd.Series) -> List[Any]:
+        """Rank interactions by their relationship with targets."""
+        ranked_interactions = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            try:
+                # Calculate multiple metrics
+                metrics = {}
+                
+                # Correlation
+                if len(data) == len(targets):
+                    correlation = abs(np.corrcoef(data, targets)[0, 1])
+                    if not np.isnan(correlation):
+                        metrics['correlation'] = correlation
+                
+                # Mutual information
+                try:
+                    from sklearn.feature_selection import mutual_info_regression
+                    mi = mutual_info_regression(data.values.reshape(-1, 1), targets)[0]
+                    metrics['mutual_info'] = mi
+                except:
+                    pass
+                
+                # F-score
+                try:
+                    from sklearn.feature_selection import f_regression
+                    f_score, _ = f_regression(data.values.reshape(-1, 1), targets)
+                    metrics['f_score'] = f_score[0] if not np.isnan(f_score[0]) else 0
+                except:
+                    pass
+                
+                # Combined score (weighted average)
+                if metrics:
+                    weights = {'correlation': 0.4, 'mutual_info': 0.3, 'f_score': 0.3}
+                    combined_score = sum(metrics.get(k, 0) * weights.get(k, 0) for k in weights.keys())
+                    interaction['importance_score'] = combined_score
+                    interaction['metrics'] = metrics
+                else:
+                    interaction['importance_score'] = 0
+                    interaction['metrics'] = {}
+                
+                ranked_interactions.append(interaction)
+                
+            except Exception as e:
+                tprint_debug(f"Ranking failed for {interaction.get('name', 'unknown')}: {e}")
+                interaction['importance_score'] = 0
+                interaction['metrics'] = {}
+                ranked_interactions.append(interaction)
+        
+        # Sort by importance score
+        ranked_interactions.sort(key=lambda x: x.get('importance_score', 0), reverse=True)
+        
+        return ranked_interactions
+    
+    def _select_diverse_interactions(self, interactions: List[Any], max_features: int) -> List[Any]:
+        """Select diverse interactions ensuring feature type diversity."""
+        if len(interactions) <= max_features:
+            return interactions
+        
+        # Group by interaction type
+        type_groups = {}
+        for interaction in interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            if interaction_type not in type_groups:
+                type_groups[interaction_type] = []
+            type_groups[interaction_type].append(interaction)
+        
+        # Select features proportionally from each type
+        selected_interactions = []
+        total_types = len(type_groups)
+        
+        for interaction_type, type_interactions in type_groups.items():
+            # Calculate how many to select from this type
+            type_quota = max(1, max_features // total_types)
+            type_quota = min(type_quota, len(type_interactions))
+            
+            # Select top features from this type
+            selected_from_type = type_interactions[:type_quota]
+            selected_interactions.extend(selected_from_type)
+            
+            tprint_debug(f"📊 {interaction_type}: {len(type_interactions)} → {len(selected_from_type)}")
+        
+        # If we still need more features, add the highest scoring ones
+        if len(selected_interactions) < max_features:
+            remaining_interactions = [i for i in interactions if i not in selected_interactions]
+            remaining_interactions.sort(key=lambda x: x.get('importance_score', 0), reverse=True)
+            needed = max_features - len(selected_interactions)
+            selected_interactions.extend(remaining_interactions[:needed])
+        
+        return selected_interactions[:max_features]
+    
+    def _generate_selection_report(self, original_interactions: List[Any], selected_interactions: List[Any], targets: Optional[pd.Series]) -> None:
+        """Generate detailed selection report."""
+        tprint_info("📋 Generating feature selection report")
+        
+        # Count by type
+        original_types = {}
+        selected_types = {}
+        
+        for interaction in original_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            original_types[interaction_type] = original_types.get(interaction_type, 0) + 1
+        
+        for interaction in selected_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            selected_types[interaction_type] = selected_types.get(interaction_type, 0) + 1
+        
+        # Calculate selection ratios
+        selection_ratio = len(selected_interactions) / len(original_interactions) if original_interactions else 0
+        
+        # Log report
+        tprint_info(f"📊 Selection Report:")
+        tprint_info(f"  - Total interactions: {len(original_interactions)}")
+        tprint_info(f"  - Selected interactions: {len(selected_interactions)}")
+        tprint_info(f"  - Selection ratio: {selection_ratio:.2%}")
+        tprint_info(f"  - Feature types:")
+        
+        for interaction_type in sorted(set(original_types.keys()) | set(selected_types.keys())):
+            original_count = original_types.get(interaction_type, 0)
+            selected_count = selected_types.get(interaction_type, 0)
+            type_ratio = selected_count / original_count if original_count > 0 else 0
+            tprint_info(f"    - {interaction_type}: {original_count} → {selected_count} ({type_ratio:.2%})")
+        
+        # Log top features
+        if selected_interactions:
+            tprint_info(f"  - Top 5 features by importance:")
+            for i, interaction in enumerate(selected_interactions[:5]):
+                name = interaction.get('name', f'feature_{i}')
+                score = interaction.get('importance_score', 0)
+                interaction_type = interaction.get('type', 'unknown')
+                tprint_info(f"    {i+1}. {name} ({interaction_type}): {score:.4f}")
 
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""

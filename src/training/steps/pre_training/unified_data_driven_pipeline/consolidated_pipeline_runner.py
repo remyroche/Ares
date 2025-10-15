@@ -452,6 +452,68 @@ class ConsolidatedPipelineRunner:
                 'optimization_metrics': {}
             }
     
+    async def run_period_lookback_optimization_step(self,
+                                                  data: pd.DataFrame,
+                                                  symbol: str = "ETHUSDT",
+                                                  timeframe: str = "15m",
+                                                  direction: str = "longs",
+                                                  intensity: str = "blank",
+                                                  lookback_days: Optional[int] = None,
+                                                  start_date: Optional[str] = None,
+                                                  end_date: Optional[str] = None,
+                                                  exchange: str = "binance",
+                                                  custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to concurrent period + lookback optimization step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+            
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'period_lookback_optimization'
+            }
+            
+            # Run pipeline up to concurrent period + lookback optimization
+            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            
+            # Extract period + lookback optimization results
+            optimization_result = {
+                'success': result.success,
+                'period_results': getattr(result, 'period_results', {}),
+                'lookback_results': getattr(result, 'lookback_results', {}),
+                'combined_results': getattr(result, 'combined_results', {}),
+                'trading_defaults': getattr(result, 'trading_defaults', {}),
+                'interaction_periods': getattr(result, 'interaction_periods', []),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+            
+            # Generate human-readable report
+            await self._generate_period_lookback_optimization_report(optimization_result, data)
+            
+            return optimization_result
+            
+        except Exception as e:
+            self.logger.error(f"Concurrent period + lookback optimization step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'period_results': {},
+                'lookback_results': {},
+                'combined_results': {},
+                'trading_defaults': {},
+                'interaction_periods': []
+            }
+    
     async def run_interaction_generation_step(self,
                                             data: pd.DataFrame,
                                             symbol: str = "ETHUSDT",
@@ -1377,6 +1439,30 @@ async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Di
         return await runner.run_labeling_integration_step(data, **kwargs)
     except Exception as e:
         error_msg = f"Convenience function failed for labeling integration: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run concurrent period + lookback optimization step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing period + lookback optimization results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting concurrent period + lookback optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_period_lookback_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for period + lookback optimization: {str(e)}"
         tprint_error(f"❌ {error_msg}")
         raise RuntimeError(error_msg) from e
 

@@ -7,6 +7,7 @@ redundancy between NAS and TAS components.
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass
 import time
@@ -498,6 +499,32 @@ def prepare_market_features(
                 tprint_debug("🔧 [SHARED_FEATURES] Scaling features with MinMaxScaler")
 
             from sklearn.preprocessing import MinMaxScaler
+            
+            # Scale features
+            scaler = MinMaxScaler()
+            features_scaled = scaler.fit_transform(features_df)
+            features_df = pd.DataFrame(features_scaled, columns=features_df.columns, index=features_df.index)
+            
+            if verbose:
+                tprint_debug("✅ [SHARED_FEATURES] Features scaled successfully")
+        
+        # Create result
+        result = FeaturePreparationResult(
+            features=features_df,
+            feature_names=features_df.columns.tolist(),
+            metadata=stage_metadata,
+            success=True
+        )
+        
+        if verbose:
+            tprint_success(f"✅ [SHARED_FEATURES] Feature preparation completed: {len(features_df.columns)} features, {len(features_df)} observations")
+        
+        return result
+        
+    except Exception as e:
+        if verbose:
+            tprint_error(f"❌ [SHARED_FEATURES] Feature preparation failed: {e}")
+        raise
 
 # VectorBT imports for native optimization
 try:
@@ -532,122 +559,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-
-            scaler = MinMaxScaler(feature_range=(-1, 1))
-            features_array = scaler.fit_transform(features_array)
-            features_df = pd.DataFrame(features_array, index=features_df.index, columns=features_df.columns)
-            stage_metadata['operations'].append({
-                'type': 'minmax_scaling',
-                'scaler': 'MinMaxScaler',
-                'range': '(-1, 1)',
-            })
-
-            # Enhanced feature validation for clustering suitability
-            if verbose:
-                tprint_debug("🔍 [SHARED_FEATURES] Validating scaled features for clustering")
-
-            # Check for standardization artifacts (means near zero)
-            feature_means = np.abs(features_array.mean(axis=0))
-            standardized_features = np.sum(feature_means < 1e-8)
-
-            # Enhanced feature validation (warnings only, don't fail pipeline)
-            validation_issues = []
-
-            if standardized_features > 0:
-                warning_msg = f"{standardized_features} features appear standardized (mean ≈ 0). This may harm clustering performance."
-                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
-                validation_issues.append({
-                    'type': 'standardized_features_detected',
-                    'count': int(standardized_features),
-                    'message': 'Features with near-zero means detected after scaling'
-                })
-
-            # Check feature variance (ensure features aren't constant)
-            feature_stds = features_array.std(axis=0)
-            low_variance_features = np.sum(feature_stds < 1e-6)
-
-            if low_variance_features > 0:
-                warning_msg = f"{low_variance_features} features have very low variance (< 1e-6). Consider removing constant features."
-                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
-                validation_issues.append({
-                    'type': 'low_variance_features',
-                    'count': int(low_variance_features),
-                    'message': 'Features with insufficient variance detected'
-                })
-
-            # Check for extreme feature ranges (potential outliers)
-            feature_ranges = features_array.max(axis=0) - features_array.min(axis=0)
-            extreme_range_features = np.sum(feature_ranges > 100)
-
-            if extreme_range_features > 0:
-                warning_msg = f"{extreme_range_features} features have extreme ranges (> 100). Consider outlier removal or robust scaling."
-                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
-                validation_issues.append({
-                    'type': 'extreme_feature_ranges',
-                    'count': int(extreme_range_features),
-                    'message': 'Features with extreme value ranges detected'
-                })
-
-            # Store validation results in metadata for downstream use
-            stage_metadata['validation_results'] = {
-                'issues': validation_issues,
-                'warnings_count': len(validation_issues),
-                'is_valid': len(validation_issues) < features_array.shape[1] * 0.5  # Valid if < 50% problematic
-            }
-
-            if verbose:
-                tprint_debug(f"🔍 [SHARED_FEATURES] Feature validation complete: "
-                           f"{standardized_features} standardized, {low_variance_features} low variance, "
-                           f"{extreme_range_features} extreme range features")
-
-        # Note: Removed stage_metadata['warnings'] to prevent pipeline failures
-        # Warnings are now stored in stage_metadata['validation_results']['issues']
-        
-        # Final validation
-        if features_array.shape[0] < feature_config.min_observations:
-            if verbose:
-                tprint_error(f"❌ [SHARED_FEATURES] Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
-            raise ValueError(f"Insufficient valid observations: {features_array.shape[0]} < {feature_config.min_observations}")
-
-        # Performance metrics
-        feature_prep_time = time.time() - feature_prep_start
-        final_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-        memory_used = final_memory - initial_memory
-
-        if verbose:
-            tprint_success(f"✅ [SHARED_FEATURES] Features prepared: {features_df.shape} in {feature_prep_time:.3f}s")
-            tprint_debug(f"📊 [SHARED_FEATURES] Feature frame memory usage: {features_df.values.nbytes / 1024 / 1024:.1f} MB")
-            tprint_debug(f"📊 [SHARED_FEATURES] Memory used: {memory_used:.1f} MB")
-
-            # Feature statistics
-            if features_array.size > 0:
-                tprint_debug(f"📊 [SHARED_FEATURES] Feature statistics:")
-                tprint_debug(f"   - Mean: {np.mean(features_array):.6f}")
-                tprint_debug(f"   - Std: {np.std(features_array):.6f}")
-                tprint_debug(f"   - Min: {np.min(features_array):.6f}")
-                tprint_debug(f"   - Max: {np.max(features_array):.6f}")
-
-        if return_metadata:
-            summary = locals().get('summary', {}) or {}
-            metadata = {
-                'stage_metadata': stage_metadata,
-                'feature_columns': list(features_df.columns),
-                'summary': summary,
-            }
-            return FeaturePreparationResult(
-                features_array=features_array,
-                features_df=features_df.copy(),
-                summary=summary,
-                metadata=metadata,
-            )
-
-        return features_array
-
-
-    except Exception as e:
-        if verbose:
-            tprint_error(f"❌ [SHARED_FEATURES] Feature preparation failed: {e}")
-        raise
 
 
 def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureConfig, verbose: bool = False) -> pd.DataFrame:

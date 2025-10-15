@@ -533,46 +533,82 @@ class BacktestingEngine:
         )
     
     def _calculate_risk_metrics(self, returns: pd.Series, equity_curve: pd.Series) -> Dict[RiskMeasure, float]:
-        """Calculate risk metrics."""
+        """Calculate risk metrics using VectorBT."""
         risk_metrics = {}
         
         if len(returns) == 0:
             return risk_metrics
         
         try:
-            # Value at Risk (VaR)
-            var_95 = np.percentile(returns, (1 - self.config.confidence_level) * 100)
+            import vectorbt as vbt
+            from vectorbt.returns import Returns
+            from vectorbt.portfolio import Portfolio
+            
+            # Use VectorBT Returns for risk calculations
+            returns_obj = Returns(returns)
+            
+            # Value at Risk (VaR) using VectorBT
+            var_95 = returns_obj.var(alpha=1 - self.config.confidence_level)
             risk_metrics[RiskMeasure.VALUE_AT_RISK] = abs(var_95)
             
-            # Conditional VaR (Expected Shortfall)
-            cvar_95 = returns[returns <= var_95].mean()
+            # Conditional VaR (Expected Shortfall) using VectorBT
+            cvar_95 = returns_obj.cvar(alpha=1 - self.config.confidence_level)
             risk_metrics[RiskMeasure.CONDITIONAL_VAR] = abs(cvar_95)
             
-            # Maximum Drawdown (already calculated)
-            rolling_max = equity_curve.expanding().max()
-            drawdown = (equity_curve - rolling_max) / rolling_max
-            risk_metrics[RiskMeasure.MAXIMUM_DRAWDOWN] = abs(drawdown.min())
+            # Maximum Drawdown using VectorBT
+            portfolio = Portfolio.from_returns(returns)
+            max_dd = portfolio.max_drawdown()
+            risk_metrics[RiskMeasure.MAXIMUM_DRAWDOWN] = abs(max_dd)
             
-            # Downside Deviation
-            downside_returns = returns[returns < returns.mean()]
-            if len(downside_returns) > 0:
-                downside_deviation = downside_returns.std()
-                risk_metrics[RiskMeasure.DOWNSIDE_DEVIATION] = downside_deviation
+            # Downside Deviation using VectorBT
+            downside_deviation = returns_obj.downside_deviation()
+            risk_metrics[RiskMeasure.DOWNSIDE_DEVIATION] = downside_deviation
             
-            # Ulcer Index
-            squared_drawdowns = drawdown ** 2
-            ulcer_index = np.sqrt(squared_drawdowns.mean())
+            # Ulcer Index using VectorBT
+            ulcer_index = returns_obj.ulcer_index()
             risk_metrics[RiskMeasure.ULCER_INDEX] = ulcer_index
             
-            # Tail Ratio (95th percentile / 5th percentile)
-            p95 = np.percentile(returns, 95)
-            p5 = np.percentile(returns, 5)
-            if p5 != 0:
-                tail_ratio = p95 / abs(p5)
-                risk_metrics[RiskMeasure.TAIL_RATIO] = tail_ratio
+            # Tail Ratio using VectorBT
+            tail_ratio = returns_obj.tail_ratio()
+            risk_metrics[RiskMeasure.TAIL_RATIO] = tail_ratio
                 
         except Exception as e:
-            self.logger.warning(f'Risk metrics calculation failed: {e}')
+            self.logger.warning(f'VectorBT risk metrics calculation failed, using manual calculation: {e}')
+            # Fallback to manual calculation
+            try:
+                # Value at Risk (VaR)
+                var_95 = np.percentile(returns, (1 - self.config.confidence_level) * 100)
+                risk_metrics[RiskMeasure.VALUE_AT_RISK] = abs(var_95)
+                
+                # Conditional VaR (Expected Shortfall)
+                cvar_95 = returns[returns <= var_95].mean()
+                risk_metrics[RiskMeasure.CONDITIONAL_VAR] = abs(cvar_95)
+                
+                # Maximum Drawdown
+                rolling_max = equity_curve.expanding().max()
+                drawdown = (equity_curve - rolling_max) / rolling_max
+                risk_metrics[RiskMeasure.MAXIMUM_DRAWDOWN] = abs(drawdown.min())
+                
+                # Downside Deviation
+                downside_returns = returns[returns < returns.mean()]
+                if len(downside_returns) > 0:
+                    downside_deviation = downside_returns.std()
+                    risk_metrics[RiskMeasure.DOWNSIDE_DEVIATION] = downside_deviation
+                
+                # Ulcer Index
+                squared_drawdowns = drawdown ** 2
+                ulcer_index = np.sqrt(squared_drawdowns.mean())
+                risk_metrics[RiskMeasure.ULCER_INDEX] = ulcer_index
+                
+                # Tail Ratio
+                p95 = np.percentile(returns, 95)
+                p5 = np.percentile(returns, 5)
+                if p5 != 0:
+                    tail_ratio = p95 / abs(p5)
+                    risk_metrics[RiskMeasure.TAIL_RATIO] = tail_ratio
+                    
+            except Exception as e2:
+                self.logger.warning(f'Manual risk metrics calculation also failed: {e2}')
         
         return risk_metrics
     

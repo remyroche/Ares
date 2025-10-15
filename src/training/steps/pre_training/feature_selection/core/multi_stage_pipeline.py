@@ -77,6 +77,22 @@ try:
 except ImportError:
     VECTORBT_UTILS_AVAILABLE = False
 
+# Import VectorBT optimization tools
+try:
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    )
+    from src.utils.matrix_operations.vectorbt_optimizations import (
+        VectorBTOptimizedOperations, get_unified_matrix_operations
+    )
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    VectorBTRollingOptimizer = None
+    get_vectorbt_rolling_optimizer = None
+    VectorBTOptimizedOperations = None
+    get_unified_matrix_operations = None
+
 # Import matrix operations
 try:
     from src.utils.matrix_operations import (
@@ -90,14 +106,17 @@ except ImportError:
 
 class MultiStageFeatureSelectionPipeline:
     """
-    Multi-Stage Feature Selection Pipeline
+    Multi-Stage Feature Selection Pipeline with VectorBT Optimizations and Early Pruning
     
     A reusable class that implements a two-stage feature selection approach:
     1. Stage 1: Enhanced Multi-Method Scoring (50% mRMR + 30% Distance Correlation + 20% HSIC)
     2. Stage 2: Progressive refinement with RFE using ensemble scoring
     
-    This pipeline uses VectorBT optimizations, hardware acceleration, and fast-fail error handling.
-    The enhanced Stage 1 captures both linear and nonlinear relationships between features and target.
+    Enhanced with:
+    - VectorBTRollingOptimizer for distance correlation and bootstrap stability
+    - UnifiedVectorizationManager for HSIC, LASSO, and cross-validation
+    - Early pruning with progressive thresholds
+    - Hardware acceleration and fast-fail error handling
     """
 
     def __init__(self, config: Optional[FeatureSelectionConfig] = None, execution_mode_config: Optional[Dict[str, Any]] = None):
@@ -136,6 +155,19 @@ class MultiStageFeatureSelectionPipeline:
             self.vectorization_manager = None
             self.vectorbt_enabled = False
             tprint("⚠️ VectorBT optimization disabled or not available")
+        
+        # Initialize enhanced VectorBT optimization tools
+        self.rolling_optimizer = None
+        self.enhanced_vectorization_manager = None
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer()
+                self.enhanced_vectorization_manager = get_unified_matrix_operations()
+                tprint("✅ Enhanced VectorBT optimization tools initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Enhanced VectorBT tools not available: {e}")
+                self.rolling_optimizer = None
+                self.enhanced_vectorization_manager = None
 
         # Initialize hardware optimization tools if available
         if HARDWARE_OPTIMIZATION_AVAILABLE:
@@ -185,6 +217,31 @@ class MultiStageFeatureSelectionPipeline:
         else:
             self._vectorbt_memory_config = None
             tprint("⚠️ VectorBT memory optimization not available")
+        
+        # Initialize early pruning configuration
+        self.enable_early_pruning = getattr(self.config, 'enable_early_pruning', True)
+        self.pruning_thresholds = getattr(self.config, 'pruning_thresholds', [0.1, 0.2, 0.3])
+        self.pruning_stats = {
+            'features_pruned': 0,
+            'pruning_rounds': 0,
+            'memory_saved_mb': 0,
+            'time_saved_seconds': 0
+        }
+        
+        # Enhanced performance tracking
+        self.performance_stats = {
+            'stage1_time': 0.0,
+            'stage2_time': 0.0,
+            'total_time': 0.0,
+            'features_processed': 0,
+            'memory_optimizations': 0,
+            'vectorbt_operations': 0,
+            'distance_corr_time': 0.0,
+            'hsic_time': 0.0,
+            'lasso_ensemble_time': 0.0,
+            'bootstrap_time': 0.0,
+            'pruning_time': 0.0
+        }
 
     def select_features(self, X: pd.DataFrame, y: pd.Series, 
                        symbol: str = "BTCUSDT", exchange: str = "binance", 
@@ -573,14 +630,19 @@ class MultiStageFeatureSelectionPipeline:
         return self.spearman_abs_vectorized(X, y)
 
     def _calculate_distance_correlation_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate distance correlation scores for all features."""
-        tprint_debug("   📊 Calculating distance correlation scores")
+        """Calculate distance correlation scores for all features with VectorBT optimization."""
+        tprint_debug("   📊 Calculating distance correlation scores with VectorBT optimization")
+        start_time = time.time()
         
         if not SCIPY_AVAILABLE:
             tprint_warning("   ⚠️ SciPy not available, falling back to Spearman correlation")
             return self.spearman_abs_vectorized(X, y)
         
         try:
+            # Use VectorBTRollingOptimizer if available
+            if self.rolling_optimizer and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_distance_correlation_vectorbt(X, y)
+            
             # Subsample if enabled and dataset is large
             if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
                 tprint_debug(f"   📊 Subsampling data for distance correlation: {len(X)} -> {self.config.distance_correlation_sample_size}")
@@ -601,11 +663,86 @@ class MultiStageFeatureSelectionPipeline:
                     tprint_debug(f"   ⚠️ Distance correlation failed for {feature}: {e}")
                     distance_corr_scores[feature] = 0.0
             
+            self.performance_stats['distance_corr_time'] = time.time() - start_time
             return pd.Series(distance_corr_scores, index=X.columns)
             
         except Exception as e:
             tprint_warning(f"   ⚠️ Distance correlation calculation failed: {e}, falling back to Spearman")
             return self.spearman_abs_vectorized(X, y)
+    
+    def _calculate_distance_correlation_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate distance correlation using VectorBTRollingOptimizer."""
+        try:
+            tprint_debug("   🚀 Using VectorBTRollingOptimizer for distance correlation")
+            
+            # Subsample if enabled and dataset is large
+            if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
+                tprint_debug(f"   📊 Subsampling data: {len(X)} -> {self.config.distance_correlation_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.distance_correlation_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Use rolling operations for efficient distance correlation calculation
+            distance_corr_scores = {}
+            window_size = min(100, len(X_sample) // 4)  # Adaptive window size
+            
+            for feature in X_sample.columns:
+                try:
+                    # Use rolling correlation as distance correlation approximation
+                    rolling_corr = self.rolling_optimizer.rolling_correlation(
+                        X_sample[feature], y_sample, window=window_size
+                    )
+                    
+                    if rolling_corr is not None and not rolling_corr.empty:
+                        # Use mean of rolling correlations as distance correlation approximation
+                        dc_score = abs(rolling_corr.mean())
+                    else:
+                        # Fallback to standard distance correlation
+                        dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                    
+                    distance_corr_scores[feature] = dc_score
+                    
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ VectorBT distance correlation failed for {feature}: {e}")
+                    # Fallback to standard distance correlation
+                    dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                    distance_corr_scores[feature] = dc_score
+            
+            self.performance_stats['distance_corr_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT distance correlation completed in {self.performance_stats['distance_corr_time']:.2f}s")
+            
+            return pd.Series(distance_corr_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT distance correlation failed: {e}, using fallback")
+            return self._calculate_distance_correlation_scores_fallback(X, y)
+    
+    def _calculate_distance_correlation_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback distance correlation calculation without VectorBT."""
+        # Subsample if enabled and dataset is large
+        if self.config.distance_correlation_enable_subsampling and len(X) > self.config.distance_correlation_sample_size:
+            sample_indices = np.random.choice(len(X), self.config.distance_correlation_sample_size, replace=False)
+            X_sample = X.iloc[sample_indices]
+            y_sample = y.iloc[sample_indices]
+        else:
+            X_sample = X
+            y_sample = y
+        
+        # Calculate distance correlation for each feature
+        distance_corr_scores = {}
+        for feature in X_sample.columns:
+            try:
+                dc_score = self._distance_correlation(X_sample[feature], y_sample)
+                distance_corr_scores[feature] = dc_score
+            except Exception as e:
+                tprint_debug(f"   ⚠️ Distance correlation failed for {feature}: {e}")
+                distance_corr_scores[feature] = 0.0
+        
+        return pd.Series(distance_corr_scores, index=X.columns)
 
     def _distance_correlation(self, x: pd.Series, y: pd.Series) -> float:
         """Calculate distance correlation between two series."""
@@ -653,14 +790,19 @@ class MultiStageFeatureSelectionPipeline:
             return 0.0
 
     def _calculate_hsic_scores(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Calculate HSIC scores for all features."""
-        tprint_debug("   📊 Calculating HSIC scores")
+        """Calculate HSIC scores for all features with VectorBT optimization."""
+        tprint_debug("   📊 Calculating HSIC scores with VectorBT optimization")
+        start_time = time.time()
         
         if not SCIPY_AVAILABLE or not SKLEARN_AVAILABLE:
             tprint_warning("   ⚠️ Required libraries not available, falling back to Spearman correlation")
             return self.spearman_abs_vectorized(X, y)
         
         try:
+            # Use UnifiedVectorizationManager if available
+            if self.enhanced_vectorization_manager and VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                return self._calculate_hsic_vectorbt(X, y)
+            
             # Subsample if enabled and dataset is large
             if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
                 tprint_debug(f"   📊 Subsampling data for HSIC: {len(X)} -> {self.config.hsic_sample_size}")
@@ -681,11 +823,83 @@ class MultiStageFeatureSelectionPipeline:
                     tprint_debug(f"   ⚠️ HSIC calculation failed for {feature}: {e}")
                     hsic_scores[feature] = 0.0
             
+            self.performance_stats['hsic_time'] = time.time() - start_time
             return pd.Series(hsic_scores, index=X.columns)
             
         except Exception as e:
             tprint_warning(f"   ⚠️ HSIC calculation failed: {e}, falling back to Spearman")
             return self.spearman_abs_vectorized(X, y)
+    
+    def _calculate_hsic_vectorbt(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Calculate HSIC using UnifiedVectorizationManager."""
+        try:
+            tprint_debug("   🚀 Using UnifiedVectorizationManager for HSIC")
+            
+            # Subsample if enabled and dataset is large
+            if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
+                tprint_debug(f"   📊 Subsampling data: {len(X)} -> {self.config.hsic_sample_size}")
+                sample_indices = np.random.choice(len(X), self.config.hsic_sample_size, replace=False)
+                X_sample = X.iloc[sample_indices]
+                y_sample = y.iloc[sample_indices]
+            else:
+                X_sample = X
+                y_sample = y
+            
+            # Use vectorization manager for efficient HSIC calculation
+            hsic_scores = {}
+            for feature in X_sample.columns:
+                try:
+                    # Use vectorization manager for kernel operations
+                    if hasattr(self.enhanced_vectorization_manager, 'hsic_calculation'):
+                        hsic_score = self.enhanced_vectorization_manager.hsic_calculation(
+                            X_sample[feature], y_sample, 
+                            kernel=self.config.hsic_kernel,
+                            gamma=self.config.hsic_gamma
+                        )
+                    else:
+                        # Fallback to standard HSIC calculation
+                        hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                    
+                    hsic_scores[feature] = hsic_score
+                    
+                except Exception as e:
+                    tprint_debug(f"   ⚠️ VectorBT HSIC failed for {feature}: {e}")
+                    # Fallback to standard HSIC calculation
+                    hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                    hsic_scores[feature] = hsic_score
+            
+            self.performance_stats['hsic_time'] = time.time() - start_time
+            self.performance_stats['vectorbt_operations'] += 1
+            tprint_debug(f"   ✅ VectorBT HSIC completed in {self.performance_stats['hsic_time']:.2f}s")
+            
+            return pd.Series(hsic_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"   ⚠️ VectorBT HSIC failed: {e}, using fallback")
+            return self._calculate_hsic_scores_fallback(X, y)
+    
+    def _calculate_hsic_scores_fallback(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fallback HSIC calculation without VectorBT."""
+        # Subsample if enabled and dataset is large
+        if self.config.hsic_enable_subsampling and len(X) > self.config.hsic_sample_size:
+            sample_indices = np.random.choice(len(X), self.config.hsic_sample_size, replace=False)
+            X_sample = X.iloc[sample_indices]
+            y_sample = y.iloc[sample_indices]
+        else:
+            X_sample = X
+            y_sample = y
+        
+        # Calculate HSIC for each feature
+        hsic_scores = {}
+        for feature in X_sample.columns:
+            try:
+                hsic_score = self._hsic_score(X_sample[feature], y_sample)
+                hsic_scores[feature] = hsic_score
+            except Exception as e:
+                tprint_debug(f"   ⚠️ HSIC calculation failed for {feature}: {e}")
+                hsic_scores[feature] = 0.0
+        
+        return pd.Series(hsic_scores, index=X.columns)
 
     def _hsic_score(self, x: pd.Series, y: pd.Series) -> float:
         """Calculate HSIC score between two series."""

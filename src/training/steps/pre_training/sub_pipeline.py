@@ -138,6 +138,79 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Advanced feature engineering pipeline with tactician/analyst labeling integration.',
         order=13,
     ),
+    # Feature Generation Steps
+    'feature_generation_data_validation_step': StepSpec(
+        name='feature_generation_data_validation_step',
+        component_key='feature_generation_data_validation_step',
+        executor_method='_execute_feature_generation_data_validation_step',
+        display_name='Data Validation Step',
+        description='Data validation and quality assessment for feature generation pipeline.',
+        order=14,
+    ),
+    'feature_generation_feature_generation_step': StepSpec(
+        name='feature_generation_feature_generation_step',
+        component_key='feature_generation_feature_generation_step',
+        executor_method='_execute_feature_generation_feature_generation_step',
+        display_name='Feature Generation Step',
+        description='Multi-method feature generation for unified pipeline.',
+        order=15,
+    ),
+    'feature_generation_feature_selection_step': StepSpec(
+        name='feature_generation_feature_selection_step',
+        component_key='feature_generation_feature_selection_step',
+        executor_method='_execute_feature_generation_feature_selection_step',
+        display_name='Feature Selection Step',
+        description='Intelligent feature selection for unified pipeline.',
+        order=16,
+    ),
+    'feature_generation_period_optimization_step': StepSpec(
+        name='feature_generation_period_optimization_step',
+        component_key='feature_generation_period_optimization_step',
+        executor_method='_execute_feature_generation_period_optimization_step',
+        display_name='Period Optimization Step',
+        description='Period optimization for features in unified pipeline.',
+        order=17,
+    ),
+    'feature_generation_lookback_optimization_step': StepSpec(
+        name='feature_generation_lookback_optimization_step',
+        component_key='feature_generation_lookback_optimization_step',
+        executor_method='_execute_feature_generation_lookback_optimization_step',
+        display_name='Lookback Optimization Step',
+        description='Lookback period optimization for features in unified pipeline.',
+        order=18,
+    ),
+    'feature_generation_interaction_generation_step': StepSpec(
+        name='feature_generation_interaction_generation_step',
+        component_key='feature_generation_interaction_generation_step',
+        executor_method='_execute_feature_generation_interaction_generation_step',
+        display_name='Interaction Generation Step',
+        description='Feature interaction generation for unified pipeline.',
+        order=19,
+    ),
+    'feature_generation_vectorization_step': StepSpec(
+        name='feature_generation_vectorization_step',
+        component_key='feature_generation_vectorization_step',
+        executor_method='_execute_feature_generation_vectorization_step',
+        display_name='Vectorization Step',
+        description='Feature vectorization optimization for unified pipeline.',
+        order=20,
+    ),
+    'feature_generation_labeling_integration_step': StepSpec(
+        name='feature_generation_labeling_integration_step',
+        component_key='feature_generation_labeling_integration_step',
+        executor_method='_execute_feature_generation_labeling_integration_step',
+        display_name='Labeling Integration Step',
+        description='Analyst/Tactician labeling integration for unified pipeline.',
+        order=21,
+    ),
+    'feature_generation_final_validation_step': StepSpec(
+        name='feature_generation_final_validation_step',
+        component_key='feature_generation_final_validation_step',
+        executor_method='_execute_feature_generation_final_validation_step',
+        display_name='Final Validation Step',
+        description='Final validation and quality check for unified pipeline.',
+        order=22,
+    ),
     'feature_lookback_optimization': StepSpec(
         name='feature_lookback_optimization',
         component_key='feature_lookback_optimization',
@@ -4126,6 +4199,467 @@ class PreTrainingSubPipeline:
         if result.artifacts:
             self._store_artifacts_in_chain('unified_data_driven_pipeline', result.artifacts)
         
+        return result
+
+    # Feature Generation Steps Executors
+    async def _execute_feature_generation_data_validation_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation data validation step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_data_validation_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_data_validation_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_data_validation_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_data_validation_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'data_quality_score': step_result.data_quality_score,
+                    'validation_metadata': step_result.validation_metadata
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_data_validation_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_feature_generation_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation feature generation step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_feature_generation_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_feature_generation_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_feature_generation_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_feature_generation_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'feature_count': len(step_result.features.columns),
+                    'generation_metrics': step_result.generation_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_feature_generation_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_feature_selection_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation feature selection step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_feature_selection_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_feature_selection_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_feature_selection_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_feature_selection_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'selected_feature_count': len(step_result.selected_features.columns),
+                    'selection_metrics': step_result.selection_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_feature_selection_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_period_optimization_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation period optimization step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_period_optimization_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_period_optimization_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_period_optimization_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_period_optimization_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'optimized_periods': len(step_result.optimal_periods),
+                    'optimization_metrics': step_result.optimization_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_period_optimization_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_lookback_optimization_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation lookback optimization step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_lookback_optimization_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_lookback_optimization_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_lookback_optimization_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_lookback_optimization_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'optimized_lookbacks': len(step_result.optimal_lookbacks),
+                    'optimization_metrics': step_result.optimization_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_lookback_optimization_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_interaction_generation_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation interaction generation step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_interaction_generation_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_interaction_generation_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_interaction_generation_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_interaction_generation_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'interaction_feature_count': len(step_result.interaction_features.columns),
+                    'generation_metrics': step_result.generation_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_interaction_generation_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_vectorization_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation vectorization step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_vectorization_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_vectorization_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_vectorization_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_vectorization_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'vectorized_feature_count': len(step_result.vectorized_features.columns),
+                    'performance_metrics': step_result.performance_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_vectorization_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_labeling_integration_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation labeling integration step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_labeling_integration_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_labeling_integration_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_labeling_integration_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_labeling_integration_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'labeled_data_shape': step_result.labeled_data.shape,
+                    'quality_metrics': step_result.quality_metrics
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_labeling_integration_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_final_validation_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute feature generation final validation step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_final_validation_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_final_validation_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.feature_generation_step_commands import (
+                handle_feature_generation_final_validation_step_command
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_final_validation_step_command(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode.value if hasattr(config, 'execution_mode') else 'blank',
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = step_result.artifacts or {}
+                result.metadata = {
+                    'final_dataset_shape': step_result.final_dataset.shape,
+                    'quality_metrics': step_result.quality_metrics,
+                    'pipeline_summary': step_result.pipeline_summary
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_final_validation_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
 
     async def _execute_feature_lookback_optimization(

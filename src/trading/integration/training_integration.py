@@ -202,6 +202,15 @@ class TrainingDataProvider:
             # Save to training pipeline data directory
             import json
             import os
+            
+            # Save the configuration
+            config_path = os.path.join(data_dir, 'training_config.json')
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error saving training configuration: {e}")
+            raise
 
 # VectorBT imports for native optimization
 try:

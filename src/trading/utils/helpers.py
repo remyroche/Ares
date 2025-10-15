@@ -664,6 +664,10 @@ def save_trading_data(
     """
     try:
         import os
+        return os.path.exists(file_path)
+    except Exception as e:
+        logger.error(f"Error checking file existence: {e}")
+        return False
 
 # VectorBT imports for native optimization
 try:

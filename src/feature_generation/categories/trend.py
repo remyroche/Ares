@@ -1745,23 +1745,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         return vwma
 
 
-    
 class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
-        # Use VectorBT for VWMA calculation
-        if VECTORBT_AVAILABLE:
-            try:
-                # Calculate VWMA using VectorBT rolling sum
-                price_volume = base_values * volume
-                price_volume_sum = rolling_sum(price_volume, window=self.period)
-                volume_sum = rolling_sum(volume, window=self.period)
-                vwma = price_volume_sum / volume_sum
-                return vwma
-            except Exception as e:
-                self.logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
-                vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-                return vwma
-        else:
-            vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
             return vwma
 
 

@@ -264,8 +264,20 @@ from src.utils.data.quality.data_quality import DataQualityFramework, QualityThr
 from src.utils.data.quality.data_cleaning import DataCleaner
 from src.utils.data.validation.validators import CrossStepValidator
 
-# Note: Time series CV, statistical analysis, and feature selection functionality
-# has been integrated into the enhanced_components and core modules
+# Import existing components
+from .time_series_cv import PurgedEmbargoedWalkForwardCV, create_purged_embargoed_cv
+from .statistical_analysis import StatisticalAnalysisFramework
+from .feature_selection.multi_objective_selector import (
+    MultiObjectiveFeatureSelector, 
+    create_default_objectives,
+    OutOfSampleSharpeObjective,
+    DrawdownObjective,
+    TurnoverObjective,
+    StabilityObjective,
+    DiversityObjective,
+    MutualInformationObjective,
+    ProfitCenteredObjective
+)
 
 # Import enhanced ML utilities from ml_common
 try:
@@ -1240,8 +1252,8 @@ class UnifiedDataDrivenPipeline:
         """Initialize core pipeline components."""
         tprint_debug("Initializing core components")
         
-        # Statistical analysis framework (integrated into enhanced components)
-        # self.stats_framework = StatisticalAnalysisFramework()
+        # Statistical analysis framework
+        self.stats_framework = StatisticalAnalysisFramework()
         
         # Time series CV - enhanced with ML Common utilities
         if ML_COMMON_AVAILABLE and self.unified_cv is not None:
@@ -1259,11 +1271,11 @@ class UnifiedDataDrivenPipeline:
             )
             tprint_info("ℹ️ Using standard purged embargoed CV")
         
-        # Multi-objective feature selector (integrated into enhanced components)
-        # self.feature_selector = MultiObjectiveFeatureSelector(
-        #     objectives=create_default_objectives(),
-        #     cv_splitter=self.cv_splitter
-        # )
+        # Multi-objective feature selector
+        self.feature_selector = MultiObjectiveFeatureSelector(
+            objectives=create_default_objectives(),
+            cv_splitter=self.cv_splitter
+        )
         
         # Economic evaluator
         economic_config = EconomicEvaluationConfig(

@@ -60,6 +60,29 @@ from .core.simplified_config import (
     PipelineIntensity
 )
 
+from .time_series_cv import (
+    PurgedEmbargoedWalkForwardCV,
+    PurgedEmbargoedConfig,
+    TimeSeriesSplit,
+    create_purged_embargoed_cv,
+    validate_time_series_splits
+)
+
+from .statistical_analysis import (
+    StatisticalAnalysisFramework,
+    DataCharacteristics,
+    PatternAnalysis,
+    RelationshipAnalysis
+)
+
+from .feature_selection.multi_objective_selector import (
+    MultiObjectiveFeatureSelector,
+    create_default_objectives,
+    create_performance_objectives,
+    create_stability_objectives,
+    create_balanced_objectives
+)
+
 __version__ = "1.0.0"
 __author__ = "Ares Trading System"
 
@@ -95,5 +118,25 @@ __all__ = [
     'create_light_config',
     'create_config_by_intensity',
     'list_available_intensities',
-    'PipelineIntensity'
+    'PipelineIntensity',
+    
+    # Time series CV
+    'PurgedEmbargoedWalkForwardCV',
+    'PurgedEmbargoedConfig',
+    'TimeSeriesSplit',
+    'create_purged_embargoed_cv',
+    'validate_time_series_splits',
+    
+    # Statistical analysis
+    'StatisticalAnalysisFramework',
+    'DataCharacteristics',
+    'PatternAnalysis',
+    'RelationshipAnalysis',
+    
+    # Feature selection
+    'MultiObjectiveFeatureSelector',
+    'create_default_objectives',
+    'create_performance_objectives',
+    'create_stability_objectives',
+    'create_balanced_objectives'
 ]

@@ -15,7 +15,7 @@ from enum import Enum
 import logging
 from collections import defaultdict
 from scipy import stats
-from sklearn.metrics import mutual_info_regression
+from sklearn.feature_selection import mutual_info_regression
 import warnings
 
 try:

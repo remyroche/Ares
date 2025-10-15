@@ -5,6 +5,45 @@ This module provides shared imports and utilities to reduce duplication
 across the features_common package.
 """
 
+import numpy as np
+import pandas as pd
+
+def check_for_inf_nan(data, name="data"):
+    """Check for infinite or NaN values in data."""
+    if isinstance(data, (pd.DataFrame, pd.Series)):
+        has_inf = np.isinf(data).any().any() if isinstance(data, pd.DataFrame) else np.isinf(data).any()
+        has_nan = data.isna().any().any() if isinstance(data, pd.DataFrame) else data.isna().any()
+    else:
+        has_inf = np.isinf(data).any()
+        has_nan = np.isnan(data).any()
+    
+    if has_inf:
+        print(f"⚠️ Warning: {name} contains infinite values")
+    if has_nan:
+        print(f"⚠️ Warning: {name} contains NaN values")
+    
+    return not (has_inf or has_nan)
+
+def validate_numeric_array(data, name="data"):
+    """Validate that data is numeric and contains no infinite or NaN values."""
+    if not isinstance(data, (np.ndarray, pd.DataFrame, pd.Series)):
+        try:
+            data = np.array(data)
+        except:
+            raise ValueError(f"{name} must be convertible to a numeric array")
+    
+    if not np.issubdtype(data.dtype, np.number):
+        raise ValueError(f"{name} must contain numeric data")
+    
+    return check_for_inf_nan(data, name)
+
+def is_valid_number(value):
+    """Check if a value is a valid number (not NaN or infinite)."""
+    try:
+        return np.isfinite(float(value))
+    except (ValueError, TypeError):
+        return False
+
 # Import utility functions
 try:
     from src.utils.tprint import tprint

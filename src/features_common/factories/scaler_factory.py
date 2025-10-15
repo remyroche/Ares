@@ -6,7 +6,7 @@ optimization selection and configuration.
 """
 
 import logging
-from typing import Dict, Any, Optional, Union, Type
+from typing import Dict, Any, Optional, Union, Type, List
 import pandas as pd
 
 from ..config import get_unified_config

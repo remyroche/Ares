@@ -37,6 +37,12 @@ except ImportError:
     cp = None
     tprint_warning("⚠️ CuPy not available, using CPU-only operations")
 
+# Create a dummy type for type hints when CuPy is not available
+if cp is None:
+    class DummyCupyArray:
+        pass
+    cp = type('CuPy', (), {'ndarray': DummyCupyArray, 'asarray': lambda x: x, 'asnumpy': lambda x: x, 'mean': lambda x, **kwargs: x, 'std': lambda x, **kwargs: x, 'var': lambda x, **kwargs: x, 'min': lambda x, **kwargs: x, 'max': lambda x, **kwargs: x, 'sum': lambda x, **kwargs: x})()
+
 # Import Numba for JIT compilation
 try:
     import numba as nb

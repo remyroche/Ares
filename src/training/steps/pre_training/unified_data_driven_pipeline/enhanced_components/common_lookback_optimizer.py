@@ -37,7 +37,7 @@ class OptimizationStrategy(Enum):
     """Strategy for lookback optimization."""
     SINGLE_BEST = "single_best"  # For single features - select most informative
     MULTIPLE_DIVERSE = "multiple_diverse"  # For cross timeframe - select multiple diverse
-    ADAPTIVE = "adaptive"  # Automatically choose based on feature type
+    # ADAPTIVE removed - no adaptive windows based on market conditions
 
 
 class InformativeMetric(Enum):
@@ -61,20 +61,20 @@ class LookbackOptimizationConfig:
     num_candidate_periods: int = 10  # Number of candidate periods to evaluate
     
     # Optimization settings
-    num_informative_periods: int = 3  # Number of informative periods to select
-    redundancy_threshold: float = 0.8  # Threshold for considering periods redundant
+    num_informative_periods: int = 2  # Minimum 2 periods per feature (changed from 3)
+    redundancy_threshold: float = 0.85  # Increased threshold to allow more diverse periods
     informativeness_threshold: float = 0.1  # Minimum informativeness score
     
     # Metrics to use
     primary_metric: InformativeMetric = InformativeMetric.COMBINED
     secondary_metrics: List[InformativeMetric] = None
     
-    # Cross timeframe specific settings
+    # Cross timeframe specific settings - ensure at least 2 periods
     cross_timeframe_min_periods: int = 2  # Minimum periods for cross timeframe
-    cross_timeframe_max_periods: int = 5  # Maximum periods for cross timeframe
+    cross_timeframe_max_periods: int = 3  # Maximum periods for cross timeframe (reduced for efficiency)
     
-    # Single feature specific settings
-    single_feature_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_BEST
+    # Single feature specific settings - changed to ensure at least 2 periods
+    single_feature_strategy: OptimizationStrategy = OptimizationStrategy.MULTIPLE_DIVERSE
     
     def __post_init__(self):
         if self.secondary_metrics is None:

@@ -92,11 +92,12 @@ class FeatureGenerationConfig:
             base_periods = [1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30, 40, 60, 80, 120, 160, 240, 320, 480, 600]
             self.cross_timeframe_periods = [p * self.base_timeframe_minutes for p in base_periods]
         if self.interaction_orders is None:
-            self.interaction_orders = [2, 3]  # 2-way and 3-way interactions
+            self.interaction_orders = [2]  # Only 2-way interactions (X² max)
         if self.creation_methods is None:
             self.creation_methods = [
                 'add', 'subtract', 'multiply', 'divide', 'log', 'sqrt', 'power', 'ratio',
-                'log_add', 'log_subtract', 'log_divide', 'exp_add', 'exp_multiply',
+                'log_add', 'log_subtract', 'log_divide', 'log_multiply', 'log_ratio',  # Added log relationships
+                'exp_add', 'exp_multiply',
                 'abs_add', 'abs_multiply', 'square_add', 'square_multiply',
                 'cube_add', 'cube_multiply', 'sin_add', 'cos_multiply', 'tan_divide'
             ]

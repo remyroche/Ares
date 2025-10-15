@@ -407,7 +407,8 @@ class LabelingAdapter:
             self.labeler = create_enhanced_tactician_labeler()
             self.labeling_type = LabelDefinitionType.TACTICIAN
         else:
-            raise ValueError(f"Invalid labeling type: {self.config.labeling_type}. Must be 'analyst' or 'tactician'")
+            # Fast fail instead of fallback to Triple Barrier
+            raise ValueError(f"Invalid labeling type: {self.config.labeling_type}. Must be 'analyst' or 'tactician'. No fallback to Triple Barrier method.")
     
     def generate_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None, 
                        existing_artifacts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1825,8 +1826,51 @@ class UnifiedDataDrivenPipeline:
                     f"data_quality_issues_{len(quality_result.issues)}"
                 )
             
-            # Step 2: Process and validate data using unified utilities with enhanced common operations
-            tprint_info("Step 2: Process and validate data using unified utilities")
+            # Step 2: Labeling Integration (moved from later in pipeline)
+            tprint_info("Step 2: Labeling Integration (Analyst/Tactician labeling)")
+            self.detailed_reporter.start_step("labeling_integration", len(data.columns))
+            
+            # Generate labels using the tactician/analyst labeling system
+            tprint_info(f"🏷️ Generating labels using {self.config.labeling_type} labeling system")
+            
+            # Initialize processed_targets early to avoid undefined variable error
+            processed_targets = targets
+            
+            # Check for existing labeling artifacts in pipeline state
+            existing_artifacts = None
+            if pipeline_state and 'labeling_artifacts' in pipeline_state:
+                existing_artifacts = pipeline_state['labeling_artifacts']
+                tprint_info("📦 Found existing labeling artifacts in pipeline state")
+            
+            labeling_result = self.labeling_adapter.generate_labels(data, processed_targets, existing_artifacts)
+            
+            if labeling_result.get('success', False):
+                tprint_success(f"✅ Labels generated successfully using {labeling_result.get('labeling_type', 'unknown')} system")
+                labeling_data = labeling_result.get('labeled_data', pd.DataFrame())
+                labeling_metadata = labeling_result.get('labeling_metadata', {})
+                labeling_quality = labeling_result.get('quality_score', 0.0)
+                
+                # Store labeling results in pipeline state
+                if pipeline_state:
+                    pipeline_state['labeling_result'] = labeling_result
+                    pipeline_state['labeling_quality'] = labeling_quality
+                    pipeline_state['labeling_metadata'] = labeling_metadata
+                
+                tprint_info(f"📊 Labeling quality score: {labeling_quality:.3f}")
+            else:
+                error_msg = f"Labeling failed: {labeling_result.get('error', 'Unknown error')}"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            # End labeling integration step reporting
+            self.detailed_reporter.end_step("labeling_integration", 
+                                          len(labeling_data.columns) if not labeling_data.empty else 0,
+                                          0.0,  # Labeling execution time
+                                          0.0,  # Labeling memory usage
+                                          True)
+            
+            # Step 3: Process and validate data using unified utilities with enhanced common operations
+            tprint_info("Step 3: Process and validate data using unified utilities")
             self.detailed_reporter.start_step("data_processing", len(data.columns))
             processed_data, processing_report = self.unified_data_utils.process_and_validate(
                 data=data,
@@ -2228,8 +2272,8 @@ class UnifiedDataDrivenPipeline:
                     getattr(feature_selection_results, 'quality_metrics', {})
                 )
             
-            # Step 3: Generate selected features
-            tprint_info("Step 3: Generate selected features")
+            # Step 4: Generate selected features (Feature Bank only)
+            tprint_info("Step 4: Generate selected features (Feature Bank only)")
             self.detailed_reporter.start_step("feature_generation", len(processed_data.columns))
             selected_features_df = self._generate_selected_features(processed_data, feature_selection_results, targets)
             
@@ -2330,10 +2374,10 @@ class UnifiedDataDrivenPipeline:
                                           0.0,  # Will be updated with actual memory usage
                                           True)
             
-            # Step 4: Enhanced interaction generation with VectorBT optimization
-            tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
+            # Step 5: Enhanced interaction generation with ML generators and feature selection
+            tprint_info("Step 5: Enhanced interaction generation with ML generators and feature selection")
             self.detailed_reporter.start_step("interaction_generation", len(transformed_features_df.columns))
-            interaction_results = self._enhanced_interaction_generation(transformed_features_df, processed_targets)
+            interaction_results = self._enhanced_interaction_generation_with_ml(transformed_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
@@ -3454,6 +3498,285 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Error details: {str(e)}")
             raise RuntimeError(error_msg) from e
     
+    def _enhanced_interaction_generation_with_ml(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Enhanced interaction generation with ML generators, log relationships, and feature selection."""
+        tprint_info("🔗 Starting enhanced interaction generation with ML generators and feature selection")
+        tprint_debug(f"📊 Features shape: {features_df.shape}")
+        tprint_debug(f"🎯 Targets shape: {targets.shape if targets is not None else 'None'}")
+        
+        # Validate input data before processing
+        if features_df is None or features_df.empty:
+            error_msg = "Features DataFrame is None or empty for interaction generation"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(features_df, pd.DataFrame):
+            error_msg = f"Features must be DataFrame, got {type(features_df)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
+        
+        try:
+            all_interactions = []
+            
+            # 1. Generate polynomial features (limited to X²)
+            tprint_info("🔧 Generating polynomial features (X² max)")
+            polynomial_interactions = self._generate_polynomial_interactions(features_df, targets, max_degree=2)
+            all_interactions.extend(polynomial_interactions)
+            tprint_success(f"✅ Generated {len(polynomial_interactions)} polynomial interactions")
+            
+            # 2. Generate log relationships
+            tprint_info("🔧 Generating log relationships")
+            log_interactions = self._generate_log_interactions(features_df, targets)
+            all_interactions.extend(log_interactions)
+            tprint_success(f"✅ Generated {len(log_interactions)} log interactions")
+            
+            # 3. Generate cross-feature interactions
+            tprint_info("🔧 Generating cross-feature interactions")
+            cross_interactions = self._generate_cross_feature_interactions(features_df, targets)
+            all_interactions.extend(cross_interactions)
+            tprint_success(f"✅ Generated {len(cross_interactions)} cross-feature interactions")
+            
+            # 4. Generate ML-based interactions using RandomForest
+            tprint_info("🔧 Generating RandomForest-based interactions")
+            rf_interactions = self._generate_randomforest_interactions(features_df, targets)
+            all_interactions.extend(rf_interactions)
+            tprint_success(f"✅ Generated {len(rf_interactions)} RandomForest interactions")
+            
+            # 5. Generate ML-based interactions using LightGBM
+            tprint_info("🔧 Generating LightGBM-based interactions")
+            lgb_interactions = self._generate_lightgbm_interactions(features_df, targets)
+            all_interactions.extend(lgb_interactions)
+            tprint_success(f"✅ Generated {len(lgb_interactions)} LightGBM interactions")
+            
+            # 6. Feature selection to keep only top 100 features
+            tprint_info("🔧 Performing feature selection (max 100 features)")
+            selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
+            tprint_success(f"✅ Selected {len(selected_interactions)} top interactions")
+            
+            return selected_interactions
+            
+        except Exception as e:
+            error_msg = f"Enhanced interaction generation with ML failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+    def _generate_polynomial_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series], max_degree: int = 2) -> List[Any]:
+        """Generate polynomial interactions limited to X²."""
+        interactions = []
+        
+        try:
+            from sklearn.preprocessing import PolynomialFeatures
+            from sklearn.feature_selection import SelectKBest, f_regression
+            
+            # Generate polynomial features up to degree 2
+            poly = PolynomialFeatures(degree=max_degree, include_bias=False, interaction_only=True)
+            poly_features = poly.fit_transform(features_df)
+            poly_feature_names = poly.get_feature_names_out(features_df.columns)
+            
+            # Convert to DataFrame
+            poly_df = pd.DataFrame(poly_features, index=features_df.index, columns=poly_feature_names)
+            
+            # Select top features if we have targets
+            if targets is not None and len(poly_df.columns) > 50:
+                selector = SelectKBest(f_regression, k=50)
+                selected_features = selector.fit_transform(poly_df, targets)
+                selected_columns = poly_df.columns[selector.get_support()]
+                poly_df = pd.DataFrame(selected_features, index=features_df.index, columns=selected_columns)
+            
+            # Convert to interaction format
+            for col in poly_df.columns:
+                interactions.append({
+                    'name': f"poly_{col}",
+                    'type': 'polynomial',
+                    'features': [col],
+                    'data': poly_df[col]
+                })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Polynomial interaction generation failed: {e}")
+            return []
+
+    def _generate_log_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate log relationship interactions."""
+        interactions = []
+        
+        try:
+            # Generate log features for each column
+            for col in features_df.columns:
+                if features_df[col].min() > 0:  # Only for positive values
+                    log_col = np.log(features_df[col])
+                    interactions.append({
+                        'name': f"log_{col}",
+                        'type': 'log',
+                        'features': [col],
+                        'data': log_col
+                    })
+            
+            # Generate log ratio features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    if features_df[col1].min() > 0 and features_df[col2].min() > 0:
+                        log_ratio = np.log(features_df[col1] / features_df[col2])
+                        interactions.append({
+                            'name': f"log_ratio_{col1}_{col2}",
+                            'type': 'log_ratio',
+                            'features': [col1, col2],
+                            'data': log_ratio
+                        })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Log interaction generation failed: {e}")
+            return []
+
+    def _generate_cross_feature_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate cross-feature interactions (ratios, differences, etc.)."""
+        interactions = []
+        
+        try:
+            # Generate ratio features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    if features_df[col2].min() > 0:  # Avoid division by zero
+                        ratio = features_df[col1] / features_df[col2]
+                        interactions.append({
+                            'name': f"ratio_{col1}_{col2}",
+                            'type': 'ratio',
+                            'features': [col1, col2],
+                            'data': ratio
+                        })
+            
+            # Generate difference features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    diff = features_df[col1] - features_df[col2]
+                    interactions.append({
+                        'name': f"diff_{col1}_{col2}",
+                        'type': 'difference',
+                        'features': [col1, col2],
+                        'data': diff
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Cross-feature interaction generation failed: {e}")
+            return []
+
+    def _generate_randomforest_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate RandomForest-based interactions."""
+        interactions = []
+        
+        try:
+            if targets is None:
+                return interactions
+                
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.feature_selection import SelectFromModel
+            
+            # Train RandomForest
+            rf = RandomForestRegressor(n_estimators=100, random_state=42)
+            rf.fit(features_df, targets)
+            
+            # Get feature importances
+            importances = rf.feature_importances_
+            feature_names = features_df.columns
+            
+            # Select top features
+            selector = SelectFromModel(rf, threshold='median')
+            selected_features = selector.fit_transform(features_df, targets)
+            selected_columns = feature_names[selector.get_support()]
+            
+            # Generate interactions from selected features
+            for i, col1 in enumerate(selected_columns):
+                for col2 in selected_columns[i+1:]:
+                    interaction = features_df[col1] * features_df[col2]
+                    interactions.append({
+                        'name': f"rf_interaction_{col1}_{col2}",
+                        'type': 'randomforest_interaction',
+                        'features': [col1, col2],
+                        'data': interaction
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ RandomForest interaction generation failed: {e}")
+            return []
+
+    def _generate_lightgbm_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate LightGBM-based interactions."""
+        interactions = []
+        
+        try:
+            if targets is None:
+                return interactions
+                
+            import lightgbm as lgb
+            from sklearn.feature_selection import SelectFromModel
+            
+            # Train LightGBM
+            lgb_model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+            lgb_model.fit(features_df, targets)
+            
+            # Get feature importances
+            importances = lgb_model.feature_importances_
+            feature_names = features_df.columns
+            
+            # Select top features
+            selector = SelectFromModel(lgb_model, threshold='median')
+            selected_features = selector.fit_transform(features_df, targets)
+            selected_columns = feature_names[selector.get_support()]
+            
+            # Generate interactions from selected features
+            for i, col1 in enumerate(selected_columns):
+                for col2 in selected_columns[i+1:]:
+                    interaction = features_df[col1] * features_df[col2]
+                    interactions.append({
+                        'name': f"lgb_interaction_{col1}_{col2}",
+                        'type': 'lightgbm_interaction',
+                        'features': [col1, col2],
+                        'data': interaction
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ LightGBM interaction generation failed: {e}")
+            return []
+
+    def _select_top_interactions(self, interactions: List[Any], targets: Optional[pd.Series], max_features: int = 100) -> List[Any]:
+        """Select top interactions based on feature importance."""
+        if len(interactions) <= max_features:
+            return interactions
+        
+        try:
+            if targets is None:
+                # If no targets, return first max_features
+                return interactions[:max_features]
+            
+            # Calculate feature importance scores
+            importance_scores = []
+            for interaction in interactions:
+                if 'data' in interaction:
+                    # Calculate correlation with target
+                    correlation = abs(np.corrcoef(interaction['data'], targets)[0, 1])
+                    if not np.isnan(correlation):
+                        importance_scores.append((interaction, correlation))
+            
+            # Sort by importance and select top features
+            importance_scores.sort(key=lambda x: x[1], reverse=True)
+            selected_interactions = [item[0] for item in importance_scores[:max_features]]
+            
+            return selected_interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature selection failed: {e}")
+            return interactions[:max_features]
+
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
         tprint_info("🔗 Starting enhanced interaction generation with comprehensive logging")

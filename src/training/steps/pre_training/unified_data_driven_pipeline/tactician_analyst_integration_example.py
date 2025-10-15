@@ -6,14 +6,19 @@ This example shows how to configure and use the tactician/analyst labeling syste
 instead of the traditional triple barrier labeling.
 """
 
-from src.training.steps.pre_training.unified_data_driven_pipeline.core.config import (
-    UnifiedPipelineConfig, 
-    create_default_config
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.simplified_config import (
+    create_full_config,
+    create_blank_config,
+    create_light_config,
+    PipelineIntensity
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.refactored_pipeline import (
+    RefactoredUnifiedPipeline
 )
 
 def create_analyst_config():
     """Create configuration for Analyst labeling."""
-    config = create_default_config()
+    config = create_full_config()
     
     # Configure for analyst labeling
     config.labeling_system = "tactician_analyst"
@@ -25,7 +30,7 @@ def create_analyst_config():
 
 def create_tactician_config():
     """Create configuration for Tactician labeling."""
-    config = create_default_config()
+    config = create_full_config()
     
     # Configure for tactician labeling
     config.labeling_system = "tactician_analyst"
@@ -37,7 +42,7 @@ def create_tactician_config():
 
 def create_triple_barrier_config():
     """Create configuration for triple barrier labeling (fallback)."""
-    config = create_default_config()
+    config = create_full_config()
     
     # Configure for triple barrier labeling
     config.labeling_system = "triple_barrier"
@@ -77,8 +82,8 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Configuration examples created successfully!")
     print("\nTo use these configurations:")
-    print("   from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline import UnifiedDataDrivenPipeline")
-    print("   pipeline = UnifiedDataDrivenPipeline(analyst_config)  # or tactician_config, triple_barrier_config")
+    print("   from src.training.steps.pre_training.unified_data_driven_pipeline.refactored_pipeline import RefactoredUnifiedPipeline")
+    print("   pipeline = RefactoredUnifiedPipeline(analyst_config)  # or tactician_config, triple_barrier_config")
 
 if __name__ == "__main__":
     main()

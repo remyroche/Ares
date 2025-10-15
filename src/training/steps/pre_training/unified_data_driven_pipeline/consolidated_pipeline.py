@@ -162,6 +162,9 @@ from .enhanced_components.gpu_optimizations import (
 from .enhanced_components.advanced_feature_selection import (
     AdvancedFeatureSelector, FeatureSelectionConfig as AdvancedFeatureSelectionConfig
 )
+from .enhanced_components.categorical_encoding import CategoricalEncoder
+from .enhanced_components.scaling_normalization import ScalingNormalizer
+from .enhanced_components.random_seed_manager import RandomSeedManager
 from .enhanced_components.lightgbm_featuretools_generator import (
     LightGBMFeatureToolsGenerator, LightGBMFeatureToolsConfig
 )
@@ -1343,6 +1346,31 @@ class UnifiedDataDrivenPipeline:
         )
         self.advanced_feature_selector = AdvancedFeatureSelector(advanced_feature_config)
         
+        # Categorical encoder for handling non-numeric features
+        self.categorical_encoder = CategoricalEncoder({
+            'categorical_threshold': 0.05,
+            'max_categories': 50,
+            'min_frequency': 10
+        })
+        
+        # Scaling normalizer for consistent feature scaling
+        self.scaling_normalizer = ScalingNormalizer({
+            'default_strategy': 'robust',
+            'auto_select': True,
+            'handle_outliers': True,
+            'outlier_threshold': 3.0
+        })
+        
+        # Random seed manager for reproducibility
+        self.random_seed_manager = RandomSeedManager(
+            base_seed=42,
+            config={
+                'enable_reproducibility': True,
+                'seed_increment': 1,
+                'track_seed_usage': True
+            }
+        )
+        
         # Advanced lookback optimizer
         lookback_config = LookbackConstraints(
             min_lookback=5,
@@ -1822,12 +1850,18 @@ class UnifiedDataDrivenPipeline:
                 # Guard against excessive null values
                 processed_data = guard_dataframe_nulls(processed_data, threshold=0.5)
                 
-                # Validate DataFrame schema
+                # Validate DataFrame schema - make it fatal for critical failures
                 required_columns = ['open', 'high', 'low', 'close', 'volume']
-                if validate_dataframe_schema(processed_data, required_columns):
-                    tprint_success("✅ DataFrame schema validation passed")
+                schema_validation_result = self._validate_dataframe_schema_fatal(
+                    processed_data, required_columns, context="data_processing"
+                )
+                
+                if not schema_validation_result['is_valid']:
+                    error_msg = f"Critical schema validation failed: {schema_validation_result['errors']}"
+                    tprint_error(f"❌ {error_msg}")
+                    return self._create_empty_result(start_time, error_msg)
                 else:
-                    tprint_warning("⚠️ DataFrame schema validation failed")
+                    tprint_success("✅ DataFrame schema validation passed")
                 
                 # Calculate and log data quality metrics
                 quality_metrics = calculate_data_quality_metrics(processed_data)
@@ -1980,8 +2014,14 @@ class UnifiedDataDrivenPipeline:
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
             
-            # Use the processed data from unified utilities
-            cleaned_data = processed_data
+            # Use the cleaned data from advanced validator if validation was successful
+            # This ensures we use the cleaned data instead of overwriting it
+            if is_valid and cleaned_data is not None and not cleaned_data.empty:
+                tprint_success(f"✅ Using cleaned data from advanced validator: {cleaned_data.shape}")
+            else:
+                # Fallback to processed data if cleaning failed or returned empty data
+                cleaned_data = processed_data
+                tprint_warning("⚠️ Using processed data as fallback (cleaned data unavailable)")
             
             # Load market data using advanced data loader
             market_data = await self.advanced_data_loader.load_market_data(
@@ -2013,6 +2053,18 @@ class UnifiedDataDrivenPipeline:
             
             # Generate labels using the tactician/analyst labeling system
             tprint_info(f"🏷️ Generating labels using {self.config.labeling_type} labeling system")
+            
+            # Initialize processed_targets early to avoid undefined variable error
+            processed_targets = targets
+            if targets is not None and len(targets) != len(market_data):
+                # Align targets with market data
+                common_index = market_data.index.intersection(targets.index)
+                if len(common_index) == 0:
+                    tprint_warning("⚠️ No common index between market data and targets, using empty targets")
+                    processed_targets = pd.DataFrame()
+                else:
+                    processed_targets = targets.loc[common_index]
+                    tprint_info(f"📊 Aligned targets to {len(common_index)} common rows with market data")
             
             if self.labeling_adapter is not None:
                 # Check for existing labeling artifacts in pipeline state
@@ -2095,17 +2147,16 @@ class UnifiedDataDrivenPipeline:
             
             tprint_success(f"✅ Generated {len(feature_columns)} features for optimization")
             
-            # Prepare targets and ensure data consistency
-            processed_targets = targets
-            if targets is not None and len(targets) != len(processed_data):
-                common_index = processed_data.index.intersection(targets.index)
+            # Ensure data and targets are properly aligned (processed_targets already defined above)
+            if targets is not None and len(processed_targets) != len(processed_data):
+                common_index = processed_data.index.intersection(processed_targets.index)
                 if len(common_index) == 0:
-                    error_msg = "No common index between data and targets"
+                    error_msg = "No common index between processed data and targets"
                     tprint_error(f"❌ {error_msg}")
                     return self._create_empty_result(start_time, error_msg)
                 processed_data = processed_data.loc[common_index]
-                processed_targets = targets.loc[common_index]
-                tprint_info(f"📊 Aligned data and targets to {len(common_index)} common rows")
+                processed_targets = processed_targets.loc[common_index]
+                tprint_info(f"📊 Final alignment: data and targets to {len(common_index)} common rows")
             
             # Step 1: Enhanced period optimization with economic evaluation
             tprint_info("Step 1: Enhanced period optimization with economic evaluation")
@@ -2880,6 +2931,84 @@ class UnifiedDataDrivenPipeline:
             processed_targets = targets.loc[common_index]
         
         return processed_data, processed_targets
+
+    def _validate_dataframe_schema_fatal(self, data: pd.DataFrame, 
+                                       required_columns: List[str], 
+                                       context: str = "unknown") -> Dict[str, Any]:
+        """
+        Validate DataFrame schema with fatal errors for critical failures.
+        
+        Args:
+            data: DataFrame to validate
+            required_columns: List of required column names
+            context: Context for error reporting
+            
+        Returns:
+            Dictionary with validation results
+        """
+        result = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'missing_columns': [],
+            'invalid_types': [],
+            'data_quality_issues': []
+        }
+        
+        try:
+            # Check if data is empty
+            if data is None or data.empty:
+                result['is_valid'] = False
+                result['errors'].append(f"Data is empty or None in {context}")
+                return result
+            
+            # Check for required columns (CRITICAL - fatal if missing)
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                result['is_valid'] = False
+                result['missing_columns'] = missing_columns
+                result['errors'].append(f"Missing critical columns in {context}: {missing_columns}")
+                return result
+            
+            # Check data types for required columns (CRITICAL - fatal if wrong type)
+            for col in required_columns:
+                if col in data.columns:
+                    if not pd.api.types.is_numeric_dtype(data[col]):
+                        result['is_valid'] = False
+                        result['invalid_types'].append(col)
+                        result['errors'].append(f"Column {col} is not numeric in {context}")
+            
+            if result['invalid_types']:
+                return result
+            
+            # Check for reasonable data ranges (WARNING - non-fatal but logged)
+            if 'high' in data.columns and 'low' in data.columns:
+                invalid_high_low = (data['high'] < data['low']).sum()
+                if invalid_high_low > 0:
+                    result['warnings'].append(f"Found {invalid_high_low} rows where high < low in {context}")
+                    result['data_quality_issues'].append('invalid_ohlc_relationship')
+            
+            # Check for excessive missing values (WARNING - non-fatal but logged)
+            missing_percentage = (data[required_columns].isnull().sum() / len(data) * 100).max()
+            if missing_percentage > 50.0:
+                result['warnings'].append(f"High missing data percentage: {missing_percentage:.1f}% in {context}")
+                result['data_quality_issues'].append('high_missing_data')
+            
+            # Check for duplicate timestamps (WARNING - non-fatal but logged)
+            if isinstance(data.index, pd.DatetimeIndex):
+                duplicate_timestamps = data.index.duplicated().sum()
+                if duplicate_timestamps > 0:
+                    result['warnings'].append(f"Found {duplicate_timestamps} duplicate timestamps in {context}")
+                    result['data_quality_issues'].append('duplicate_timestamps')
+            
+            tprint_success(f"✅ Schema validation passed for {context}")
+            return result
+            
+        except Exception as e:
+            result['is_valid'] = False
+            result['errors'].append(f"Schema validation error in {context}: {str(e)}")
+            tprint_error(f"❌ Schema validation error in {context}: {e}")
+            return result
     
     def _enhanced_period_optimization(self, data: pd.DataFrame, timeframe: str) -> Dict[str, Any]:
         """Enhanced period optimization with economic evaluation and safe mathematical operations."""

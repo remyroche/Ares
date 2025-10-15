@@ -466,7 +466,41 @@ class AdvancedArtifactManager:
         return outcome_report
 
     async def _save_single_artifact(self, data: Any, path: Path, artifact_type: str) -> int:
-        """Save a single artifact."""
+        """Save a single artifact using proper async I/O operations."""
+        import aiofiles
+        import asyncio
+        
+        try:
+            if artifact_type == 'dataframe':
+                # Use asyncio.to_thread for blocking pandas operations
+                await asyncio.to_thread(data.to_parquet, path)
+                return path.stat().st_size
+            elif artifact_type == 'json':
+                # Use aiofiles for async file writing
+                json_str = json.dumps(data, indent=2, default=str)
+                async with aiofiles.open(path, 'w') as f:
+                    await f.write(json_str)
+                return path.stat().st_size
+            elif artifact_type == 'pickle':
+                # Use asyncio.to_thread for blocking pickle operations
+                await asyncio.to_thread(self.pickle_serializer.save, data, str(path))
+                return path.stat().st_size
+            else:
+                # Default to JSON with async file writing
+                json_str = json.dumps(data, indent=2, default=str)
+                async with aiofiles.open(path, 'w') as f:
+                    await f.write(json_str)
+                return path.stat().st_size
+        except ImportError:
+            # Fallback to synchronous operations if aiofiles is not available
+            tprint_warning("⚠️ aiofiles not available, using synchronous I/O")
+            return await self._save_single_artifact_sync(data, path, artifact_type)
+        except Exception as e:
+            tprint_error(f"❌ Error saving artifact {path}: {e}")
+            raise
+
+    async def _save_single_artifact_sync(self, data: Any, path: Path, artifact_type: str) -> int:
+        """Synchronous fallback for artifact saving."""
         if artifact_type == 'dataframe':
             data.to_parquet(path)
             return path.stat().st_size
@@ -509,15 +543,20 @@ class AdvancedArtifactManager:
             return 'pickle'
 
     def _get_save_path(self, artifact_name: str, artifact_type: str) -> Path:
-        """Get the save path for an artifact."""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        """Get the save path for an artifact with microsecond precision to avoid collisions."""
+        # Use microsecond precision to avoid timestamp collisions
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        
+        # Add a small random component as additional collision prevention
+        import random
+        random_suffix = random.randint(1000, 9999)
         
         if artifact_type == 'dataframe':
-            return self.dirs['data'] / f"{artifact_name}_{timestamp}.parquet"
+            return self.dirs['data'] / f"{artifact_name}_{timestamp}_{random_suffix}.parquet"
         elif artifact_type == 'json':
-            return self.dirs['results'] / f"{artifact_name}_{timestamp}.json"
+            return self.dirs['results'] / f"{artifact_name}_{timestamp}_{random_suffix}.json"
         else:
-            return self.dirs['results'] / f"{artifact_name}_{timestamp}.pkl"
+            return self.dirs['results'] / f"{artifact_name}_{timestamp}_{random_suffix}.pkl"
 
     def _register_artifact(self, name: str, artifact_type: str, path: Path, size_bytes: int):
         """Register an artifact in the registry."""

@@ -135,10 +135,21 @@ class AdvancedDataLoader:
         """
         tprint_debug("📥 Starting market data loading")
         
-        # If data is already provided and not empty, use it
+        # If data is already provided, validate and process it properly
         if data is not None and not data.empty:
-            tprint_success(f"✅ Using provided data: {data.shape[0]} rows, {data.shape[1]} columns")
-            return data
+            tprint_info(f"📊 Provided data detected: {data.shape[0]} rows, {data.shape[1]} columns")
+            
+            # Validate provided data
+            if not self._validate_provided_data(data):
+                tprint_warning("⚠️ Provided data validation failed, falling back to fresh data loading")
+            else:
+                # Apply data processing to provided data
+                processed_data = await self._process_provided_data(data, pipeline_state)
+                if processed_data is not None and not processed_data.empty:
+                    tprint_success(f"✅ Using validated and processed provided data: {processed_data.shape}")
+                    return processed_data
+                else:
+                    tprint_warning("⚠️ Data processing failed on provided data, falling back to fresh loading")
 
         # Extract configuration from pipeline state
         config = self._extract_data_config(pipeline_state)
@@ -317,26 +328,22 @@ class AdvancedDataLoader:
         # Log data quality report
         tprint_debug(format_nan_analysis_report(nan_analysis, "  "))
         
-        # Add labeling data if available using safe operations
+        # Add labeling data if available using enhanced merge operations
         if labeling_data and isinstance(labeling_data, dict):
             labels_df = labeling_data.get('labeled_data')
             if labels_df is not None and isinstance(labels_df, pd.DataFrame):
-                # Use safe merge operation
+                # Use enhanced merge operation with better index handling
                 try:
-                    # Find common index
-                    common_index = optimization_data.index.intersection(labels_df.index)
-                    if len(common_index) > 0:
-                        optimization_data = optimization_data.loc[common_index]
-                        labels_to_merge = labels_df.loc[common_index]
-                        
-                        # Add label columns safely
-                        for col in labels_to_merge.columns:
-                            if col not in optimization_data.columns:
-                                optimization_data[col] = labels_to_merge[col]
-                        
-                        tprint_success(f"✅ Merged {len(labels_to_merge.columns)} label columns")
+                    optimization_data, merge_stats = self._enhanced_label_merge(
+                        optimization_data, labels_df
+                    )
+                    
+                    if merge_stats['success']:
+                        tprint_success(f"✅ Merged {merge_stats['columns_added']} label columns "
+                                     f"({merge_stats['rows_merged']} rows)")
                     else:
-                        tprint_warning("⚠️ No common index found for label merging")
+                        tprint_warning(f"⚠️ Label merging failed: {merge_stats['error']}")
+                        
                 except Exception as e:
                     tprint_warning(f"⚠️ Label merging failed: {e}")
             else:
@@ -442,7 +449,8 @@ class AdvancedDataLoader:
         start_date = end_date - timedelta(days=config['lookback_days'])
         date_range = pd.date_range(start=start_date, end=end_date, freq=config['timeframe'])
         
-        # Generate synthetic OHLCV data
+        # Generate synthetic OHLCV data with proper seed management
+        # Note: This should be called with a seed manager in production
         np.random.seed(42)  # For reproducibility
         n_periods = len(date_range)
         
@@ -761,3 +769,179 @@ class AdvancedDataLoader:
             tprint_error(f"❌ Error updating klines data: {e}")
             return False
         tprint_success("✅ Cache metrics reset")
+
+    def _validate_provided_data(self, data: pd.DataFrame) -> bool:
+        """Validate provided data for basic requirements."""
+        try:
+            # Check if data is not empty
+            if data.empty:
+                tprint_warning("⚠️ Provided data is empty")
+                return False
+            
+            # Check for required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                tprint_warning(f"⚠️ Provided data missing required columns: {missing_columns}")
+                return False
+            
+            # Check for numeric data types
+            for col in required_columns:
+                if not pd.api.types.is_numeric_dtype(data[col]):
+                    tprint_warning(f"⚠️ Column {col} is not numeric in provided data")
+                    return False
+            
+            # Check for reasonable data ranges
+            if (data['high'] < data['low']).any():
+                tprint_warning("⚠️ Invalid OHLC data: high < low detected")
+                return False
+            
+            if (data['high'] < data['open']).any() or (data['high'] < data['close']).any():
+                tprint_warning("⚠️ Invalid OHLC data: high < open/close detected")
+                return False
+            
+            if (data['low'] > data['open']).any() or (data['low'] > data['close']).any():
+                tprint_warning("⚠️ Invalid OHLC data: low > open/close detected")
+                return False
+            
+            tprint_success("✅ Provided data validation passed")
+            return True
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data validation error: {e}")
+            return False
+
+    async def _process_provided_data(self, data: pd.DataFrame, 
+                                   pipeline_state: Optional[Dict[str, Any]] = None) -> Optional[pd.DataFrame]:
+        """Process provided data through the pipeline."""
+        try:
+            # Create a copy to avoid modifying original data
+            processed_data = data.copy()
+            
+            # Apply data quality checks
+            tprint_debug("🔍 Applying data quality checks to provided data")
+            nan_analysis = analyze_nan_values_detailed(processed_data)
+            quality_metrics = calculate_data_quality_metrics(processed_data)
+            
+            # Log quality metrics
+            tprint_debug(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.1f}% missing, "
+                        f"{quality_metrics.get('duplicate_percentage', 0):.1f}% duplicates")
+            
+            # Apply basic cleaning if needed
+            if quality_metrics.get('missing_percentage', 0) > 5.0:
+                tprint_info("🧹 Applying basic data cleaning to provided data")
+                processed_data = processed_data.dropna(subset=required_columns)
+            
+            # Ensure proper data types
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in processed_data.columns:
+                    processed_data[col] = pd.to_numeric(processed_data[col], errors='coerce')
+            
+            # Remove any remaining NaN values
+            processed_data = processed_data.dropna()
+            
+            if processed_data.empty:
+                tprint_warning("⚠️ All data removed during cleaning")
+                return None
+            
+            tprint_success(f"✅ Processed provided data: {processed_data.shape}")
+            return processed_data
+            
+        except Exception as e:
+            tprint_error(f"❌ Error processing provided data: {e}")
+            return None
+
+    def _enhanced_label_merge(self, market_data: pd.DataFrame, 
+                            labels_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Enhanced label merging with better index handling and data preservation."""
+        merge_stats = {
+            'success': False,
+            'rows_merged': 0,
+            'columns_added': 0,
+            'rows_dropped': 0,
+            'index_strategy': 'unknown',
+            'error': None
+        }
+        
+        try:
+            # Strategy 1: Try exact index match first
+            common_index = market_data.index.intersection(labels_df.index)
+            if len(common_index) > 0:
+                merge_stats['index_strategy'] = 'exact_match'
+                merge_stats['rows_merged'] = len(common_index)
+                
+                # Use the common index
+                merged_data = market_data.loc[common_index].copy()
+                labels_to_merge = labels_df.loc[common_index]
+                
+                # Add label columns
+                for col in labels_to_merge.columns:
+                    if col not in merged_data.columns:
+                        merged_data[col] = labels_to_merge[col]
+                        merge_stats['columns_added'] += 1
+                
+                merge_stats['success'] = True
+                tprint_success(f"✅ Exact index match: {len(common_index)} rows merged")
+                return merged_data, merge_stats
+            
+            # Strategy 2: Try time-based alignment if both have datetime indices
+            if (isinstance(market_data.index, pd.DatetimeIndex) and 
+                isinstance(labels_df.index, pd.DatetimeIndex)):
+                
+                merge_stats['index_strategy'] = 'time_alignment'
+                
+                # Find overlapping time range
+                market_start, market_end = market_data.index.min(), market_data.index.max()
+                labels_start, labels_end = labels_df.index.min(), labels_df.index.max()
+                
+                overlap_start = max(market_start, labels_start)
+                overlap_end = min(market_end, labels_end)
+                
+                if overlap_start < overlap_end:
+                    # Filter to overlapping time range
+                    market_filtered = market_data[(market_data.index >= overlap_start) & 
+                                                (market_data.index <= overlap_end)]
+                    labels_filtered = labels_df[(labels_df.index >= overlap_start) & 
+                                             (labels_df.index <= overlap_end)]
+                    
+                    # Use nearest time alignment
+                    merged_data = market_filtered.copy()
+                    
+                    for col in labels_filtered.columns:
+                        if col not in merged_data.columns:
+                            # Use forward fill for time alignment
+                            aligned_labels = labels_filtered[col].reindex(
+                                merged_data.index, method='ffill'
+                            )
+                            merged_data[col] = aligned_labels
+                            merge_stats['columns_added'] += 1
+                    
+                    merge_stats['rows_merged'] = len(merged_data)
+                    merge_stats['success'] = True
+                    tprint_success(f"✅ Time alignment: {len(merged_data)} rows merged")
+                    return merged_data, merge_stats
+            
+            # Strategy 3: Try positional alignment as last resort
+            if len(market_data) == len(labels_df):
+                merge_stats['index_strategy'] = 'positional'
+                merge_stats['rows_merged'] = len(market_data)
+                
+                merged_data = market_data.copy()
+                for col in labels_df.columns:
+                    if col not in merged_data.columns:
+                        merged_data[col] = labels_df[col].values
+                        merge_stats['columns_added'] += 1
+                
+                merge_stats['success'] = True
+                tprint_warning("⚠️ Using positional alignment - verify data correctness")
+                return merged_data, merge_stats
+            
+            # If all strategies fail
+            merge_stats['error'] = "No compatible alignment strategy found"
+            tprint_warning("⚠️ No compatible alignment strategy found for label merging")
+            return market_data, merge_stats
+            
+        except Exception as e:
+            merge_stats['error'] = str(e)
+            tprint_error(f"❌ Enhanced label merge failed: {e}")
+            return market_data, merge_stats

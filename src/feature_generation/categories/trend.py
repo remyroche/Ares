@@ -1746,10 +1746,6 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
 
 
 class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
-            return vwma
-
-
-class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
     """Generator for Keltner Channels with different base calculations."""
     
     def __init__(self,

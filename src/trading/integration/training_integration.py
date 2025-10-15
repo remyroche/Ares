@@ -245,20 +245,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            export_dir = "data_cache/training_sync"
-            os.makedirs(export_dir, exist_ok=True)
-            
-            filename = f"trading_performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            filepath = os.path.join(export_dir, filename)
-            
-            with open(filepath, 'w') as f:
-                json.dump(export_data, f, indent=2, default=str)
-            
-            tprint_info(f"📤 Exported trading performance to {filepath}")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Trading performance export failed: {e}")
     
     async def _update_feature_cache(self):
         """Update feature cache from training pipeline."""

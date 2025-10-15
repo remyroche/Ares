@@ -176,15 +176,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            # This would integrate with your existing market analysis
-            self.logger.info("🔍 Loading Market Analyzer for regime detection...")
-            
-            # Placeholder for market analyzer loading
-            self.market_analyzer = None  # Load actual analyzer here
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Market Analyzer not available: {e}")
     
     @trading_error_handler(
         error_types=(Exception,),

@@ -702,38 +702,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        
-        # Create directory if it doesn't exist
-        os.makedirs(directory, exist_ok=True)
-        
-        # Add timestamp to filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_filename = f"{filename}_{timestamp}.json"
-        filepath = os.path.join(directory, full_filename)
-        
-        # Convert any datetime objects to strings
-        def convert_datetime(obj):
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            elif isinstance(obj, dict):
-                return {k: convert_datetime(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_datetime(v) for v in obj]
-            else:
-                return obj
-        
-        converted_data = convert_datetime(data)
-        
-        # Save to file
-        with open(filepath, 'w') as f:
-            json.dump(converted_data, f, indent=2, default=str)
-        
-        tprint_success(f"✅ Trading data saved to {filepath}")
-        return True
-        
-    except Exception as e:
-        tprint_info(f"❌ Failed to save trading data: {e}")
-        return False
 
 
 def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:

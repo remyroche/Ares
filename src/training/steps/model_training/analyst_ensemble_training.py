@@ -2449,6 +2449,12 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     tprint(f"✅ [ANALYST_ENSEMBLE] Generated {len(meta_features.columns)} meta-features", color="green")
                 except ImportError as e:
                     tprint(f"⚠️ [ANALYST_ENSEMBLE] Could not import meta-feature generator: {e}", color="yellow")
+            
+            return meta_features
+            
+        except Exception as e:
+            tprint(f"❌ [ANALYST_ENSEMBLE] Error generating meta-features: {e}", color="red")
+            return pd.DataFrame(index=df.index)
 
 # VectorBT imports for native optimization
 try:
@@ -2483,123 +2489,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                    # Add default disagreement features
-                    default_disagreement = {
-                        "prediction_dispersion": 0.0, "prediction_std": 0.0,
-                        "direction_conflict": 0.0, "long_ratio": 0.5, "disagreement_rate": 0.0,
-                        "confidence_gap": 0.0, "max_confidence": 0.0, "second_max_confidence": 0.0,
-                        "entropy": 0.0, "uncertainty": 0.0, "prediction_range": 0.0, "prediction_iqr": 0.0,
-                        "probability_range": 0.0, "probability_iqr": 0.0, "js_divergence": 0.0,
-                        "kl_divergence": 0.0, "avg_divergence": 0.0
-                    }
-                    for feature_name, feature_value in default_disagreement.items():
-                        meta_features[feature_name] = feature_value
-            else:
-                tprint("⚠️ [ANALYST_ENSEMBLE] Insufficient base model predictions for disagreement analysis", color="yellow")
-                # Add default disagreement features
-                default_disagreement = {
-                    "prediction_dispersion": 0.0, "prediction_std": 0.0,
-                    "direction_conflict": 0.0, "long_ratio": 0.5, "disagreement_rate": 0.0,
-                    "confidence_gap": 0.0, "max_confidence": 0.0, "second_max_confidence": 0.0,
-                    "entropy": 0.0, "uncertainty": 0.0, "prediction_range": 0.0, "prediction_iqr": 0.0,
-                    "probability_range": 0.0, "probability_iqr": 0.0, "js_divergence": 0.0,
-                    "kl_divergence": 0.0, "avg_divergence": 0.0
-                }
-                for feature_name, feature_value in default_disagreement.items():
-                    meta_features[feature_name] = feature_value
-            
-            # Ensure all features are numeric and handle any NaN values
-            meta_features = meta_features.fillna(0.0)
-            
-            # Convert to numeric, coercing any non-numeric values
-            for col in meta_features.columns:
-                meta_features[col] = pd.to_numeric(meta_features[col], errors='coerce').fillna(0.0)
-            
-            tprint(f"✅ [ANALYST_ENSEMBLE] Generated {len(meta_features.columns)} meta-features", color="green")
-            return meta_features
-            
-        except Exception as e:
-            self.logger.error(f"Error generating meta-features for analyst ensemble: {e}")
-            # Return basic meta-features as fallback
-            try:
-                meta_features = pd.DataFrame(index=df.index)
-                if 'close' in df.columns:
-                    meta_features['price_momentum'] = df['close'].pct_change(10).fillna(0)
-                return meta_features.fillna(0.0)
-            except Exception as fallback_error:
-                self.logger.error(f"Fallback meta-feature generation also failed: {fallback_error}")
-                return pd.DataFrame(index=df.index)
-    
-    def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool = False) -> Dict[str, Any]:
-        """
-        Get predictions from all base models for disagreement analysis.
-        
-        Args:
-            df: Input DataFrame with features
-            is_live: Whether this is for live trading or backtesting
-            
-        Returns:
-            Dict containing model predictions and probabilities
-        """
-        try:
-            base_predictions = {}
-            
-            # Get predictions from ensemble models if available
-            if hasattr(self, 'analyst_ensembles') and self.analyst_ensembles:
-                for regime, ensemble in self.analyst_ensembles.items():
-                    if ensemble and hasattr(ensemble, 'predict'):
-                        try:
-                            # Get prediction from ensemble
-                            prediction = ensemble.predict(df.values) if hasattr(ensemble, 'predict') else 0.5
-                            confidence = 0.8  # Default confidence for analyst ensemble models
-                            
-                            base_predictions[f'ensemble_{regime}'] = {
-                                'prediction': float(prediction),
-                                'probability': float(prediction),
-                                'confidence': float(confidence)
-                            }
-                        except Exception as model_error:
-                            self.logger.warning(f"Error getting prediction from ensemble {regime}: {model_error}")
-                            base_predictions[f'ensemble_{regime}'] = {
-                                'prediction': 0.5,
-                                'probability': 0.5,
-                                'confidence': 0.0
-                            }
-            
-            # Get predictions from NAS models if available
-            if hasattr(self, 'nas_models') and self.nas_models:
-                for regime, nas_model in self.nas_models.items():
-                    if nas_model and hasattr(nas_model, 'predict'):
-                        try:
-                            prediction = nas_model.predict(df.values) if hasattr(nas_model, 'predict') else 0.5
-                            confidence = 0.7  # Default confidence for NAS models
-                            
-                            base_predictions[f'nas_{regime}'] = {
-                                'prediction': float(prediction),
-                                'probability': float(prediction),
-                                'confidence': float(confidence)
-                            }
-                        except Exception as model_error:
-                            self.logger.warning(f"Error getting prediction from NAS model {regime}: {model_error}")
-                            base_predictions[f'nas_{regime}'] = {
-                                'prediction': 0.5,
-                                'probability': 0.5,
-                                'confidence': 0.0
-                            }
-            
-            return base_predictions
-            
-        except Exception as e:
-            self.logger.error(f"Error getting base model predictions: {e}")
-            return {}
-
-
-# Convenience functions for backward compatibility
-def create_analyst_ensemble_training_step(
-    config: Optional[EnsembleTrainingConfig] = None
-) -> AnalystEnsembleTrainingStep:
-    """Create Analyst ensemble training step."""
-    return AnalystEnsembleTrainingStep(config)
 
 
 def execute_analyst_ensemble_training(

@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from dataclasses import dataclass
 import time
+import warnings
 from datetime import datetime
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
@@ -37,6 +38,14 @@ except ImportError:
 
 try:
     from src.utils.matrix_operations import (
+        UnifiedMatrixOperations,
+        MatrixOperationRegistry,
+        VectorBTRollingOptimizer,
+        UnifiedVectorizationManager
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPERATIONS_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -71,14 +80,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        get_unified_matrix_operations,
-        get_vectorized_processing_core,
-        get_enhanced_matrix_operations,
-        get_batch_matrix_processor
-    )
-    MATRIX_OPERATIONS_AVAILABLE = True
-except ImportError:
-    MATRIX_OPERATIONS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 

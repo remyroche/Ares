@@ -15,6 +15,15 @@ from contextlib import contextmanager
 import warnings
 warnings.filterwarnings('ignore')
 
+@dataclass
+class VectorBTOptimizationResult:
+    """Result of VectorBT optimization operation."""
+    success: bool
+    optimized_data: Optional[Union[pd.DataFrame, pd.Series]] = None
+    performance_metrics: Optional[Dict[str, float]] = None
+    error_message: Optional[str] = None
+    execution_time: Optional[float] = None
+
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -96,6 +105,12 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
     tprint_debug("CuPy not available, using CPU-only operations")
+
+# Create a dummy type for type hints when CuPy is not available
+if cp is None:
+    class DummyCupyArray:
+        pass
+    cp = type('CuPy', (), {'ndarray': DummyCupyArray, 'asarray': lambda x: x, 'asnumpy': lambda x: x, 'mean': lambda x, **kwargs: x, 'std': lambda x, **kwargs: x, 'var': lambda x, **kwargs: x, 'min': lambda x, **kwargs: x, 'max': lambda x, **kwargs: x, 'sum': lambda x, **kwargs: x})()
 
 logger = logging.getLogger(__name__)
 
@@ -849,10 +864,10 @@ class VectorBTOptimizer:
                     tprint_warning(f"⚠️ Vectorized correlation failed: {e}, using loop fallback")
                     # Fallback to loop-based correlation
                     for col in features.columns:
-                    try:
-                        importance_scores[col] = float(features[col].corr(targets).abs())
-                    except Exception:
-                        importance_scores[col] = 0.0
+                        try:
+                            importance_scores[col] = float(features[col].corr(targets).abs())
+                        except Exception:
+                            importance_scores[col] = 0.0
             
             self.performance_stats['vectorbt_operations'] += 1
             tprint_debug(f"✅ Calculated feature importance for {len(features.columns)} features")

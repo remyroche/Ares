@@ -4,8 +4,17 @@ Unified Vectorization Manager
 This module provides a centralized system for managing all vectorization and matrix
 optimizations across the Ares trading system. It automatically selects the optimal
 optimization strategy based on operation type, data size, and available hardware.
+
+Enhanced with:
+- Advanced caching strategies
+- Memory profiling and optimization
+- Async/await patterns for I/O operations
+- Progressive loading for large datasets
+- VectorBT integration for financial operations
+- M1 hardware optimizations
 """
 
+import asyncio
 import numpy as np
 import pandas as pd
 import time
@@ -20,6 +29,18 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
     torch = None
+
+# Import performance optimization modules
+try:
+    from .performance.caching_strategies import get_ml_common_cache, CacheConfig, CacheStrategy
+    from .performance.memory_profiler import get_memory_profiler, MemoryOptimizationConfig
+    from .performance.async_patterns import get_async_operation_manager, AsyncOperationType
+    from .performance.progressive_loading import get_progressive_data_processor, ProgressiveLoadingConfig
+    from .performance.vectorbt_integration import get_vectorbt_performance_optimizer, VectorBTPerformanceConfig
+    from .performance.m1_integration import get_m1_performance_optimizer, M1PerformanceConfig
+    PERFORMANCE_MODULES_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_MODULES_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +62,12 @@ class OperationType(Enum):
     VECTORBT_METRICS = "vectorbt_metrics"
     VECTORBT_PORTFOLIO_OPTIMIZATION = "vectorbt_portfolio_optimization"
     VECTORBT_TECHNICAL_ANALYSIS = "vectorbt_technical_analysis"
+    # Performance optimization operations
+    CACHED_OPERATION = "cached_operation"
+    MEMORY_INTENSIVE = "memory_intensive"
+    ASYNC_OPERATION = "async_operation"
+    PROGRESSIVE_LOADING = "progressive_loading"
+    M1_OPTIMIZED = "m1_optimized"
 
 
 class OptimizationStrategy(Enum):
@@ -55,6 +82,12 @@ class OptimizationStrategy(Enum):
     VECTORBT_CPU = "vectorbt_cpu"
     VECTORBT_GPU = "vectorbt_gpu"
     VECTORBT_PARALLEL = "vectorbt_parallel"
+    # Performance optimization strategies
+    CACHED_STRATEGY = "cached_strategy"
+    ASYNC_STRATEGY = "async_strategy"
+    PROGRESSIVE_STRATEGY = "progressive_strategy"
+    M1_OPTIMIZED_STRATEGY = "m1_optimized_strategy"
+    MEMORY_PROFILED_STRATEGY = "memory_profiled_strategy"
 
 
 @dataclass
@@ -67,6 +100,15 @@ class OperationConfig:
     time_budget_seconds: float = 300.0
     precision_requirement: str = "medium"  # "low", "medium", "high"
     parallel_workers: Optional[int] = None
+    # Performance optimization settings
+    enable_caching: bool = True
+    enable_memory_profiling: bool = True
+    enable_async_processing: bool = True
+    enable_progressive_loading: bool = True
+    enable_vectorbt_optimization: bool = True
+    enable_m1_optimization: bool = True
+    cache_ttl_seconds: int = 3600
+    chunk_size: int = 10000
 
 
 @dataclass
@@ -96,6 +138,19 @@ class UnifiedVectorizationManager:
         # Initialize optimization components
         tprint("🔄 Initializing optimization components...")
         self._initialize_components()
+
+        # Initialize performance optimization modules
+        if PERFORMANCE_MODULES_AVAILABLE:
+            tprint("🔧 Initializing performance optimization modules...")
+            self._initialize_performance_modules()
+
+        # Performance optimization modules
+        self._cache = None
+        self._memory_profiler = None
+        self._async_manager = None
+        self._progressive_loader = None
+        self._vectorbt_optimizer = None
+        self._m1_optimizer = None
 
         # Performance tracking
         tprint("🔄 Setting up performance tracking...")
@@ -272,10 +327,73 @@ class UnifiedVectorizationManager:
         tprint(f"🖥️ Hardware capabilities: {self.hardware_caps}")
         self.logger.info(f"🖥️ Hardware detected: {self.hardware_caps}")
 
-    def optimize_operation(self, operation_type: OperationType,
-                          data: Any,
-                          config: Optional[OperationConfig] = None,
-                          **kwargs) -> OptimizationResult:
+    def _initialize_performance_modules(self):
+        """Initialize performance optimization modules."""
+        try:
+            # Initialize caching
+            cache_config = CacheConfig(
+                strategy=CacheStrategy.HYBRID,
+                enable_m1_optimizations=True,
+                enable_vectorbt_optimizations=True,
+                ttl_seconds=3600
+            )
+            self._cache = get_ml_common_cache(cache_config)
+
+            # Initialize memory profiler
+            memory_config = MemoryOptimizationConfig(
+                enable_m1_optimizations=True,
+                enable_vectorbt_optimizations=True,
+                enable_memory_profiling=True
+            )
+            self._memory_profiler = get_memory_profiler(memory_config)
+
+            # Initialize async manager
+            from .performance.async_patterns import AsyncConfig
+            async_config = AsyncConfig(
+                enable_m1_optimizations=True,
+                enable_vectorbt_optimizations=True,
+                max_workers=4
+            )
+            self._async_manager = get_async_operation_manager(async_config)
+
+            # Initialize progressive loader
+            progressive_config = ProgressiveLoadingConfig(
+                enable_m1_optimizations=True,
+                enable_vectorbt_optimizations=True,
+                chunk_size=10000
+            )
+            self._progressive_loader = get_progressive_data_processor(progressive_config)
+
+            # Initialize VectorBT optimizer
+            vectorbt_config = VectorBTPerformanceConfig(
+                enable_vectorbt=True,
+                enable_caching=True,
+                enable_memory_optimization=True,
+                enable_async_processing=True
+            )
+            self._vectorbt_optimizer = get_vectorbt_performance_optimizer(vectorbt_config)
+
+            # Initialize M1 optimizer
+            m1_config = M1PerformanceConfig(
+                enable_m1_optimizations=True,
+                enable_memory_optimization=True,
+                enable_cpu_optimization=True,
+                enable_gpu_optimization=True,
+                enable_caching=True,
+                enable_async_processing=True
+            )
+            self._m1_optimizer = get_m1_performance_optimizer(m1_config)
+
+            tprint("✅ Performance optimization modules initialized successfully!")
+
+        except Exception as e:
+            tprint(f"⚠️ Warning: Some performance modules failed to initialize: {e}")
+            self.logger.warning(f"Performance module initialization failed: {e}")
+
+    async def optimize_operation_async(self, operation_type: OperationType,
+                                      data: Any,
+                                      config: Optional[OperationConfig] = None,
+                                      **kwargs) -> OptimizationResult:
         """
         Optimize and execute an operation using the best available strategy.
 
@@ -1101,3 +1219,215 @@ if __name__ == "__main__":
     print(f"Strategy usage: {stats['strategy_usage']}")
 
     print("\n🎉 Unified Vectorization Manager ready for production use!")
+
+
+# Enhanced performance optimization methods
+async def optimize_with_caching(operation_type: OperationType,
+                               data: Any,
+                               config: Optional[OperationConfig] = None,
+                               **kwargs) -> OptimizationResult:
+    """Optimize operation with caching enabled."""
+    manager = UnifiedVectorizationManager()
+    if manager._cache:
+        await manager._cache.initialize()
+    
+    # Use cached strategy
+    if config is None:
+        data_size = len(data) if hasattr(data, '__len__') else 1
+        data_dimensions = data.shape if hasattr(data, 'shape') else (data_size,)
+        config = OperationConfig(
+            operation_type=operation_type,
+            data_size=data_size,
+            data_dimensions=data_dimensions,
+            enable_caching=True
+        )
+    
+    return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+
+
+async def optimize_with_memory_profiling(operation_type: OperationType,
+                                        data: Any,
+                                        config: Optional[OperationConfig] = None,
+                                        **kwargs) -> OptimizationResult:
+    """Optimize operation with memory profiling enabled."""
+    manager = UnifiedVectorizationManager()
+    if manager._memory_profiler:
+        with manager._memory_profiler.memory_checkpoint(f"optimize_{operation_type.value}"):
+            return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+    else:
+        return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+
+
+async def optimize_with_async_processing(operation_type: OperationType,
+                                        data: Any,
+                                        config: Optional[OperationConfig] = None,
+                                        **kwargs) -> OptimizationResult:
+    """Optimize operation with async processing enabled."""
+    manager = UnifiedVectorizationManager()
+    if manager._async_manager:
+        await manager._async_manager.initialize()
+    
+    if config is None:
+        data_size = len(data) if hasattr(data, '__len__') else 1
+        data_dimensions = data.shape if hasattr(data, 'shape') else (data_size,)
+        config = OperationConfig(
+            operation_type=operation_type,
+            data_size=data_size,
+            data_dimensions=data_dimensions,
+            enable_async_processing=True
+        )
+    
+    return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+
+
+async def optimize_with_progressive_loading(filepath: str,
+                                           operation_type: OperationType,
+                                           processor_func: Callable,
+                                           config: Optional[OperationConfig] = None,
+                                           **kwargs) -> List[OptimizationResult]:
+    """Optimize operation with progressive loading for large datasets."""
+    manager = UnifiedVectorizationManager()
+    if manager._progressive_loader:
+        # Process data progressively
+        results = await manager._progressive_loader.process_data_progressively(
+            filepath, processor_func
+        )
+        return results
+    else:
+        # Fallback to regular optimization
+        return [await manager.optimize_operation_async(operation_type, data, config, **kwargs)]
+
+
+async def optimize_with_vectorbt(operation_type: OperationType,
+                                data: Any,
+                                config: Optional[OperationConfig] = None,
+                                **kwargs) -> OptimizationResult:
+    """Optimize operation with VectorBT integration."""
+    manager = UnifiedVectorizationManager()
+    if manager._vectorbt_optimizer:
+        await manager._vectorbt_optimizer.initialize()
+        
+        # Use VectorBT-specific optimization
+        if operation_type in [OperationType.VECTORBT_BACKTESTING, OperationType.VECTORBT_METRICS,
+                             OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION, OperationType.VECTORBT_TECHNICAL_ANALYSIS]:
+            # Direct VectorBT optimization
+            if operation_type == OperationType.VECTORBT_BACKTESTING:
+                result = await manager._vectorbt_optimizer.backtesting_operation(
+                    data, kwargs.get('strategy_func'), **kwargs
+                )
+            elif operation_type == OperationType.VECTORBT_METRICS:
+                result = await manager._vectorbt_optimizer.financial_metrics(
+                    data.get('portfolio_values'), data.get('returns'), 
+                    data.get('benchmark_values'), **kwargs
+                )
+            elif operation_type == OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION:
+                result = await manager._vectorbt_optimizer.portfolio_optimization(
+                    data.get('returns'), **kwargs
+                )
+            else:
+                result = await manager._vectorbt_optimizer.vectorized_operation(
+                    data, kwargs.get('operation_func'), **kwargs
+                )
+            
+            return OptimizationResult(
+                result=result,
+                strategy_used=OptimizationStrategy.VECTORBT_CPU,
+                computation_time=0.0,
+                memory_used_mb=0.0,
+                performance_gain=1.0,
+                metadata={'vectorbt_optimized': True}
+            )
+    
+    # Fallback to regular optimization
+    return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+
+
+async def optimize_with_m1_hardware(operation_type: OperationType,
+                                   data: Any,
+                                   config: Optional[OperationConfig] = None,
+                                   **kwargs) -> OptimizationResult:
+    """Optimize operation with M1 hardware optimizations."""
+    manager = UnifiedVectorizationManager()
+    if manager._m1_optimizer:
+        await manager._m1_optimizer.initialize()
+        
+        # Use M1-specific optimization
+        if isinstance(data, pd.DataFrame):
+            optimized_data = manager._m1_optimizer.optimize_dataframe(data)
+        elif isinstance(data, np.ndarray):
+            optimized_data = manager._m1_optimizer.optimize_array(data)
+        else:
+            optimized_data = data
+        
+        # Execute with M1 optimizations
+        if operation_type == OperationType.MEMORY_INTENSIVE:
+            result = await manager._m1_optimizer.memory_intensive_operation(
+                kwargs.get('func'), optimized_data, **kwargs
+            )
+        elif operation_type == OperationType.CPU_INTENSIVE:
+            result = await manager._m1_optimizer.cpu_intensive_operation(
+                kwargs.get('func'), optimized_data, **kwargs
+            )
+        else:
+            result = await manager._m1_optimizer.vectorized_operation(
+                optimized_data, kwargs.get('operation_func'), **kwargs
+            )
+        
+        return OptimizationResult(
+            result=result,
+            strategy_used=OptimizationStrategy.M1_OPTIMIZED_STRATEGY,
+            computation_time=0.0,
+            memory_used_mb=0.0,
+            performance_gain=1.0,
+            metadata={'m1_optimized': True}
+        )
+    
+    # Fallback to regular optimization
+    return await manager.optimize_operation_async(operation_type, data, config, **kwargs)
+
+
+# Convenience functions for common operations
+async def optimize_feature_engineering_with_caching(data: pd.DataFrame,
+                                                   feature_funcs: List[Callable],
+                                                   **kwargs) -> OptimizationResult:
+    """Optimize feature engineering with caching."""
+    return await optimize_with_caching(
+        OperationType.FEATURE_ENGINEERING,
+        data,
+        **kwargs
+    )
+
+
+async def optimize_backtesting_with_vectorbt(data: Dict[str, Any],
+                                           strategy_func: Callable,
+                                           **kwargs) -> OptimizationResult:
+    """Optimize backtesting with VectorBT."""
+    return await optimize_with_vectorbt(
+        OperationType.VECTORBT_BACKTESTING,
+        data,
+        **kwargs
+    )
+
+
+async def optimize_cross_validation_with_async(data: Any,
+                                              model_func: Callable,
+                                              cv_folds: int = 5,
+                                              **kwargs) -> OptimizationResult:
+    """Optimize cross-validation with async processing."""
+    return await optimize_with_async_processing(
+        OperationType.CROSS_VALIDATION,
+        data,
+        **kwargs
+    )
+
+
+async def optimize_large_dataset_processing(filepath: str,
+                                           processor_func: Callable,
+                                           **kwargs) -> List[OptimizationResult]:
+    """Optimize processing of large datasets with progressive loading."""
+    return await optimize_with_progressive_loading(
+        filepath,
+        OperationType.PROGRESSIVE_LOADING,
+        processor_func,
+        **kwargs
+    )

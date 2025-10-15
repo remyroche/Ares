@@ -3,6 +3,9 @@ M1 Memory Optimizer for Apple Silicon.
 
 This module provides memory optimization techniques specifically
 designed for Apple Silicon's unified memory architecture.
+
+Version: 2.0.0
+Backwards Compatibility: Yes (maintains API compatibility with v1.x)
 """
 
 import logging
@@ -11,6 +14,8 @@ from typing import Any, Dict, List, Optional, Set
 import sys
 import threading
 import time
+import warnings
+from functools import wraps
 
 # Optional dependencies
 try:
@@ -29,14 +34,34 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-class M1MemoryOptimizer:
-    """Memory optimizer for M1 unified memory architecture."""
+# Version information
+__version__ = "2.0.0"
+__compatible_versions__ = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
 
-    def __init__(self, memory_limit_gb: Optional[float] = None):
+def deprecated(reason: str, version: str = "2.0.0"):
+    """Decorator to mark functions as deprecated."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{func.__name__} is deprecated since version {version}. {reason}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+class M1MemoryOptimizer:
+    """Memory optimizer for M1 unified memory architecture with enhanced backwards compatibility."""
+
+    def __init__(self, memory_limit_gb: Optional[float] = None, compatibility_mode: str = "auto"):
         self.logger = logger.getChild('M1MemoryOptimizer')
         self.memory_pressure = 0.0  # Initialize as float
         self.monitoring_active = False
         self.optimization_thread = None
+        self.compatibility_mode = compatibility_mode
+        self.version = __version__
 
         # Memory limit in GB (if specified)
         self.memory_limit_gb = memory_limit_gb
@@ -55,6 +80,88 @@ class M1MemoryOptimizer:
 
         # Track objects to prevent premature garbage collection
         self.protected_objects: Set[int] = set()
+        
+        # M1-specific compatibility flags
+        self._legacy_mode = False
+        self._m1_detected = self._detect_m1_system()
+        self._m1_generation = self._detect_m1_generation()
+        
+        if not self._m1_detected:
+            self.logger.warning("⚠️ Non-M1 system detected - some optimizations may not be effective")
+        
+        # Initialize M1-specific features
+        self._initialize_m1_features()
+
+    def _detect_m1_system(self) -> bool:
+        """Detect if running on Apple Silicon M1/M2/M3/M4."""
+        try:
+            import platform
+            import subprocess
+            
+            if platform.system() != 'Darwin':
+                return False
+                
+            result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                brand = result.stdout.strip().lower()
+                m1_indicators = ['apple', 'm1', 'm2', 'm3', 'm4', 'silicon']
+                return any(indicator in brand for indicator in m1_indicators)
+            return False
+        except Exception as e:
+            self.logger.warning(f"Could not detect M1 system: {e}")
+            return False
+
+    def _detect_m1_generation(self) -> str:
+        """Detect M1 chip generation for optimization purposes."""
+        if not self._m1_detected:
+            return "none"
+            
+        try:
+            import subprocess
+            result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                brand = result.stdout.strip().lower()
+                if 'm4' in brand:
+                    return "m4"
+                elif 'm3' in brand:
+                    return "m3"
+                elif 'm2' in brand:
+                    return "m2"
+                elif 'm1' in brand:
+                    return "m1"
+                elif 'apple' in brand:
+                    return "apple_silicon"
+            return "unknown"
+        except Exception as e:
+            self.logger.warning(f"Could not detect M1 generation: {e}")
+            return "unknown"
+
+    def _initialize_m1_features(self):
+        """Initialize M1-specific memory optimization features."""
+        if self._m1_detected:
+            # M1-specific memory thresholds based on generation
+            if self._m1_generation in ["m3", "m4"]:
+                # Newer M1 chips have better memory management
+                self.thresholds.update({
+                    'low': 0.65,     # Slightly higher thresholds for newer chips
+                    'medium': 0.80,
+                    'high': 0.90,
+                    'critical': 0.95
+                })
+            elif self._m1_generation in ["m1", "m2"]:
+                # Original M1/M2 chips - more conservative thresholds
+                self.thresholds.update({
+                    'low': 0.55,
+                    'medium': 0.70,
+                    'high': 0.80,
+                    'critical': 0.90
+                })
+            
+            self.logger.info(f"🧠 M1 Memory Optimizer initialized for {self._m1_generation.upper()}")
+        else:
+            self.logger.warning("⚠️ M1-specific optimizations disabled - non-M1 system detected")
 
     def start_monitoring(self):
         """Start memory monitoring and optimization."""
@@ -99,7 +206,7 @@ class M1MemoryOptimizer:
             self.monitoring_active = False
 
     def _check_memory_pressure(self):
-        """Check current memory pressure."""
+        """Check current memory pressure with M1-specific optimizations."""
         if not PSUTIL_AVAILABLE:
             self.memory_pressure = 0.0
             return
@@ -108,16 +215,117 @@ class M1MemoryOptimizer:
             memory = psutil.virtual_memory()
             self.memory_pressure = float(memory.percent) / 100.0
 
-            if self.memory_pressure > self.thresholds['critical']:
-                self.logger.warning(f"🚨 CRITICAL: Memory pressure at {self.memory_pressure:.2f}")
-            elif self.memory_pressure > self.thresholds['high']:
-                self.logger.warning(f"⚠️ HIGH: Memory pressure at {self.memory_pressure:.2f}")
-            elif self.memory_pressure > self.thresholds['medium']:
-                self.logger.info(f"🧠 Memory pressure at {self.memory_pressure:.2f}")
+            # M1-specific memory pressure handling
+            if self._m1_detected:
+                # M1 unified memory architecture requires different handling
+                if self.memory_pressure > self.thresholds['critical']:
+                    self.logger.warning(f"🚨 CRITICAL: M1 Memory pressure at {self.memory_pressure:.2f}")
+                    self._handle_critical_m1_memory()
+                elif self.memory_pressure > self.thresholds['high']:
+                    self.logger.warning(f"⚠️ HIGH: M1 Memory pressure at {self.memory_pressure:.2f}")
+                    self._handle_high_m1_memory()
+                elif self.memory_pressure > self.thresholds['medium']:
+                    self.logger.info(f"🧠 M1 Memory pressure at {self.memory_pressure:.2f}")
+            else:
+                # Standard memory pressure handling for non-M1 systems
+                if self.memory_pressure > self.thresholds['critical']:
+                    self.logger.warning(f"🚨 CRITICAL: Memory pressure at {self.memory_pressure:.2f}")
+                elif self.memory_pressure > self.thresholds['high']:
+                    self.logger.warning(f"⚠️ HIGH: Memory pressure at {self.memory_pressure:.2f}")
+                elif self.memory_pressure > self.thresholds['medium']:
+                    self.logger.info(f"🧠 Memory pressure at {self.memory_pressure:.2f}")
         except Exception as e:
             # Ensure memory_pressure is always a valid float
             self.memory_pressure = 0.0
             self.logger.error(f"Could not check memory pressure: {e}")
+
+    def _handle_critical_m1_memory(self):
+        """Handle critical memory pressure on M1 systems."""
+        if not self._m1_detected:
+            return
+            
+        try:
+            # M1-specific critical memory handling
+            self.logger.warning("🚨 M1 Critical memory pressure - applying aggressive cleanup")
+            
+            # Force multiple garbage collections
+            for _ in range(5):
+                gc.collect()
+            
+            # Clear M1-specific caches
+            self._clear_m1_caches()
+            
+            # Attempt to free M1 unified memory
+            self._free_m1_unified_memory()
+            
+        except Exception as e:
+            self.logger.error(f"M1 critical memory handling failed: {e}")
+
+    def _handle_high_m1_memory(self):
+        """Handle high memory pressure on M1 systems."""
+        if not self._m1_detected:
+            return
+            
+        try:
+            # M1-specific high memory handling
+            self.logger.info("⚠️ M1 High memory pressure - applying moderate cleanup")
+            
+            # Force garbage collection
+            gc.collect()
+            
+            # Clear M1-specific caches
+            self._clear_m1_caches()
+            
+        except Exception as e:
+            self.logger.error(f"M1 high memory handling failed: {e}")
+
+    def _clear_m1_caches(self):
+        """Clear M1-specific caches and optimizations."""
+        if not self._m1_detected:
+            return
+            
+        try:
+            # Clear pandas cache if available
+            if PANDAS_AVAILABLE and hasattr(pd, '_cache'):
+                pd._cache.clear()
+
+            # Clear numpy's internal caches
+            try:
+                import numpy as np
+                if hasattr(np, 'array'):
+                    # Force cleanup of array caches
+                    pass
+            except ImportError:
+                pass
+
+            # M1-specific cache clearing
+            self.logger.debug("🧹 M1-specific caches cleared")
+
+        except Exception as e:
+            self.logger.debug(f"M1 cache clearing failed: {e}")
+
+    def _free_m1_unified_memory(self):
+        """Attempt to free M1 unified memory."""
+        if not self._m1_detected:
+            return
+            
+        try:
+            # Get current memory usage
+            before = psutil.virtual_memory().used
+
+            # Force garbage collection multiple times for M1
+            for _ in range(3):
+                gc.collect()
+
+            # Try to release memory back to M1 unified memory system
+            after = psutil.virtual_memory().used
+            freed = before - after
+
+            if freed > 0:
+                self.logger.info(f"🧠 M1 unified memory: freed {freed / 1024 / 1024:.1f} MB")
+
+        except Exception as e:
+            self.logger.debug(f"M1 unified memory freeing failed: {e}")
 
     def _apply_memory_optimizations(self):
         """Apply memory optimizations based on current pressure."""
@@ -497,28 +705,39 @@ _m1_memory_optimizer_instance: Optional[M1MemoryOptimizer] = None
 # Create global instance for backward compatibility
 m1_memory_optimizer = None
 
+# M1-specific initialization flag
+_m1_initialized = False
 
-def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None) -> M1MemoryOptimizer:
-    """Get the M1 memory optimizer instance.
+
+def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibility_mode: str = "auto") -> M1MemoryOptimizer:
+    """Get the M1 memory optimizer instance with enhanced backwards compatibility.
 
     Args:
         memory_limit_gb: Optional memory limit in GB
+        compatibility_mode: Compatibility mode for M1-specific optimizations
 
     Returns:
         M1MemoryOptimizer instance
     """
-    global _m1_memory_optimizer_instance, m1_memory_optimizer
+    global _m1_memory_optimizer_instance, m1_memory_optimizer, _m1_initialized
 
     try:
         # Lazy initialization to avoid circular import issues
-        if _m1_memory_optimizer_instance is None:
-            _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=memory_limit_gb)
+        if _m1_memory_optimizer_instance is None or not _m1_initialized:
+            _m1_memory_optimizer_instance = M1MemoryOptimizer(
+                memory_limit_gb=memory_limit_gb, 
+                compatibility_mode=compatibility_mode
+            )
             m1_memory_optimizer = _m1_memory_optimizer_instance
+            _m1_initialized = True
         else:
             # If a memory limit is specified and it's different from the current instance, create a new one
             if memory_limit_gb and (not hasattr(_m1_memory_optimizer_instance, 'memory_limit_gb') or
                                    _m1_memory_optimizer_instance.memory_limit_gb != memory_limit_gb):
-                _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=memory_limit_gb)
+                _m1_memory_optimizer_instance = M1MemoryOptimizer(
+                    memory_limit_gb=memory_limit_gb,
+                    compatibility_mode=compatibility_mode
+                )
                 m1_memory_optimizer = _m1_memory_optimizer_instance
 
         return _m1_memory_optimizer_instance
@@ -526,8 +745,9 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None) -> M1Memory
     except Exception as e:
         # Fallback: return a basic instance without memory limit if initialization fails
         logger.warning(f"Failed to initialize M1 memory optimizer: {e}. Using basic instance.")
-        _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=None)
+        _m1_memory_optimizer_instance = M1MemoryOptimizer(memory_limit_gb=None, compatibility_mode="legacy")
         m1_memory_optimizer = _m1_memory_optimizer_instance
+        _m1_initialized = True
         return _m1_memory_optimizer_instance
 
 

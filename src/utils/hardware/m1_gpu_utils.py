@@ -3,12 +3,17 @@ M1 GPU Utilities for Apple Silicon optimization.
 
 This module provides utilities for leveraging M1 GPU acceleration
 for machine learning and data processing operations.
+
+Version: 2.0.0
+Backwards Compatibility: Yes (maintains API compatibility with v1.x)
 """
 
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 import sys
 import platform
+import warnings
+from functools import wraps
 
 # Optional dependencies
 try:
@@ -34,16 +39,44 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-class M1GPUManager:
-    """Manager for M1 GPU operations."""
+# Version information
+__version__ = "2.0.0"
+__compatible_versions__ = ["1.0.0", "1.1.0", "1.2.0", "2.0.0"]
 
-    def __init__(self):
-        self.is_m1 = self._detect_m1()
-        self.mps_available = self._check_mps_availability()
+def deprecated(reason: str, version: str = "2.0.0"):
+    """Decorator to mark functions as deprecated."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"{func.__name__} is deprecated since version {version}. {reason}",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+class M1GPUManager:
+    """Manager for M1 GPU operations with enhanced backwards compatibility."""
+
+    def __init__(self, version_check: bool = True):
         self.logger = logger.getChild('M1GPUManager')
+        self.version_check = version_check
+        self.is_m1 = self._detect_m1()
+        self.m1_generation = self._detect_m1_generation()
+        self.mps_available = self._check_mps_availability()
+        self.compatibility_mode = self._determine_compatibility_mode()
+        
+        # Backwards compatibility flags
+        self._legacy_mode = False
+        self._fallback_enabled = True
+        
+        self.logger.info(f"M1 GPU Manager initialized - M1: {self.is_m1}, "
+                        f"Generation: {self.m1_generation}, MPS: {self.mps_available}")
 
     def _detect_m1(self) -> bool:
-        """Detect if running on Apple Silicon (M1/M2/M3)."""
+        """Detect if running on Apple Silicon (M1/M2/M3/M4)."""
         try:
             # Check platform
             if platform.system() != 'Darwin':
@@ -52,60 +85,141 @@ class M1GPUManager:
             # Check for Apple Silicon
             import subprocess
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
-                                  capture_output=True, text=True)
+                                  capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                brand = result.stdout.strip()
-                return 'Apple' in brand or 'M1' in brand or 'M2' in brand or 'M3' in brand
+                brand = result.stdout.strip().lower()
+                apple_silicon_indicators = ['apple', 'm1', 'm2', 'm3', 'm4', 'silicon']
+                return any(indicator in brand for indicator in apple_silicon_indicators)
 
             return False
         except Exception as e:
             self.logger.warning(f"Could not detect M1 hardware: {e}")
             return False
 
+    def _detect_m1_generation(self) -> str:
+        """Detect M1 chip generation for optimization purposes."""
+        if not self.is_m1:
+            return "none"
+            
+        try:
+            import subprocess
+            result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                brand = result.stdout.strip().lower()
+                if 'm4' in brand:
+                    return "m4"
+                elif 'm3' in brand:
+                    return "m3"
+                elif 'm2' in brand:
+                    return "m2"
+                elif 'm1' in brand:
+                    return "m1"
+                elif 'apple' in brand:
+                    return "apple_silicon"  # Generic Apple Silicon
+            return "unknown"
+        except Exception as e:
+            self.logger.warning(f"Could not detect M1 generation: {e}")
+            return "unknown"
+
+    def _determine_compatibility_mode(self) -> str:
+        """Determine compatibility mode based on available features."""
+        if not self.is_m1:
+            return "non_m1"
+        elif not self.mps_available:
+            return "m1_no_mps"
+        elif self.m1_generation in ["m1", "m2"]:
+            return "legacy_m1"
+        else:
+            return "modern_m1"
+
     def _check_mps_availability(self) -> bool:
         """Check if Metal Performance Shaders (MPS) is available."""
+        if not TORCH_AVAILABLE:
+            return False
+            
         try:
-            import torch
             if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps'):
                 return torch.backends.mps.is_available()
             return False
-        except ImportError:
+        except Exception as e:
+            self.logger.warning(f"Could not check MPS availability: {e}")
             return False
 
-    def get_gpu_info(self) -> Dict[str, Any]:
-        """Get information about available GPU resources."""
-        info = {
+    def enable_legacy_mode(self):
+        """Enable legacy mode for backwards compatibility."""
+        self._legacy_mode = True
+        self.logger.info("Legacy mode enabled for backwards compatibility")
+
+    def disable_fallback(self):
+        """Disable fallback mechanisms (use with caution)."""
+        self._fallback_enabled = False
+        self.logger.warning("Fallback mechanisms disabled - may cause errors on non-M1 systems")
+
+    def get_compatibility_info(self) -> Dict[str, Any]:
+        """Get detailed compatibility information."""
+        return {
             'is_m1': self.is_m1,
+            'm1_generation': self.m1_generation,
             'mps_available': self.mps_available,
-            'gpu_memory': None,
-            'gpu_name': None
+            'compatibility_mode': self.compatibility_mode,
+            'legacy_mode': self._legacy_mode,
+            'fallback_enabled': self._fallback_enabled,
+            'torch_available': TORCH_AVAILABLE,
+            'numpy_available': NUMPY_AVAILABLE,
+            'pandas_available': PANDAS_AVAILABLE,
+            'version': __version__
         }
 
-        if self.mps_available:
+    def get_gpu_info(self) -> Dict[str, Any]:
+        """Get information about available GPU resources with enhanced compatibility."""
+        info = {
+            'is_m1': self.is_m1,
+            'm1_generation': self.m1_generation,
+            'mps_available': self.mps_available,
+            'gpu_memory': None,
+            'gpu_name': None,
+            'compatibility_mode': self.compatibility_mode,
+            'fallback_available': self._fallback_enabled
+        }
+
+        if self.mps_available and TORCH_AVAILABLE:
             try:
                 if torch.backends.mps.is_available():
                     # Get MPS device info
                     device = torch.device('mps')
-                    info['gpu_name'] = 'Apple Silicon GPU (MPS)'
+                    info['gpu_name'] = f'Apple Silicon GPU (MPS) - {self.m1_generation.upper()}'
                     # MPS doesn't provide direct memory info, but we can estimate
                     info['gpu_memory'] = 'Shared system memory'
+                    info['device'] = str(device)
             except Exception as e:
                 self.logger.warning(f"Could not get GPU info: {e}")
+                if self._fallback_enabled:
+                    info['gpu_name'] = f'Apple Silicon GPU (Fallback) - {self.m1_generation.upper()}'
+                    info['gpu_memory'] = 'Unknown (fallback mode)'
+        elif self.is_m1 and not self.mps_available:
+            info['gpu_name'] = f'Apple Silicon GPU (No MPS) - {self.m1_generation.upper()}'
+            info['gpu_memory'] = 'CPU fallback mode'
+        elif not self.is_m1:
+            info['gpu_name'] = 'Non-Apple Silicon GPU'
+            info['gpu_memory'] = 'Standard GPU memory'
 
         return info
 
-    def optimize_tensor_operations(self, data):
-        """Optimize tensor operations for M1 GPU."""
+    def optimize_tensor_operations(self, data, force_cpu: bool = False):
+        """Optimize tensor operations for M1 GPU with enhanced backwards compatibility."""
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, returning data as-is")
             return data
             
-        if not self.mps_available:
-            self.logger.debug("MPS not available, using CPU operations")
+        if not self.mps_available or force_cpu or not self._fallback_enabled:
+            if not self.mps_available:
+                self.logger.debug("MPS not available, using CPU operations")
+            elif force_cpu:
+                self.logger.debug("CPU mode forced")
             return data
 
         try:
-
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(data).to('mps')
 
@@ -118,8 +232,17 @@ class M1GPUManager:
             return result
 
         except Exception as e:
-            self.logger.warning(f"M1 GPU optimization failed, falling back to CPU: {e}")
-            return data
+            if self._fallback_enabled:
+                self.logger.warning(f"M1 GPU optimization failed, falling back to CPU: {e}")
+                return data
+            else:
+                self.logger.error(f"M1 GPU optimization failed and fallback disabled: {e}")
+                raise RuntimeError(f"GPU optimization failed: {e}") from e
+
+    @deprecated("Use optimize_tensor_operations with force_cpu parameter instead", "2.0.0")
+    def optimize_tensor_operations_legacy(self, data):
+        """Legacy version of optimize_tensor_operations for backwards compatibility."""
+        return self.optimize_tensor_operations(data, force_cpu=False)
 
     def create_mps_model(self, model_class: Any, *args, **kwargs):
         """Create a model optimized for MPS."""
@@ -280,8 +403,8 @@ class M1GPUManager:
             return np.matmul(array1, array2)
 
 
-# Global instance
-m1_gpu_manager = M1GPUManager()
+# Global instance with M1-specific initialization
+m1_gpu_manager = M1GPUManager(version_check=True)
 
 
 def get_m1_gpu_manager() -> M1GPUManager:
@@ -297,6 +420,46 @@ def is_m1_available() -> bool:
 def is_mps_available() -> bool:
     """Check if MPS is available."""
     return m1_gpu_manager.mps_available
+
+
+def get_m1_generation() -> str:
+    """Get M1 chip generation."""
+    return m1_gpu_manager.m1_generation
+
+
+def get_compatibility_mode() -> str:
+    """Get current compatibility mode."""
+    return m1_gpu_manager.compatibility_mode
+
+
+def check_compatibility(required_features: List[str] = None) -> Dict[str, Any]:
+    """Check compatibility for required features."""
+    if required_features is None:
+        required_features = ['m1', 'mps', 'torch', 'numpy']
+    
+    compatibility = {}
+    for feature in required_features:
+        if feature == 'm1':
+            compatibility[feature] = m1_gpu_manager.is_m1
+        elif feature == 'mps':
+            compatibility[feature] = m1_gpu_manager.mps_available
+        elif feature == 'torch':
+            compatibility[feature] = TORCH_AVAILABLE
+        elif feature == 'numpy':
+            compatibility[feature] = NUMPY_AVAILABLE
+        elif feature == 'pandas':
+            compatibility[feature] = PANDAS_AVAILABLE
+        else:
+            compatibility[feature] = False
+    
+    compatibility['all_available'] = all(compatibility.values())
+    return compatibility
+
+
+@deprecated("Use get_m1_gpu_manager().get_compatibility_info() instead", "2.0.0")
+def get_gpu_compatibility_info() -> Dict[str, Any]:
+    """Legacy function for getting GPU compatibility info."""
+    return m1_gpu_manager.get_compatibility_info()
 
 
 def optimize_dataframe_for_m1(df):

@@ -7,11 +7,30 @@ allowing the step files to call the consolidated pipeline at the proper places.
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union, Callable, Awaitable
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import numpy as np
+
+# Import tprint utilities for enhanced logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_performance, tprint_step, tprint_result
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
+    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
 from .consolidated_pipeline import (
     UnifiedDataDrivenPipeline,
@@ -31,11 +50,44 @@ from .core.simplified_config import (
 class ConsolidatedPipelineRunner:
     """Runner for executing consolidated pipeline up to specific steps."""
     
-    def __init__(self, config: Optional[UnifiedPipelineConfig] = None):
-        """Initialize the pipeline runner."""
-        self.config = config or create_default_config()
-        self.pipeline = create_unified_pipeline(self.config)
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, config: Optional[UnifiedPipelineConfig] = None) -> None:
+        """
+        Initialize the pipeline runner.
+        
+        Args:
+            config: Optional pipeline configuration. If None, uses default config.
+            
+        Raises:
+            ValueError: If config is invalid
+            ImportError: If required dependencies are missing
+        """
+        try:
+            tprint_step("🚀 Initializing ConsolidatedPipelineRunner")
+            
+            if config is None:
+                tprint_info("📋 Using default configuration")
+                self.config = create_default_config()
+            else:
+                tprint_info("📋 Using provided configuration")
+                self.config = config
+            
+            # Validate configuration
+            if not isinstance(self.config, UnifiedPipelineConfig):
+                raise ValueError(f"Invalid config type: {type(self.config)}. Expected UnifiedPipelineConfig.")
+            
+            tprint_info("🔧 Creating unified pipeline")
+            self.pipeline = create_unified_pipeline(self.config)
+            
+            if self.pipeline is None:
+                raise RuntimeError("Failed to create unified pipeline")
+            
+            self.logger = logging.getLogger(__name__)
+            tprint_success("✅ ConsolidatedPipelineRunner initialized successfully")
+            
+        except Exception as e:
+            error_msg = f"Failed to initialize ConsolidatedPipelineRunner: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     async def run_data_validation_step(self, 
                                      data: pd.DataFrame,
@@ -48,11 +100,53 @@ class ConsolidatedPipelineRunner:
                                      end_date: Optional[str] = None,
                                      exchange: str = "binance",
                                      custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Run pipeline up to data validation step."""
+        """
+        Run pipeline up to data validation step.
+        
+        Args:
+            data: Input DataFrame with time series data
+            symbol: Trading symbol (default: "ETHUSDT")
+            timeframe: Time frame for analysis (default: "15m")
+            direction: Trading direction (default: "longs")
+            intensity: Pipeline intensity level (default: "blank")
+            lookback_days: Optional lookback period in days
+            start_date: Optional start date for analysis
+            end_date: Optional end date for analysis
+            exchange: Exchange name (default: "binance")
+            custom_overrides: Optional configuration overrides
+            
+        Returns:
+            Dict containing validation results with keys:
+            - success: bool
+            - data_quality_score: float
+            - validation_metadata: Dict[str, Any]
+            - artifacts: Dict[str, Any]
+            - error_message: Optional[str]
+            
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If pipeline execution fails
+        """
         try:
+            tprint_step("🔍 Starting data validation step")
+            tprint_info(f"📊 Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
+            tprint_info(f"🎯 Symbol: {symbol}, Timeframe: {timeframe}, Direction: {direction}")
+            tprint_info(f"⚙️ Intensity: {intensity}, Exchange: {exchange}")
+            
+            # Validate input data
+            if data is None or data.empty:
+                raise ValueError("Input data cannot be None or empty")
+            
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Expected pandas DataFrame, got {type(data)}")
+            
             # Configure pipeline based on intensity
+            tprint_info("🔧 Configuring pipeline based on intensity")
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
+            
+            if self.pipeline is None:
+                raise RuntimeError("Failed to create unified pipeline with new configuration")
             
             # Create pipeline state
             pipeline_state = {
@@ -66,8 +160,12 @@ class ConsolidatedPipelineRunner:
                 'step': 'data_validation'
             }
             
+            tprint_info("🚀 Executing pipeline up to data validation")
             # Run pipeline up to data validation
             result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            
+            if result is None:
+                raise RuntimeError("Pipeline returned None result")
             
             # Extract validation results
             validation_result = {
@@ -78,16 +176,49 @@ class ConsolidatedPipelineRunner:
                 'error_message': result.error_message if not result.success else None
             }
             
+            if validation_result['success']:
+                tprint_success(f"✅ Data validation completed successfully")
+                tprint_result(f"📈 Data quality score: {validation_result['data_quality_score']:.3f}")
+                tprint_info(f"📋 Validation metadata keys: {list(validation_result['validation_metadata'].keys())}")
+                tprint_info(f"📦 Artifacts generated: {len(validation_result['artifacts'])}")
+            else:
+                tprint_error(f"❌ Data validation failed: {validation_result['error_message']}")
+            
             # Generate human-readable report
+            tprint_info("📄 Generating human-readable report")
             await self._generate_data_validation_report(validation_result, data)
             
             return validation_result
             
-        except Exception as e:
-            self.logger.error(f"Data validation step failed: {e}")
+        except ValueError as e:
+            error_msg = f"Invalid input for data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
             return {
                 'success': False,
-                'error_message': str(e),
+                'error_message': error_msg,
+                'artifacts': {},
+                'data_quality_score': 0.0,
+                'validation_metadata': {}
+            }
+        except RuntimeError as e:
+            error_msg = f"Runtime error in data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            return {
+                'success': False,
+                'error_message': error_msg,
+                'artifacts': {},
+                'data_quality_score': 0.0,
+                'validation_metadata': {}
+            }
+        except Exception as e:
+            error_msg = f"Unexpected error in data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(f"Data validation step failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error_message': error_msg,
                 'artifacts': {},
                 'data_quality_score': 0.0,
                 'validation_metadata': {}
@@ -556,25 +687,71 @@ class ConsolidatedPipelineRunner:
             }
     
     def _create_config_from_intensity(self, intensity: str, custom_overrides: Optional[Dict[str, Any]] = None) -> UnifiedPipelineConfig:
-        """Create configuration based on intensity."""
-        if intensity == "full":
-            config = create_full_config()
-        elif intensity == "blank":
-            config = create_blank_config()
-        elif intensity == "light":
-            config = create_light_config()
-        else:
-            config = create_config_by_intensity(PipelineIntensity.BLANK)
+        """
+        Create configuration based on intensity level.
         
-        # Apply custom overrides if provided
-        if custom_overrides:
-            for key, value in custom_overrides.items():
-                if hasattr(config, key):
-                    setattr(config, key, value)
-        
-        return config
+        Args:
+            intensity: Intensity level ("full", "blank", "light")
+            custom_overrides: Optional configuration overrides
+            
+        Returns:
+            Configured UnifiedPipelineConfig instance
+            
+        Raises:
+            ValueError: If intensity is invalid
+            RuntimeError: If config creation fails
+        """
+        try:
+            tprint_info(f"🔧 Creating configuration for intensity: {intensity}")
+            
+            # Validate intensity parameter
+            valid_intensities = {"full", "blank", "light"}
+            if intensity not in valid_intensities:
+                raise ValueError(f"Invalid intensity '{intensity}'. Must be one of: {valid_intensities}")
+            
+            # Create base configuration
+            if intensity == "full":
+                tprint_info("📋 Creating full intensity configuration (100%)")
+                config = create_full_config()
+            elif intensity == "blank":
+                tprint_info("📋 Creating blank intensity configuration (25%)")
+                config = create_blank_config()
+            elif intensity == "light":
+                tprint_info("📋 Creating light intensity configuration (10%)")
+                config = create_light_config()
+            else:
+                tprint_warning(f"⚠️ Unknown intensity '{intensity}', falling back to blank")
+                config = create_config_by_intensity(PipelineIntensity.BLANK)
+            
+            if config is None:
+                raise RuntimeError("Failed to create configuration")
+            
+            # Apply custom overrides if provided
+            if custom_overrides:
+                tprint_info(f"🔧 Applying {len(custom_overrides)} custom overrides")
+                for key, value in custom_overrides.items():
+                    if hasattr(config, key):
+                        old_value = getattr(config, key)
+                        setattr(config, key, value)
+                        tprint_debug(f"  - {key}: {old_value} → {value}")
+                    else:
+                        tprint_warning(f"  - Unknown config key: {key}")
+            
+            tprint_success(f"✅ Configuration created successfully for intensity: {intensity}")
+            return config
+            
+        except ValueError as e:
+            error_msg = f"Invalid intensity parameter: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Failed to create configuration: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
     
     async def _generate_data_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """
+        Generate human-readable report for data validation step.
         """Generate human-readable report for data validation step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
@@ -585,19 +762,58 @@ class ConsolidatedPipelineRunner:
         report_filename = f"data_validation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         
-        # Generate report content
-        report_content = f"""# Data Validation Report
+        Args:
+            result: Validation result dictionary
+            data: Input DataFrame
+            
+        Raises:
+            OSError: If report file cannot be created
+            ValueError: If result data is invalid
+        """
+        try:
+            tprint_info("📄 Generating data validation report")
+            
+            # Validate inputs
+            if not isinstance(result, dict):
+                raise ValueError(f"Result must be a dictionary, got {type(result)}")
+            
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
+            
+            # Create outcomes directory
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            tprint_debug(f"📁 Using outcomes directory: {outcomes_dir.absolute()}")
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"data_validation_report_{timestamp}.md"
+            report_path = outcomes_dir / report_filename
+            
+            # Generate report content
+            status_emoji = "✅ SUCCESS" if result['success'] else "❌ FAILED"
+            quality_score = result.get('data_quality_score', 0.0)
+            error_msg = result.get('error_message', 'None')
+            artifacts_count = len(result.get('artifacts', {}))
+            
+            report_content = f"""# Data Validation Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
-- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Status**: {status_emoji}
 - **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
-- **Quality Score**: {result.get('data_quality_score', 0.0):.3f}
+- **Quality Score**: {quality_score:.3f}
 
 ## Validation Results
 - **Success**: {result['success']}
-- **Error Message**: {result.get('error_message', 'None')}
-- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+- **Error Message**: {error_msg}
+- **Artifacts Generated**: {artifacts_count}
+
+## Data Quality Metrics
+- **Rows**: {data.shape[0]:,}
+- **Columns**: {data.shape[1]:,}
+- **Memory Usage**: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+- **Missing Values**: {data.isnull().sum().sum():,}
 
 ## Next Steps
 1. Review validation results
@@ -607,15 +823,32 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
-        # Write report
-        with open(report_path, 'w') as f:
-            f.write(report_content)
-        
-        # Add report to artifacts
-        result['artifacts']['human_readable_report'] = str(report_path)
-        
-        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+            
+            # Write report
+            tprint_debug(f"💾 Writing report to: {report_path}")
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            # Add report to artifacts
+            result['artifacts']['human_readable_report'] = str(report_path)
+            
+            tprint_success(f"📊 Human-readable report saved: {report_path}")
+            
+        except OSError as e:
+            error_msg = f"Failed to create report file: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            raise OSError(error_msg) from e
+        except ValueError as e:
+            error_msg = f"Invalid data for report generation: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error generating report: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
     
     async def _generate_feature_generation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for feature generation step."""
@@ -955,47 +1188,218 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 
 # Convenience functions for each step
-async def run_data_validation_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run data validation step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_data_validation_step(data, **kwargs)
+async def run_data_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run data validation step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing validation results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting data validation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_data_validation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for data validation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_feature_generation_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run feature generation step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_feature_generation_step(data, **kwargs)
+async def run_feature_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run feature generation step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing feature generation results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting feature generation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_feature_generation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for feature generation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_feature_selection_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run feature selection step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_feature_selection_step(data, **kwargs)
+async def run_feature_selection_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run feature selection step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing feature selection results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting feature selection step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_feature_selection_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for feature selection: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_period_optimization_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run period optimization step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_period_optimization_step(data, **kwargs)
+async def run_period_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run period optimization step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing period optimization results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting period optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_period_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for period optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run lookback optimization step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_lookback_optimization_step(data, **kwargs)
+async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run lookback optimization step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing lookback optimization results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting lookback optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_lookback_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for lookback optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_interaction_generation_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run interaction generation step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_interaction_generation_step(data, **kwargs)
+async def run_interaction_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run interaction generation step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing interaction generation results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting interaction generation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_interaction_generation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for interaction generation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_vectorization_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run vectorization step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_vectorization_step(data, **kwargs)
+async def run_vectorization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run vectorization step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing vectorization results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting vectorization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_vectorization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for vectorization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_labeling_integration_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run labeling integration step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_labeling_integration_step(data, **kwargs)
+async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run labeling integration step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing labeling integration results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting labeling integration step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_labeling_integration_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for labeling integration: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
-async def run_final_validation_step(data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-    """Run final validation step using consolidated pipeline."""
-    runner = ConsolidatedPipelineRunner()
-    return await runner.run_final_validation_step(data, **kwargs)
+async def run_final_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run final validation step using consolidated pipeline.
+    
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+        
+    Returns:
+        Dict containing final validation results
+        
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting final validation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_final_validation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for final validation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e

@@ -73,7 +73,13 @@ class FeatureType(Enum):
 
 @dataclass
 class GuardrailConfig:
-    """Configuration for guardrails to prevent brittle statistical discovery."""
+    """
+    Configuration for guardrails to prevent brittle statistical discovery.
+    
+    This class provides comprehensive guardrails to ensure robust feature engineering
+    while maintaining data-driven methodology. It prevents overfitting and ensures
+    realistic performance expectations.
+    """
     
     # Maximum lookback constraints
     max_lookback_periods: Dict[FeatureType, int] = field(default_factory=lambda: {
@@ -118,11 +124,112 @@ class GuardrailConfig:
     min_statistical_significance: float = 0.05
     min_effect_size: float = 0.01
     min_sample_size: int = 30
+    
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        self._validate_config()
+    
+    def _validate_config(self) -> None:
+        """
+        Validate the guardrail configuration.
+        
+        Raises:
+            ValueError: If configuration values are invalid
+        """
+        try:
+            tprint_debug("🔍 Validating GuardrailConfig")
+            
+            # Validate lookback periods
+            for feature_type, max_period in self.max_lookback_periods.items():
+                if not isinstance(max_period, int) or max_period <= 0:
+                    raise ValueError(f"Invalid max_lookback_period for {feature_type}: {max_period}. Must be positive integer.")
+            
+            # Validate monotonicity tolerance
+            if not 0.0 <= self.monotonicity_tolerance <= 1.0:
+                raise ValueError(f"Invalid monotonicity_tolerance: {self.monotonicity_tolerance}. Must be between 0.0 and 1.0.")
+            
+            # Validate feature costs
+            for feature_type, cost in self.feature_costs.items():
+                if not isinstance(cost, (int, float)) or cost < 0:
+                    raise ValueError(f"Invalid feature_cost for {feature_type}: {cost}. Must be non-negative number.")
+            
+            # Validate bounds
+            if len(self.price_bounds) != 2 or self.price_bounds[0] >= self.price_bounds[1]:
+                raise ValueError(f"Invalid price_bounds: {self.price_bounds}. Must be (min, max) with min < max.")
+            
+            if len(self.volatility_bounds) != 2 or self.volatility_bounds[0] >= self.volatility_bounds[1]:
+                raise ValueError(f"Invalid volatility_bounds: {self.volatility_bounds}. Must be (min, max) with min < max.")
+            
+            # Validate thresholds
+            if not 0.0 <= self.correlation_threshold <= 1.0:
+                raise ValueError(f"Invalid correlation_threshold: {self.correlation_threshold}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 <= self.stability_threshold <= 1.0:
+                raise ValueError(f"Invalid stability_threshold: {self.stability_threshold}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 <= self.min_statistical_significance <= 1.0:
+                raise ValueError(f"Invalid min_statistical_significance: {self.min_statistical_significance}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 <= self.min_effect_size <= 1.0:
+                raise ValueError(f"Invalid min_effect_size: {self.min_effect_size}. Must be between 0.0 and 1.0.")
+            
+            if not isinstance(self.min_sample_size, int) or self.min_sample_size <= 0:
+                raise ValueError(f"Invalid min_sample_size: {self.min_sample_size}. Must be positive integer.")
+            
+            tprint_success("✅ GuardrailConfig validation passed")
+            
+        except ValueError as e:
+            error_msg = f"GuardrailConfig validation failed: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error validating GuardrailConfig: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def get_max_lookback(self, feature_type: FeatureType) -> int:
+        """
+        Get maximum lookback period for a feature type.
+        
+        Args:
+            feature_type: The feature type to get lookback for
+            
+        Returns:
+            Maximum lookback period in periods
+            
+        Raises:
+            KeyError: If feature type is not configured
+        """
+        if feature_type not in self.max_lookback_periods:
+            raise KeyError(f"Feature type {feature_type} not found in max_lookback_periods")
+        return self.max_lookback_periods[feature_type]
+    
+    def get_feature_cost(self, feature_type: FeatureType) -> float:
+        """
+        Get cost penalty for a feature type.
+        
+        Args:
+            feature_type: The feature type to get cost for
+            
+        Returns:
+            Cost penalty value
+            
+        Raises:
+            KeyError: If feature type is not configured
+        """
+        if feature_type not in self.feature_costs:
+            raise KeyError(f"Feature type {feature_type} not found in feature_costs")
+        return self.feature_costs[feature_type]
 
 
 @dataclass
 class TimeSeriesCVConfig:
-    """Configuration for time series cross-validation."""
+    """
+    Configuration for time series cross-validation.
+    
+    Provides comprehensive configuration for purged & embargoed walk-forward
+    cross-validation to prevent data leakage in time series data.
+    """
     
     # Basic CV parameters
     n_splits: int = 5
@@ -140,6 +247,91 @@ class TimeSeriesCVConfig:
     strict_time_ordering: bool = True
     validate_splits: bool = True
     check_leakage: bool = True
+    
+    def __post_init__(self) -> None:
+        """Validate configuration after initialization."""
+        self._validate_config()
+    
+    def _validate_config(self) -> None:
+        """
+        Validate the time series CV configuration.
+        
+        Raises:
+            ValueError: If configuration values are invalid
+        """
+        try:
+            tprint_debug("🔍 Validating TimeSeriesCVConfig")
+            
+            # Validate n_splits
+            if not isinstance(self.n_splits, int) or self.n_splits <= 0:
+                raise ValueError(f"Invalid n_splits: {self.n_splits}. Must be positive integer.")
+            
+            # Validate size fractions
+            if not 0.0 < self.test_size < 1.0:
+                raise ValueError(f"Invalid test_size: {self.test_size}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 < self.train_size < 1.0:
+                raise ValueError(f"Invalid train_size: {self.train_size}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 <= self.purge_fraction < 1.0:
+                raise ValueError(f"Invalid purge_fraction: {self.purge_fraction}. Must be between 0.0 and 1.0.")
+            
+            if not 0.0 <= self.embargo_fraction < 1.0:
+                raise ValueError(f"Invalid embargo_fraction: {self.embargo_fraction}. Must be between 0.0 and 1.0.")
+            
+            # Validate that sizes sum to reasonable value
+            total_size = self.train_size + self.test_size
+            if total_size > 1.0:
+                raise ValueError(f"train_size + test_size = {total_size} > 1.0. Must be <= 1.0.")
+            
+            # Validate minimum samples
+            if not isinstance(self.min_train_samples, int) or self.min_train_samples <= 0:
+                raise ValueError(f"Invalid min_train_samples: {self.min_train_samples}. Must be positive integer.")
+            
+            if not isinstance(self.min_test_samples, int) or self.min_test_samples <= 0:
+                raise ValueError(f"Invalid min_test_samples: {self.min_test_samples}. Must be positive integer.")
+            
+            if not isinstance(self.min_embargo_samples, int) or self.min_embargo_samples < 0:
+                raise ValueError(f"Invalid min_embargo_samples: {self.min_embargo_samples}. Must be non-negative integer.")
+            
+            tprint_success("✅ TimeSeriesCVConfig validation passed")
+            
+        except ValueError as e:
+            error_msg = f"TimeSeriesCVConfig validation failed: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error validating TimeSeriesCVConfig: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+    
+    def calculate_split_sizes(self, total_samples: int) -> Dict[str, int]:
+        """
+        Calculate actual split sizes based on total samples.
+        
+        Args:
+            total_samples: Total number of samples in dataset
+            
+        Returns:
+            Dictionary with calculated split sizes
+            
+        Raises:
+            ValueError: If total_samples is invalid
+        """
+        if not isinstance(total_samples, int) or total_samples <= 0:
+            raise ValueError(f"Invalid total_samples: {total_samples}. Must be positive integer.")
+        
+        train_samples = int(total_samples * self.train_size)
+        test_samples = int(total_samples * self.test_size)
+        purge_samples = int(total_samples * self.purge_fraction)
+        embargo_samples = int(total_samples * self.embargo_fraction)
+        
+        return {
+            'train_samples': max(train_samples, self.min_train_samples),
+            'test_samples': max(test_samples, self.min_test_samples),
+            'purge_samples': purge_samples,
+            'embargo_samples': max(embargo_samples, self.min_embargo_samples)
+        }
 
 
 @dataclass
@@ -427,26 +619,59 @@ class UnifiedPipelineConfig:
 
 
 def create_default_config() -> UnifiedPipelineConfig:
-    """Create a default configuration for the unified pipeline."""
-    return UnifiedPipelineConfig()
+    """
+    Create a default configuration for the unified pipeline.
+    
+    Returns:
+        UnifiedPipelineConfig with sensible defaults
+        
+    Raises:
+        RuntimeError: If configuration creation fails
+    """
+    try:
+        tprint_info("🔧 Creating default configuration")
+        config = UnifiedPipelineConfig()
+        tprint_success("✅ Default configuration created successfully")
+        return config
+    except Exception as e:
+        error_msg = f"Failed to create default configuration: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
 
 def create_high_performance_config() -> UnifiedPipelineConfig:
-    """Create a high-performance configuration."""
-    config = UnifiedPipelineConfig()
+    """
+    Create a high-performance configuration optimized for speed and GPU usage.
     
-    # Optimize for performance
-    config.vectorization.enable_gpu = True
-    config.vectorization.enable_parallel = True
-    config.vectorization.vectorbt_strategy = OptimizationStrategy.VECTORBT_GPU
-    
-    config.period_optimization.enable_parallel = True
-    config.period_optimization.optimization_strategy = OptimizationStrategy.VECTORBT_GPU
-    
-    config.interaction_generation.enable_batch_processing = True
-    config.interaction_generation.optimization_strategy = OptimizationStrategy.VECTORBT_GPU
-    
-    return config
+    Returns:
+        UnifiedPipelineConfig optimized for performance
+        
+    Raises:
+        RuntimeError: If configuration creation fails
+    """
+    try:
+        tprint_info("🚀 Creating high-performance configuration")
+        config = UnifiedPipelineConfig()
+        
+        # Optimize for performance
+        tprint_info("⚡ Enabling GPU optimizations")
+        config.vectorization.enable_gpu = True
+        config.vectorization.enable_parallel = True
+        config.vectorization.vectorbt_strategy = OptimizationStrategy.VECTORBT_GPU
+        
+        config.period_optimization.enable_parallel = True
+        config.period_optimization.optimization_strategy = OptimizationStrategy.VECTORBT_GPU
+        
+        config.interaction_generation.enable_batch_processing = True
+        config.interaction_generation.optimization_strategy = OptimizationStrategy.VECTORBT_GPU
+        
+        tprint_success("✅ High-performance configuration created successfully")
+        return config
+        
+    except Exception as e:
+        error_msg = f"Failed to create high-performance configuration: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
 
 
 def create_memory_efficient_config() -> UnifiedPipelineConfig:

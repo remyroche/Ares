@@ -561,8 +561,8 @@ class MultiObjectiveFeatureSelector:
     
     def __init__(self, objectives: List[ObjectiveFunction], 
                  weights: Optional[Dict[str, float]] = None,
-                 max_features: int = 50,  # Reverted back to original 50
-                 min_features: int = 5,   # Reverted back to original 5
+                 max_features: int = 45,  # Decreased by 10% from 50
+                 min_features: int = 4,   # Decreased by 10% from 5
                  use_ml_commons: bool = True,
                  use_evolutionary: bool = True,
                  optimization_algorithm: str = "auto"):
@@ -1108,8 +1108,8 @@ def create_default_objectives() -> List[ObjectiveFunction]:
 
 def create_enhanced_feature_selector(objectives: Optional[List[ObjectiveFunction]] = None,
                                    weights: Optional[Dict[str, float]] = None,
-                                   max_features: int = 50,
-                                   min_features: int = 5,
+                                   max_features: int = 45,  # Decreased by 10% from 50
+                                   min_features: int = 4,   # Decreased by 10% from 5
                                    use_ml_commons: bool = True,
                                    use_evolutionary: bool = True,
                                    optimization_algorithm: str = "auto") -> MultiObjectiveFeatureSelector:

@@ -479,8 +479,8 @@ class MultiObjectiveConfig:
     population_size: int = 50
     
     # Constraints
-    max_features: int = 50
-    min_features: int = 5
+    max_features: int = 45  # Decreased by 10% for early pruning
+    min_features: int = 4   # Decreased by 10% for early pruning
     max_feature_cost: float = 100.0
 
 

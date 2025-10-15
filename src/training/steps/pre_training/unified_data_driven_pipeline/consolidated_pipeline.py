@@ -2012,7 +2012,7 @@ class UnifiedDataDrivenPipeline:
                     # Select top features by correlation
                     if feature_correlations:
                         sorted_features = sorted(feature_correlations.items(), key=lambda x: x[1], reverse=True)
-                        top_features = [f[0] for f in sorted_features[:50]]  # Top 50 features
+                        top_features = [f[0] for f in sorted_features[:45]]  # Top 45 features (-10% early pruning)
                         screening_result['combined_selected_features'] = top_features
                         tprint_success(f"✅ Advanced screening completed: {len(top_features)} features selected")
                     else:
@@ -4832,7 +4832,7 @@ class UnifiedDataDrivenPipeline:
                 'n_trials': 25,  # Reduced iterations for light mode
                 'n_bootstrap_samples': 20,
                 'cv_folds': 3,
-                'max_features': 50,
+                'max_features': 45,  # Decreased by 10% for early pruning
                 'max_lookback': 30,
                 'early_stopping_patience': 5,  # Earlier stopping for light mode
                 'coarse_grid_trials': 10,  # Reduced grid trials

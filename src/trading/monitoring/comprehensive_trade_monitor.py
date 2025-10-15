@@ -672,6 +672,14 @@ class ComprehensiveTradeMonitor:
         """Convert trade metrics to enhanced monitoring format."""
         try:
             from src.monitoring.enhanced_ml_monitoring import (
+                EnhancedMLMonitoring
+            )
+            return self._convert_to_enhanced_format(trade_metrics)
+        except ImportError:
+            return self._convert_to_basic_format(trade_metrics)
+        except Exception as e:
+            self.logger.error(f"Error converting trade metrics: {e}")
+            return {}
 
 # VectorBT imports for native optimization
 try:
@@ -706,89 +714,20 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradingMode
-            )
-            
-            # Create trade context
-            context = TradeContext(
-                exchange=trade_metrics.exchange,
-                symbol=trade_metrics.symbol,
-                timestamp=trade_metrics.timestamp,
-                price=trade_metrics.price,
-                volume=trade_metrics.quantity,
-                market_conditions=trade_metrics.market_conditions
-            )
-            
-            # Create trading indicators
-            indicators = [
-                TradingIndicator(
-                    name="confidence",
-                    value=trade_metrics.signal_confidence,
-                    weight=1.0,
-                    source="combined_signal"
-                ),
-                TradingIndicator(
-                    name="risk_score",
-                    value=trade_metrics.portfolio_risk,
-                    weight=1.0,
-                    source="risk_calculator"
-                )
-            ]
-            
-            # Create individual model decisions
-            individual_decisions = []
-            for model_id, prediction in trade_metrics.model_predictions.items():
-                decision = MLModelDecision(
-                    model_id=model_id,
-                    model_type=trade_metrics.models_used.get(model_id, {}).get('model_type', 'unknown'),
-                    prediction=prediction,
-                    confidence=trade_metrics.model_confidences.get(model_id, 0.0),
-                    feature_importance=trade_metrics.shap_explanations.get(model_id, {}),
-                    execution_time_ms=trade_metrics.execution_time_ms,
-                    timestamp=trade_metrics.timestamp
-                )
-                individual_decisions.append(decision)
-            
-            # Create ensemble decision
-            ensemble_decision = EnsembleDecision(
-                final_prediction=trade_metrics.signal_confidence,
-                model_weights=trade_metrics.model_weights,
-                individual_decisions=individual_decisions,
-                ensemble_confidence=trade_metrics.signal_confidence,
-                timestamp=trade_metrics.timestamp
-            )
-            
-            # Create comprehensive decision
-            comprehensive_decision = {
-                'decision_id': trade_metrics.trade_id,
-                'timestamp': trade_metrics.timestamp,
-                'trading_mode': TradingMode.PAPER if trade_metrics.trading_mode == 'paper' else TradingMode.LIVE,
-                'context': context,
-                'trading_indicators': indicators,
-                'overall_confidence': trade_metrics.signal_confidence,
-                'overall_risk_score': trade_metrics.portfolio_risk,
-                'ensemble_decision': ensemble_decision,
-                'individual_model_decisions': individual_decisions,
-                'shap_explanations': trade_metrics.shap_explanations,
-                'lime_explanations': trade_metrics.lime_explanations,
-                'execution_details': {
-                    'action': trade_metrics.action,
-                    'quantity': trade_metrics.quantity,
-                    'price': trade_metrics.price,
-                    'leverage': trade_metrics.leverage
-                },
-                'performance_metrics': {
-                    'pnl_absolute': trade_metrics.pnl_absolute,
-                    'pnl_percentage': trade_metrics.pnl_percentage,
-                    'execution_quality': trade_metrics.execution_quality
-                }
-            }
-            
-            return comprehensive_decision
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to convert to comprehensive decision: {e}")
-            return {}
+
+# Import trading components
+try:
+    from src.trading.monitoring.trade_context import (
+        TradeContext, TradingIndicator, MLModelDecision, EnsembleDecision, TradingMode
+    )
+    TRADING_COMPONENTS_AVAILABLE = True
+except ImportError:
+    TRADING_COMPONENTS_AVAILABLE = False
+    TradeContext = None
+    TradingIndicator = None
+    MLModelDecision = None
+    EnsembleDecision = None
+    TradingMode = None
     
     async def _export_trade_metrics(self, trade_metrics: DetailedTradeMetrics):
         """Export trade metrics to file."""

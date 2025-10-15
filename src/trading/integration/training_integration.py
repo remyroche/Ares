@@ -202,6 +202,15 @@ class TrainingDataProvider:
             # Save to training pipeline data directory
             import json
             import os
+            
+            # Save the configuration
+            config_path = os.path.join(data_dir, 'training_config.json')
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Error saving training configuration: {e}")
+            raise
 
 # VectorBT imports for native optimization
 try:
@@ -236,20 +245,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-            
-            export_dir = "data_cache/training_sync"
-            os.makedirs(export_dir, exist_ok=True)
-            
-            filename = f"trading_performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            filepath = os.path.join(export_dir, filename)
-            
-            with open(filepath, 'w') as f:
-                json.dump(export_data, f, indent=2, default=str)
-            
-            tprint_info(f"📤 Exported trading performance to {filepath}")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Trading performance export failed: {e}")
     
     async def _update_feature_cache(self):
         """Update feature cache from training pipeline."""

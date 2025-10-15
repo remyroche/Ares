@@ -312,7 +312,9 @@ class FeatureGenerationFinalValidationStep:
         artifacts["pipeline_summary"] = str(pipeline_summary_path)
         
         # Generate human-readable report
-        await self._generate_human_readable_report(artifacts_path, final_dataset, validation_summary, quality_metrics, pipeline_summary)
+        report_path = await self._generate_human_readable_report(artifacts_path, final_dataset, validation_summary, quality_metrics, pipeline_summary)
+        if report_path:
+            artifacts["human_readable_report"] = str(report_path)
         
         return artifacts
     
@@ -321,7 +323,7 @@ class FeatureGenerationFinalValidationStep:
                                             final_dataset: pd.DataFrame,
                                             validation_summary: Dict[str, Any],
                                             quality_metrics: Dict[str, Any],
-                                            pipeline_summary: Dict[str, Any]) -> None:
+                                            pipeline_summary: Dict[str, Any]) -> Optional[Path]:
         """Generate human-readable report in outcomes/ directory.
         
         Args:
@@ -330,6 +332,9 @@ class FeatureGenerationFinalValidationStep:
             validation_summary: Validation summary
             quality_metrics: Quality metrics
             pipeline_summary: Pipeline summary
+            
+        Returns:
+            Path to the generated report file
         """
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
@@ -423,6 +428,8 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             f.write(report_content)
         
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
+        
+        return report_path
 
 
 # Command handler for ares_launcher integration

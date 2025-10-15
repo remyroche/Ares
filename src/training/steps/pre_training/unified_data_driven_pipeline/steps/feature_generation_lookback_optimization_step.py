@@ -207,20 +207,25 @@ class FeatureGenerationLookbackOptimizationStep:
         artifacts["optimization_metrics"] = str(optimization_metrics_path)
         
         # Generate human-readable report
-        await self._generate_human_readable_report(artifacts_path, optimal_lookbacks, optimization_metrics)
+        report_path = await self._generate_human_readable_report(artifacts_path, optimal_lookbacks, optimization_metrics)
+        if report_path:
+            artifacts["human_readable_report"] = str(report_path)
         
         return artifacts
     
     async def _generate_human_readable_report(self,
                                             artifacts_path: Path,
                                             optimal_lookbacks: Dict[str, int],
-                                            optimization_metrics: Dict[str, Any]) -> None:
+                                            optimization_metrics: Dict[str, Any]) -> Optional[Path]:
         """Generate human-readable report in outcomes/ directory.
         
         Args:
             artifacts_path: Path to save artifacts
             optimal_lookbacks: Optimal lookbacks for features
             optimization_metrics: Optimization metrics
+            
+        Returns:
+            Path to the generated report file
         """
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
@@ -292,6 +297,8 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             f.write(report_content)
         
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
+        
+        return report_path
 
 
 # Command handler for ares_launcher integration

@@ -308,20 +308,25 @@ class FeatureGenerationDataValidationStep:
             artifacts["correlation_matrix"] = str(corr_matrix_path)
         
         # Generate human-readable report
-        await self._generate_human_readable_report(artifacts_path, quality_report, market_data)
+        report_path = await self._generate_human_readable_report(artifacts_path, quality_report, market_data)
+        if report_path:
+            artifacts["human_readable_report"] = str(report_path)
         
         return artifacts
     
     async def _generate_human_readable_report(self,
                                             artifacts_path: Path,
                                             quality_report: Dict[str, Any],
-                                            market_data: pd.DataFrame) -> None:
+                                            market_data: pd.DataFrame) -> Optional[Path]:
         """Generate human-readable report in outcomes/ directory.
         
         Args:
             artifacts_path: Path to save artifacts
             quality_report: Quality report data
             market_data: Market data
+            
+        Returns:
+            Path to the generated report file
         """
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
@@ -389,6 +394,8 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             f.write(report_content)
         
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
+        
+        return report_path
 
 
 # Command handler for ares_launcher integration

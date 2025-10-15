@@ -345,7 +345,9 @@ class FeatureGenerationFeatureSelectionStep:
         artifacts["selection_results"] = str(selection_results_path)
         
         # Generate human-readable report
-        await self._generate_human_readable_report(artifacts_path, selected_features, selection_metadata, selection_metrics)
+        report_path = await self._generate_human_readable_report(artifacts_path, selected_features, selection_metadata, selection_metrics)
+        if report_path:
+            artifacts["human_readable_report"] = str(report_path)
         
         return artifacts
     
@@ -353,7 +355,7 @@ class FeatureGenerationFeatureSelectionStep:
                                             artifacts_path: Path,
                                             selected_features: pd.DataFrame,
                                             selection_metadata: Dict[str, Any],
-                                            selection_metrics: Dict[str, Any]) -> None:
+                                            selection_metrics: Dict[str, Any]) -> Optional[Path]:
         """Generate human-readable report in outcomes/ directory.
         
         Args:
@@ -361,6 +363,9 @@ class FeatureGenerationFeatureSelectionStep:
             selected_features: Selected features
             selection_metadata: Selection metadata
             selection_metrics: Selection metrics
+            
+        Returns:
+            Path to the generated report file
         """
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
@@ -420,6 +425,8 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             f.write(report_content)
         
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
+        
+        return report_path
 
 
 # Command handler for ares_launcher integration

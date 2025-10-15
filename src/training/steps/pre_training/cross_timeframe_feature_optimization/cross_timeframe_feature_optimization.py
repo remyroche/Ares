@@ -13,6 +13,7 @@ Key Features:
 """
 
 import json
+import logging
 import time
 import numpy as np
 import pandas as pd
@@ -42,7 +43,13 @@ from ...feature_generation.utils.cross_timeframe_interaction_features import Cro
 
 # Import optimization components
 from .core.cross_timeframe_optimizer import CrossTimeframeOptimizer, CrossTimeframeOptimizationConfig
-from .core.feature_backtester import FeatureBacktester, BacktestConfig
+try:
+    from .core.feature_backtester import FeatureBacktester, BacktestConfig
+    FEATURE_BACKTESTER_AVAILABLE = True
+except ImportError:
+    FeatureBacktester = None  # type: ignore[assignment]
+    BacktestConfig = None  # type: ignore[assignment]
+    FEATURE_BACKTESTER_AVAILABLE = False
 from .core.feature_selector import FeatureSelector, SelectionConfig
 
 # Import VectorBT optimizations
@@ -199,8 +206,7 @@ class CrossTimeframeFeatureOptimizationComponent(BasePreTrainingComponent):
         
         # Initialize backtester
         self.backtester = None
-        if self.config.enable_economic_evaluation:
-            from .core.feature_backtester import FeatureBacktester, BacktestConfig
+        if self.config.enable_economic_evaluation and FEATURE_BACKTESTER_AVAILABLE:
             backtest_config = BacktestConfig(
                 backtest_periods=self.config.backtest_periods,
                 min_backtest_periods=self.config.min_backtest_periods,
@@ -209,6 +215,8 @@ class CrossTimeframeFeatureOptimizationComponent(BasePreTrainingComponent):
             )
             self.backtester = FeatureBacktester(backtest_config)
             tprint("✅ Feature backtester initialized")
+        elif self.config.enable_economic_evaluation:
+            tprint_warning("⚠️ Feature backtester module unavailable, skipping backtesting setup")
         
         # Initialize feature selector
         self.feature_selector = None

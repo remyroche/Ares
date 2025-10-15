@@ -24,12 +24,6 @@ from .core.cross_timeframe_optimizer import (
     OptimizationMethod
 )
 
-from .core.feature_backtester import (
-    FeatureBacktester,
-    BacktestConfig,
-    BacktestResult
-)
-
 from .core.feature_selector import (
     FeatureSelector,
     SelectionConfig,
@@ -47,10 +41,6 @@ __all__ = [
     'OptimizerConfig',
     'OptimizationResult',
     'OptimizationMethod',
-    
-    'FeatureBacktester',
-    'BacktestConfig',
-    'BacktestResult',
     
     'FeatureSelector',
     'SelectionConfig',

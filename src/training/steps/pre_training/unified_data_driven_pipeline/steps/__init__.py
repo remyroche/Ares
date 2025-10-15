@@ -98,25 +98,23 @@ __all__ = [
 # Step execution order
 STEP_EXECUTION_ORDER = [
     "feature_generation_data_validation_step",
+    "feature_generation_labeling_integration_step",  # Moved to step 2
     "feature_generation_feature_generation_step",
     "feature_generation_feature_selection_step",
-    "feature_generation_period_optimization_step",
-    "feature_generation_lookback_optimization_step",
+    "feature_generation_period_lookback_optimization_step",  # Merged period + lookback optimization
     "feature_generation_interaction_generation_step",
     "feature_generation_vectorization_step",
-    "feature_generation_labeling_integration_step",
     "feature_generation_final_validation_step"
 ]
 
 # Step descriptions
 STEP_DESCRIPTIONS = {
     "feature_generation_data_validation_step": "Data validation and quality assessment",
-    "feature_generation_feature_generation_step": "Multi-method feature generation",
-    "feature_generation_feature_selection_step": "Intelligent feature selection",
-    "feature_generation_period_optimization_step": "Period optimization for features",
-    "feature_generation_lookback_optimization_step": "Lookback period optimization",
-    "feature_generation_interaction_generation_step": "Feature interaction generation",
+    "feature_generation_labeling_integration_step": "Analyst/Tactician labeling integration (moved to step 2)",
+    "feature_generation_feature_generation_step": "Feature Bank only feature generation",
+    "feature_generation_feature_selection_step": "Intelligent feature selection (4-45 features, -10% early pruning)",
+    "feature_generation_period_lookback_optimization_step": "Concurrent period + lookback optimization (min 2 periods per feature, no recency bias)",
+    "feature_generation_interaction_generation_step": "Feature interaction generation (X² max, log relationships, ML generators, max 100 features)",
     "feature_generation_vectorization_step": "Feature vectorization optimization",
-    "feature_generation_labeling_integration_step": "Analyst/Tactician labeling integration",
     "feature_generation_final_validation_step": "Final validation and quality check"
 }

@@ -243,7 +243,7 @@ class AdvancedLookbackOptimizer:
                     enable_hardware_optimization=True,
                     enable_vectorbt_optimization=VECTORBT_AVAILABLE,
                     early_stopping_patience=10,
-                    enable_adaptive_optimization=True
+                    enable_adaptive_optimization=False  # Removed adaptive optimization
                 )
                 self.bayesian_tpe_optimizer = BayesianTPEOptimizer(tpe_config)
                 tprint_success("✅ Enhanced Bayesian TPE optimizer initialized")

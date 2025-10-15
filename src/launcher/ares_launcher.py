@@ -1119,8 +1119,69 @@ class AresLauncher:
         
         return result
     
+    async def _execute_feature_generation_step(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute a specific feature generation step."""
+        try:
+            tprint(f"🚀 [FEATURE_GENERATION] Executing feature generation step: {sub_pipeline}")
+            
+            # Import the step module
+            step_module = __import__(f'src.training.steps.pre_training.unified_data_driven_pipeline.steps.{sub_pipeline}', fromlist=['FeatureGenerationStep'])
+            
+            # Get the step class
+            step_class_name = ''.join(word.capitalize() for word in sub_pipeline.split('_'))
+            step_class = getattr(step_module, step_class_name)
+            
+            # Create step instance
+            step = step_class()
+            
+            # Execute the step
+            result = await step.execute(
+                data=config.data,
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode,
+                lookback_days=config.lookback_days,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=config.exchange
+            )
+            
+            # Create MainPipelineResult
+            pipeline_result = MainPipelineResult(
+                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.COMPLETED if result.get('success', False) else SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=result.get('error', None) if not result.get('success', False) else None
+            )
+            
+            # Add artifacts
+            pipeline_result.artifacts = result.get('artifacts', {})
+            
+            tprint(f"✅ [FEATURE_GENERATION] Feature generation step completed: {sub_pipeline}")
+            return pipeline_result
+            
+        except Exception as e:
+            error_msg = f"Feature generation step {sub_pipeline} failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            
+            return MainPipelineResult(
+                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=error_msg
+            )
+    
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
+        # Handle feature generation steps
+        if sub_pipeline.startswith('feature_generation_'):
+            return await self._execute_feature_generation_step(sub_pipeline, config)
+        
         # Handle unified data driven pipeline shortcuts
         if sub_pipeline.startswith('unified_data_driven_pipeline'):
             return await self._execute_unified_pipeline_shortcut(sub_pipeline, config)
@@ -1807,7 +1868,7 @@ Examples:
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_generation_data_validation_step, feature_generation_labeling_integration_step, feature_generation_feature_generation_step, feature_generation_feature_selection_step, feature_generation_period_lookback_optimization_step, feature_generation_interaction_generation_step, feature_generation_vectorization_step, feature_generation_final_validation_step, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble.'
     )
     
     parser.add_argument(

@@ -407,7 +407,8 @@ class LabelingAdapter:
             self.labeler = create_enhanced_tactician_labeler()
             self.labeling_type = LabelDefinitionType.TACTICIAN
         else:
-            raise ValueError(f"Invalid labeling type: {self.config.labeling_type}. Must be 'analyst' or 'tactician'")
+            # Fast fail instead of fallback to Triple Barrier
+            raise ValueError(f"Invalid labeling type: {self.config.labeling_type}. Must be 'analyst' or 'tactician'. No fallback to Triple Barrier method.")
     
     def generate_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None, 
                        existing_artifacts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -1825,8 +1826,51 @@ class UnifiedDataDrivenPipeline:
                     f"data_quality_issues_{len(quality_result.issues)}"
                 )
             
-            # Step 2: Process and validate data using unified utilities with enhanced common operations
-            tprint_info("Step 2: Process and validate data using unified utilities")
+            # Step 2: Labeling Integration (moved from later in pipeline)
+            tprint_info("Step 2: Labeling Integration (Analyst/Tactician labeling)")
+            self.detailed_reporter.start_step("labeling_integration", len(data.columns))
+            
+            # Generate labels using the tactician/analyst labeling system
+            tprint_info(f"🏷️ Generating labels using {self.config.labeling_type} labeling system")
+            
+            # Initialize processed_targets early to avoid undefined variable error
+            processed_targets = targets
+            
+            # Check for existing labeling artifacts in pipeline state
+            existing_artifacts = None
+            if pipeline_state and 'labeling_artifacts' in pipeline_state:
+                existing_artifacts = pipeline_state['labeling_artifacts']
+                tprint_info("📦 Found existing labeling artifacts in pipeline state")
+            
+            labeling_result = self.labeling_adapter.generate_labels(data, processed_targets, existing_artifacts)
+            
+            if labeling_result.get('success', False):
+                tprint_success(f"✅ Labels generated successfully using {labeling_result.get('labeling_type', 'unknown')} system")
+                labeling_data = labeling_result.get('labeled_data', pd.DataFrame())
+                labeling_metadata = labeling_result.get('labeling_metadata', {})
+                labeling_quality = labeling_result.get('quality_score', 0.0)
+                
+                # Store labeling results in pipeline state
+                if pipeline_state:
+                    pipeline_state['labeling_result'] = labeling_result
+                    pipeline_state['labeling_quality'] = labeling_quality
+                    pipeline_state['labeling_metadata'] = labeling_metadata
+                
+                tprint_info(f"📊 Labeling quality score: {labeling_quality:.3f}")
+            else:
+                error_msg = f"Labeling failed: {labeling_result.get('error', 'Unknown error')}"
+                tprint_error(f"❌ {error_msg}")
+                return self._create_empty_result(start_time, error_msg)
+            
+            # End labeling integration step reporting
+            self.detailed_reporter.end_step("labeling_integration", 
+                                          len(labeling_data.columns) if not labeling_data.empty else 0,
+                                          0.0,  # Labeling execution time
+                                          0.0,  # Labeling memory usage
+                                          True)
+            
+            # Step 3: Process and validate data using unified utilities with enhanced common operations
+            tprint_info("Step 3: Process and validate data using unified utilities")
             self.detailed_reporter.start_step("data_processing", len(data.columns))
             processed_data, processing_report = self.unified_data_utils.process_and_validate(
                 data=data,
@@ -1968,7 +2012,7 @@ class UnifiedDataDrivenPipeline:
                     # Select top features by correlation
                     if feature_correlations:
                         sorted_features = sorted(feature_correlations.items(), key=lambda x: x[1], reverse=True)
-                        top_features = [f[0] for f in sorted_features[:50]]  # Top 50 features
+                        top_features = [f[0] for f in sorted_features[:45]]  # Top 45 features (-10% early pruning)
                         screening_result['combined_selected_features'] = top_features
                         tprint_success(f"✅ Advanced screening completed: {len(top_features)} features selected")
                     else:
@@ -2228,8 +2272,8 @@ class UnifiedDataDrivenPipeline:
                     getattr(feature_selection_results, 'quality_metrics', {})
                 )
             
-            # Step 3: Generate selected features
-            tprint_info("Step 3: Generate selected features")
+            # Step 4: Generate selected features (Feature Bank only)
+            tprint_info("Step 4: Generate selected features (Feature Bank only)")
             self.detailed_reporter.start_step("feature_generation", len(processed_data.columns))
             selected_features_df = self._generate_selected_features(processed_data, feature_selection_results, targets)
             
@@ -2330,10 +2374,10 @@ class UnifiedDataDrivenPipeline:
                                           0.0,  # Will be updated with actual memory usage
                                           True)
             
-            # Step 4: Enhanced interaction generation with VectorBT optimization
-            tprint_info("Step 4: Enhanced interaction generation with VectorBT optimization")
+            # Step 5: Enhanced interaction generation with ML generators and feature selection
+            tprint_info("Step 5: Enhanced interaction generation with ML generators and feature selection")
             self.detailed_reporter.start_step("interaction_generation", len(transformed_features_df.columns))
-            interaction_results = self._enhanced_interaction_generation(transformed_features_df, processed_targets)
+            interaction_results = self._enhanced_interaction_generation_with_ml(transformed_features_df, processed_targets)
             
             # Step 5: HTF-aware interaction generation
             tprint_info("Step 5: HTF-aware interaction generation")
@@ -3454,6 +3498,701 @@ class UnifiedDataDrivenPipeline:
             tprint_error(f"❌ Error details: {str(e)}")
             raise RuntimeError(error_msg) from e
     
+    def _enhanced_interaction_generation_with_ml(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Enhanced interaction generation with ML generators, log relationships, and feature selection."""
+        tprint_info("🔗 Starting enhanced interaction generation with ML generators and feature selection")
+        tprint_debug(f"📊 Features shape: {features_df.shape}")
+        tprint_debug(f"🎯 Targets shape: {targets.shape if targets is not None else 'None'}")
+        
+        # Validate input data before processing
+        if features_df is None or features_df.empty:
+            error_msg = "Features DataFrame is None or empty for interaction generation"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
+        if not isinstance(features_df, pd.DataFrame):
+            error_msg = f"Features must be DataFrame, got {type(features_df)}"
+            tprint_error(f"❌ {error_msg}")
+            raise TypeError(error_msg)
+        
+        try:
+            all_interactions = []
+            
+            # 1. Generate polynomial features (limited to X²)
+            tprint_info("🔧 Generating polynomial features (X² max)")
+            polynomial_interactions = self._generate_polynomial_interactions(features_df, targets, max_degree=2)
+            all_interactions.extend(polynomial_interactions)
+            tprint_success(f"✅ Generated {len(polynomial_interactions)} polynomial interactions")
+            
+            # 2. Generate log relationships
+            tprint_info("🔧 Generating log relationships")
+            log_interactions = self._generate_log_interactions(features_df, targets)
+            all_interactions.extend(log_interactions)
+            tprint_success(f"✅ Generated {len(log_interactions)} log interactions")
+            
+            # 3. Generate cross-feature interactions
+            tprint_info("🔧 Generating cross-feature interactions")
+            cross_interactions = self._generate_cross_feature_interactions(features_df, targets)
+            all_interactions.extend(cross_interactions)
+            tprint_success(f"✅ Generated {len(cross_interactions)} cross-feature interactions")
+            
+            # 4. Generate ML-based interactions using RandomForest
+            tprint_info("🔧 Generating RandomForest-based interactions")
+            rf_interactions = self._generate_randomforest_interactions(features_df, targets)
+            all_interactions.extend(rf_interactions)
+            tprint_success(f"✅ Generated {len(rf_interactions)} RandomForest interactions")
+            
+            # 5. Generate ML-based interactions using LightGBM
+            tprint_info("🔧 Generating LightGBM-based interactions")
+            lgb_interactions = self._generate_lightgbm_interactions(features_df, targets)
+            all_interactions.extend(lgb_interactions)
+            tprint_success(f"✅ Generated {len(lgb_interactions)} LightGBM interactions")
+            
+        # 6. Feature selection to keep only top 100 features
+        tprint_info("🔧 Performing feature selection (target: 100 features)")
+        selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
+        tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 100)")
+            
+            return selected_interactions
+            
+        except Exception as e:
+            error_msg = f"Enhanced interaction generation with ML failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+    def _generate_polynomial_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series], max_degree: int = 2) -> List[Any]:
+        """Generate polynomial interactions limited to X²."""
+        interactions = []
+        
+        try:
+            from sklearn.preprocessing import PolynomialFeatures
+            from sklearn.feature_selection import SelectKBest, f_regression
+            
+            # Generate polynomial features up to degree 2
+            poly = PolynomialFeatures(degree=max_degree, include_bias=False, interaction_only=True)
+            poly_features = poly.fit_transform(features_df)
+            poly_feature_names = poly.get_feature_names_out(features_df.columns)
+            
+            # Convert to DataFrame
+            poly_df = pd.DataFrame(poly_features, index=features_df.index, columns=poly_feature_names)
+            
+            # Select top features if we have targets
+            if targets is not None and len(poly_df.columns) > 50:
+                selector = SelectKBest(f_regression, k=50)
+                selected_features = selector.fit_transform(poly_df, targets)
+                selected_columns = poly_df.columns[selector.get_support()]
+                poly_df = pd.DataFrame(selected_features, index=features_df.index, columns=selected_columns)
+            
+            # Convert to interaction format
+            for col in poly_df.columns:
+                interactions.append({
+                    'name': f"poly_{col}",
+                    'type': 'polynomial',
+                    'features': [col],
+                    'data': poly_df[col]
+                })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Polynomial interaction generation failed: {e}")
+            return []
+
+    def _generate_log_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate log relationship interactions."""
+        interactions = []
+        
+        try:
+            # Generate log features for each column
+            for col in features_df.columns:
+                if features_df[col].min() > 0:  # Only for positive values
+                    log_col = np.log(features_df[col])
+                    interactions.append({
+                        'name': f"log_{col}",
+                        'type': 'log',
+                        'features': [col],
+                        'data': log_col
+                    })
+            
+            # Generate log ratio features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    if features_df[col1].min() > 0 and features_df[col2].min() > 0:
+                        log_ratio = np.log(features_df[col1] / features_df[col2])
+                        interactions.append({
+                            'name': f"log_ratio_{col1}_{col2}",
+                            'type': 'log_ratio',
+                            'features': [col1, col2],
+                            'data': log_ratio
+                        })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Log interaction generation failed: {e}")
+            return []
+
+    def _generate_cross_feature_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate cross-feature interactions (ratios, differences, etc.)."""
+        interactions = []
+        
+        try:
+            # Generate ratio features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    if features_df[col2].min() > 0:  # Avoid division by zero
+                        ratio = features_df[col1] / features_df[col2]
+                        interactions.append({
+                            'name': f"ratio_{col1}_{col2}",
+                            'type': 'ratio',
+                            'features': [col1, col2],
+                            'data': ratio
+                        })
+            
+            # Generate difference features
+            for i, col1 in enumerate(features_df.columns):
+                for col2 in features_df.columns[i+1:]:
+                    diff = features_df[col1] - features_df[col2]
+                    interactions.append({
+                        'name': f"diff_{col1}_{col2}",
+                        'type': 'difference',
+                        'features': [col1, col2],
+                        'data': diff
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Cross-feature interaction generation failed: {e}")
+            return []
+
+    def _generate_randomforest_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate RandomForest-based interactions."""
+        interactions = []
+        
+        try:
+            if targets is None:
+                return interactions
+                
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.feature_selection import SelectFromModel
+            
+            # Train RandomForest
+            rf = RandomForestRegressor(n_estimators=100, random_state=42)
+            rf.fit(features_df, targets)
+            
+            # Get feature importances
+            importances = rf.feature_importances_
+            feature_names = features_df.columns
+            
+            # Select top features
+            selector = SelectFromModel(rf, threshold='median')
+            selected_features = selector.fit_transform(features_df, targets)
+            selected_columns = feature_names[selector.get_support()]
+            
+            # Generate interactions from selected features
+            for i, col1 in enumerate(selected_columns):
+                for col2 in selected_columns[i+1:]:
+                    interaction = features_df[col1] * features_df[col2]
+                    interactions.append({
+                        'name': f"rf_interaction_{col1}_{col2}",
+                        'type': 'randomforest_interaction',
+                        'features': [col1, col2],
+                        'data': interaction
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ RandomForest interaction generation failed: {e}")
+            return []
+
+    def _generate_lightgbm_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """Generate LightGBM-based interactions."""
+        interactions = []
+        
+        try:
+            if targets is None:
+                return interactions
+                
+            import lightgbm as lgb
+            from sklearn.feature_selection import SelectFromModel
+            
+            # Train LightGBM
+            lgb_model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+            lgb_model.fit(features_df, targets)
+            
+            # Get feature importances
+            importances = lgb_model.feature_importances_
+            feature_names = features_df.columns
+            
+            # Select top features
+            selector = SelectFromModel(lgb_model, threshold='median')
+            selected_features = selector.fit_transform(features_df, targets)
+            selected_columns = feature_names[selector.get_support()]
+            
+            # Generate interactions from selected features
+            for i, col1 in enumerate(selected_columns):
+                for col2 in selected_columns[i+1:]:
+                    interaction = features_df[col1] * features_df[col2]
+                    interactions.append({
+                        'name': f"lgb_interaction_{col1}_{col2}",
+                        'type': 'lightgbm_interaction',
+                        'features': [col1, col2],
+                        'data': interaction
+                    })
+            
+            return interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ LightGBM interaction generation failed: {e}")
+            return []
+
+    def _select_top_interactions(self, interactions: List[Any], targets: Optional[pd.Series], max_features: int = 100) -> List[Any]:
+        """
+        Select top interactions using the existing feature selection pipeline.
+        
+        This method leverages the existing feature selection tools and pipeline
+        to select strong features that work well together and with other features.
+        The goal is not to create a final feature set, but to identify the most
+        promising interactions for further combination and analysis.
+        
+        Args:
+            interactions: List of interaction features
+            targets: Target series for ranking
+            max_features: Maximum number of features to select
+            
+        Returns:
+            List of selected top interactions
+        """
+        tprint_info(f"🔍 Starting interaction feature selection using existing pipeline")
+        tprint_debug(f"📊 Input interactions: {len(interactions)}, max_features: {max_features}")
+        
+        if len(interactions) <= max_features:
+            tprint_info(f"✅ No selection needed: {len(interactions)} <= {max_features}")
+            return interactions
+        
+        try:
+            # Convert interactions to DataFrame format for feature selection pipeline
+            features_df = self._convert_interactions_to_dataframe(interactions)
+            
+            if features_df is None or features_df.empty:
+                tprint_warning("⚠️ No valid interactions to select from")
+                return interactions[:max_features]
+            
+            # Use final feature selection pipeline only
+            selected_interactions = self._use_final_feature_selection_pipeline(
+                features_df, targets, max_features, interactions
+            )
+            
+            # Generate selection report
+            self._generate_interaction_selection_report(interactions, selected_interactions, targets)
+            
+            tprint_success(f"✅ Interaction feature selection completed: {len(interactions)} → {len(selected_interactions)}")
+            return selected_interactions
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature selection failed: {e}")
+            # Fallback to simple selection
+            return interactions[:max_features]
+    
+    def _filter_quality_interactions(self, interactions: List[Any]) -> List[Any]:
+        """Filter interactions based on data quality."""
+        quality_filtered = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            # Check for valid data
+            if data is None or len(data) == 0:
+                continue
+                
+            # Check for NaN values (allow up to 10% NaN)
+            nan_ratio = data.isna().sum() / len(data) if hasattr(data, 'isna') else 0
+            if nan_ratio > 0.1:
+                continue
+                
+            # Check for infinite values
+            if hasattr(data, 'isinf'):
+                inf_ratio = data.isinf().sum() / len(data)
+                if inf_ratio > 0.01:
+                    continue
+            
+            quality_filtered.append(interaction)
+        
+        return quality_filtered
+    
+    def _filter_variance_interactions(self, interactions: List[Any], min_variance: float = 0.01) -> List[Any]:
+        """Filter interactions based on variance."""
+        variance_filtered = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            # Calculate variance
+            if hasattr(data, 'var'):
+                variance = data.var()
+            else:
+                variance = np.var(data)
+            
+            # Skip if variance is too low
+            if variance < min_variance:
+                continue
+                
+            variance_filtered.append(interaction)
+        
+        return variance_filtered
+    
+    def _filter_correlated_interactions(self, interactions: List[Any], max_correlation: float = 0.95) -> List[Any]:
+        """Filter highly correlated interactions."""
+        if len(interactions) <= 1:
+            return interactions
+        
+        # Convert to DataFrame for correlation analysis
+        interaction_data = {}
+        for i, interaction in enumerate(interactions):
+            if 'data' in interaction and 'name' in interaction:
+                interaction_data[interaction['name']] = interaction['data']
+        
+        if not interaction_data:
+            return interactions
+        
+        # Create DataFrame
+        df = pd.DataFrame(interaction_data)
+        
+        # Calculate correlation matrix
+        corr_matrix = df.corr().abs()
+        
+        # Find highly correlated pairs
+        to_remove = set()
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i+1, len(corr_matrix.columns)):
+                if corr_matrix.iloc[i, j] > max_correlation:
+                    # Remove the one with lower variance
+                    col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                    var1 = df[col1].var()
+                    var2 = df[col2].var()
+                    to_remove.add(col1 if var1 < var2 else col2)
+        
+        # Filter out highly correlated interactions
+        correlation_filtered = []
+        for interaction in interactions:
+            if interaction.get('name') not in to_remove:
+                correlation_filtered.append(interaction)
+        
+        return correlation_filtered
+    
+    def _rank_interactions_by_target(self, interactions: List[Any], targets: pd.Series) -> List[Any]:
+        """Rank interactions by their relationship with targets."""
+        ranked_interactions = []
+        
+        for interaction in interactions:
+            if 'data' not in interaction:
+                continue
+                
+            data = interaction['data']
+            
+            try:
+                # Calculate multiple metrics
+                metrics = {}
+                
+                # Correlation
+                if len(data) == len(targets):
+                    correlation = abs(np.corrcoef(data, targets)[0, 1])
+                    if not np.isnan(correlation):
+                        metrics['correlation'] = correlation
+                
+                # Mutual information
+                try:
+                    from sklearn.feature_selection import mutual_info_regression
+                    mi = mutual_info_regression(data.values.reshape(-1, 1), targets)[0]
+                    metrics['mutual_info'] = mi
+                except:
+                    pass
+                
+                # F-score
+                try:
+                    from sklearn.feature_selection import f_regression
+                    f_score, _ = f_regression(data.values.reshape(-1, 1), targets)
+                    metrics['f_score'] = f_score[0] if not np.isnan(f_score[0]) else 0
+                except:
+                    pass
+                
+                # Combined score (weighted average)
+                if metrics:
+                    weights = {'correlation': 0.4, 'mutual_info': 0.3, 'f_score': 0.3}
+                    combined_score = sum(metrics.get(k, 0) * weights.get(k, 0) for k in weights.keys())
+                    interaction['importance_score'] = combined_score
+                    interaction['metrics'] = metrics
+                else:
+                    interaction['importance_score'] = 0
+                    interaction['metrics'] = {}
+                
+                ranked_interactions.append(interaction)
+                
+            except Exception as e:
+                tprint_debug(f"Ranking failed for {interaction.get('name', 'unknown')}: {e}")
+                interaction['importance_score'] = 0
+                interaction['metrics'] = {}
+                ranked_interactions.append(interaction)
+        
+        # Sort by importance score
+        ranked_interactions.sort(key=lambda x: x.get('importance_score', 0), reverse=True)
+        
+        return ranked_interactions
+    
+    def _select_diverse_interactions(self, interactions: List[Any], max_features: int) -> List[Any]:
+        """Select diverse interactions ensuring feature type diversity."""
+        if len(interactions) <= max_features:
+            return interactions
+        
+        # Group by interaction type
+        type_groups = {}
+        for interaction in interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            if interaction_type not in type_groups:
+                type_groups[interaction_type] = []
+            type_groups[interaction_type].append(interaction)
+        
+        # Select features proportionally from each type
+        selected_interactions = []
+        total_types = len(type_groups)
+        
+        for interaction_type, type_interactions in type_groups.items():
+            # Calculate how many to select from this type
+            type_quota = max(1, max_features // total_types)
+            type_quota = min(type_quota, len(type_interactions))
+            
+            # Select top features from this type
+            selected_from_type = type_interactions[:type_quota]
+            selected_interactions.extend(selected_from_type)
+            
+            tprint_debug(f"📊 {interaction_type}: {len(type_interactions)} → {len(selected_from_type)}")
+        
+        # If we still need more features, add the highest scoring ones
+        if len(selected_interactions) < max_features:
+            remaining_interactions = [i for i in interactions if i not in selected_interactions]
+            remaining_interactions.sort(key=lambda x: x.get('importance_score', 0), reverse=True)
+            needed = max_features - len(selected_interactions)
+            selected_interactions.extend(remaining_interactions[:needed])
+        
+        return selected_interactions[:max_features]
+    
+    def _convert_interactions_to_dataframe(self, interactions: List[Any]) -> Optional[pd.DataFrame]:
+        """Convert interactions to DataFrame format for feature selection pipeline."""
+        try:
+            interaction_data = {}
+            
+            for i, interaction in enumerate(interactions):
+                if 'data' not in interaction:
+                    continue
+                    
+                data = interaction['data']
+                name = interaction.get('name', f'interaction_{i}')
+                
+                # Ensure data is a pandas Series
+                if not isinstance(data, pd.Series):
+                    if isinstance(data, np.ndarray):
+                        data = pd.Series(data, name=name)
+                    else:
+                        data = pd.Series(data, name=name)
+                
+                # Align data length (pad with NaN if necessary)
+                if len(data) > 0:
+                    interaction_data[name] = data
+            
+            if not interaction_data:
+                return None
+                
+            # Create DataFrame
+            features_df = pd.DataFrame(interaction_data)
+            
+            # Store original interaction metadata
+            features_df.attrs['interaction_metadata'] = {
+                i: interaction for i, interaction in enumerate(interactions)
+                if 'data' in interaction
+            }
+            
+            return features_df
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to convert interactions to DataFrame: {e}")
+            return None
+    
+    def _use_final_feature_selection_pipeline(self, features_df: pd.DataFrame, targets: Optional[pd.Series], 
+                                            max_features: int, original_interactions: List[Any]) -> List[Any]:
+        """Use the final feature selection pipeline for sophisticated selection."""
+        try:
+            # Import the final feature selection component
+            from src.training.steps.pre_training.components.final_feature_selection import (
+                FinalFeatureSelectionComponent, FinalFeatureSelectionConfig
+            )
+            
+            # Create configuration for interaction selection
+            config = FinalFeatureSelectionConfig(
+                max_features=max_features,  # Ensure we can get up to 100 features
+                min_features=min(20, max_features // 2),  # At least 20 features
+                # Use multi-stage selection to ensure we can reach target
+                selection_stages=[max_features * 1.5, max_features * 1.2, max_features, max_features * 0.9],
+                enable_vectorbt_optimization=True,
+                enable_economic_evaluation=True,
+                enable_stability_analysis=True,
+                # Focus on features that work well together
+                sharpe_ratio_weight=0.3,
+                drawdown_weight=0.25,
+                turnover_weight=0.2,
+                stability_weight=0.15,
+                diversity_weight=0.1
+            )
+            
+            # Create component
+            component = FinalFeatureSelectionComponent(config)
+            
+            # Prepare targets if available
+            if targets is not None:
+                aligned_targets = targets.align(features_df.index, join='inner')[0]
+                if len(aligned_targets) == 0:
+                    tprint_warning("⚠️ No aligned targets available")
+                    aligned_targets = None
+            else:
+                aligned_targets = None
+            
+            # Run feature selection
+            tprint_info("🔧 Running final feature selection pipeline")
+            selection_result = component.select_features(
+                features_df, 
+                aligned_targets,
+                method='multi_stage'
+            )
+            
+            # Extract selected feature names
+            selected_feature_names = selection_result.get('selected_features', [])
+            
+            # Map back to original interactions
+            selected_interactions = []
+            interaction_metadata = features_df.attrs.get('interaction_metadata', {})
+            
+            for feature_name in selected_feature_names:
+                for i, interaction in enumerate(original_interactions):
+                    if interaction.get('name') == feature_name or f'interaction_{i}' == feature_name:
+                        selected_interactions.append(interaction)
+                        break
+            
+            tprint_success(f"✅ Final feature selection: {len(features_df.columns)} → {len(selected_interactions)}")
+            
+            # Store selection metadata
+            for interaction in selected_interactions:
+                interaction['selection_metadata'] = {
+                    'method': 'final_feature_selection_pipeline',
+                    'config': config.__dict__,
+                    'selection_result': selection_result
+                }
+            
+            return selected_interactions
+            
+        except Exception as e:
+            tprint_error(f"❌ Final feature selection pipeline failed: {e}")
+            raise RuntimeError(f"Feature selection failed: {e}") from e
+    
+    
+    def _generate_interaction_selection_report(self, original_interactions: List[Any], selected_interactions: List[Any], targets: Optional[pd.Series]) -> None:
+        """Generate detailed interaction selection report."""
+        tprint_info("📋 Generating interaction selection report")
+        
+        # Count by type
+        original_types = {}
+        selected_types = {}
+        
+        for interaction in original_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            original_types[interaction_type] = original_types.get(interaction_type, 0) + 1
+        
+        for interaction in selected_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            selected_types[interaction_type] = selected_types.get(interaction_type, 0) + 1
+        
+        # Calculate selection ratios
+        selection_ratio = len(selected_interactions) / len(original_interactions) if original_interactions else 0
+        
+        # Log report
+        tprint_info(f"📊 Interaction Selection Report:")
+        tprint_info(f"  - Total interactions: {len(original_interactions)}")
+        tprint_info(f"  - Selected interactions: {len(selected_interactions)}")
+        tprint_info(f"  - Selection ratio: {selection_ratio:.2%}")
+        tprint_info(f"  - Interaction types:")
+        
+        for interaction_type in sorted(set(original_types.keys()) | set(selected_types.keys())):
+            original_count = original_types.get(interaction_type, 0)
+            selected_count = selected_types.get(interaction_type, 0)
+            type_ratio = selected_count / original_count if original_count > 0 else 0
+            tprint_info(f"    - {interaction_type}: {original_count} → {selected_count} ({type_ratio:.2%})")
+        
+        # Log top features with selection metadata
+        if selected_interactions:
+            tprint_info(f"  - Top 5 selected interactions:")
+            for i, interaction in enumerate(selected_interactions[:5]):
+                name = interaction.get('name', f'interaction_{i}')
+                interaction_type = interaction.get('type', 'unknown')
+                selection_metadata = interaction.get('selection_metadata', {})
+                method = selection_metadata.get('method', 'unknown')
+                tprint_info(f"    {i+1}. {name} ({interaction_type}) - Method: {method}")
+        
+        # Log selection objectives (if available)
+        if selected_interactions and 'selection_metadata' in selected_interactions[0]:
+            config = selected_interactions[0]['selection_metadata'].get('config', {})
+            tprint_info(f"  - Selection objectives:")
+            tprint_info(f"    - Sharpe ratio weight: {config.get('sharpe_weight', 0):.2f}")
+            tprint_info(f"    - Drawdown weight: {config.get('drawdown_weight', 0):.2f}")
+            tprint_info(f"    - Stability weight: {config.get('stability_weight', 0):.2f}")
+            tprint_info(f"    - Diversity weight: {config.get('diversity_weight', 0):.2f}")
+    
+    def _generate_selection_report(self, original_interactions: List[Any], selected_interactions: List[Any], targets: Optional[pd.Series]) -> None:
+        """Generate detailed selection report."""
+        tprint_info("📋 Generating feature selection report")
+        
+        # Count by type
+        original_types = {}
+        selected_types = {}
+        
+        for interaction in original_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            original_types[interaction_type] = original_types.get(interaction_type, 0) + 1
+        
+        for interaction in selected_interactions:
+            interaction_type = interaction.get('type', 'unknown')
+            selected_types[interaction_type] = selected_types.get(interaction_type, 0) + 1
+        
+        # Calculate selection ratios
+        selection_ratio = len(selected_interactions) / len(original_interactions) if original_interactions else 0
+        
+        # Log report
+        tprint_info(f"📊 Selection Report:")
+        tprint_info(f"  - Total interactions: {len(original_interactions)}")
+        tprint_info(f"  - Selected interactions: {len(selected_interactions)}")
+        tprint_info(f"  - Selection ratio: {selection_ratio:.2%}")
+        tprint_info(f"  - Feature types:")
+        
+        for interaction_type in sorted(set(original_types.keys()) | set(selected_types.keys())):
+            original_count = original_types.get(interaction_type, 0)
+            selected_count = selected_types.get(interaction_type, 0)
+            type_ratio = selected_count / original_count if original_count > 0 else 0
+            tprint_info(f"    - {interaction_type}: {original_count} → {selected_count} ({type_ratio:.2%})")
+        
+        # Log top features
+        if selected_interactions:
+            tprint_info(f"  - Top 5 features by importance:")
+            for i, interaction in enumerate(selected_interactions[:5]):
+                name = interaction.get('name', f'feature_{i}')
+                score = interaction.get('importance_score', 0)
+                interaction_type = interaction.get('type', 'unknown')
+                tprint_info(f"    {i+1}. {name} ({interaction_type}): {score:.4f}")
+
     def _enhanced_interaction_generation(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
         """Enhanced interaction generation with VectorBT optimization and feature engineering roadmap."""
         tprint_info("🔗 Starting enhanced interaction generation with comprehensive logging")
@@ -4093,7 +4832,7 @@ class UnifiedDataDrivenPipeline:
                 'n_trials': 25,  # Reduced iterations for light mode
                 'n_bootstrap_samples': 20,
                 'cv_folds': 3,
-                'max_features': 50,
+                'max_features': 45,  # Decreased by 10% for early pruning
                 'max_lookback': 30,
                 'early_stopping_patience': 5,  # Earlier stopping for light mode
                 'coarse_grid_trials': 10,  # Reduced grid trials

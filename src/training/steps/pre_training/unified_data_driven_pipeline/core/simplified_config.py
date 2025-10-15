@@ -82,8 +82,8 @@ class SimplifiedConfig:
         self.config.interaction_generation.htf_interaction_ratio = 0.2  # Reduced HTF interactions
         
         # Reduce feature selection intensity
-        self.config.feature_selection.multi_objective.max_features = 25  # Reduced from 50
-        self.config.feature_selection.multi_objective.min_features = 3  # Reduced from 5
+        self.config.feature_selection.multi_objective.max_features = 22  # Reduced from 25 (-10% early pruning)
+        self.config.feature_selection.multi_objective.min_features = 2   # Reduced from 3 (-10% early pruning)
         self.config.feature_selection.multi_objective.max_generations = 50  # Reduced from 100
         self.config.feature_selection.multi_objective.population_size = 25  # Reduced from 50
         self.config.feature_selection.cv_config.n_splits = 3  # Reduced from 5
@@ -122,8 +122,8 @@ class SimplifiedConfig:
         self.config.interaction_generation.batch_size = 200  # Smaller batches
         
         # Light feature selection - same structure, reduced parameters
-        self.config.feature_selection.multi_objective.max_features = 10  # Reduced from 50
-        self.config.feature_selection.multi_objective.min_features = 2  # Reduced from 5
+        self.config.feature_selection.multi_objective.max_features = 9   # Reduced from 10 (-10% early pruning)
+        self.config.feature_selection.multi_objective.min_features = 1   # Reduced from 2 (-10% early pruning)
         self.config.feature_selection.multi_objective.max_generations = 20  # Reduced from 100
         self.config.feature_selection.multi_objective.population_size = 10  # Reduced from 50
         self.config.feature_selection.cv_config.n_splits = 2  # Reduced from 5

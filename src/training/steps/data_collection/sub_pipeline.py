@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 """
 Unified Data Collection Sub-Pipeline
@@ -1419,6 +1420,23 @@ class DataCollectionSubPipeline:
                     
                     # Copy file
                     import shutil
+                    shutil.copy2(source_path, dest_path)
+                    stored_count += 1
+                    total_size += os.path.getsize(dest_path)
+            
+            # Update artifacts
+            artifacts['stored_files'] = [f for f in processed_files if os.path.exists(os.path.join(storage_dir, f))]
+            artifacts['storage_stats'] = {
+                'files_stored': stored_count,
+                'total_size_mb': total_size / (1024 * 1024),
+                'storage_path': storage_dir
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Data storage failed: {e}")
+            raise
+        
+        return artifacts
 
 # VectorBT imports for native optimization
 try:
@@ -1453,30 +1471,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-                    shutil.copy2(source_path, dest_path)
-                    
-                    # Get file size
-                    file_size = os.path.getsize(dest_path)
-                    total_size += file_size
-                    
-                    artifacts['stored_files'].append(file_name)
-                    stored_count += 1
-                    
-                    self.logger.info(f"💾 Stored {file_name} ({file_size / 1024 / 1024:.2f} MB)")
-            
-            artifacts['storage_stats'] = {
-                'files_stored': stored_count,
-                'total_size_mb': total_size / 1024 / 1024,
-                'storage_directory': storage_dir
-            }
-            
-            self.logger.info(f"✅ Storage completed: {stored_count} files, {total_size / 1024 / 1024:.2f} MB")
-            
-        except Exception as e:
-            self.logger.exception(f"❌ Error in data storage pipeline: {e}")
-            artifacts['storage_stats'] = {'error': str(e)}
-        
-        return artifacts
     
     @log_important_calls
     async def _data_monitoring_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:

@@ -757,6 +757,42 @@ class ComponentFactory:
             except ImportError as e:
                 raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
 
+        # Multi-horizon profit labeler moved to pre_training stage
+        # Handle HMM training components (DEPRECATED - removed)
+        if component_name == 'hmm_models_training':
+            tprint("⚠️ [COMPONENT_FACTORY] HMM models training is deprecated", color="yellow")
+            raise ValueError("HMM models training is deprecated and no longer available")
+        
+        if component_name == 'hmm_ensemble_training':
+            tprint("⚠️ [COMPONENT_FACTORY] HMM ensemble training is deprecated", color="yellow")
+            raise ValueError("HMM ensemble training is deprecated and no longer available")
+        
+        if component_name not in self._components:
+            available_components = list(self._components.keys()) + ['regime_data_splitting']
+            tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
+            tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
+            raise ValueError(
+                f"Unknown component: {component_name}. "
+                f"Available components: {available_components}"
+            )
+
+        tprint(f"🔧 [COMPONENT_FACTORY] Creating {component_name} from registered components", color="yellow")
+        component_class = self._components[component_name]
+
+        # Handle None component classes
+        if component_class is None:
+            tprint(f"❌ [COMPONENT_FACTORY] Component {component_name} is not available", color="red")
+            raise ValueError(f"Component {component_name} is not available. Required dependencies may be missing.")
+
+        # Create component instance
+        try:
+            component = component_class(config)
+            tprint(f"✅ [COMPONENT_FACTORY] Created {component_name}", color="green")
+            return component
+        except Exception as e:
+            tprint(f"❌ [COMPONENT_FACTORY] Failed to create {component_name}: {e}", color="red")
+            raise
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -790,37 +826,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-        
-        # Multi-horizon profit labeler moved to pre_training stage
-        # Handle HMM training components (DEPRECATED - removed)
-        if component_name == 'hmm_models_training':
-            tprint("⚠️ [COMPONENT_FACTORY] HMM models training is deprecated", color="yellow")
-            raise ValueError("HMM models training is deprecated and no longer available")
-        
-        if component_name == 'hmm_ensemble_training':
-            tprint("⚠️ [COMPONENT_FACTORY] HMM ensemble training is deprecated", color="yellow")
-            raise ValueError("HMM ensemble training is deprecated and no longer available")
-        
-        if component_name not in self._components:
-            available_components = list(self._components.keys()) + ['regime_data_splitting']
-            tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
-            tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
-            raise ValueError(
-                f"Unknown component: {component_name}. "
-                f"Available components: {available_components}"
-            )
-
-        tprint(f"🔧 [COMPONENT_FACTORY] Creating {component_name} from registered components", color="yellow")
-        component_class = self._components[component_name]
-
-        # Handle None component classes
-        if component_class is None:
-            tprint(f"❌ [COMPONENT_FACTORY] Component {component_name} is not available", color="red")
-            raise ValueError(f"Component {component_name} is not available. Required dependencies may be missing.")
-
-        component = component_class(config)
-        tprint(f"✅ [COMPONENT_FACTORY] Successfully created {component_name}", color="green")
-        return component
     
     @classmethod
     def register_component(

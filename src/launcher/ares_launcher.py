@@ -1179,72 +1179,89 @@ class AresLauncher:
         
         return result
     
-    async def _execute_feature_generation_step(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
-        """Execute a specific feature generation step."""
-        try:
-            tprint(f"🚀 [FEATURE_GENERATION] Executing feature generation step: {sub_pipeline}")
-            
-            # Import the step module
-            step_module = __import__(f'src.training.steps.pre_training.unified_data_driven_pipeline.steps.{sub_pipeline}', fromlist=['FeatureGenerationStep'])
-            
-            # Get the step class
-            step_class_name = ''.join(word.capitalize() for word in sub_pipeline.split('_'))
-            step_class = getattr(step_module, step_class_name)
-            
-            # Create step instance
-            step = step_class()
-            
-            # Execute the step
-            result = await step.execute(
-                data=config.data,
-                symbol=config.symbol,
-                timeframe=config.timeframe,
-                direction=config.direction,
-                intensity=config.execution_mode,
-                lookback_days=config.lookback_days,
-                start_date=config.start_date,
-                end_date=config.end_date,
-                exchange=config.exchange
-            )
-            
-            # Create MainPipelineResult
-            pipeline_result = MainPipelineResult(
-                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                status=SubPipelineStatus.COMPLETED if result.get('success', False) else SubPipelineStatus.FAILED,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                duration_seconds=0.0,
-                error_message=result.get('error', None) if not result.get('success', False) else None
-            )
-            
-            # Add artifacts
-            pipeline_result.artifacts = result.get('artifacts', {})
-            
-            tprint(f"✅ [FEATURE_GENERATION] Feature generation step completed: {sub_pipeline}")
-            return pipeline_result
-            
-        except Exception as e:
-            error_msg = f"Feature generation step {sub_pipeline} failed: {e}"
-            tprint_error(f"❌ {error_msg}")
-            
-            return MainPipelineResult(
-                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                status=SubPipelineStatus.FAILED,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                duration_seconds=0.0,
-                error_message=error_msg
-            )
     
-    async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
-        """Execute a specific sub-pipeline."""
-        # Handle feature generation steps
+    async def _execute_sub_pipeline_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute a specific sub-pipeline directly (for internal use in sequential mode)."""
+        # Handle feature generation steps directly
         if sub_pipeline.startswith('feature_generation_'):
-            return await self._execute_feature_generation_step(sub_pipeline, config)
+            return await self._execute_feature_generation_step_direct(sub_pipeline, config)
         
         # Handle unified data driven pipeline shortcuts
         if sub_pipeline.startswith('unified_data_driven_pipeline'):
             return await self._execute_unified_pipeline_shortcut(sub_pipeline, config)
+        
+        # Find the stage containing this sub-pipeline
+        target_stage = None
+        for stage in PipelineStage:
+            available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
+            if sub_pipeline in available_sub_pipelines:
+                target_stage = stage
+                break
+        
+        if not target_stage:
+            raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
+        
+        # Log sub-pipeline transition
+        self._log_sub_pipeline_transition(None, sub_pipeline, target_stage.value)
+        
+        # Check for existing outcome files
+        outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
+        if outcome_data:
+            timestamp = outcome_data.get('metadata', {}).get('timestamp', outcome_data.get('timestamp', 'unknown'))
+            self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
+        
+        # Create mid-function artifacts for the sub-pipeline
+        artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
+        
+        # Execute only the specified sub-pipeline with automatic chaining
+        # Use execute_sub_pipeline_with_chain for automatic sequential execution
+        sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, sub_pipeline, config)
+        
+        # Create a MainPipelineResult to maintain compatibility
+        result = MainPipelineResult(
+            pipeline_id=f"sub_pipeline_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            status=sub_pipeline_result.status if sub_pipeline_result else SubPipelineStatus.FAILED,
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_seconds=sub_pipeline_result.duration_seconds if sub_pipeline_result else 0.0,
+            error_message=sub_pipeline_result.error_message if sub_pipeline_result else "Sub-pipeline execution failed"
+        )
+        
+        # Add the sub-pipeline result to the stage results
+        if sub_pipeline_result:
+            result.stage_results[target_stage] = [sub_pipeline_result]
+        
+        # Calculate overall metrics for sub-pipeline execution
+        self.pipeline._calculate_pipeline_metrics(result)
+        
+        # Create outcome file for this sub-pipeline
+        if result.stage_results and target_stage in result.stage_results:
+            stage_results = result.stage_results[target_stage]
+            for sub_result in stage_results:
+                if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
+                    await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
+                    break
+        
+        # Store execution
+        self.current_execution = result
+        self.execution_history.append(result)
+        
+        # Log results
+        self._log_execution_results(result)
+        
+        return result
+    
+    async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute a specific sub-pipeline."""
+        # Handle feature generation steps - redirect to sequential mode
+        if sub_pipeline.startswith('feature_generation_'):
+            tprint(f"⚠️ [SUB_PIPELINE] Individual feature generation steps are deprecated.")
+            tprint(f"   Use --mode sequential instead for feature generation pipeline.")
+            tprint(f"   Example: python3 src/launcher/ares_launcher.py --mode sequential --symbol {config.symbol} --execution-mode {config.execution_mode}")
+            raise ValueError(f"Individual feature generation steps are deprecated. Use --mode sequential instead.")
+        
+        # Use the direct method for other sub-pipelines
+        return await self._execute_sub_pipeline_direct(sub_pipeline, config)
         
         # Find the stage containing this sub-pipeline
         target_stage = None
@@ -1362,8 +1379,8 @@ class AresLauncher:
             tprint(f"{'='*80}")
             
             try:
-                # Execute the sub-pipeline step
-                step_result = await self._execute_sub_pipeline(step['sub_pipeline'], config)
+                # Execute the sub-pipeline step directly (bypassing the redirect)
+                step_result = await self._execute_sub_pipeline_direct(step['sub_pipeline'], config)
                 step_duration = (datetime.now() - step_start_time).total_seconds()
                 total_execution_time += step_duration
                 
@@ -1455,6 +1472,63 @@ class AresLauncher:
         self.execution_history.append(result)
         
         return result
+    
+    async def _execute_feature_generation_step_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute a specific feature generation step directly (for internal use in sequential mode)."""
+        try:
+            tprint(f"🚀 [FEATURE_GENERATION] Executing feature generation step: {sub_pipeline}")
+            
+            # Import the step module
+            step_module = __import__(f'src.training.steps.pre_training.unified_data_driven_pipeline.steps.{sub_pipeline}', fromlist=['FeatureGenerationStep'])
+            
+            # Get the step class
+            step_class_name = ''.join(word.capitalize() for word in sub_pipeline.split('_'))
+            step_class = getattr(step_module, step_class_name)
+            
+            # Create step instance
+            step = step_class()
+            
+            # Execute the step
+            result = await step.execute(
+                data=config.data,
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                direction=config.direction,
+                intensity=config.execution_mode,
+                lookback_days=config.lookback_days,
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=config.exchange
+            )
+            
+            # Create MainPipelineResult
+            pipeline_result = MainPipelineResult(
+                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.COMPLETED if result.get('success', False) else SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=result.get('error', None) if not result.get('success', False) else None
+            )
+            
+            # Add artifacts
+            pipeline_result.artifacts = result.get('artifacts', {})
+            
+            tprint(f"✅ [FEATURE_GENERATION] Feature generation step completed: {sub_pipeline}")
+            return pipeline_result
+            
+        except Exception as e:
+            error_msg = f"Feature generation step {sub_pipeline} failed: {e}"
+            tprint_error(f"❌ {error_msg}")
+            
+            return MainPipelineResult(
+                pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=error_msg
+            )
     
     async def _create_mid_function_artifacts(self, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for full pipeline execution."""
@@ -2088,7 +2162,7 @@ Examples:
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_generation_data_validation_step, feature_generation_labeling_integration_step, feature_generation_feature_generation_step, feature_generation_feature_selection_step, feature_generation_period_lookback_optimization_step, feature_generation_interaction_generation_step, feature_generation_vectorization_step, feature_generation_final_validation_step, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble. For feature generation steps, use --mode sequential instead.'
     )
     
     parser.add_argument(

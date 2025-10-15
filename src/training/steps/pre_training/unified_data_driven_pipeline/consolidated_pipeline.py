@@ -1757,7 +1757,7 @@ class UnifiedDataDrivenPipeline:
         tprint_info("📊 Detailed pipeline reporter initialized")
     
     async def process(self, data: pd.DataFrame, 
-                targets: Optional[pd.Series] = None,
+                targets: pd.Series,
                 feature_columns: Optional[List[str]] = None,
                 timeframe: str = "15m",
                 pipeline_state: Optional[Dict[str, Any]] = None) -> ConsolidatedPipelineResult:
@@ -1766,7 +1766,7 @@ class UnifiedDataDrivenPipeline:
         
         Args:
             data: Input data with OHLCV columns
-            targets: Optional target series for supervised learning
+            targets: Required target series for supervised learning and optimization
             feature_columns: Optional list of feature columns to use
             timeframe: Target timeframe (e.g., "15m", "5m", "1h")
             pipeline_state: Optional pipeline state dictionary
@@ -1787,6 +1787,10 @@ class UnifiedDataDrivenPipeline:
         try:
             # Fast fail validation - check critical requirements first
             self._validate_critical_requirements(data, targets, timeframe, pipeline_state)
+            
+            # Validate that targets are provided (required for target-driven optimization)
+            if targets is None:
+                raise ValueError("Targets are required for target-driven optimization. Please provide target series.")
             
             # Enhanced data processing and validation using unified utilities
             tprint_info("🔍 Performing comprehensive data validation and processing...")
@@ -4567,13 +4571,7 @@ class UnifiedDataDrivenPipeline:
         
         try:
             # Prepare data for optimization
-            if targets is None:
-                # Create synthetic targets if none provided
-                if 'close' in data.columns:
-                    targets = data['close'].pct_change().dropna()
-                else:
-                    tprint_warning("⚠️ No targets provided and no close price available")
-                    return {}
+            # Targets are now required and should be provided by the pipeline runner
             
             # Align data and targets
             aligned_data = data.copy()
@@ -5038,13 +5036,7 @@ class UnifiedDataDrivenPipeline:
         
         try:
             # Prepare data for feature generation
-            if targets is None:
-                # Create synthetic targets if none provided
-                if 'close' in data.columns:
-                    targets = data['close'].pct_change().dropna()
-                else:
-                    tprint_warning("⚠️ No targets provided and no close price available")
-                    return self._create_empty_enhanced_feature_result()
+            # Targets are now required and should be provided by the pipeline runner
             
             # Align data and targets
             aligned_data = data.copy()
@@ -6609,7 +6601,7 @@ def create_unified_pipeline(config: Optional[UnifiedPipelineConfig] = None) -> U
 
 
 async def process_with_unified_pipeline(data: pd.DataFrame,
-                                targets: Optional[pd.Series] = None,
+                                targets: pd.Series,
                                 feature_columns: Optional[List[str]] = None,
                                 timeframe: str = "15m",
                                 config: Optional[UnifiedPipelineConfig] = None,
@@ -6619,7 +6611,7 @@ async def process_with_unified_pipeline(data: pd.DataFrame,
     
     Args:
         data: Input data with features
-        targets: Target variable
+        targets: Required target variable for optimization
         feature_columns: Optional list of feature columns to use
         timeframe: Target timeframe
         config: Optional pipeline configuration
@@ -6628,7 +6620,7 @@ async def process_with_unified_pipeline(data: pd.DataFrame,
         ConsolidatedPipelineResult with selected features and performance metrics
     """
     pipeline = create_unified_pipeline(config)
-    return pipeline.process(data, targets, feature_columns, timeframe, pipeline_state)
+    return await pipeline.process(data, targets, feature_columns, timeframe, pipeline_state)
 
 
 # Export main classes and functions

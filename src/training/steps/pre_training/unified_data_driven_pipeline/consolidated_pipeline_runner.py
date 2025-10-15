@@ -148,6 +148,9 @@ class ConsolidatedPipelineRunner:
             if self.pipeline is None:
                 raise RuntimeError("Failed to create unified pipeline with new configuration")
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -162,7 +165,7 @@ class ConsolidatedPipelineRunner:
             
             tprint_info("🚀 Executing pipeline up to data validation")
             # Run pipeline up to data validation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             if result is None:
                 raise RuntimeError("Pipeline returned None result")
@@ -241,6 +244,9 @@ class ConsolidatedPipelineRunner:
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -254,7 +260,7 @@ class ConsolidatedPipelineRunner:
             }
             
             # Run pipeline up to feature generation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract feature generation results
             feature_result = {
@@ -311,8 +317,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'feature_selection'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to feature selection
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract feature selection results
             selection_result = {
@@ -369,8 +378,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'period_optimization'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to period optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract period optimization results
             optimization_result = {
@@ -425,8 +437,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'lookback_optimization'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to lookback optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract lookback optimization results
             optimization_result = {
@@ -481,8 +496,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'period_lookback_optimization'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to concurrent period + lookback optimization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract period + lookback optimization results
             optimization_result = {
@@ -543,8 +561,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'interaction_generation'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to interaction generation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract interaction generation results
             interaction_result = {
@@ -601,8 +622,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'vectorization'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to vectorization
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract vectorization results
             vectorization_result = {
@@ -659,8 +683,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'labeling_integration'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to labeling integration
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract labeling integration results
             labeling_result = {
@@ -717,8 +744,11 @@ class ConsolidatedPipelineRunner:
                 'step': 'final_validation'
             }
             
+            # Generate targets before running pipeline
+            targets = self._generate_targets(data, symbol, timeframe, direction)
+            
             # Run pipeline up to final validation
-            result = await self.pipeline.process(data, timeframe=timeframe, pipeline_state=pipeline_state)
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
             
             # Extract final validation results
             validation_result = {
@@ -748,6 +778,44 @@ class ConsolidatedPipelineRunner:
                 'pipeline_summary': {}
             }
     
+    def _generate_targets(self, data: pd.DataFrame, symbol: str, timeframe: str, direction: str) -> pd.Series:
+        """
+        Generate targets using the labeling system before running the pipeline.
+        
+        Args:
+            data: Input DataFrame with OHLCV columns
+            symbol: Trading symbol
+            timeframe: Time frame for analysis
+            direction: Trading direction
+            
+        Returns:
+            Generated target series
+        """
+        try:
+            tprint_info("🏷️ Generating targets using labeling system")
+            
+            # Create a temporary pipeline to generate labels
+            temp_config = self._create_config_from_intensity("blank")
+            temp_pipeline = create_unified_pipeline(temp_config)
+            
+            # Generate labels using the labeling adapter
+            labeling_result = temp_pipeline.labeling_adapter.generate_labels(data, None, None)
+            
+            if labeling_result.get('success', False):
+                labeled_data = labeling_result.get('labeled_data', pd.DataFrame())
+                if 'target' in labeled_data.columns:
+                    targets = labeled_data['target']
+                    tprint_success(f"✅ Generated {len(targets)} targets")
+                    return targets
+                else:
+                    raise ValueError("No 'target' column found in labeled data")
+            else:
+                raise ValueError(f"Labeling failed: {labeling_result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            tprint_error(f"❌ Target generation failed: {e}")
+            raise RuntimeError(f"Failed to generate targets: {e}") from e
+
     def _create_config_from_intensity(self, intensity: str, custom_overrides: Optional[Dict[str, Any]] = None) -> UnifiedPipelineConfig:
         """
         Create configuration based on intensity level.

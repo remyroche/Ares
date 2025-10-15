@@ -103,7 +103,7 @@ class PeriodLookbackOptimizationStep:
     
     async def execute(self, 
                      data: pd.DataFrame, 
-                     targets: Optional[pd.Series] = None,
+                     targets: pd.Series,
                      pipeline_state: Optional[Dict[str, Any]] = None,
                      **kwargs) -> Dict[str, Any]:
         """
@@ -111,7 +111,7 @@ class PeriodLookbackOptimizationStep:
         
         Args:
             data: Input data with OHLCV columns
-            targets: Target series for optimization
+            targets: Required target series for optimization
             pipeline_state: Pipeline state dictionary
             **kwargs: Additional arguments
             
@@ -172,7 +172,7 @@ class PeriodLookbackOptimizationStep:
                 }
             }
     
-    def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> None:
+    def _validate_inputs(self, data: pd.DataFrame, targets: pd.Series) -> None:
         """Validate input data and parameters."""
         if data is None or data.empty:
             raise ValueError("Data cannot be None or empty")
@@ -180,16 +180,18 @@ class PeriodLookbackOptimizationStep:
         if not isinstance(data, pd.DataFrame):
             raise TypeError(f"Data must be DataFrame, got {type(data)}")
         
-        if targets is not None:
-            if not isinstance(targets, pd.Series):
-                raise TypeError(f"Targets must be Series, got {type(targets)}")
-            
-            if len(targets) != len(data):
-                raise ValueError(f"Data and targets length mismatch: {len(data)} vs {len(targets)}")
+        if targets is None:
+            raise ValueError("Targets are required for target-driven optimization")
+        
+        if not isinstance(targets, pd.Series):
+            raise TypeError(f"Targets must be Series, got {type(targets)}")
+        
+        if len(targets) != len(data):
+            raise ValueError(f"Data and targets length mismatch: {len(data)} vs {len(targets)}")
     
     async def _execute_concurrent_optimization(self, 
                                              data: pd.DataFrame, 
-                                             targets: Optional[pd.Series],
+                                             targets: pd.Series,
                                              pipeline: UnifiedDataDrivenPipeline,
                                              pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Execute concurrent period and lookback optimization."""
@@ -214,7 +216,7 @@ class PeriodLookbackOptimizationStep:
     
     async def _sequential_optimization(self, 
                                      data: pd.DataFrame, 
-                                     targets: Optional[pd.Series],
+                                     targets: pd.Series,
                                      pipeline: UnifiedDataDrivenPipeline,
                                      pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Fallback sequential optimization."""
@@ -235,7 +237,7 @@ class PeriodLookbackOptimizationStep:
     
     async def _optimize_periods(self, 
                                data: pd.DataFrame, 
-                               targets: Optional[pd.Series],
+                               targets: pd.Series,
                                pipeline: UnifiedDataDrivenPipeline) -> Dict[str, Any]:
         """Optimize periods for features."""
         try:
@@ -253,7 +255,7 @@ class PeriodLookbackOptimizationStep:
     
     async def _optimize_lookbacks(self, 
                                  data: pd.DataFrame, 
-                                 targets: Optional[pd.Series],
+                                 targets: pd.Series,
                                  pipeline: UnifiedDataDrivenPipeline) -> Dict[str, Any]:
         """Optimize lookbacks for features."""
         try:
@@ -269,7 +271,7 @@ class PeriodLookbackOptimizationStep:
             tprint_warning(f"⚠️ Lookback optimization failed: {e}")
             return {'optimized_lookbacks': {}, 'lookback_scores': {}}
     
-    def _fallback_period_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+    def _fallback_period_optimization(self, data: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
         """Fallback period optimization implementation."""
         tprint_info("🔄 Using fallback period optimization")
         
@@ -308,7 +310,7 @@ class PeriodLookbackOptimizationStep:
             'period_scores': period_scores
         }
     
-    def _fallback_lookback_optimization(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> Dict[str, Any]:
+    def _fallback_lookback_optimization(self, data: pd.DataFrame, targets: pd.Series) -> Dict[str, Any]:
         """Fallback lookback optimization implementation."""
         tprint_info("🔄 Using fallback lookback optimization")
         
@@ -471,7 +473,7 @@ class PeriodLookbackOptimizationStep:
 # Convenience function for ares_launcher.py
 async def run_period_lookback_optimization_step(
     data: pd.DataFrame,
-    targets: Optional[pd.Series] = None,
+    targets: pd.Series,
     config: Optional[PeriodLookbackOptimizationConfig] = None,
     pipeline_state: Optional[Dict[str, Any]] = None,
     **kwargs
@@ -481,7 +483,7 @@ async def run_period_lookback_optimization_step(
     
     Args:
         data: Input data with OHLCV columns
-        targets: Target series for optimization
+        targets: Required target series for optimization
         config: Configuration for the optimization step
         pipeline_state: Pipeline state dictionary
         **kwargs: Additional arguments
@@ -507,7 +509,7 @@ if __name__ == "__main__":
         'volume': np.random.randint(1000, 10000, 1000)
     }, index=dates)
     
-    # Create sample targets
+    # Create sample targets (in real usage, these would come from labeling system)
     targets = pd.Series(np.random.randn(1000), index=dates)
     
     # Run optimization

@@ -1,5 +1,6 @@
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+import warnings
 
 from typing import Dict, Optional, Any, Union
 import numpy as np
@@ -640,12 +641,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
         logger = logging.getLogger(__name__)

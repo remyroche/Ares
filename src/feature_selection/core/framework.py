@@ -286,3 +286,74 @@ def enhanced_select_features(
     """Legacy compatibility function."""
     tprint("⚠️ Using legacy enhanced_select_features - consider using select_features")
     return select_features(X, y, method, max_features, **kwargs)
+
+
+def run_comprehensive_feature_selection(
+    X: Union[np.ndarray, pd.DataFrame],
+    y: Union[np.ndarray, pd.Series, List[float], List[int]],
+    feature_names: Optional[List[str]] = None,
+    target_count: Optional[int] = None,
+    model_type: str = 'default',
+    enable_all_optimizations: bool = True,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Run comprehensive feature selection with all optimizations enabled.
+
+    This is a convenience function that wraps select_features with comprehensive
+    settings for maximum effectiveness across all feature selection methods.
+
+    Args:
+        X: Feature matrix (np.ndarray or pandas DataFrame)
+        y: Target vector
+        feature_names: Optional list of feature names
+        target_count: Target number of features to select (if None, auto-determined)
+        model_type: Type of model for feature selection ('classification', 'regression', 'default')
+        enable_all_optimizations: Whether to enable all optimizations
+        **kwargs: Additional parameters passed to select_features
+
+    Returns:
+        Dictionary with comprehensive selection results
+    """
+    tprint("🚀 Starting comprehensive feature selection...")
+
+    # Determine if this is classification or regression
+    y_array = np.asarray(y)
+    is_classification = model_type == 'classification' or (
+        model_type == 'default' and (
+            len(np.unique(y_array)) < 20 or
+            (np.issubdtype(y_array.dtype, np.integer) and np.max(y_array) < 100)
+        )
+    )
+
+    tprint(f"📊 Input: {X.shape[0]} samples, {X.shape[1]} features, "
+           f"classification: {is_classification}, model_type: {model_type}")
+
+    # Set comprehensive method as default
+    method = kwargs.get('method', 'comprehensive')
+
+    # Configure comprehensive settings
+    comprehensive_config = {
+        'method': method,
+        'is_classification': is_classification,
+        'enable_performance_monitoring': enable_all_optimizations,
+        'enable_early_stopping': enable_all_optimizations,
+        'enable_parallel_processing': enable_all_optimizations,
+        'max_features': target_count,
+        **kwargs
+    }
+
+    # Run selection
+    result = select_features(
+        X=X,
+        y=y,
+        feature_names=feature_names,
+        **comprehensive_config
+    )
+
+    if result['success']:
+        tprint_success(f"✅ Comprehensive selection completed: {result['n_selected']} features selected")
+    else:
+        tprint_warning(f"⚠️ Comprehensive selection failed: {result.get('error', 'Unknown error')}")
+
+    return result

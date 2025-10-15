@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 # src/analyst/advanced_feature_generation.utils.py
 
@@ -15,9 +16,7 @@ and adaptive indicators for improved prediction accuracy.
 import logging
 from typing import Any
 
-
 import pandas as pd
-
 
 class CandlestickPatternAnalyzer:
     """
@@ -674,7 +673,6 @@ class CandlestickPatternAnalyzer:
 
             return {}
 
-
 class FeatureInteractionEngine:
     """
     Engine for creating feature interaction terms to capture complex market dynamics.
@@ -1142,7 +1140,6 @@ class FeatureInteractionEngine:
         """Print message with proper formatting."""
         tprint(message)
 
-
 class AdvancedFeatureEngineering:
     """
     Advanced feature engineering with market microstructure analysis,
@@ -1303,12 +1300,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                     
                     self.meta_labeling_system = MetaLabelingSystem(self.config)
@@ -2201,7 +2194,6 @@ except ImportError:
             self.logger.error(f"Error selecting optimal features: {e}")
             return features
 
-
 class VolatilityRegimeModel:
     """Model volatility regimes using GARCH and other methods."""
 
@@ -2284,7 +2276,6 @@ class VolatilityRegimeModel:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             return pd.Series()
 
-
 class CorrelationAnalyzer:
     """Analyze correlations between different assets and timeframes."""
 
@@ -2335,7 +2326,6 @@ class CorrelationAnalyzer:
             self.logger.error("Error analyzing correlations: {e}")
 
             return {}
-
 
 class MomentumAnalyzer:
     """Analyze momentum patterns and signals."""
@@ -2402,7 +2392,6 @@ class MomentumAnalyzer:
             self.logger.error("Error analyzing momentum: {e}")
 
             return {}
-
 
 class LiquidityAnalyzer:
     """Analyze liquidity conditions and market depth."""

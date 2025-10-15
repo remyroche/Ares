@@ -25,7 +25,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class RegimeDetectionMethod(Enum):
     """Regime detection methods."""
     KMEANS = "kmeans"
@@ -34,7 +33,6 @@ class RegimeDetectionMethod(Enum):
     HMM = "hmm"
     UNSUPERVISED = "unsupervised"
     SUPERVISED = "supervised"
-
 
 @dataclass
 class RegimeConfig:
@@ -76,7 +74,6 @@ class RegimeConfig:
     output_directory: str = "regime_data"
     cache_regimes: bool = True
 
-
 @dataclass
 class RegimeResult:
     """Result of regime detection."""
@@ -114,7 +111,6 @@ class RegimeResult:
     config: RegimeConfig
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
-
 
 class RegimeDetector:
     """
@@ -1048,12 +1044,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             metadata = {
                 'regime_labels': result.regime_labels.tolist(),

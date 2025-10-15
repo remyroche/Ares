@@ -76,10 +76,11 @@ except ImportError:
 # VectorBT optimization imports
 try:
     import vectorbt as vbt
-    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from ...feature_generation.utils.unified_vectorization_manager import (
-        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager
     )
+    from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
     VECTORBT_AVAILABLE = True
     logger.info("✅ VectorBT optimization available")
 except ImportError as e:
@@ -117,12 +118,13 @@ class HyperparameterOptimization:
         self.vectorbt_rolling_optimizer = None
         self.vectorization_manager = None
         
+        # Enhanced monitoring configuration (must be set before VectorBT initialization)
+        self.enable_monitoring = self.config.get('enable_monitoring', True)
+        
         # Initialize VectorBT components if available
         if self.enable_vectorbt and VECTORBT_AVAILABLE:
             self._initialize_vectorbt_components()
 
-        # Enhanced monitoring configuration
-        self.enable_monitoring = self.config.get('enable_monitoring', True)
         self.convergence_config = self.config.get('convergence', {
             'improvement_threshold': 0.001,
             'patience_trials': 20,

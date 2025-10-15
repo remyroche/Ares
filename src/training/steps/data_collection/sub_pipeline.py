@@ -105,7 +105,6 @@ class LoggingConfig:
 
 DEFAULT_DATA_DIR = "historical_data"
 
-
 @dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
@@ -650,7 +649,6 @@ class DataCollectionSubPipeline:
             self.logger.info("🔄 Adding klines-only features (aggtrades removed)")
             unified_df = await self._add_klines_only_features(unified_df)
 
-            
             # Add date columns
             if 'timestamp' in unified_df.columns:
                 timestamps = pd.to_datetime(unified_df['timestamp'], unit='ms', utc=True)
@@ -712,8 +710,7 @@ class DataCollectionSubPipeline:
         except Exception as e:
             self.logger.exception(f"❌ Error adding klines-only features: {e}")
             return klines_df
-    
-    
+
     @log_important_calls
     async def _data_resampling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data resampling sub-pipeline using unified resampler."""
@@ -1437,40 +1434,6 @@ class DataCollectionSubPipeline:
             raise
         
         return artifacts
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
     
     @log_important_calls
     async def _data_monitoring_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -1722,7 +1685,6 @@ if __name__ == "__main__":
         tprint(f"Total duration: {result['pipeline_summary']['total_duration_seconds']:.2f}s")
     
     asyncio.run(main())
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

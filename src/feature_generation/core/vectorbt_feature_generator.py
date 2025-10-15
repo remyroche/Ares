@@ -97,36 +97,52 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         if not VECTORBT_AVAILABLE:
             return
         
-        # Configure VectorBT settings for optimal performance
-        vbt.settings.setting('array_wrapper', 'pandas')
-        vbt.settings.setting('caching', True)
-        vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
-        
-        # Advanced caching configuration
-        vbt.settings.setting('cache_size', 1000)  # 1GB cache
-        vbt.settings.setting('cache_ttl', 3600)  # 1 hour TTL
-        vbt.settings.setting('cache_compression', True)
-        
-        # Memory optimization settings
-        vbt.settings.setting('memory_limit', self.vectorbt_memory_limit_gb * 1024**3)  # Convert GB to bytes
-        vbt.settings.setting('chunk_size', 10000)  # Process data in chunks for memory efficiency
-        
-        # Array wrapper optimization
-        vbt.settings.setting('array_wrapper_optimize', True)
-        vbt.settings.setting('array_wrapper_compress', True)
-        
+        # Configure VectorBT settings for optimal performance using newer API
+        # Check if array_wrapper structure exists and set wrapper if available
+        if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
+            vbt.settings['array_wrapper']['wrapper'] = 'pandas'
+        vbt.settings['caching']['enabled'] = True
+
+        # Advanced caching configuration (if available in this VectorBT version)
+        if hasattr(vbt.settings, 'caching') and 'cache_size' in vbt.settings['caching']:
+            vbt.settings['caching']['cache_size'] = 1000  # 1GB cache
+        if hasattr(vbt.settings, 'caching') and 'cache_ttl' in vbt.settings['caching']:
+            vbt.settings['caching']['cache_ttl'] = 3600  # 1 hour TTL
+        if hasattr(vbt.settings, 'caching') and 'cache_compression' in vbt.settings['caching']:
+            vbt.settings['caching']['cache_compression'] = True
+
+        # Memory optimization settings (if available in this VectorBT version)
+        if hasattr(vbt.settings, 'memory') and 'memory_limit' in vbt.settings['memory']:
+            vbt.settings['memory']['memory_limit'] = self.vectorbt_memory_limit_gb * 1024**3  # Convert GB to bytes
+        if hasattr(vbt.settings, 'chunking') and 'chunk_size' in vbt.settings['chunking']:
+            vbt.settings['chunking']['chunk_size'] = 10000  # Process data in chunks for memory efficiency
+
+        # Array wrapper optimization (if available in this VectorBT version)
+        if hasattr(vbt.settings, 'array_wrapper') and 'optimize' in vbt.settings['array_wrapper']:
+            vbt.settings['array_wrapper']['optimize'] = True
+        if hasattr(vbt.settings, 'array_wrapper') and 'compress' in vbt.settings['array_wrapper']:
+            vbt.settings['array_wrapper']['compress'] = True
+
         if self.enable_gpu:
             try:
-                vbt.settings.setting('use_gpu', True)
-                logger.info("✅ VectorBT GPU acceleration enabled")
+                # Check if GPU settings are available in this VectorBT version
+                if hasattr(vbt.settings, 'gpu') and 'enabled' in vbt.settings['gpu']:
+                    vbt.settings['gpu']['enabled'] = True
+                    logger.info("✅ VectorBT GPU acceleration enabled")
+                else:
+                    logger.warning("⚠️ GPU acceleration not available in this VectorBT version")
+                    self.enable_gpu = False
             except Exception as e:
                 logger.warning(f"⚠️ GPU acceleration not available: {e}")
                 self.enable_gpu = False
-        
+
         if self.enable_parallel:
             try:
-                vbt.settings.setting('use_parallel', True)
-                vbt.settings.setting('n_threads', min(8, os.cpu_count()))  # Limit threads for memory efficiency
+                # Check if parallel settings are available in this VectorBT version
+                if hasattr(vbt.settings, 'parallel') and 'enabled' in vbt.settings['parallel']:
+                    vbt.settings['parallel']['enabled'] = True
+                if hasattr(vbt.settings, 'parallel') and 'n_threads' in vbt.settings['parallel']:
+                    vbt.settings['parallel']['n_threads'] = min(8, os.cpu_count())  # Limit threads for memory efficiency
                 logger.info("✅ VectorBT parallel processing enabled")
             except Exception as e:
                 logger.warning(f"⚠️ Parallel processing not available: {e}")

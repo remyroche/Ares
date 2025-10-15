@@ -18,9 +18,43 @@ from .vectorbt_memory_optimizer import (
     optimize_dataframe_memory, process_with_memory_management
 )
 from .vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ..features_common.transforms.vectorbt_scaler import (
-    VectorBTScaler, VectorBTBatchScaler, get_available_scaling_methods
-)
+# Lazy import to avoid circular dependencies
+def _get_scaler_imports():
+    """Direct scaling functions to avoid circular dependencies."""
+    # Define available scaling methods directly
+    def get_available_scaling_methods() -> List[str]:
+        return ['zscore', 'minmax', 'robust']
+
+    # Simple scaler class replacement
+    class SimpleScaler:
+        def __init__(self, method: str = 'zscore'):
+            self.method = method
+
+        def fit_transform(self, data: pd.Series) -> pd.Series:
+            if self.method == 'zscore':
+                return (data - data.mean()) / data.std()
+            elif self.method == 'minmax':
+                return (data - data.min()) / (data.max() - data.min())
+            elif self.method == 'robust':
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / mad
+            else:
+                return (data - data.mean()) / data.std()
+
+    class SimpleBatchScaler:
+        def __init__(self, method: str = 'zscore'):
+            self.method = method
+            self.scalers = {}
+
+        def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+            result = data.copy()
+            for col in data.columns:
+                scaler = SimpleScaler(self.method)
+                result[col] = scaler.fit_transform(data[col])
+            return result
+
+    return SimpleScaler, SimpleBatchScaler, get_available_scaling_methods
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +147,10 @@ class VectorBTOptimizationManager:
             data = self.memory_optimizer.optimize_dataframe(data)
         
         # Create scaler
+        VectorBTScaler, VectorBTBatchScaler, get_available_scaling_methods = _get_scaler_imports()
+        if VectorBTBatchScaler is None or VectorBTScaler is None:
+            raise ImportError("VectorBT scaler modules not available")
+
         if isinstance(data, pd.DataFrame):
             scaler = VectorBTBatchScaler(
                 method=method,
@@ -294,6 +332,9 @@ class VectorBTOptimizationManager:
     
     def get_available_scaling_methods(self) -> List[str]:
         """Get list of available scaling methods."""
+        VectorBTScaler, VectorBTBatchScaler, get_available_scaling_methods = _get_scaler_imports()
+        if get_available_scaling_methods is None:
+            return []
         return get_available_scaling_methods()
     
     def get_optimization_stats(self) -> Dict[str, Any]:

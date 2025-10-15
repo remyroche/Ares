@@ -164,7 +164,9 @@ class VectorizedTrainingManager:
                 save_metadata=True,
                 enable_backup=True
             ))
-            self.model_validation = ModelValidator()
+            # Import ValidationConfig
+            from src.utils.ml_common.post_training.model_validation import ValidationConfig
+            self.model_validation = ModelValidator(ValidationConfig())
         else:
             self.model_manager = None
             self.model_persistence = None

@@ -1,7 +1,7 @@
 """
 GPU Optimizations for Enhanced Performance
 
-This module provides GPU-specific optimizations using CuPy and other GPU libraries
+This module provides GPU-specific optimizations using 
 for high-performance computing operations.
 """
 
@@ -27,21 +27,9 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-# Import CuPy for GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-    tprint_info("✅ CuPy GPU acceleration available")
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-    tprint_warning("⚠️ CuPy not available, using CPU-only operations")
-
-# Create a dummy type for type hints when CuPy is not available
-if cp is None:
-    class DummyCupyArray:
-        pass
-    cp = type('CuPy', (), {'ndarray': DummyCupyArray, 'asarray': lambda x: x, 'asnumpy': lambda x: x, 'mean': lambda x, **kwargs: x, 'std': lambda x, **kwargs: x, 'var': lambda x, **kwargs: x, 'min': lambda x, **kwargs: x, 'max': lambda x, **kwargs: x, 'sum': lambda x, **kwargs: x})()
+# GPU/CuPy support removed
+CUPY_AVAILABLE = False
+cp = None
 
 # Import Numba for JIT compilation
 try:
@@ -57,7 +45,6 @@ except ImportError:
     tprint_warning("⚠️ Numba not available, using standard Python")
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class GPUConfig:
@@ -77,7 +64,6 @@ class GPUConfig:
         assert self.max_workers > 0, "max_workers must be positive"
         assert self.batch_size > 0, "batch_size must be positive"
 
-
 @dataclass
 class GPUOperationResult:
     """Result of a GPU operation."""
@@ -96,19 +82,18 @@ class GPUOperationResult:
         assert self.memory_used_mb >= 0, "memory_used_mb must be non-negative"
         assert 0 <= self.gpu_utilization <= 100, "gpu_utilization must be between 0 and 100"
 
-
 class GPUOptimizer:
     """
     GPU optimizer for high-performance operations.
     
-    Provides GPU acceleration using CuPy and Numba for various
+    Provides 
     mathematical and data processing operations.
     """
     
     def __init__(self, config: Optional[GPUConfig] = None):
         """Initialize the GPU optimizer."""
         self.config = config or GPUConfig()
-        self.gpu_available = CUPY_AVAILABLE and self.config.enable_gpu
+        self.gpu_available =  self.config.enable_gpu
         
         # Initialize GPU components
         self._initialize_gpu_components()
@@ -125,9 +110,9 @@ class GPUOptimizer:
         
         tprint_info("GPU Optimizer initialized")
         if self.gpu_available:
-            tprint_info("✅ GPU acceleration enabled")
+            tprint_info("✅ GPU acceleration available")
         else:
-            tprint_warning("⚠️ GPU acceleration disabled, using CPU operations")
+            tprint_warning("⚠️ GPU acceleration not available") 
     
     def _initialize_gpu_components(self):
         """Initialize GPU components."""
@@ -135,18 +120,14 @@ class GPUOptimizer:
             return
         
         try:
-            # Test GPU availability
-            test_array = cp.array([1, 2, 3, 4, 5])
-            result = cp.sum(test_array)
+            # Test CPU availability (GPU support removed)
+            test_array = np.array([1, 2, 3, 4, 5])
+            result = np.sum(test_array)
             
-            # Set memory pool if enabled
-            if self.config.enable_memory_pool:
-                cp.get_default_memory_pool().set_limit(size=self.config.gpu_memory_limit_mb * 1024 * 1024)
-            
-            tprint_success("✅ GPU components initialized successfully")
+            tprint_success("✅ CPU components initialized successfully")
             
         except Exception as e:
-            tprint_warning(f"⚠️ GPU initialization failed: {e}")
+            tprint_warning(f"⚠️ CPU initialization failed: {e}")
             self.gpu_available = False
     
     def matrix_multiply(self, a: np.ndarray, b: np.ndarray) -> GPUOperationResult:
@@ -154,44 +135,19 @@ class GPUOptimizer:
         start_time = time.time()
         
         try:
-            if self.gpu_available and self._should_use_gpu(a, b):
-                # GPU operation
-                a_gpu = cp.asarray(a)
-                b_gpu = cp.asarray(b)
-                
-                result_gpu = cp.dot(a_gpu, b_gpu)
-                result = cp.asnumpy(result_gpu)
-                
-                # Clean up GPU memory
-                del a_gpu, b_gpu, result_gpu
-                cp.get_default_memory_pool().free_all_blocks()
-                
-                execution_time = time.time() - start_time
-                memory_used = self._estimate_memory_usage(a, b)
-                
-                self.performance_stats['gpu_operations'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=memory_used,
-                    gpu_utilization=50.0,  # Estimated
-                    fallback_used=False
-                )
-            else:
-                # CPU fallback
-                result = np.dot(a, b)
-                execution_time = time.time() - start_time
-                
-                self.performance_stats['cpu_fallbacks'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=0.0,
-                    gpu_utilization=0.0,
-                    fallback_used=True
-                )
+            # CPU operation (GPU support removed)
+            result = np.dot(a, b)
+            execution_time = time.time() - start_time
+            
+            self.performance_stats['cpu_fallbacks'] += 1
+            
+            return GPUOperationResult(
+                success=True,
+                execution_time=execution_time,
+                memory_used_mb=0.0,
+                gpu_utilization=0.0,
+                fallback_used=True
+            )
         
         except Exception as e:
             execution_time = time.time() - start_time
@@ -212,59 +168,27 @@ class GPUOptimizer:
         start_time = time.time()
         
         try:
-            if self.gpu_available and len(data) > 1000:  # Use GPU for large datasets
-                # Convert to GPU array
-                data_gpu = cp.asarray(data.values)
-                
-                if operation == "mean":
-                    result_gpu = self._gpu_rolling_mean(data_gpu, window)
-                elif operation == "std":
-                    result_gpu = self._gpu_rolling_std(data_gpu, window)
-                elif operation == "sum":
-                    result_gpu = self._gpu_rolling_sum(data_gpu, window)
-                else:
-                    raise ValueError(f"Unsupported operation: {operation}")
-                
-                result = cp.asnumpy(result_gpu)
-                
-                # Clean up GPU memory
-                del data_gpu, result_gpu
-                cp.get_default_memory_pool().free_all_blocks()
-                
-                execution_time = time.time() - start_time
-                memory_used = len(data) * 8 / (1024 * 1024)  # Estimate
-                
-                self.performance_stats['gpu_operations'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=memory_used,
-                    gpu_utilization=30.0,  # Estimated
-                    fallback_used=False
-                )
+            # CPU operation (GPU support removed)
+            if operation == "mean":
+                result = data.rolling(window=window).mean()
+            elif operation == "std":
+                result = data.rolling(window=window).std()
+            elif operation == "sum":
+                result = data.rolling(window=window).sum()
             else:
-                # CPU fallback
-                if operation == "mean":
-                    result = data.rolling(window=window).mean()
-                elif operation == "std":
-                    result = data.rolling(window=window).std()
-                elif operation == "sum":
-                    result = data.rolling(window=window).sum()
-                else:
-                    raise ValueError(f"Unsupported operation: {operation}")
-                
-                execution_time = time.time() - start_time
-                
-                self.performance_stats['cpu_fallbacks'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=0.0,
-                    gpu_utilization=0.0,
-                    fallback_used=True
-                )
+                raise ValueError(f"Unsupported operation: {operation}")
+            
+            execution_time = time.time() - start_time
+            
+            self.performance_stats['cpu_fallbacks'] += 1
+            
+            return GPUOperationResult(
+                success=True,
+                execution_time=execution_time,
+                memory_used_mb=0.0,
+                gpu_utilization=0.0,
+                fallback_used=True
+            )
         
         except Exception as e:
             execution_time = time.time() - start_time
@@ -285,44 +209,19 @@ class GPUOptimizer:
         start_time = time.time()
         
         try:
-            if self.gpu_available and data.shape[0] > 1000:
-                # Convert to GPU array
-                data_gpu = cp.asarray(data.values)
-                
-                # Calculate correlation matrix on GPU
-                corr_gpu = cp.corrcoef(data_gpu.T)
-                result = cp.asnumpy(corr_gpu)
-                
-                # Clean up GPU memory
-                del data_gpu, corr_gpu
-                cp.get_default_memory_pool().free_all_blocks()
-                
-                execution_time = time.time() - start_time
-                memory_used = data.shape[0] * data.shape[1] * 8 / (1024 * 1024)
-                
-                self.performance_stats['gpu_operations'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=memory_used,
-                    gpu_utilization=40.0,  # Estimated
-                    fallback_used=False
-                )
-            else:
-                # CPU fallback
-                result = data.corr().values
-                execution_time = time.time() - start_time
-                
-                self.performance_stats['cpu_fallbacks'] += 1
-                
-                return GPUOperationResult(
-                    success=True,
-                    execution_time=execution_time,
-                    memory_used_mb=0.0,
-                    gpu_utilization=0.0,
-                    fallback_used=True
-                )
+            # CPU operation (GPU support removed)
+            result = data.corr().values
+            execution_time = time.time() - start_time
+            
+            self.performance_stats['cpu_fallbacks'] += 1
+            
+            return GPUOperationResult(
+                success=True,
+                execution_time=execution_time,
+                memory_used_mb=0.0,
+                gpu_utilization=0.0,
+                fallback_used=True
+            )
         
         except Exception as e:
             execution_time = time.time() - start_time
@@ -351,19 +250,6 @@ class GPUOptimizer:
         total_bytes = sum(arr.nbytes for arr in arrays)
         return total_bytes / (1024 * 1024)
     
-    def _gpu_rolling_mean(self, data: cp.ndarray, window: int) -> cp.ndarray:
-        """Calculate rolling mean on GPU."""
-        return cp.convolve(data, cp.ones(window) / window, mode='valid')
-    
-    def _gpu_rolling_std(self, data: cp.ndarray, window: int) -> cp.ndarray:
-        """Calculate rolling standard deviation on GPU."""
-        mean = self._gpu_rolling_mean(data, window)
-        squared_diff = (data[:len(mean)] - mean) ** 2
-        return cp.sqrt(self._gpu_rolling_mean(squared_diff, window))
-    
-    def _gpu_rolling_sum(self, data: cp.ndarray, window: int) -> cp.ndarray:
-        """Calculate rolling sum on GPU."""
-        return cp.convolve(data, cp.ones(window), mode='valid')
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary."""
@@ -379,7 +265,6 @@ class GPUOptimizer:
             stats['average_execution_time'] = 0.0
         
         return stats
-
 
 # Numba JIT compiled functions
 if NUMBA_AVAILABLE:
@@ -399,12 +284,10 @@ if NUMBA_AVAILABLE:
             result[i] = np.std(data[i:i + window])
         return result
 
-
 # Convenience functions
 def create_gpu_optimizer(config: Optional[GPUConfig] = None) -> GPUOptimizer:
     """Create a GPU optimizer."""
     return GPUOptimizer(config)
-
 
 def gpu_matrix_multiply(a: np.ndarray, b: np.ndarray, config: Optional[GPUConfig] = None) -> Tuple[np.ndarray, GPUOperationResult]:
     """Perform GPU-accelerated matrix multiplication."""
@@ -415,7 +298,6 @@ def gpu_matrix_multiply(a: np.ndarray, b: np.ndarray, config: Optional[GPUConfig
         return np.dot(a, b), result
     else:
         raise RuntimeError(f"GPU operation failed: {result.error_message}")
-
 
 def gpu_rolling_mean(data: pd.Series, window: int, config: Optional[GPUConfig] = None) -> Tuple[pd.Series, GPUOperationResult]:
     """Perform GPU-accelerated rolling mean."""

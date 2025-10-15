@@ -73,15 +73,10 @@ except ImportError as e:
     print(f"⚠️ WARNING: VectorBT Rolling Optimizer not available: {e}")
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     UTILS_AVAILABLE = False
-
 
 @dataclass
 class MLEntryTimingConfig:
@@ -106,7 +101,6 @@ class MLEntryTimingConfig:
     # Quality thresholds
     min_r2_score: float = 0.3
     min_correlation: float = 0.5
-
 
 class MLEntryTimingLabeler:
     """ML-based entry timing labeler for Tactician."""

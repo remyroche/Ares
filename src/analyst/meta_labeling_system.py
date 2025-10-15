@@ -1,5 +1,5 @@
 from src.utils.tprint import tprint
-
+import warnings
 
 import logging
 from typing import Any
@@ -37,12 +37,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # src/analyst/meta_labeling_system.py
@@ -1269,7 +1265,6 @@ class MetaLabelingSystem:
         except (AttributeError, TypeError) as e:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error stopping meta-labeling system: {e}")
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

@@ -11,6 +11,7 @@ High efficiency (>0.6) = directional, Low efficiency (<0.3) = choppy
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass
 import time
@@ -47,16 +48,27 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
     cp = None
-
 
 @dataclass
 class BarEfficiencyConfig:
@@ -74,7 +86,6 @@ class BarEfficiencyConfig:
     include_raw_efficiency: bool = True  # Include raw efficiency values
     include_rolling_efficiency: bool = True  # Include rolling mean efficiency
     include_efficiency_grade: bool = True  # Include normalized grade (0.0-1.0)
-
 
 class BarEfficiencyRatioFeature:
     """
@@ -195,7 +206,6 @@ class BarEfficiencyRatioFeature:
                 'interpretation': 'Categorical classification based on thresholds'
             }
         }
-
 
 class BarEfficiencyRatioGenerator(VectorizedFeatureGenerator):
     """
@@ -331,7 +341,6 @@ class BarEfficiencyRatioGenerator(VectorizedFeatureGenerator):
         
         # Generate all features
         return self.feature_engine.calculate_features(data)
-
 
 # Convenience function for external usage
 def calculate_bar_efficiency_features(

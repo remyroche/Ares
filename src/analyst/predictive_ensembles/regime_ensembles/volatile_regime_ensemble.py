@@ -1,4 +1,5 @@
 import logging
+import warnings
 from arch import arch_model
 from keras.layers import LSTM, Dense, Dropout, Flatten, Input, LayerNormalization, MultiHeadAttention
 from keras.models import Model
@@ -43,12 +44,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class VolatileRegimeEnsemble(BaseEnsemble):

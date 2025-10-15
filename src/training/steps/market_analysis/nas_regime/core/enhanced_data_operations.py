@@ -1,4 +1,5 @@
 """
+import warnings
 Enhanced Data Operations for Perfect NAS Regime System
 
 Integrates with utils/data/ and utils/common_operations.py for comprehensive data handling.
@@ -64,12 +65,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     DATA_UTILS_AVAILABLE = True
 except ImportError as e:

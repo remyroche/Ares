@@ -72,7 +72,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 # Custom exception classes for better error handling
 class FeatureExtractionError(Exception):
     """Base exception for feature extraction errors."""
@@ -94,7 +93,6 @@ class HardwareOptimizationError(FeatureExtractionError):
     """Raised when hardware optimization fails."""
     pass
 
-
 class FeatureCategory(Enum):
     """Feature categories for balanced extraction."""
     PRICE: str = "price"
@@ -105,7 +103,6 @@ class FeatureCategory(Enum):
     TECHNICAL: str = "technical"
     REGIME: str = "regime"
     INTERACTION: str = "interaction"
-
 
 @dataclass
 class BalancedFeatureConfig:
@@ -150,7 +147,6 @@ class BalancedFeatureConfig:
     micro_regime_threshold: float = 0.3  # Sensitivity for micro-regime detection
     regime_stability_window: int = 10  # Window for regime stability analysis
 
-
 @dataclass
 class BalancedFeatureResult:
     """Result from balanced feature extraction."""
@@ -162,7 +158,6 @@ class BalancedFeatureResult:
     balance_metrics: Dict[str, float]
     success: bool
     error_message: Optional[str] = None
-
 
 class BalancedFeatureExtractor:
     """
@@ -1502,43 +1497,11 @@ class BalancedFeatureExtractor:
             if SKLEARN_AVAILABLE:
                 try:
                     from sklearn.metrics import silhouette_score
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-                    metrics['silhouette_score'] = silhouette_score(features, labels)
-                except:
-                    pass
+                    silhouette = silhouette_score(features, labels)
+                    metrics['silhouette_score'] = silhouette
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not calculate silhouette score: {e}")
+                    metrics['silhouette_score'] = 0.0
 
             # Between vs within class variance ratio
             unique_labels = np.unique(labels)
@@ -1598,7 +1561,6 @@ except ImportError:
         except Exception:
             return "Feature importance analysis completed"
 
-
 # Convenience functions for easy integration
 def extract_balanced_features(data: Union[np.ndarray, pd.DataFrame],
                             config: Optional[BalancedFeatureConfig] = None,
@@ -1616,7 +1578,6 @@ def extract_balanced_features(data: Union[np.ndarray, pd.DataFrame],
     """
     extractor = BalancedFeatureExtractor(config)
     return extractor.extract_balanced_features(data, labels)
-
 
 def create_unified_config() -> BalancedFeatureConfig:
     """Create unified configuration for both NAS and TAS to ensure identical features."""
@@ -1638,16 +1599,13 @@ def create_unified_config() -> BalancedFeatureConfig:
         enable_micro_regime_features=True  # Add micro-regime detection
     )
 
-
 def create_nas_config() -> BalancedFeatureConfig:
     """Create configuration for NAS clustering - now uses unified config."""
     return create_unified_config()
 
-
 def create_tas_config() -> BalancedFeatureConfig:
     """Create configuration for TAS regime detection - now uses unified config."""
     return create_unified_config()
-
 
 def analyze_regime_feature_importance(features: np.ndarray,
                                     feature_names: List[str],
@@ -1678,7 +1636,6 @@ def analyze_regime_feature_importance(features: np.ndarray,
     return extractor.analyze_feature_importance_for_regimes(
         features, feature_names, regime_labels, method
     )
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

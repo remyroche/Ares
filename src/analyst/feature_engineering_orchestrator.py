@@ -1,4 +1,5 @@
 import logging
+import warnings
 import os
 from typing import Any, Dict
 import pywt
@@ -278,12 +279,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
             meta_labeling = MetaLabelingSystem(self.config)

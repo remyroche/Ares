@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional, Tuple
+import warnings
 import pandas as pd
 from datetime import datetime
 import numpy as np
@@ -366,12 +367,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                 step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
                 step06_result = await step06_engineer.engineer_features(market_data)

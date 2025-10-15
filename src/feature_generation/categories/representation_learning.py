@@ -1,4 +1,5 @@
 """
+import warnings
 Representation Learning Feature Generator
 
 This module provides self-supervised representation learning features
@@ -33,7 +34,6 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-
 
 class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
     """Generator for PatchTST-based self-supervised representation learning."""
@@ -134,9 +134,6 @@ class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
         representations = np.column_stack([patch_means, patch_stds, patch_trends])
 
         return representations
-
-
-    
 
 class TFTEncoderRepresentationGenerator(FeatureGenerator):
     """Generator for TFT (Temporal Fusion Transformer) encoder representations."""
@@ -307,9 +304,6 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
         else:
             return attention_output
 
-
-    
-
 class AutoencoderRepresentationGenerator(FeatureGenerator):
     """Generator for autoencoder-based representation learning."""
 
@@ -414,46 +408,43 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
             # Fallback to simple linear transformation
             return features[:, :self.embedding_dim] if features.shape[1] >= self.embedding_dim else features
 
-warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    def _encode_time_series(self, features: np.ndarray) -> np.ndarray:
+        """Encode time series features using PCA."""
+        try:
+            from sklearn.decomposition import PCA
 
-# Optional GPU acceleration
+            # Reshape for time series encoding
+            seq_len, feature_dim = features.shape
+
+            # Flatten for PCA
+            flattened = features.flatten().reshape(1, -1)
+
+            # Apply PCA for dimensionality reduction
+            if feature_dim >= self.encoding_dim:
+                pca = PCA(n_components=self.encoding_dim)
+                encoded = pca.fit_transform(flattened)
+            else:
+                # Pad if needed
+                encoded = np.pad(flattened, ((0, 0), (0, self.encoding_dim - feature_dim)), mode='constant')
+
+            # Reshape back to sequence format
+            encoded_reshaped = encoded.reshape(seq_len, -1)
+
+            return encoded_reshaped
+
+        except ImportError:
+            # Fallback to simple averaging
+            return features.mean(axis=1, keepdims=True)
+
+# VectorBT imports
 try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
+    import vectorbt as vbt
+    from vectorbt.indicators import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum
+    VECTORBT_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-def _encode_time_series(self, features: np.ndarray) -> np.ndarray:
-    """Encode time series features using PCA."""
-    try:
-        from sklearn.decomposition import PCA
-        
-        # Reshape for time series encoding
-        seq_len, feature_dim = features.shape
-
-        # Flatten for PCA
-        flattened = features.flatten().reshape(1, -1)
-
-        # Apply PCA for dimensionality reduction
-        if feature_dim >= self.encoding_dim:
-            pca = PCA(n_components=self.encoding_dim)
-            encoded = pca.fit_transform(flattened)
-        else:
-            # Pad if needed
-            encoded = np.pad(flattened, ((0, 0), (0, self.encoding_dim - feature_dim)), mode='constant')
-
-        # Reshape back to sequence format
-        encoded_reshaped = encoded.reshape(seq_len, -1)
-
-        return encoded_reshaped
-
-    except ImportError:
-        # Fallback to simple averaging
-        return features.mean(axis=1, keepdims=True)
-
-
-    
+    import warnings
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 class ContrastiveLearningGenerator(FeatureGenerator):
     """Generator for contrastive learning representations."""

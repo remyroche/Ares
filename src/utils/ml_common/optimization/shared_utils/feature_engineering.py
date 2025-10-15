@@ -36,7 +36,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class FeatureConfig:
     """Configuration for feature engineering."""
@@ -120,7 +119,6 @@ class FeatureConfig:
     # Random state
     random_state: int = 42
 
-
 @dataclass
 class FeatureEngineeringResult:
     """Result from feature engineering operations."""
@@ -145,7 +143,6 @@ class FeatureEngineeringResult:
     error_message: Optional[str] = None
     warnings: List[str] = field(default_factory=list)
 
-
 class BaseFeatureEngineer(ABC):
     """Abstract base class for feature engineers."""
     
@@ -159,7 +156,6 @@ class BaseFeatureEngineer(ABC):
                          feature_names: Optional[List[str]] = None) -> FeatureEngineeringResult:
         """Generate enhanced features."""
         pass
-
 
 class TechnicalIndicatorEngineer(BaseFeatureEngineer):
     """Engineer for technical indicators."""
@@ -325,7 +321,6 @@ class TechnicalIndicatorEngineer(BaseFeatureEngineer):
             error_message=error_message
         )
 
-
 class FeatureSelector:
     """Feature selection utilities."""
     
@@ -431,6 +426,30 @@ class FeatureSelector:
             
             from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
             from sklearn.linear_model import LinearRegression, LogisticRegression
+            
+            # Determine if classification or regression
+            is_classification = len(np.unique(y)) < 10
+            
+            if is_classification:
+                estimator = LogisticRegression(random_state=self.config.random_state)
+            else:
+                estimator = LinearRegression()
+            
+            # Use RFE
+            n_features = min(self.config.max_features, X.shape[1])
+            selector = RFE(estimator, n_features_to_select=n_features)
+            X_selected = selector.fit_transform(X, y)
+            
+            # Get selected feature names and importance
+            selected_indices = selector.get_support(indices=True)
+            selected_names = [feature_names[i] for i in selected_indices] if feature_names else [f'feature_{i}' for i in selected_indices]
+            importance = {name: float(selector.ranking_[i]) for name, i in zip(selected_names, selected_indices)}
+            
+            return X_selected, selected_names, importance
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in RFE feature selection: {e}")
+            return X, feature_names or [f'feature_{i}' for i in range(X.shape[1])], {}
 
 # VectorBT imports for native optimization
 try:
@@ -457,39 +476,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            
-            # Determine if classification or regression
-            is_classification = len(np.unique(y)) < 10
-            
-            if is_classification:
-                estimator = LogisticRegression(random_state=self.config.random_state)
-            else:
-                estimator = LinearRegression()
-            
-            # Use RFE
-            n_features = min(self.config.max_features, X.shape[1])
-            selector = RFE(estimator, n_features_to_select=n_features)
-            X_selected = selector.fit_transform(X, y)
-            
-            # Get selected feature names and importance
-            selected_indices = selector.get_support(indices=True)
-            selected_names = [feature_names[i] for i in selected_indices] if feature_names else [f'feature_{i}' for i in selected_indices]
-            importance = {name: float(selector.ranking_[i]) for name, i in zip(selected_names, selected_indices)}
-            
-            return X_selected, selected_names, importance
-            
-        except Exception as e:
-            self.logger.error(f"❌ RFE selection failed: {e}")
-            return X, feature_names or [f'feature_{i}' for i in range(X.shape[1])], {}
-
 
 class DimensionalityReducer:
     """Dimensionality reduction utilities."""
@@ -542,7 +528,6 @@ class DimensionalityReducer:
             self.logger.error(f"❌ PCA reduction failed: {e}")
             return X, feature_names or [f'feature_{i}' for i in range(X.shape[1])]
 
-
 class FeatureScaler:
     """Feature scaling utilities."""
     
@@ -579,7 +564,6 @@ class FeatureScaler:
         except Exception as e:
             self.logger.error(f"❌ Feature scaling failed: {e}")
             return X
-
 
 class UnifiedFeatureEngineer:
     """Unified feature engineering system."""
@@ -690,14 +674,12 @@ class UnifiedFeatureEngineer:
         except Exception:
             return {}
 
-
 # Convenience functions
 def create_unified_feature_engineer(config: Optional[FeatureConfig] = None) -> UnifiedFeatureEngineer:
     """Create unified feature engineer instance."""
     if config is None:
         config = FeatureConfig()
     return UnifiedFeatureEngineer(config)
-
 
 def quick_feature_engineering(X: np.ndarray, y: Optional[np.ndarray] = None,
                              feature_names: Optional[List[str]] = None,

@@ -11,6 +11,7 @@ EMA slope: Rolling slope of EMA for trend continuity
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
@@ -48,15 +49,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
-
 @dataclass
 class TrendCoherenceConfig:
     """Configuration for Trend Coherence feature."""
@@ -77,7 +69,6 @@ class TrendCoherenceConfig:
     include_ema_slope: bool = True             # Include EMA slope
     include_trend_coherence_grade: bool = True  # Include combined grade (0.0-1.0)
     include_trend_class: bool = True           # Include trend classification
-
 
 class TrendCoherenceFeature:
     """
@@ -212,7 +203,6 @@ class TrendCoherenceFeature:
                 'interpretation': 'Categorical classification of trend state'
             }
         }
-
 
 class TrendCoherenceGenerator(VectorizedFeatureGenerator):
     """
@@ -352,7 +342,6 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
         
         # Generate all features
         return self.feature_engine.calculate_features(data)
-
 
 # Convenience function for external usage
 def calculate_trend_coherence_features(

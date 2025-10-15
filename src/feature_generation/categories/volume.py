@@ -13,7 +13,7 @@ Key Features:
 - Volume profile analysis and clustering
 - VectorBT-optimized rolling operations
 - Memory-efficient processing
-- GPU acceleration support
+- 
 - Comprehensive volume indicators
 """
 
@@ -21,10 +21,11 @@ import numpy as np
 import pandas as pd
 import warnings
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable
 from dataclasses import dataclass
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for optimization
@@ -66,6 +67,19 @@ except ImportError:
     def tprint(*args, **kwargs):
         print(*args, **kwargs)
 
+# VectorBT Scaler removed to avoid circular imports - using direct scaling instead
+
+# PyTorch for GPU acceleration
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
+
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
     from ..utils.consolidated_rolling_optimizer import (
@@ -86,7 +100,7 @@ try:
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
         VECTORBT_OPTIMIZER_AVAILABLE = True
         ROLLING_OPTIMIZER_AVAILABLE = True
         OPTIMIZATION_AVAILABLE = False
@@ -100,10 +114,11 @@ except ImportError:
 # Unified Vectorization Manager
 try:
     from ...utils.ml_common.unified_vectorization_manager import (
-        get_unified_vectorization_manager, 
-        UnifiedVectorizationManager, 
-        OperationType, 
-        OptimizationStrategy
+        get_unified_vectorization_manager,
+        UnifiedVectorizationManager,
+        OperationType,
+        OptimizationStrategy,
+        OperationConfig
     )
     UNIFIED_MANAGER_AVAILABLE = True
 except ImportError:
@@ -112,6 +127,7 @@ except ImportError:
     UnifiedVectorizationManager = None
     OperationType = None
     OptimizationStrategy = None
+    OperationConfig = None
 
 # Optimization utilities
 try:
@@ -171,9 +187,9 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         self.memory_threshold_mb = 512.0  # 512MB threshold
         self.chunk_size = 10000  # Process data in chunks
         self.enable_memory_optimization = True
-        
-        # GPU acceleration
-        self.enable_gpu = enable_gpu
+
+        # GPU settings
+        self.enable_gpu = False  # GPU support disabled by default
         self.gpu_available = self._check_gpu_availability()
         self.gpu_threshold = 50000  # Use GPU for datasets larger than 50k rows
     
@@ -266,8 +282,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         return volume.rolling(window=20).mean()
 
 # Volume Simple Moving Average
-    
-    
+
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (VECTORBT_AVAILABLE and 
@@ -529,16 +544,16 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         return memory_usage_mb > self.memory_threshold_mb or len(data) > self.chunk_size * 2
     
     def _check_gpu_availability(self) -> bool:
-        """Check if GPU acceleration is available."""
+        """Check if GPU is available for processing.""" 
         if not self.enable_gpu:
             return False
         
         try:
-            # Check for CuPy
-            if CUPY_AVAILABLE:
+            # Check for GPU availability 
+            if False:  # GPU support removed
                 return True
             
-            # Check for PyTorch with CUDA
+            # Check for PyTorch with CUDA support
             if TORCH_AVAILABLE and torch.cuda.is_available():
                 return True
             
@@ -559,12 +574,12 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
             return data
         
         try:
-            if CUPY_AVAILABLE:
-                # Convert to CuPy arrays
+            if False:  # GPU support removed
+                # Convert to GPU arrays
                 gpu_data = data.copy()
                 for column in gpu_data.columns:
                     if gpu_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
-                        gpu_data[column] = cp.asarray(gpu_data[column].values)
+                        gpu_data[column] = np.asarray(gpu_data[column].values)
                 return gpu_data
             elif TORCH_AVAILABLE and torch.cuda.is_available():
                 # Convert to PyTorch tensors on GPU
@@ -582,11 +597,11 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
     def _convert_from_gpu(self, data: pd.DataFrame) -> pd.DataFrame:
         """Convert DataFrame from GPU memory back to CPU."""
         try:
-            if CUPY_AVAILABLE:
-                # Convert from CuPy arrays
+            if False:  # GPU support removed
+                # Convert from 
                 cpu_data = data.copy()
                 for column in cpu_data.columns:
-                    if hasattr(cpu_data[column].iloc[0], 'get'):  # CuPy array
+                    if hasattr(cpu_data[column].iloc[0], 'get'):  # 
                         cpu_data[column] = cpu_data[column].apply(lambda x: x.get() if hasattr(x, 'get') else x)
                 return cpu_data
             elif TORCH_AVAILABLE and torch.cuda.is_available():
@@ -1130,7 +1145,6 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             raise
 
 # Volume Exponential Moving Average
-    
 
 class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Exponential Moving Average with VectorBT optimization."""
@@ -1209,7 +1223,6 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             return pd.Series(np.nan, index=data.index, name=f'volume_ema_{self.period}')
 
 # Volume Ratio
-    
 
 class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Ratio (current volume vs average volume) with VectorBT optimization."""
@@ -1295,7 +1308,6 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
         return volume / avg_volume.replace(0, 1)  # Avoid division by zero
 
 # Volume Rate of Change
-    
 
 class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Rate of Change with VectorBT optimization."""
@@ -1371,7 +1383,6 @@ class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         return volume.pct_change(periods=self.period) * 100
 
 # Volume Standard Deviation
-    
 
 class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Standard Deviation with VectorBT optimization."""
@@ -1440,7 +1451,6 @@ class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         return volume.rolling(window=self.period).std()
 
 # Volume Percentile Rank
-    
 
 class VolumePercentileGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Percentile Rank with VectorBT optimization."""
@@ -1504,7 +1514,6 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator, VectorBTOptimization
         return volume.rolling(window=self.period).rank(pct=True) * 100
 
 # Volume Trend Strength
-    
 
 class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Trend Strength with VectorBT optimization."""
@@ -1570,7 +1579,6 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
         return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
 
 # Volume Oscillator
-    
 
 class VolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Oscillator with VectorBT optimization."""
@@ -1636,7 +1644,6 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimization
         return short_ma - long_ma
 
 # Volume Momentum
-    
 
 class VolumeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Momentum with VectorBT optimization."""
@@ -1702,7 +1709,6 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMi
         return volume - volume.shift(self.period)
 
 # Volume Weighted Average Price (VWAP)
-    
 
 class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Weighted Average Price with VectorBT optimization."""
@@ -1828,7 +1834,6 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
             raise
 
 # Volume Price Trend (VPT)
-    
 
 class VolumePriceTrendGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Price Trend with VectorBT optimization."""
@@ -1877,7 +1882,6 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator, VectorBTOptimization
             return vpt
 
 # Volume Accumulation/Distribution
-    
 
 class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Volume Accumulation/Distribution with VectorBT optimization."""
@@ -1941,9 +1945,6 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator, Vector
             mfv = mfm * volume
             
             return mfv.cumsum()
-
-
-    
 
 class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for volume-price correlation features with VectorBT optimization."""
@@ -2027,9 +2028,6 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator, VectorBTOptimi
         price_returns = close.pct_change()
         correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
         return correlation
-
-
-    
 
 class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for volume-price divergence features with VectorBT optimization."""
@@ -2135,9 +2133,6 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             
             return enhanced_divergence
 
-
-    
-
 class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for price-volume oscillator features with VectorBT optimization."""
 
@@ -2218,7 +2213,6 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             combined_osc = price_osc * volume_osc
 
             return combined_osc
-
 
 def create_default_volume_generators() -> List[FeatureGenerator]:
     """Create default volume feature generators."""
@@ -2327,18 +2321,15 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
 
     return generators
 
-
 class OptimizedVolumeFeatureFactory:
-    """
-    Factory for creating optimized volume feature generators with VectorBT and UnifiedVectorizationManager.
-    """
+    """Factory for creating optimized volume feature generators with VectorBT and UnifiedVectorizationManager."""
     
     def __init__(self, enable_gpu: bool = False, enable_parallel: bool = True):
         """
         Initialize the optimized volume feature factory.
         
         Args:
-            enable_gpu: Whether to enable GPU acceleration
+            enable_gpu: Whether to enable GPU processing
             enable_parallel: Whether to enable parallel processing
         """
         self.enable_gpu = enable_gpu
@@ -2445,21 +2436,19 @@ class OptimizedVolumeFeatureFactory:
         
         return stats
 
-
 def create_optimized_volume_factory(enable_gpu: bool = False, 
                                   enable_parallel: bool = True) -> OptimizedVolumeFeatureFactory:
     """
     Create an optimized volume feature factory.
     
     Args:
-        enable_gpu: Whether to enable GPU acceleration
+        enable_gpu: Whether to enable GPU processing
         enable_parallel: Whether to enable parallel processing
         
     Returns:
         OptimizedVolumeFeatureFactory instance
     """
     return OptimizedVolumeFeatureFactory(enable_gpu=enable_gpu, enable_parallel=enable_parallel)
-
 
 class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Enhanced OBV generator with smoothing and trend analysis."""
@@ -2558,7 +2547,6 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Enhanced OBV: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_enhanced_obv_{self.period}')
-
 
 class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Enhanced AD Line generator with advanced features."""
@@ -2669,7 +2657,6 @@ class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating Enhanced AD Line: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_enhanced_ad_line_{self.period}')
 
-
 class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Volume-Weighted AD Line generator."""
     
@@ -2756,7 +2743,6 @@ class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Volume-Weighted AD Line: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_volume_weighted_ad_line_{self.period}')
-
 
 class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Smoothed OBV generator with multiple smoothing techniques."""
@@ -2865,9 +2851,7 @@ class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating Smoothed OBV: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_smoothed_obv_{self.period}')
 
-
 # Analyst Features - Volume pattern generators
-    
 
 class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
     """Generator for volume pressure feature."""
@@ -2918,8 +2902,6 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
 
             volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
             return volume_pressure
-
-    
 
 class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
     """Generator for volume trend using linear regression."""
@@ -3336,7 +3318,6 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(elasticity, index=data.index)
 
-
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
                                    window: int, **kwargs) -> pd.Series:
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
@@ -3383,13 +3364,22 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
             raise ValueError(f"Unsupported operation: {operation}")
     
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
+        """Normalize feature using direct scaling to avoid circular imports."""
         try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
+            if method == 'zscore':
+                return (data - data.mean()) / data.std()
+            elif method == 'minmax':
+                return (data - data.min()) / (data.max() - data.min())
+            elif method == 'robust':
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / mad
+            else:
+                logger.warning(f"Unsupported normalization method: {method}, using zscore")
+                return (data - data.mean()) / data.std()
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
+            logger.warning(f"Normalization failed: {e}, using simple zscore")
+            return (data - data.mean()) / data.std()
     
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
@@ -3403,7 +3393,6 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
             return (data - median) / mad
         else:
             return data
-
 
 # ============================================================================
 # ADVANCED VOLUME FEATURES
@@ -3423,14 +3412,12 @@ class VolumeConfig:
     vwap_window: int = 20
     volume_profile_bins: int = 10
 
-
 class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
-    """
-    Advanced volume features with VectorBT optimization.
-    
+    """Advanced volume features with VectorBT optimization.
+
     This generator creates comprehensive volume features including OBV, AD, MFI,
     VWAP, and volume profile analysis with full VectorBT optimization.
-    
+
     Key Features:
     - On-Balance Volume (OBV) with VectorBT optimization
     - Accumulation/Distribution Line (AD) with advanced metrics
@@ -3438,13 +3425,13 @@ class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
     - Volume Rate of Change and momentum indicators
     - Volume-weighted average price (VWAP) with VectorBT
     - Volume profile analysis and clustering
-    
+
     Parameters:
     - config: VolumeConfig object with generator parameters
-    
+
     Returns:
     - Dict[str, np.ndarray]: Dictionary of advanced volume features
-    
+
     Example:
         >>> config = VolumeConfig(enable_obv=True, enable_vwap=True)
         >>> generator = AdvancedVolumeFeatures(config)
@@ -3474,7 +3461,7 @@ class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
         
         # Initialize VectorBT optimizer
         self.vectorbt_optimizer = None
-        if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
@@ -3582,7 +3569,6 @@ class AdvancedVolumeFeatures(VectorizedFeatureGenerator):
         
         return features
 
-
 # ============================================================================
 # FACTORY FUNCTIONS
 # ============================================================================
@@ -3602,7 +3588,6 @@ def create_advanced_volume_generators() -> List[FeatureGenerator]:
         generators.append(AdvancedVolumeFeatures(config))
     
     return generators
-
 
 def process_advanced_volume_features_batch(data: pd.DataFrame, 
                                          generators: Optional[List[FeatureGenerator]] = None,
@@ -3639,13 +3624,22 @@ def process_advanced_volume_features_batch(data: pd.DataFrame,
     else:
         return _process_advanced_volume_features_sequential(data, generators, **kwargs)
 
-
-def _process_advanced_volume_features_sequential(data: pd.DataFrame, 
+def _process_advanced_volume_features_sequential(data: pd.DataFrame,
                                                generators: List[FeatureGenerator],
                                                **kwargs) -> pd.DataFrame:
-    """Process advanced volume features sequentially (fallback)."""
+    """Process advanced volume features sequentially (fallback).
+
+    Args:
+        data: Input OHLCV data
+        generators: List of feature generators to process
+        **kwargs: Additional arguments for generators
+
+    Returns:
+        DataFrame with processed features
+    """
+
     results = []
-    
+
     for generator in generators:
         try:
             feature_result = generator._generate_feature(data, **kwargs)
@@ -3654,7 +3648,7 @@ def _process_advanced_volume_features_sequential(data: pd.DataFrame,
         except Exception as e:
             warnings.warn(f"Generator {generator.__class__.__name__} failed: {e}")
             continue
-    
+
     if results:
         return pd.concat(results, axis=1)
     else:

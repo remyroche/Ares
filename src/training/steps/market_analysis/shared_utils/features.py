@@ -22,7 +22,6 @@ from .feature_filters import (
     winsorize_frame,
 )
 
-
 @dataclass
 class FeatureConfig:
     """Configuration for feature preparation."""
@@ -104,7 +103,6 @@ class FeatureConfig:
                 'min_stability', quality_thresholds.get('min_temporal_stability', 0.1)
             )
 
-
 @dataclass
 class FeaturePreparationResult:
     """Container object for Stage 1 feature preparation outputs."""
@@ -116,7 +114,6 @@ class FeaturePreparationResult:
 
     def __array__(self) -> np.ndarray:  # pragma: no cover - helper for numpy interop
         return self.features_array
-
 
 def prepare_market_features(
     market_data: pd.DataFrame,
@@ -474,7 +471,6 @@ def prepare_market_features(
                     'threshold': feature_config.correlation_threshold,
                 })
 
-
                 if verbose:
                     tprint_debug(f"📊 [SHARED_FEATURES] Dropped correlated features: {len(features_to_remove)} features")
 
@@ -552,14 +548,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureConfig, verbose: bool = False) -> pd.DataFrame:
     """
@@ -632,7 +623,6 @@ def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureC
     
     return features_df
 
-
 def detect_data_leakage(features: np.ndarray, targets: np.ndarray, threshold: float = 0.95) -> Dict[str, Any]:
     """
     Detect potential data leakage by checking for suspiciously high correlations
@@ -685,7 +675,6 @@ def detect_data_leakage(features: np.ndarray, targets: np.ndarray, threshold: fl
         print(f"Error in data leakage detection: {e}")
         return results
 
-
 def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = None) -> bool:
     """
     Validate feature array quality.
@@ -719,7 +708,6 @@ def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = No
         
     except Exception:
         return False
-
 
 def _enhanced_nan_handling(features_df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     """
@@ -757,7 +745,6 @@ def _enhanced_nan_handling(features_df: pd.DataFrame, verbose: bool = False) -> 
         tprint(f"✅ [SHARED_FEATURES] Enhanced NaN handling completed: {remaining_nans} NaNs remaining")
     
     return features_df
-
 
 def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
     """

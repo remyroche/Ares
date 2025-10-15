@@ -1,4 +1,5 @@
 from .logger import system_logger
+import warnings
 import numpy as np
 
 '\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
@@ -295,12 +296,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
         numbers = re.findall('\\d+', ma_column_name)

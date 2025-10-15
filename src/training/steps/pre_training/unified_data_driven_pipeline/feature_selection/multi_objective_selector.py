@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import logging
 from scipy.optimize import minimize
-from sklearn.metrics import mutual_info_regression, mutual_info_classif
-from sklearn.feature_selection import mutual_info_score
+from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
+from sklearn.metrics import mutual_info_score
 import warnings
 
 try:

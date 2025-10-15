@@ -1,4 +1,5 @@
 """
+import warnings
 Enhanced data operations for advanced data processing.
 
 This module provides enhanced data processing operations including
@@ -110,12 +111,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         
         if axis == 0:
@@ -272,7 +269,6 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
     except Exception as e:
         logger.error(f"Error in smart sampling: {e}")
         return df
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

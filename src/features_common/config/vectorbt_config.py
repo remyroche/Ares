@@ -328,3 +328,7 @@ def reset_vectorbt_config() -> None:
     """Reset the global VectorBT configuration to defaults."""
     global _global_config
     _global_config = None
+
+
+# Alias for backward compatibility
+VectorizationConfig = VectorBTConfig

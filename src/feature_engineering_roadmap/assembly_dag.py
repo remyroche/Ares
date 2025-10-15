@@ -11,7 +11,7 @@ Orchestrates the complete feature engineering pipeline:
 
 VectorBT Optimizations:
 - Vectorized feature assembly operations
-- GPU acceleration for correlation analysis
+- 
 - Parallel processing for feature selection
 - Memory-efficient operations
 """
@@ -38,13 +38,8 @@ except ImportError:
     rolling_apply_parallel = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 # Import our modules
 from .data_contracts import InputBar, FeatureStore, ArtifactsRegistry
@@ -54,14 +49,12 @@ from .lookback_selection import LookbackSelector, create_feature_families
 from .interactions import InteractionEngine, create_default_interaction_config
 from ..models.patch_gru import PatchOrchestrator, PatchConfig, ModelType
 
-
 class AssemblyStatus(Enum):
     """Status of assembly process."""
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class AssemblyConfig:
@@ -86,7 +79,6 @@ class AssemblyConfig:
         if self.patch_horizons is None:
             self.patch_horizons = [1, 3]
 
-
 @dataclass
 class AssemblyResult:
     """Result of assembly process."""
@@ -97,7 +89,6 @@ class AssemblyResult:
     artifacts: ArtifactsRegistry
     status: AssemblyStatus
     metadata: Dict[str, Any]
-
 
 class CalendarSessionizer:
     """Exchange-aware session management."""
@@ -129,7 +120,6 @@ class CalendarSessionizer:
         result['last30'] = (minutes_to_close <= 30).astype(int)
 
         return result
-
 
 class ParentFeatureBuilder:
     """Builds parent features from market data."""
@@ -199,10 +189,8 @@ class ParentFeatureBuilder:
         
         return features_df
 
-
 class AssemblyError(RuntimeError):
     """Raised when assembly fails."""
-
 
 class AssemblyDAG:
     """Main assembly DAG orchestrator with VectorBT optimization."""
@@ -218,7 +206,7 @@ class AssemblyDAG:
         
         # VectorBT optimization settings
         self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = config.use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         self.enable_parallel = config.enable_parallel and VECTORBT_AVAILABLE
     
     def assemble(self, 
@@ -453,7 +441,7 @@ class AssemblyDAG:
                                                     threshold: float = 0.9
                                                     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """VectorBT-optimized correlation analysis and orthogonalization."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._orthogonalize_correlated_features_gpu(features, threshold)
         else:
             return self._orthogonalize_correlated_features_cpu_vectorized(features, threshold)
@@ -531,87 +519,8 @@ class AssemblyDAG:
                                              features: pd.DataFrame,
                                              threshold: float = 0.9
                                              ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-        """GPU-accelerated correlation analysis and orthogonalization using CuPy."""
-        if not CUPY_AVAILABLE:
-            return self._orthogonalize_correlated_features_cpu_vectorized(features, threshold)
-        
-        # Convert to GPU arrays for correlation calculation
-        features_gpu = cp.asarray(features.values, dtype=cp.float32)
-        
-        # GPU-accelerated correlation calculation
-        corr_matrix_gpu = cp.corrcoef(features_gpu.T)
-        corr_matrix_gpu = cp.abs(corr_matrix_gpu)
-        corr_matrix_gpu = cp.fill_diagonal(corr_matrix_gpu, 0.0)
-        
-        # Convert back to CPU for group finding (as it's more complex)
-        corr_matrix = pd.DataFrame(
-            cp.asnumpy(corr_matrix_gpu),
-            index=features.columns,
-            columns=features.columns
-        )
-        
-        visited = set()
-        rotation_metadata: Dict[str, Any] = {}
-
-        for column in corr_matrix.columns:
-            if column in visited:
-                continue
-
-            group = {column}
-            stack = [column]
-
-            while stack:
-                current = stack.pop()
-                visited.add(current)
-                strong_partners = corr_matrix.loc[current][corr_matrix.loc[current] > threshold].index.tolist()
-                for partner in strong_partners:
-                    if partner not in group:
-                        group.add(partner)
-                        if partner not in visited:
-                            stack.append(partner)
-
-            if len(group) < 2:
-                continue
-
-            ordered_group = sorted(group, key=lambda name: list(features.columns).index(name))
-            subset = features[ordered_group]
-
-            # GPU-accelerated mean calculation and centering
-            subset_gpu = cp.asarray(subset.values, dtype=cp.float32)
-            column_means_gpu = cp.mean(subset_gpu, axis=0)
-            subset_filled_gpu = cp.nan_to_num(subset_gpu, nan=cp.nanmean(subset_gpu, axis=0))
-            centered_gpu = subset_filled_gpu - column_means_gpu
-
-            if cp.allclose(centered_gpu, 0.0):
-                continue
-
-            try:
-                # GPU-accelerated SVD
-                _, _, vh = cp.linalg.svd(centered_gpu, full_matrices=False)
-            except cp.linalg.LinAlgError:
-                continue
-
-            rotation_matrix_gpu = vh.T
-            rotated_values_gpu = centered_gpu @ rotation_matrix_gpu
-
-            # Convert back to CPU
-            rotated_values = cp.asnumpy(rotated_values_gpu)
-            column_means = cp.asnumpy(column_means_gpu)
-            rotation_matrix = cp.asnumpy(rotation_matrix_gpu)
-
-            rotated_df = pd.DataFrame(rotated_values, index=subset.index, columns=ordered_group)
-            features.loc[:, ordered_group] = rotated_df
-
-            group_key = "::".join(ordered_group)
-            rotation_metadata[group_key] = {
-                'columns': ordered_group,
-                'means': {col: mean for col, mean in zip(ordered_group, column_means)},
-                'rotation_matrix': rotation_matrix.tolist(),
-                'method': 'pca_gpu',
-                'threshold': threshold
-            }
-
-        return features, rotation_metadata
+        """CPU-based correlation analysis and orthogonalization (GPU support removed)."""
+        return self._orthogonalize_correlated_features_cpu_vectorized(features, threshold)
 
     def _create_artifacts(self,
                          transform_router: TransformRouter,
@@ -674,11 +583,9 @@ class AssemblyDAG:
             spec_hash=f"assembly_{hash(str(transform_params))}"
         )
 
-
 def create_assembly_pipeline(config: AssemblyConfig) -> AssemblyDAG:
     """Create assembly pipeline with configuration."""
     return AssemblyDAG(config)
-
 
 def run_assembly(bars: pd.DataFrame, 
                 targets: Optional[Dict[int, pd.Series]] = None,

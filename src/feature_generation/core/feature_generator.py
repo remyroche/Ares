@@ -19,8 +19,8 @@ import numpy as np
 import warnings
 
 # Import centralized logging and error handling
-from ..utils.centralized_logging import tprint, log_function_execution, fast_fail_error
-from ..utils.error_handling import (
+from src.feature_generation.utils.centralized_logging import tprint, log_function_execution, fast_fail_error
+from src.feature_generation.utils.error_handling import (
     DataValidationError, ConfigurationError, ComputationError,
     validate_required_columns, validate_finite_values, safe_divide
 )
@@ -28,11 +28,34 @@ from ..utils.error_handling import (
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # Try to import rolling functions from vectorbt.generic (older API)
+    try:
+        from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+        from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+        VECTORBT_ROLLING_AVAILABLE = True
+    except ImportError:
+        # Rolling functions not available in this VectorBT version
+        rolling_mean = None
+        rolling_std = None
+        rolling_var = None
+        rolling_min = None
+        rolling_max = None
+        rolling_sum = None
+        rolling_apply = None
+        rolling_corr = None
+        rolling_cov = None
+        scale = None
+        rank = None
+        zscore = None
+        winsorize = None
+        clip = None
+        quantile = None
+        VECTORBT_ROLLING_AVAILABLE = False
+
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
+    VECTORBT_ROLLING_AVAILABLE = False
     vbt = None
     rolling_mean = None
     rolling_std = None
@@ -52,13 +75,9 @@ except ImportError:
     # VectorBT not available - will use fallback implementations
     tprint("VectorBT not available. Install with: pip install vectorbt for optimized performance", level="warning")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
+CUPY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +182,7 @@ class FeatureGenerator(ABC):
         
         # VectorBT configuration
         self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
-        self.enable_gpu = config.enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.enable_parallel = config.enable_parallel and VECTORBT_AVAILABLE
         self.vectorbt_threshold = config.vectorbt_threshold
         
@@ -195,35 +214,47 @@ class FeatureGenerator(ABC):
             return
         
         try:
-            # Configure VectorBT settings
-            vbt.settings.setting('array_wrapper', 'pandas')
-            vbt.settings.setting('caching', True)
-            vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
-            
+            # Configure VectorBT settings using newer API
+            # Check if array_wrapper structure exists and set wrapper if available
+            if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
+                vbt.settings['array_wrapper']['wrapper'] = 'pandas'
+            vbt.settings['caching']['enabled'] = True
+
             if self.enable_gpu:
                 try:
-                    vbt.settings.setting('use_gpu', True)
-                    self.logger.debug("✅ VectorBT GPU acceleration enabled")
+                    # Check if GPU settings are available in this VectorBT version
+                    if hasattr(vbt.settings, 'gpu') and 'enabled' in vbt.settings['gpu']:
+                        vbt.settings['gpu']['enabled'] = True
+                        self.logger.debug("✅ VectorBT GPU processing enabled")
+                    else:
+                        self.logger.debug("⚠️ GPU processing not available in this VectorBT version")
+                        self.enable_gpu = False
                 except Exception as e:
-                    self.logger.warning(f"⚠️ GPU acceleration not available: {e}")
+                    self.logger.warning(f"⚠️ GPU processing not available: {e}")
                     self.enable_gpu = False
-            
+
             if self.enable_parallel:
                 try:
-                    vbt.settings.setting('use_parallel', True)
-                    self.logger.debug("✅ VectorBT parallel processing enabled")
+                    # Check if parallel settings are available in this VectorBT version
+                    if hasattr(vbt.settings, 'parallel') and 'enabled' in vbt.settings['parallel']:
+                        vbt.settings['parallel']['enabled'] = True
+                        self.logger.debug("✅ VectorBT parallel processing enabled")
+                    else:
+                        self.logger.debug("⚠️ Parallel processing not available in this VectorBT version")
+                        self.enable_parallel = False
                 except Exception as e:
                     self.logger.warning(f"⚠️ Parallel processing not available: {e}")
                     self.enable_parallel = False
-                    
+
         except Exception as e:
             self.logger.warning(f"VectorBT configuration failed: {e}")
     
     def _should_use_vectorbt(self, data: pd.DataFrame) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (self.use_vectorbt and 
-                len(data) >= self.vectorbt_threshold and 
-                VECTORBT_AVAILABLE)
+        return (self.use_vectorbt and
+                len(data) >= self.vectorbt_threshold and
+                VECTORBT_AVAILABLE and
+                VECTORBT_ROLLING_AVAILABLE)
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
@@ -242,7 +273,7 @@ class FeatureGenerator(ABC):
         """
         # Use VectorBTRollingOptimizer for enhanced performance
         try:
-            from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
             optimizer = get_vectorbt_rolling_optimizer()
             
             # Map operation to optimizer method
@@ -787,15 +818,15 @@ class CompositeFeatureGenerator(FeatureGenerator):
 class VectorizedFeatureGenerator(FeatureGenerator):
     """
     Base class for vectorized feature generators with native VectorBT support.
-    
+
     This class provides optimized vectorized computation capabilities
     using VectorBT's optimized backend, matrix operations framework, and optimization utilities.
     """
-    
+
     def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True, enable_vectorization_optimization: bool = True):
         """
         Initialize vectorized feature generator with native VectorBT support.
-        
+
         Args:
             config: Feature configuration with VectorBT settings
             enable_matrix_ops: Whether to enable matrix operations
@@ -804,11 +835,11 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         super().__init__(config)
         self.enable_matrix_ops = enable_matrix_ops
         self.enable_vectorization_optimization = enable_vectorization_optimization
-        
+
         # Initialize matrix operations if available
         if enable_matrix_ops:
             try:
-                from ...utils.matrix_operations import get_unified_matrix_operations
+                from src.feature_generation.utils.matrix_operations import get_unified_matrix_operations
                 self.matrix_ops = get_unified_matrix_operations()
                 self.logger.debug("Matrix operations enabled")
             except ImportError:
@@ -817,11 +848,11 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                 self.logger.warning("Matrix operations not available")
         else:
             self.matrix_ops = None
-        
+
         # Initialize vectorization optimizer if available
         if enable_vectorization_optimization:
             try:
-                from ..utils.vectorization_optimizer import get_vectorization_optimizer
+                from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
                 self.vectorization_optimizer = get_vectorization_optimizer()
                 self.logger.debug("Vectorization optimizer enabled")
             except ImportError:
@@ -830,50 +861,50 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                 self.logger.warning("Vectorization optimizer not available")
         else:
             self.vectorization_optimizer = None
-    
+
     def _vectorized_operation(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform vectorized operation using matrix operations framework.
-        
+
         Args:
             operation: Operation to perform
             data: Input data array
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the operation
         """
         if not self.enable_matrix_ops or self.matrix_ops is None:
             # Fallback to numpy operations
             return self._numpy_fallback(operation, data, **kwargs)
-        
+
         try:
             return self.matrix_ops.batch_process(data, operation, **kwargs)
         except Exception as e:
             self.logger.warning(f"Matrix operation failed, using numpy fallback: {e}")
             return self._numpy_fallback(operation, data, **kwargs)
-    
+
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize DataFrame for vectorized processing using the vectorization optimizer.
-        
+
         This method provides automatic optimization of DataFrames for efficient vectorized
         processing. It includes memory optimization, data type optimization, and VectorBT
         compatibility checks.
-        
+
         Features:
         - Automatic memory optimization for large datasets
         - Data type optimization (int64 -> int32/int16/int8, float64 -> float32)
         - VectorBT compatibility preparation
         - Memory usage monitoring and optimization
         - Graceful fallback for unsupported data types
-        
+
         Args:
             data: Input DataFrame to optimize
-            
+
         Returns:
             Optimized DataFrame with improved memory usage and processing efficiency
-            
+
         Example:
             >>> generator = VectorizedFeatureGenerator(config)
             >>> optimized_data = generator.optimize_dataframe_processing(data)
@@ -883,27 +914,27 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             return self.vectorization_optimizer.optimize_dataframe_processing(data)
         else:
             return data
-    
-    def vectorized_rolling_operations(self, 
+
+    def vectorized_rolling_operations(self,
                                     data: pd.DataFrame,
                                     operations: List[str],
                                     windows: List[int],
                                     columns: Optional[List[str]] = None) -> pd.DataFrame:
         """
         Perform vectorized rolling operations with VectorBT optimization.
-        
+
         This method provides high-performance rolling operations using VectorBT's optimized
         C++ backend when available, with automatic fallback to pandas for smaller datasets
         or when VectorBT is not available.
-        
+
         Features:
         - VectorBT optimization for large datasets (>1000 rows)
         - Automatic fallback to pandas for smaller datasets
         - Support for multiple operations and windows in a single call
         - Memory-efficient processing with chunked operations
-        - GPU acceleration support when available
+        - 
         - Comprehensive error handling and logging
-        
+
         Supported Operations:
         - 'mean': Rolling mean
         - 'std': Rolling standard deviation
@@ -913,21 +944,21 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         - 'sum': Rolling sum
         - 'corr': Rolling correlation (requires 'other' parameter)
         - 'cov': Rolling covariance (requires 'other' parameter)
-        
+
         Args:
             data: Input DataFrame containing the data to process
             operations: List of operation types to perform
             windows: List of window sizes for rolling calculations
             columns: Columns to process (None = all numeric columns)
-            
+
         Returns:
             DataFrame with rolling features added as new columns
-            
+
         Example:
             >>> generator = VectorizedFeatureGenerator(config)
             >>> result = generator.vectorized_rolling_operations(
-            ...     data, 
-            ...     operations=['mean', 'std'], 
+            ...     data,
+            ...     operations=['mean', 'std'],
             ...     windows=[20, 50],
             ...     columns=['close', 'volume']
             ... )
@@ -936,7 +967,7 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         # Use VectorBT if available and data is large enough
         if self._should_use_vectorbt(data):
             return self._vectorbt_rolling_operations(data, operations, windows, columns)
-        
+
         # Fallback to vectorization optimizer
         if self.enable_vectorization_optimization and self.vectorization_optimizer:
             return self.vectorization_optimizer.vectorized_rolling_operations(
@@ -944,13 +975,13 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             )
         else:
             return self._fallback_rolling_operations(data, operations, windows, columns)
-    
-    def _vectorbt_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+
+    def _vectorbt_rolling_operations(self, data: pd.DataFrame, operations: List[str],
                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
         """Perform rolling operations using VectorBT optimization."""
         result = data.copy()
         process_columns = columns or data.select_dtypes(include=[np.number]).columns
-        
+
         for col in process_columns:
             for operation in operations:
                 for window in windows:
@@ -964,42 +995,42 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                         result[f'{col}_{operation}_{window}'] = self._pandas_rolling_operation(
                             data[col], operation, window
                         )
-        
+
         return result
-    
-    def _fallback_rolling_operations(self, 
+
+    def _fallback_rolling_operations(self,
                                    data: pd.DataFrame,
                                    operations: List[str],
                                    windows: List[int],
                                    columns: List[str]) -> pd.DataFrame:
         """Fallback rolling operations without vectorization optimizer."""
         result = data.copy()
-        
+
         if columns is None:
             columns = data.select_dtypes(include=[np.number]).columns.tolist()
-        
+
         for window in windows:
             for col in columns:
                 if col in data.columns:
                     series = data[col]
-                    
+
                     for operation in operations:
                         # Use VectorBT helper methods for consistency
                         result[f'{col}_rolling_{operation}_{window}'] = self._pandas_rolling_operation(
                             series, operation, window
                         )
-        
+
         return result
-    
+
     def _numpy_fallback(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Fallback to numpy operations when matrix operations are not available.
-        
+
         Args:
             operation: Operation to perform
             data: Input data array
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the operation
         """
@@ -1026,13 +1057,13 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             return pd.Series(data).ewm(span=span).mean().values
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     # Enhanced rolling operation helper methods using VectorBTRollingOptimizer
     def _calculate_ema_vectorized(self, data: pd.Series, window: int, alpha: Optional[float] = None) -> pd.Series:
         """Calculate EMA using vectorized operations with VectorBT optimization."""
         if alpha is None:
             alpha = 2.0 / (window + 1)
-        
+
         try:
             if VECTORBT_AVAILABLE and len(data) >= 1000:  # Use VectorBT for large datasets
                 return vbt.ta.ema(data, window=window, alpha=alpha)
@@ -1042,31 +1073,31 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         except Exception as e:
             self.logger.warning(f"VectorBT EMA calculation failed: {e}, using pandas fallback")
             return data.ewm(span=window, alpha=alpha).mean()
-    
+
     def _calculate_sma_vectorized(self, data: pd.Series, window: int) -> pd.Series:
         """Calculate SMA using vectorized operations with VectorBT optimization."""
         return self._vectorbt_rolling_operation(data, "mean", window)
-    
+
     def _calculate_rolling_std_vectorized(self, data: pd.Series, window: int) -> pd.Series:
         """Calculate rolling standard deviation using vectorized operations."""
         return self._vectorbt_rolling_operation(data, "std", window)
-    
+
     def _calculate_rolling_min_vectorized(self, data: pd.Series, window: int) -> pd.Series:
         """Calculate rolling minimum using vectorized operations."""
         return self._vectorbt_rolling_operation(data, "min", window)
-    
+
     def _calculate_rolling_max_vectorized(self, data: pd.Series, window: int) -> pd.Series:
         """Calculate rolling maximum using vectorized operations."""
         return self._vectorbt_rolling_operation(data, "max", window)
-    
+
     def _calculate_rolling_sum_vectorized(self, data: pd.Series, window: int) -> pd.Series:
         """Calculate rolling sum using vectorized operations."""
         return self._vectorbt_rolling_operation(data, "sum", window)
-    
+
     def _calculate_rolling_quantile_vectorized(self, data: pd.Series, window: int, q: float = 0.5) -> pd.Series:
         """Calculate rolling quantile using vectorized operations."""
         try:
-            from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
             optimizer = get_vectorbt_rolling_optimizer()
             return optimizer.rolling_quantile(data, window, q=q)
         except ImportError:

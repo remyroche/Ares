@@ -47,14 +47,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class ValidationLevel(Enum):
     """Validation levels."""
@@ -62,7 +57,6 @@ class ValidationLevel(Enum):
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
     COMPREHENSIVE = "comprehensive"
-
 
 @dataclass
 class ValidationResult:
@@ -75,7 +69,6 @@ class ValidationResult:
     overall_quality: str
     recommendations: List[str]
     timestamp: datetime
-
 
 class EnhancedValidationFramework:
     """

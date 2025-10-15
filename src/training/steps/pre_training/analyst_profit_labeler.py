@@ -1047,7 +1047,25 @@ async def execute_analyst_profit_labeling(
         tprint_success(f"✅ Labels generated successfully: {result.n_samples} samples, {result.n_targets} targets")
         
         return result
-        
+
     except Exception as e:
         tprint_error(f"❌ execute_analyst_profit_labeling failed: {e}")
         raise
+
+
+# Register component with factory
+def _register_analyst_profit_labeler():
+    """Register the analyst profit labeler component with the factory."""
+    try:
+        from ..components.component_factory import ComponentFactory
+        ComponentFactory.register_component(
+            'analyst_profit_labeler',
+            AnalystProfitLabelerComponent
+        )
+    except ImportError:
+        # Component factory not available, skip registration
+        pass
+
+
+# Register the component when module is imported
+_register_analyst_profit_labeler()

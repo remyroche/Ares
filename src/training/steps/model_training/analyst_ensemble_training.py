@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
 import time
 import traceback
+import warnings
 from pathlib import Path
 import sys
 import os
@@ -84,7 +85,7 @@ from src.utils.serialization_utils import JSONSerializer, PickleSerializer
 # Import ML common utilities
 from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
 from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
-from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
+from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.hyperparameter_optimization import HyperparameterOptimizer
 
 # Import Bayesian TPE optimizer for advanced HPO
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
@@ -113,7 +114,6 @@ from src.utils.data.quality.data_cleaning import (
 
 # Setup logging
 logger = system_logger.getChild('AnalystEnsembleTraining')
-
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     """
@@ -167,27 +167,27 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 1: Validate and setup configuration
             config = self._setup_configuration(config)
             self._validate_config_consolidated(config)
-            
-            # Step 2: Initialize NAS models storage
+
+            # Step 2: Initialize parent class FIRST (this sets self.config)
+            super().__init__(config, enable_vectorization=enable_vectorization)
+
+            # Step 3: Initialize NAS models storage
             self.nas_models = {}  # Per-regime NAS models
             self.nas_architectures = {}  # Per-regime NAS architectures
-            
-            # Step 3: Initialize hardware optimizers (consolidated)
+
+            # Step 4: Initialize hardware optimizers (consolidated)
             self.hardware = self._initialize_hardware_optimizers_consolidated()
-            
-            # Step 4: Initialize data cleaner
+
+            # Step 5: Initialize data cleaner
             self.data_cleaner = self._initialize_data_cleaner()
-            
-            # Step 5: Initialize model persistence
+
+            # Step 6: Initialize model persistence (now self.config is available)
             self.model_persistence = self._initialize_model_persistence()
-            
-            # Step 5.5: Initialize model cache
+
+            # Step 7: Initialize model cache (now self.config is available)
             self.model_cache = self._initialize_model_cache()
             
-            # Step 6: Initialize parent class
-            super().__init__(config, enable_vectorization=enable_vectorization)
-            
-            # Step 7: Setup consolidated tracking
+            # Step 8: Setup consolidated tracking
             self._setup_tracking_consolidated(config)
             
             # Log initialization summary
@@ -1335,8 +1335,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         
         tprint_success("✅ Enhanced training execution completed")
         return results
-    
-    
+
     def _post_training_processing(
         self,
         results: Dict[str, Any],
@@ -2086,7 +2085,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Hardware optimization recommendations
             hw_stats = self.training_stats.get('hardware_optimizers_available', {})
             if not hw_stats.get('gpu_manager', False):
-                recommendations.append("⚙️ Consider enabling GPU acceleration for large datasets")
+                recommendations.append("⚙️ Consider enabling GPU manager for better performance")
             if not hw_stats.get('memory_optimizer', False):
                 recommendations.append("💾 Consider enabling memory optimization for large datasets")
             if not hw_stats.get('cpu_optimizer', False):
@@ -2482,13 +2481,17 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+
     cp = None
+
+
+# Convenience functions for backward compatibility
+def create_analyst_ensemble_training_step(
+    config: Optional[EnsembleTrainingConfig] = None
+) -> AnalystEnsembleTrainingStep:
+    """Create Analyst ensemble training step."""
+    return AnalystEnsembleTrainingStep(config)
 
 
 def execute_analyst_ensemble_training(
@@ -2504,7 +2507,6 @@ def execute_analyst_ensemble_training(
     """Execute Analyst ensemble training step."""
     step = create_analyst_ensemble_training_step(config)
     return step.execute(X, y, regime_labels, feature_names, regime_states, base_analyst_models, analyst_training_metrics)
-
 
 # Example usage
 if __name__ == "__main__":
@@ -2565,7 +2567,7 @@ if __name__ == "__main__":
     tprint_info("- ✅ Provides enhanced trade decision signals")
     
     tprint_info("⚙️ HARDWARE OPTIMIZATION FEATURES:")
-    tprint_info("- ✅ M1 GPU acceleration support")
+    tprint_info("- ✅ M1 Mac optimization for enhanced performance")
     tprint_info("- ✅ Memory optimization for large datasets")
     tprint_info("- ✅ CPU optimization for better performance")
     tprint_info("- ✅ Automatic hardware detection and configuration")

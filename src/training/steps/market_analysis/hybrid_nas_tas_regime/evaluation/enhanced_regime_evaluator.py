@@ -47,19 +47,14 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class RegimeMetrics:
@@ -85,7 +80,6 @@ class RegimeMetrics:
     risk_score: float
     performance_score: float
 
-
 @dataclass
 class RegimeEvaluationResult:
     """Result from regime evaluation."""
@@ -97,7 +91,6 @@ class RegimeEvaluationResult:
     economic_rankings: Dict[str, List[int]]
     trading_rankings: Dict[str, List[int]]
     metadata: Dict[str, Any]
-
 
 class EnhancedRegimeEvaluator:
     """
@@ -694,7 +687,6 @@ class EnhancedRegimeEvaluator:
         except Exception as e:
             self.logger.warning(f"Trading rankings calculation failed: {e}")
             return {}
-
 
 def create_enhanced_regime_evaluator(config: Dict[str, Any]) -> EnhancedRegimeEvaluator:
     """Create enhanced regime evaluator."""

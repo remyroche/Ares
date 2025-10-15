@@ -17,7 +17,7 @@ Key Features:
 
 Built on existing utilities:
 - Uses math_validation.py for safe mathematical operations
-- Integrates with m1_gpu_utils.py for GPU acceleration
+- Integrates with m1_gpu_utils.py for 
 - Leverages common_operations.py for robust error handling
 - Builds on existing feature selection patterns
 """
@@ -98,7 +98,6 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited feature selection functionality")
-
 
 class FeatureSelectionFramework:
     """Comprehensive feature selection framework with multiple methods and stability analysis."""
@@ -257,7 +256,7 @@ class FeatureSelectionFramework:
             # Initialize memory optimization tools
             self._initialize_memory_optimization_tools()
             
-            # Initialize GPU acceleration tools
+            # Initialize 
             self._initialize_gpu_acceleration_tools()
             
             # Setup optimization settings
@@ -366,7 +365,7 @@ class FeatureSelectionFramework:
             self.enable_chunked_processing = False
 
     def _initialize_gpu_acceleration_tools(self):
-        """Initialize GPU acceleration tools for VectorBT operations."""
+        """Initialize GPU acceleration tools."""
         try:
             # GPU settings
             self.enable_gpu = self.config.get('enable_gpu', False)
@@ -379,22 +378,20 @@ class FeatureSelectionFramework:
             if self.enable_gpu:
                 try:
                     import torch
-                    import cupy as cp
-                    
+
                     if torch.cuda.is_available():
                         # Configure CUDA device
                         torch.cuda.set_device(self.gpu_device)
                         
-                        # Configure CuPy memory pool
-                        cp.cuda.MemoryPool().set_limit(fraction=self.gpu_memory_fraction)
+                        # GPU memory configuration removed
                         
                         self.gpu_available = True
-                        _LOGGER.info("🚀 GPU acceleration initialized successfully")
+                        _LOGGER.info("🚀 GPU acceleration enabled") 
                     else:
-                        _LOGGER.warning("⚠️ CUDA not available, GPU acceleration disabled")
+                        _LOGGER.warning("⚠️ CUDA not available, using CPU") 
                         
                 except ImportError:
-                    _LOGGER.warning("⚠️ CUDA libraries not available, GPU acceleration disabled")
+                    _LOGGER.warning("⚠️ CUDA libraries not available, using CPU") 
                 except Exception as e:
                     _LOGGER.warning(f"⚠️ GPU initialization failed: {e}")
             
@@ -402,57 +399,32 @@ class FeatureSelectionFramework:
                 _LOGGER.info("💻 Using CPU-only processing")
                 
         except Exception as e:
-            _LOGGER.warning(f"⚠️ GPU acceleration tools initialization failed: {e}")
+            _LOGGER.warning(f"⚠️ GPU tools initialization failed: {e}")
             self.gpu_available = False
             self.enable_gpu = False
 
     def _gpu_correlation_computation(self, X: np.ndarray) -> np.ndarray:
-        """GPU-accelerated correlation computation using CuPy."""
-        try:
-            if not self.gpu_available:
-                return np.corrcoef(X.T)
-            
-            import cupy as cp
-            
-            # Move data to GPU
-            X_gpu = cp.asarray(X)
-            
-            # GPU-accelerated correlation
-            corr_matrix = cp.corrcoef(X_gpu.T)
-            
-            # Move result back to CPU
-            result = cp.asnumpy(corr_matrix)
-            
-            # Clean up GPU memory
-            del X_gpu, corr_matrix
-            cp.get_default_memory_pool().free_all_blocks()
-            
-            return result
-            
-        except Exception as e:
-            _LOGGER.warning(f"⚠️ GPU correlation computation failed: {e}")
-            return np.corrcoef(X.T)
+        """CPU-based correlation computation (GPU support removed)."""
+        return np.corrcoef(X.T)
 
     def _gpu_variance_computation(self, X: np.ndarray) -> np.ndarray:
         """GPU-accelerated variance computation using CuPy."""
         try:
             if not self.gpu_available:
                 return np.var(X, axis=0)
-            
-            import cupy as cp
-            
+
             # Move data to GPU
-            X_gpu = cp.asarray(X)
+            X_gpu = np.asarray(X)
             
             # GPU-accelerated variance
-            variances = cp.var(X_gpu, axis=0)
+            variances = np.var(X_gpu, axis=0)
             
             # Move result back to CPU
-            result = cp.asnumpy(variances)
+            result = np.asarray(variances)
             
             # Clean up GPU memory
             del X_gpu, variances
-            cp.get_default_memory_pool().free_all_blocks()
+            # GPU memory cleanup removed
             
             return result
             
@@ -599,7 +571,6 @@ class FeatureSelectionFramework:
         Enhanced with:
         - VectorBT rolling correlation for time series data
         - Memory-mapped processing for large datasets
-        - GPU acceleration when available
         - Advanced caching with VectorBT-aware keys
         - Financial data optimizations
         
@@ -619,7 +590,7 @@ class FeatureSelectionFramework:
                 return df.corr(method='spearman').values
         
         try:
-            # Use GPU acceleration for large datasets if available
+            # Use 
             if self.gpu_available and X.shape[1] > 1000:
                 return self._gpu_correlation_computation(X)
             
@@ -714,7 +685,7 @@ class FeatureSelectionFramework:
         Enhanced with:
         - VectorBT rolling variance for time series data
         - Memory-mapped processing for large datasets
-        - GPU acceleration when available
+        - 
         - Financial data optimizations
         - Advanced caching with VectorBT-aware keys
         
@@ -731,7 +702,7 @@ class FeatureSelectionFramework:
             return variances > variance_threshold
         
         try:
-            # Use GPU acceleration for large datasets if available
+            # Use 
             if self.gpu_available and X.shape[1] > 1000:
                 variances = self._gpu_variance_computation(X)
                 return variances > variance_threshold
@@ -797,7 +768,7 @@ class FeatureSelectionFramework:
         Enhanced with:
         - VectorBT parallel processing with financial data optimizations
         - Memory-mapped processing for large datasets
-        - GPU acceleration when available
+        - 
         - Advanced caching with VectorBT-aware keys
         - Financial data optimizations
         
@@ -1114,7 +1085,7 @@ class FeatureSelectionFramework:
         - Caching
         - Safe mathematical operations
         - Error handling with fallbacks
-        - GPU acceleration when available
+        - 
         
         Args:
             method_name: Name of the method for logging and monitoring
@@ -2629,7 +2600,6 @@ class FeatureSelectionFramework:
 
             # Use processed data for RFECV
             X = X_processed
-
 
             _LOGGER.info(f"🔍 Determining optimal RFE features using {cv_folds}-fold CV...")
             
@@ -4232,7 +4202,7 @@ class FeatureSelectionFramework:
         - Caching for correlation matrices
         - Adaptive thresholding
         - Data quality validation
-        - M1 GPU acceleration
+        - M1 
         - Parallel processing for large datasets
 
         Args:
@@ -9359,7 +9329,6 @@ class FeatureSelectionFramework:
             if not SKLEARN_AVAILABLE:
                 return self._calculate_importance_scores(X, y, feature_names)
 
-
             # Get baseline score
             baseline_score = self._calculate_model_score(model, X, y)
 
@@ -9465,7 +9434,6 @@ class FeatureSelectionFramework:
         except Exception as e:
             self.logger.warning(f"Feature stability calculation failed: {e}")
             return {}
-
 
 # Comprehensive usage example demonstrating all optimizations
 if __name__ == "__main__":
@@ -9590,3 +9558,8 @@ if __name__ == "__main__":
     tprint("💡 Use framework.run_comprehensive_feature_selection() for full optimization")
     tprint("🔧 All methods automatically enhanced with performance monitoring, caching, and memory optimization")
     tprint("🚨 Enhanced error handling with detailed context and suspicious feature detection")
+
+
+# Aliases for backward compatibility
+FeatureSelector = FeatureSelectionFramework
+FeatureSelectionConfig = dict  # Simple dict-based config for now

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -11,7 +12,6 @@ import numpy as np
 import pandas as pd
 
 from src.utils.tprint import LogLevel, tprint_info, tprint_structured, tprint_success
-
 
 # ---------------------------------------------------------------------------
 # Core statistical helpers
@@ -154,11 +154,9 @@ def calculate_max_drawdown(
     
     return float(abs(max_drawdown)), int(peak_idx), int(max_dd_idx)
 
-
 # ---------------------------------------------------------------------------
 # Volatility-aware trailing helpers
 # ---------------------------------------------------------------------------
-
 
 def _ensure_datetime_index(data: pd.DataFrame) -> pd.DataFrame:
     """Ensure a DataFrame is indexed by datetime for resampling."""
@@ -179,7 +177,6 @@ def _ensure_datetime_index(data: pd.DataFrame) -> pd.DataFrame:
 
     return df.sort_index()
 
-
 def _resample_ohlcv(data: pd.DataFrame, rule: str) -> pd.DataFrame:
     """Resample OHLCV data to a new timeframe."""
 
@@ -195,7 +192,6 @@ def _resample_ohlcv(data: pd.DataFrame, rule: str) -> pd.DataFrame:
     }
     resampled = data.resample(rule).agg(agg).dropna()
     return resampled
-
 
 def compute_atr(data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, float]:
     """Compute the Average True Range and return the full series and latest value."""
@@ -221,7 +217,6 @@ def compute_atr(data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, float]
     latest_atr = float(atr_series.iloc[-1]) if not atr_series.dropna().empty else 0.0
     return atr_series, latest_atr
 
-
 def compute_realized_volatility(data: pd.DataFrame, window: int = 20) -> Tuple[pd.Series, float]:
     """Compute realized volatility using log returns."""
 
@@ -236,7 +231,6 @@ def compute_realized_volatility(data: pd.DataFrame, window: int = 20) -> Tuple[p
     latest_vol = float(vol_series.iloc[-1]) if not vol_series.dropna().empty else 0.0
     return vol_series, latest_vol
 
-
 def compute_momentum(data: pd.DataFrame, window: int = 3) -> float:
     """Compute simple momentum over a rolling window."""
 
@@ -246,7 +240,6 @@ def compute_momentum(data: pd.DataFrame, window: int = 3) -> float:
     close = data["close"]
     momentum = float(close.iloc[-1] - close.iloc[-window - 1])
     return momentum
-
 
 def compute_rsi(data: pd.DataFrame, window: int = 3) -> float:
     """Compute a short-term RSI."""
@@ -269,7 +262,6 @@ def compute_rsi(data: pd.DataFrame, window: int = 3) -> float:
     rsi = 100.0 - (100.0 / (1.0 + rs))
     return float(rsi)
 
-
 def compute_volatility_slope(series: pd.Series, lookback: int = 5) -> float:
     """Compute a simple slope for a volatility series."""
 
@@ -280,7 +272,6 @@ def compute_volatility_slope(series: pd.Series, lookback: int = 5) -> float:
     slope = float(recent.iloc[-1] - recent.iloc[0])
     return slope
 
-
 @dataclass
 class TrailingFeatureBundle:
     """Container for trailing management metrics."""
@@ -290,7 +281,6 @@ class TrailingFeatureBundle:
     bar_seconds: int
     tactician: Dict[str, float]
     analyst: Dict[str, float]
-
 
 def prepare_trailing_feature_bundle(
     market_data: pd.DataFrame,
@@ -695,14 +685,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:
     """Calculate the Average True Range (ATR) for OHLCV input data."""
@@ -729,7 +714,6 @@ def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:
     atr = true_range.rolling(window=period, min_periods=period).mean()
     return atr
 
-
 def calculate_realized_volatility(data: pd.DataFrame, window: int = 20) -> pd.Series:
     """Compute realized volatility using log returns over the supplied window."""
 
@@ -743,7 +727,6 @@ def calculate_realized_volatility(data: pd.DataFrame, window: int = 20) -> pd.Se
     realized_vol *= np.sqrt(window)
     return realized_vol
 
-
 def calculate_three_bar_momentum(data: pd.DataFrame) -> pd.Series:
     """Calculate momentum between the latest close and the close three bars prior."""
 
@@ -753,7 +736,6 @@ def calculate_three_bar_momentum(data: pd.DataFrame) -> pd.Series:
     close = pd.to_numeric(data["close"], errors="coerce")
     momentum = close - close.shift(3)
     return momentum
-
 
 def calculate_three_bar_rsi(data: pd.DataFrame, period: int = 3) -> pd.Series:
     """Calculate a fast RSI value over a three-period window."""
@@ -772,7 +754,6 @@ def calculate_three_bar_rsi(data: pd.DataFrame, period: int = 3) -> pd.Series:
     rs = avg_gain / avg_loss.replace(to_replace=0, value=np.nan)
     rsi = 100 - (100 / (1 + rs))
     return rsi
-
 
 def calculate_volatility_slope(
     data: pd.DataFrame,

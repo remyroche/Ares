@@ -57,12 +57,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -816,12 +812,10 @@ class EnhancedSRFeatureExtractor(SRFeatureExtractor):
         
         return features
 
-
 def get_enhanced_sr_feature_extractor(sr_config: Optional[SRFeatureConfig] = None,
                                     historical_config: Optional[HistoricalSRConfig] = None) -> EnhancedSRFeatureExtractor:
     """Get an enhanced SR feature extractor instance."""
     return EnhancedSRFeatureExtractor(sr_config, historical_config)
-
 
 def extract_enhanced_sr_features(data: pd.DataFrame, 
                                sr_levels: Optional[Dict[str, Any]] = None,

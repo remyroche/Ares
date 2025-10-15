@@ -8,7 +8,6 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict, Any
 import numpy as np
 
-
 @dataclass
 class VectorBTFeatureSelectionConfig:
     """Configuration for VectorBT feature selection operations."""
@@ -195,17 +194,17 @@ class VectorBTFeatureSelectionConfig:
         try:
             if self.enable_gpu:
                 import torch
-                import cupy as cp
-                
+
                 # Check CUDA availability
                 if torch.cuda.is_available():
                     # Configure CUDA device
                     torch.cuda.set_device(self.gpu_device)
-                    
-                    # Configure CuPy memory pool
+
+                    # Configure memory pool
                     if self.cuda_memory_pool:
-                        cp.cuda.MemoryPool().set_limit(fraction=self.gpu_memory_fraction)
-                    
+                        # GPU memory limit removed
+                        pass
+
                     # Enable VectorBT GPU operations
                     import vectorbt as vbt
                     vbt.settings['array_wrapper']['enable_gpu'] = True
@@ -215,7 +214,7 @@ class VectorBTFeatureSelectionConfig:
                 else:
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning("CUDA not available, GPU acceleration disabled")
+                    logger.warning("CUDA not available, falling back to CPU")
                     return False
         except Exception as e:
             import logging

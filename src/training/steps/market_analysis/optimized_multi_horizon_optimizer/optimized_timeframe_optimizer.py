@@ -33,7 +33,7 @@ from src.utils.ml_common.utils.lookahead_protection import LookaheadProtection
 
 # Import optimization components
 from .grid_bayesian_optimizer import GridBayesianOptimizer
-from .enhanced_validation import EnhancedValidationFramework
+from .enhanced_validation import EnhancedValidator
 from .optimization_config import (
     OptimizationConfig, ModelType, OptimizationMethod, 
     OptimizationResult, ValidationConfig, ValidationLevel
@@ -138,7 +138,7 @@ class OptimizedTimeframeOptimizer:
             self.grid_bayesian_optimizer = GridBayesianOptimizer(self.config)
             
             # Initialize enhanced validation framework
-            self.validation_framework = EnhancedValidationFramework(self.config.validation_config)
+            self.validation_framework = EnhancedValidator(self.config.validation_config)
             
             self.logger.info('✅ Optimization components initialized')
             

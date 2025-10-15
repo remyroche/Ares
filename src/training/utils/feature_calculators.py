@@ -1,9 +1,10 @@
 """
+import warnings
 Feature calculation utilities for matrix optimization.
 
 This module contains all feature calculation methods extracted from the main optimizer
 to reduce complexity and improve maintainability. Enhanced with advanced matrix operations
-for GPU acceleration, batch processing, and optimized computations.
+for 
 """
 
 import pandas as pd
@@ -57,12 +58,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
         validate_finite, get_memory_usage, timed_operation
@@ -155,7 +152,7 @@ class FeatureCalculator:
                 gain = np.maximum(delta, 0)
                 loss = np.maximum(-delta, 0)
                 
-                # Use rolling operations with GPU acceleration
+                # Use rolling operations with 
                 gain_ma = self.enhanced_matrix_ops.rolling_mean(gain, period)
                 loss_ma = self.enhanced_matrix_ops.rolling_mean(loss, period)
                 
@@ -179,7 +176,7 @@ class FeatureCalculator:
             if self.enable_gpu_acceleration and self.enhanced_matrix_ops:
                 close_prices = data['close'].values.reshape(-1, 1)
                 
-                # Calculate SMA and STD using GPU acceleration
+                # Calculate SMA and STD using 
                 sma = self.enhanced_matrix_ops.rolling_mean(close_prices, period)
                 std = self.enhanced_matrix_ops.rolling_std(close_prices, period)
                 
@@ -274,7 +271,7 @@ class FeatureCalculator:
                 # Extract feature data
                 feature_data = data[feature_columns].values
                 
-                # Calculate correlation matrix using GPU acceleration
+                # Calculate correlation matrix using 
                 corr_matrix = correlation_matrix_gpu(pd.DataFrame(feature_data, columns=feature_columns))
                 
                 # Extract correlation features

@@ -487,8 +487,7 @@ class EnhancedSRDetector:
         self.max_relaxation_attempts = config.get('max_relaxation_attempts', 6)  # Fewer attempts for faster convergence
         self.eps_strictness_factor = config.get('eps_strictness_factor', 2.5)  # More aggressive eps reduction
         self.min_samples_reduction_factor = config.get('min_samples_reduction_factor', 0.5)  # More aggressive min_samples reduction
-        
-        
+
         # NEW: ATR and normalization parameters
         self.atr_period = config.get('atr_period', 14)  # ATR calculation period
         self.atr_multiplier = config.get('atr_multiplier', 1.0)  # ATR multiplier for normalization
@@ -1246,7 +1245,6 @@ class EnhancedSRDetector:
                     market_data = market_data.tail(max_rows)  # Use last max_rows rows (legacy behavior)
                     self.logger.info(f'🔧 Memory optimization: Simple sampling completed, final dataset: {len(market_data)} rows')
 
-            
             # Detect fractal levels with multiple periods for more levels
             tprint("🔍 Starting Fractal Level Detection...")
             tprint("   📊 Fractal detection identifies local highs and lows where price reverses direction")
@@ -2662,7 +2660,6 @@ class EnhancedSRDetector:
         try:
             if not params:
                 return []
-
 
             # Extract quality metrics
             r2_values = np.array([abs(p.get('r2', 0)) for p in params])
@@ -4245,7 +4242,6 @@ class EnhancedSRDetector:
             self.logger.error(f'Backtesting-enhanced clustering failed: {e}')
             raise e
 
-
     def _strength_aware_distance(self, point1: np.ndarray, point2: np.ndarray) -> float:
         """
         Custom distance metric that considers both price proximity and strength.
@@ -4353,7 +4349,6 @@ class EnhancedSRDetector:
             self.logger.warning(f'Failed to merge backtesting-enhanced cluster: {e}')
             # Return the strongest level as fallback
             return max(cluster, key=lambda x: x.strength)
-
 
     def _merge_cluster_strength_proximity(self, cluster: List[SRLevel], data: pd.DataFrame, cluster_id: int) -> SRLevel:
         """Merge a cluster of SR levels using strength-proximity approach."""
@@ -4710,12 +4705,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
         level_data = np.array([[level.price, level.strength] for level in levels])

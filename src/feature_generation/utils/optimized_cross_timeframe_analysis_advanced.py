@@ -1,4 +1,5 @@
 """
+import warnings
 Optimized Cross Timeframe Analysis Advanced Methods
 
 This module contains the advanced feature selection and metrics calculation methods.
@@ -41,12 +42,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     validate_finite, validate_positive, validate_range,
     safe_divide, safe_log, safe_sqrt, safe_power,

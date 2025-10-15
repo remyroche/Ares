@@ -11,7 +11,7 @@ Key Idea:
 
 VectorBT Optimizations:
 - Vectorized feature evaluation and selection
-- GPU acceleration for large datasets
+- 
 - Parallel processing for feature optimization
 - Memory-efficient operations
 """
@@ -28,23 +28,16 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
-    from vectorbt.utils.array_ops import rolling_apply
-    from vectorbt.utils.array_ops import rolling_apply_parallel
+    from vectorbt.generic import rolling_apply
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
     rolling_apply = None
-    rolling_apply_parallel = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 # Feature generation & optimization
 try:
@@ -54,22 +47,20 @@ except ImportError:
     FEATURE_GENERATION_AVAILABLE = False
     tprint_warning("⚠️  feature_generation not available")
 
-# Lookback optimization
-try:
-    from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization import (
-        FeatureLookbackOptimizer
-    )
-    LOOKBACK_OPT_AVAILABLE = True
-except ImportError:
-    LOOKBACK_OPT_AVAILABLE = False
-    tprint_warning("⚠️  feature_lookback_optimization not available")
+# Lookback optimization - REMOVED
+# try:
+#     from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization import (
+#         FeatureLookbackOptimizer
+#     )
+#     LOOKBACK_OPT_AVAILABLE = True
+# except ImportError:
+#     LOOKBACK_OPT_AVAILABLE = False
 
 # Roadmap transforms & interactions
 from .transforms import TransformRouter, create_default_transform_config
 from .interactions import InteractionEngine, create_default_interaction_config
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class OptimizedPipelineConfig:
@@ -97,7 +88,6 @@ class OptimizedPipelineConfig:
                 'volatility': [10, 20, 50],
                 'volume': [10, 20]
             }
-
 
 class DynamicRoadmapPipeline:
     """
@@ -131,7 +121,7 @@ class DynamicRoadmapPipeline:
         
         # VectorBT optimization settings
         self.use_vectorbt = self.config.use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = self.config.use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         self.enable_parallel = self.config.enable_parallel and VECTORBT_AVAILABLE
         
         # Initialize components if available
@@ -140,12 +130,13 @@ class DynamicRoadmapPipeline:
         else:
             self.feature_bank = None
         
-        if LOOKBACK_OPT_AVAILABLE:
-            self.lookback_optimizer = FeatureLookbackOptimizer(
-                use_bayesian=self.config.use_bayesian_opt
-            )
-        else:
-            self.lookback_optimizer = None
+        # if LOOKBACK_OPT_AVAILABLE:  # REMOVED
+        #     self.lookback_optimizer = FeatureLookbackOptimizer(
+        #         use_bayesian=self.config.use_bayesian_opt
+        #     )
+        # else:
+        #     self.lookback_optimizer = None
+        self.lookback_optimizer = None
         
         tprint_info(f"🚀 DynamicRoadmapPipeline initialized: "
                    f"target_features={self.config.n_selected_features}, "
@@ -247,7 +238,7 @@ class DynamicRoadmapPipeline:
     
     def _apply_transforms_vectorized(self, transformer, optimized_features: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """VectorBT-optimized transform application."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._apply_transforms_gpu(transformer, optimized_features)
         else:
             return self._apply_transforms_cpu_vectorized(transformer, optimized_features)
@@ -263,7 +254,7 @@ class DynamicRoadmapPipeline:
     
     def _apply_transforms_gpu(self, transformer, optimized_features: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """GPU-accelerated transform application."""
-        if not CUPY_AVAILABLE:
+        if True:
             return self._apply_transforms_cpu_vectorized(transformer, optimized_features)
         
         # GPU-accelerated transform application
@@ -306,7 +297,7 @@ class DynamicRoadmapPipeline:
     
     def _generate_interactions_vectorized(self, engine, transformed: pd.DataFrame) -> pd.DataFrame:
         """VectorBT-optimized interaction generation."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._generate_interactions_gpu(engine, transformed)
         else:
             return self._generate_interactions_cpu_vectorized(engine, transformed)
@@ -319,7 +310,7 @@ class DynamicRoadmapPipeline:
     
     def _generate_interactions_gpu(self, engine, transformed: pd.DataFrame) -> pd.DataFrame:
         """GPU-accelerated interaction generation."""
-        if not CUPY_AVAILABLE:
+        if True:
             return self._generate_interactions_cpu_vectorized(engine, transformed)
         
         # GPU-accelerated interaction generation
@@ -377,7 +368,6 @@ class DynamicRoadmapPipeline:
             'final': final
         }
 
-
 # Convenience function
 def run_optimized_roadmap_pipeline(data: pd.DataFrame,
                                      targets: pd.Series,
@@ -402,8 +392,8 @@ def run_optimized_roadmap_pipeline(data: pd.DataFrame,
     
     pipeline = DynamicRoadmapPipeline(config)
     result = pipeline.run(data, targets)
-    
-        return result['final']
+
+    return result['final']
     
     def evaluate_features_vectorized(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
         """
@@ -419,7 +409,7 @@ def run_optimized_roadmap_pipeline(data: pd.DataFrame,
         if not self.use_vectorbt or len(features) < self.config.performance_threshold:
             return self._evaluate_features_sequential(features, targets)
         
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._evaluate_features_gpu(features, targets)
         else:
             return self._evaluate_features_cpu_vectorized(features, targets)
@@ -457,8 +447,8 @@ def run_optimized_roadmap_pipeline(data: pd.DataFrame,
         return metrics
     
     def _evaluate_features_gpu(self, features: pd.DataFrame, targets: pd.Series) -> Dict[str, float]:
-        """GPU-accelerated feature evaluation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated feature evaluation using VectorBT."""
+        if True:
             return self._evaluate_features_cpu_vectorized(features, targets)
         
         metrics = {}
@@ -469,15 +459,16 @@ def run_optimized_roadmap_pipeline(data: pd.DataFrame,
             finite_features = features[finite_mask]
             finite_targets = targets[finite_mask]
             
-            # GPU-accelerated correlation calculation
-            features_gpu = cp.asarray(finite_features.values, dtype=cp.float32)
-            targets_gpu = cp.asarray(finite_targets.values, dtype=cp.float32)
+            # CPU-based correlation calculation (GPU support removed)
+            features_values = finite_features.values
+            targets_values = finite_targets.values
             
-            # Calculate correlations on GPU
+            # Calculate correlations on CPU
             for i, col in enumerate(finite_features.columns):
-                feature_col = features_gpu[:, i]
-                corr = cp.corrcoef(feature_col, targets_gpu)[0, 1]
-                if not cp.isnan(corr):
-                    metrics[f'{col}_correlation'] = float(cp.asnumpy(cp.abs(corr)))
+                feature_col = features_values[:, i]
+                corr_matrix = np.corrcoef(feature_col, targets_values)
+                corr = corr_matrix[0, 1]
+                if not np.isnan(corr):
+                    metrics[f'{col}_correlation'] = float(np.abs(corr))
         
         return metrics

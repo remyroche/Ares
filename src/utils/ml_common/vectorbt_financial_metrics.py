@@ -115,12 +115,23 @@ class VectorBTFinancialMetrics:
     
     def _configure_vectorbt(self):
         """Configure VectorBT global settings."""
-        # Set parallel processing
-        if self.config.enable_parallel:
-            vbt.settings.parallel['threading'] = True
-        
-        # Set array wrapper settings
-        vbt.settings.array_wrapper['freq'] = '1min'
+        try:
+            # Set parallel processing (check if attribute exists)
+            if self.config.enable_parallel and hasattr(vbt.settings, 'parallel'):
+                vbt.settings.parallel['threading'] = True
+                logger.debug("✅ VectorBT parallel processing enabled")
+            elif self.config.enable_parallel:
+                logger.debug("⚠️ VectorBT parallel settings not available in this version")
+
+            # Set array wrapper settings (check if attribute exists)
+            if hasattr(vbt.settings, 'array_wrapper'):
+                vbt.settings.array_wrapper['freq'] = '1min'
+                logger.debug("✅ VectorBT array wrapper frequency set to 1min")
+            else:
+                logger.debug("⚠️ VectorBT array_wrapper settings not available in this version")
+
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to configure VectorBT settings: {e}")
     
     def calculate_comprehensive_metrics(self, 
                                       portfolio_values: Union[np.ndarray, pd.Series],

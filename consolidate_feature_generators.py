@@ -38,7 +38,7 @@ def main():
         "src/feature_generation/categories/trend.py", 
         "src/feature_generation/categories/oscillator.py",
         "src/feature_generation/categories/legacy.py",
-        "src/feature_generation/categories/normalization.py"
+        "src/features_common/normalization.py"
     ]
     
     for file_path in feature_files:

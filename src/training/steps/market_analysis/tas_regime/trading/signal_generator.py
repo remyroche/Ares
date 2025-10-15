@@ -1,6 +1,7 @@
 """Signal generation module for TAS trading engine."""
 
 from __future__ import annotations
+import warnings
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -35,16 +36,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class SignalConfig:
@@ -77,7 +73,6 @@ class SignalConfig:
             raise ValueError("capital_fraction_per_trade must be within (0, 1]")
         if self.max_signals <= 0:
             raise ValueError("max_signals must be positive")
-
 
 class TradingSignalGenerator:
     """Generate trading signals for the TAS trading engine."""
@@ -295,7 +290,6 @@ class TradingSignalGenerator:
                 return str(column).rsplit("_", 1)[0]
 
         return self.config.default_symbol
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

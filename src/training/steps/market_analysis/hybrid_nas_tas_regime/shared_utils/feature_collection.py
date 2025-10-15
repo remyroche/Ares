@@ -73,16 +73,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class FeatureCollectionConfig:
@@ -101,7 +96,6 @@ class FeatureCollectionConfig:
         if self.lookback_periods is None:
             self.lookback_periods = [5, 10, 20, 50]
 
-
 @dataclass
 class FeatureCollectionResult:
     """Result from feature collection operations."""
@@ -114,7 +108,6 @@ class FeatureCollectionResult:
     error_message: Optional[str] = None
     hardware_optimization_applied: bool = False
     matrix_operations_used: bool = False
-
 
 class StandardizedFeatureCalculator:
     """Standardized feature calculator using the existing feature_generator system."""
@@ -411,7 +404,6 @@ class StandardizedFeatureCalculator:
         
         return primary_features
 
-
 class FeatureCollectionManager:
     """Manager for feature collection operations with coordination between NAS and TAS."""
     
@@ -699,7 +691,6 @@ class FeatureCollectionManager:
         except Exception as e:
             self.logger.warning(f"⚠️ Feature statistics calculation failed: {e}")
             return {'error': str(e)}
-
 
 def create_feature_collection_manager(config: FeatureCollectionConfig) -> FeatureCollectionManager:
     """Create a feature collection manager instance.

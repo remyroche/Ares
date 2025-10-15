@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
+import warnings
 from datetime import datetime
 
 from ..config.hybrid_regime_config import HybridRegimeConfig, EconomicSignificanceType
@@ -19,7 +20,6 @@ from src.utils.tprint import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 class EconomicRegimeEvaluator:
     """
@@ -321,7 +321,21 @@ class EconomicRegimeEvaluator:
             # Calculate R-squared of linear trend
             from scipy.stats import linregress
 
-# VectorBT imports for native optimization
+            slope, intercept, r_value, p_value, std_err = linregress(x, y)
+
+            r_squared = r_value ** 2
+
+            # Strong trend if R-squared is high and significant
+            if p_value < 0.05 and r_squared > 0.1:
+                return min(r_squared * 2, 1.0)  # Scale to 0-1 range
+            else:
+                return 0.5  # Neutral trend strength
+
+        except Exception as e:
+            self.logger.warning(f"Trend strength evaluation failed: {e}")
+            return 0.5
+
+    # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
@@ -347,27 +361,31 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-            slope, intercept, r_value, p_value, std_err = linregress(x, y)
 
-            r_squared = r_value ** 2
+    def _evaluate_regime_significance(self, regime_data: pd.DataFrame) -> float:
+        """Evaluate overall regime significance using multiple factors."""
+        try:
+            # Calculate trend strength
+            trend_score = self._evaluate_trend_strength(regime_data)
 
-            # Strong trend if R-squared is high and significant
-            if p_value < 0.05 and r_squared > 0.1:
-                trend_score = min(r_squared * 2.0, 1.0)  # Scale to [0, 1]
-            else:
-                trend_score = 0.3  # Weak or no trend
+            # Combine trend strength with other factors
+            volume_factor = self._evaluate_volume_factor(regime_data)
+            volatility_factor = self._evaluate_volatility_factor(regime_data)
 
-            return trend_score
+            # Weighted combination
+            significance_score = (
+                trend_score * 0.4 +
+                volume_factor * 0.3 +
+                volatility_factor * 0.3
+            )
+
+            return min(significance_score, 1.0)
 
         except Exception as e:
-            self.logger.warning(f"Trend strength evaluation failed: {e}")
+            self.logger.warning(f"Regime significance evaluation failed: {e}")
             return 0.5
 
     def _evaluate_volume_profile(self, regime_data: pd.DataFrame) -> float:
@@ -837,7 +855,6 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"Sector rotation regime evaluation failed: {e}")
             return 0.5
-
 
 def create_economic_evaluator(config: Dict[str, Any]) -> EconomicRegimeEvaluator:
     """Create economic regime evaluator."""

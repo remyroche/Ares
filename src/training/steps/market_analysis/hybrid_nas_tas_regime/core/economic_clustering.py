@@ -25,7 +25,6 @@ from src.utils.tprint import (
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class EconomicClusteringResult:
     """Result from economic clustering operation."""
@@ -43,7 +42,6 @@ class EconomicClusteringResult:
     execution_time: float
     metadata: Dict[str, Any]
 
-
 class EconomicDistanceMetric(Enum):
     """Economic distance metrics for clustering."""
     ECONOMIC_EUCLIDEAN = "economic_euclidean"
@@ -51,7 +49,6 @@ class EconomicDistanceMetric(Enum):
     VOLUME_ADJUSTED = "volume_adjusted"
     ECONOMIC_MANHATTAN = "economic_manhattan"
     HYBRID_ECONOMIC = "hybrid_economic"
-
 
 @dataclass
 class EconomicCluster:
@@ -67,7 +64,6 @@ class EconomicCluster:
     characteristics: Dict[str, float]
     centroid: np.ndarray
     description: str
-
 
 class EconomicClusterer:
     """
@@ -945,8 +941,26 @@ class EconomicClusterer:
             prices = regime_data['close'].values
             if len(prices) > 20:
                 from scipy.stats import linregress
+                slope, intercept, r_value, p_value, std_err = linregress(np.arange(len(prices)), prices)
+                trend_significance = min(abs(r_value) * 2.0, 1.0)  # Scale to 0-1 range
+                significance_factors.append(trend_significance)
 
-# VectorBT imports for native optimization
+            # Volume significance if available
+            if 'volume' in regime_data.columns:
+                volume = regime_data['volume'].values
+                avg_volume = np.mean(volume) if len(volume) > 0 else 1.0
+                vol_factor = min(avg_volume / 1000000, 1.0)  # Normalize volume factor
+                significance_factors.append(vol_factor)
+
+            # Calculate overall significance
+            if significance_factors:
+                return np.mean(significance_factors)
+            else:
+                return 0.5  # Default neutral significance
+
+        except Exception as e:
+            self.logger.warning(f"Economic significance calculation failed: {e}")
+            return 0.5
 try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
@@ -972,13 +986,26 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
+
+    def _calculate_regime_economic_significance(self, regime_data: pd.DataFrame) -> float:
+        """Calculate economic significance for a single regime."""
+        try:
+            # Multiple factors contribute to economic significance
+            significance_factors = []
+
+            # Volatility significance
+            returns = regime_data['close'].pct_change().dropna()
+            volatility = np.std(returns) if len(returns) > 0 else 0.01
+            vol_significance = min(volatility / 0.05, 1.0)  # Normalize to reasonable range
+            significance_factors.append(vol_significance)
+
+            # Trend significance
+            prices = regime_data['close'].values
+            if len(prices) > 20:
+                from scipy.stats import linregress
                 x = np.arange(len(prices))
                 slope, intercept, r_value, p_value, std_err = linregress(x, prices)
                 trend_significance = min(abs(r_value ** 2), 1.0)
@@ -1202,7 +1229,6 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"Economic transfer evaluation failed for {label_a}-{label_b}: {e}")
             return None
-
 
 def create_economic_clusterer(config: Dict[str, Any]) -> EconomicClusterer:
     """Create economic clusterer."""

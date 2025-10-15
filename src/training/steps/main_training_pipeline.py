@@ -24,6 +24,12 @@ from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 
+class ExecutionModeType(Enum):
+    """Execution mode types for stage/sub-pipeline specific execution."""
+    FULL = "full"          # Complete execution with all features
+    LIGHT = "light"        # Lightweight execution with essential features only
+    BLANK = "blank"        # Minimal execution for testing/validation
+
 class DirectionType(Enum):
     """Direction types for trading."""
     LONGS = "longs"        # Long positions only
@@ -164,10 +170,12 @@ class MainPipelineConfig:
     """Configuration for the main training pipeline."""
     # General configuration
     mode: ExecutionMode = ExecutionMode.FULL
+    execution_mode: ExecutionModeType = ExecutionModeType.LIGHT
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"
     data_dir: str = "historical_data"
+    direction: DirectionType = DirectionType.BOTH
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -200,7 +208,7 @@ class MainPipelineConfig:
             'regime_data_splitting', 'sr_feature_integration'
         ],
         PipelineStage.PRE_TRAINING: [
-            'multi_horizon_profit_labeler', 'feature_lookback_optimization',
+            'multi_horizon_profit_labeler',
             'interactive_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
@@ -1149,7 +1157,7 @@ def get_full_pipeline_config(
                 'regime_data_splitting', 'sr_feature_integration'
             ],
             PipelineStage.PRE_TRAINING: [
-                'multi_horizon_profit_labeler', 'feature_lookback_optimization',
+                'multi_horizon_profit_labeler',
                 'interactive_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
@@ -1273,7 +1281,7 @@ def get_light_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
-                'regime_data_splitting', 'feature_lookback_optimization',
+                'regime_data_splitting',
                 'interactive_feature_generation', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [

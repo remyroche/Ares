@@ -50,9 +50,9 @@ class PerformanceBenchmark:
         self.gpu_available = self._check_gpu_availability()
         
     def _check_gpu_availability(self) -> bool:
-        """Check if GPU acceleration is available."""
+        """Check if 
         try:
-            import cupy as cp
+
             return True
         except ImportError:
             return False
@@ -329,63 +329,64 @@ class PerformanceBenchmark:
         }
     
     def benchmark_interactive_features(self, data: pd.DataFrame, iterations: int = 5) -> Dict[str, Any]:
-        """Benchmark interactive feature generation."""
-        tprint_info(f"🔄 Benchmarking interactive features with {len(data)} rows, {iterations} iterations")
+#         """Benchmark interactive feature generation."""
+#         tprint_info(f"🔄 Benchmarking interactive features with {len(data)} rows, {iterations} iterations")
         
-        try:
-            from training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import InteractiveFeatureGenerationComponent
-            component = InteractiveFeatureGenerationComponent()
-        except ImportError as e:
-            tprint_error(f"Failed to import InteractiveFeatureGenerationComponent: {e}")
-            return {}
+        # try:
+        #     from training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import InteractiveFeatureGenerationComponent
+        #     component = InteractiveFeatureGenerationComponent()
+        # except ImportError as e:
+        #     tprint_error(f"Failed to import InteractiveFeatureGenerationComponent: {e}")
+        #     return {}
+#         return {}
         
         # Test individual operations
-        individual_times = []
-        for _ in range(iterations):
-            start_time = time.time()
-            start_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
+#         individual_times = []
+#         for _ in range(iterations):
+#             start_time = time.time()
+#             start_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
             
             # Generate individual rolling features
-            rolling_mean_20 = data['close'].rolling(20).mean()
-            rolling_std_20 = data['close'].rolling(20).std()
-            rolling_corr = data['close'].rolling(20).corr(data['volume'])
+#             rolling_mean_20 = data['close'].rolling(20).mean()
+#             rolling_std_20 = data['close'].rolling(20).std()
+#             rolling_corr = data['close'].rolling(20).corr(data['volume'])
             
-            end_time = time.time()
-            end_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
+#             end_time = time.time()
+#             end_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
             
-            individual_times.append(end_time - start_time)
+#             individual_times.append(end_time - start_time)
         
         # Test batch operations
-        batch_times = []
-        for _ in range(iterations):
-            start_time = time.time()
-            start_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
+#         batch_times = []
+#         for _ in range(iterations):
+#             start_time = time.time()
+#             start_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
             
             # Generate batch features
-            batch_features = component.generate_rolling_features_batch(
-                data,
-                windows=[20, 50],
-                operations=['mean', 'std', 'var'],
-                columns=['close', 'volume']
-            )
+#             batch_features = component.generate_rolling_features_batch(
+#                 data,
+#                 windows=[20, 50],
+#                 operations=['mean', 'std', 'var'],
+#                 columns=['close', 'volume']
+#             )
             
-            end_time = time.time()
-            end_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
+#             end_time = time.time()
+#             end_memory = psutil.Process(os.getpid()).memory_info().rss / 1024**2
             
-            batch_times.append(end_time - start_time)
+#             batch_times.append(end_time - start_time)
         
-        avg_individual = np.mean(individual_times)
-        avg_batch = np.mean(batch_times)
-        speedup = avg_individual / avg_batch if avg_batch > 0 else 0
+#         avg_individual = np.mean(individual_times)
+#         avg_batch = np.mean(batch_times)
+#         speedup = avg_individual / avg_batch if avg_batch > 0 else 0
         
-        return {
-            'category': 'interactive',
-            'individual_time': avg_individual,
-            'batch_time': avg_batch,
-            'speedup': speedup,
-            'memory_usage_mb': end_memory - start_memory,
-            'iterations': iterations
-        }
+#         return {
+#             'category': 'interactive',
+#             'individual_time': avg_individual,
+#             'batch_time': avg_batch,
+#             'speedup': speedup,
+#             'memory_usage_mb': end_memory - start_memory,
+#             'iterations': iterations
+#         }
     
     def run_comprehensive_benchmark(self, sizes: List[int], categories: List[str], iterations: int = 5) -> Dict[str, Any]:
         """Run comprehensive benchmark across multiple data sizes and categories."""
@@ -481,7 +482,7 @@ class PerformanceBenchmark:
         report.append("")
         report.append("### Optimization Tips:")
         report.append("- Use batch processing for multiple features")
-        report.append("- Enable GPU acceleration for large datasets")
+        report.append("- Enable 
         report.append("- Use memory-efficient data types")
         report.append("- Process features in chunks for very large datasets")
         report.append("")
@@ -516,7 +517,6 @@ class PerformanceBenchmark:
             json.dump(converted_results, f, indent=2)
         
         tprint_success(f"💾 Results saved to {filename}")
-
 
 def main():
     """Main function to run benchmarks."""
@@ -579,7 +579,6 @@ def main():
     if all_speedups:
         avg_speedup = np.mean(all_speedups)
         tprint_success(f"📈 Average speedup: {avg_speedup:.2f}x")
-
 
 if __name__ == "__main__":
     main()

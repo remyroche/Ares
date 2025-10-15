@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 """
 Step06 Comprehensive Implementation with Extensive Utility Integration
@@ -699,12 +700,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                     ParquetWriter.write_partitioned(enhanced_features, features_file, partition_size=500_000)
                     

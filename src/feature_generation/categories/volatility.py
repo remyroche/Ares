@@ -9,7 +9,7 @@ Key Features:
 - VectorBT-optimized volatility calculations
 - Advanced volatility indicators
 - Memory-efficient processing
-- GPU acceleration support
+- 
 - Comprehensive volatility analysis
 """
 
@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Union
 
 # Import tprint for consistent logging
 try:
-    from tprint import tprint
+    from src.utils.tprint import tprint
 except ImportError:
     def tprint(*args, **kwargs):
         print(*args, **kwargs)
@@ -59,7 +59,7 @@ except ImportError:
 
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.consolidated_rolling_optimizer import (
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
         ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
         get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
         RollingOperationConfig,
@@ -69,7 +69,7 @@ try:
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
         ROLLING_OPTIMIZER_AVAILABLE = True
     except ImportError:
         ROLLING_OPTIMIZER_AVAILABLE = False
@@ -78,50 +78,48 @@ except ImportError:
 
 # Optimization utilities - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.unified_optimization_wrapper import (
+    from src.feature_generation.utils.unified_optimization_wrapper import (
         UnifiedOptimizationWrapper,
         UnifiedOptimizationConfig,
         OptimizationMode,
         create_unified_optimizer
     )
-    from ..utils.statistical_calculations_optimizer import (
+    from src.feature_generation.utils.statistical_calculations_optimizer import (
         StatisticalCalculationsOptimizer as VectorizationOptimizer,
         get_global_statistical_optimizer as get_vectorization_optimizer,
         StatisticalOperationConfig,
         StatisticalOperationType
     )
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
     UNIFIED_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorization_optimizer import get_vectorization_optimizer
-        from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+        from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+        from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
         OPTIMIZATION_AVAILABLE = True
         UNIFIED_OPTIMIZATION_AVAILABLE = False
     except ImportError:
         OPTIMIZATION_AVAILABLE = False
         UNIFIED_OPTIMIZATION_AVAILABLE = False
 
-from ..base_calculations import (
-    BaseCalculator,
-    BaseCalculationType,
-    BaseCalculationConfig,
-    create_base_calculator
-)
-
-# Optional GPU acceleration
 try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
+    from ..base_calculations import (
+        BaseCalculator,
+        BaseCalculationType,
+        BaseCalculationConfig,
+        create_base_calculator
+    )
 except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+    BaseCalculator = None
+    BaseCalculationType = None
+    BaseCalculationConfig = None
+    create_base_calculator = None
 
 # Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+# Removed VectorBTScaler import to avoid circular import - using direct scaling instead
 from ..core.feature_bank import get_global_feature_bank
 
 # Enhanced VectorBT integration
@@ -743,7 +741,6 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         
         return all_features
 
-
 class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volatility feature generator with comprehensive indicators."""
     
@@ -826,7 +823,6 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating volatility features: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_volatility_{self.period}')
 
-
 class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Bollinger Bands generator."""
     
@@ -865,7 +861,6 @@ class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):
         
         return bb_result.rename(f'vectorbt_bbands_{self.period}')
 
-
 class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Average True Range generator."""
     
@@ -900,7 +895,6 @@ class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
         atr = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
         
         return atr.rename(f'vectorbt_atr_{self.period}')
-
 
 class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Garman-Klass Volatility generator."""
@@ -973,7 +967,6 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating Garman-Klass volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_garman_klass_volatility_{self.period}')
 
-
 class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Parkinson Volatility generator."""
     
@@ -1041,7 +1034,6 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Parkinson volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_parkinson_volatility_{self.period}')
-
 
 class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Rogers-Satchell Volatility generator."""
@@ -1115,7 +1107,6 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Rogers-Satchell volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_rogers_satchell_volatility_{self.period}')
-
 
 class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Yang-Zhang Volatility generator."""
@@ -1200,8 +1191,6 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating Yang-Zhang volatility: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
 
-
-
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
                                    window: int, **kwargs) -> pd.Series:
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
@@ -1248,13 +1237,22 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
             raise ValueError(f"Unsupported operation: {operation}")
     
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
+        """Normalize feature using direct scaling to avoid circular imports."""
         try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
+            if method == 'zscore':
+                return (data - data.mean()) / data.std()
+            elif method == 'minmax':
+                return (data - data.min()) / (data.max() - data.min())
+            elif method == 'robust':
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / mad
+            else:
+                logger.warning(f"Unsupported normalization method: {method}, using zscore")
+                return (data - data.mean()) / data.std()
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
+            logger.warning(f"Normalization failed: {e}, using simple zscore")
+            return (data - data.mean()) / data.std()
     
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
@@ -1301,7 +1299,6 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
     
     return generators
 
-
 def create_comprehensive_vectorbt_volatility_generators(
     periods: List[int] = [10, 14, 20, 30, 50],
     std_devs: List[float] = [1.5, 2.0, 2.5],
@@ -1318,7 +1315,7 @@ def create_comprehensive_vectorbt_volatility_generators(
     Args:
         periods: List of periods for volatility calculations
         std_devs: List of standard deviations for Bollinger Bands
-        enable_gpu: Enable GPU acceleration
+        enable_gpu: Enable 
         enable_parallel: Enable parallel processing
         use_unified_manager: Use UnifiedVectorizationManager for optimization
         
@@ -1361,7 +1358,6 @@ def create_comprehensive_vectorbt_volatility_generators(
     
     return generators
 
-
 def create_optimized_volatility_pipeline(
     data: pd.DataFrame,
     periods: List[int] = [10, 14, 20, 30, 50],
@@ -1380,7 +1376,7 @@ def create_optimized_volatility_pipeline(
         data: Input DataFrame with OHLCV data
         periods: List of periods for volatility calculations
         std_devs: List of standard deviations for Bollinger Bands
-        enable_gpu: Enable GPU acceleration
+        enable_gpu: Enable 
         enable_parallel: Enable parallel processing
         use_unified_manager: Use UnifiedVectorizationManager for optimization
         
@@ -1420,7 +1416,6 @@ def create_optimized_volatility_pipeline(
             logger.warning(f"Generator {generator.__class__.__name__} failed: {e}")
     
     return pd.DataFrame(features, index=data.index)
-
 
 def benchmark_volatility_optimizations(
     data: pd.DataFrame,

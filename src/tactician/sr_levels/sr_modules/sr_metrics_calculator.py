@@ -1,4 +1,5 @@
 from src.core.decorators import handles_errors
+import warnings
 """Support/Resistance Metrics Calculator Module."""
 
 from typing import Any
@@ -35,12 +36,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class SRMetricsCalculator:

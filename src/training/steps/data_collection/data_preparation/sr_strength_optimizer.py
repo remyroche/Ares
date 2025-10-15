@@ -22,7 +22,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-
 try:
     import numba
     import logging
@@ -63,12 +62,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     JOBLIB_AVAILABLE = True
 except ImportError:

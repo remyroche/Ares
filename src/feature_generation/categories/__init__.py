@@ -73,15 +73,16 @@ from .volume import (
 )
 from .volatility import (
     VolatilityFeatureGenerator,
-    create_volatility_generators,
     create_default_volatility_generators
 )
-from .normalization import (
-    NormalizationFeatureGenerator,
-    RollingZScoreGenerator,
-    VolatilityScalingGenerator,
-    CrossSectionalNormalizer
-)
+# Note: Removed direct import of NormalizationFeatureGenerator to avoid circular import
+# These will be imported lazily when needed
+# from src.features_common.normalization import (
+#     NormalizationFeatureGenerator,
+#     RollingZScoreGenerator,
+#     VolatilityScalingGenerator,
+#     CrossSectionalNormalizer
+# )
 from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
@@ -171,7 +172,7 @@ from .advanced_regime_features import (
     create_advanced_regime_generators
 )
 
-from .microstructure import create_default_microstructure_generators
+from .microstructure_features import create_default_microstructure_generators
 from .autoencoder import create_default_autoencoder_generators
 from .representation_learning import (
     PatchTSTRepresentationGenerator,
@@ -179,10 +180,10 @@ from .representation_learning import (
     AutoencoderRepresentationGenerator,
     ContrastiveLearningGenerator
 )
-from .order_flow import create_default_order_flow_generators
+from .microstructure_features import create_default_order_flow_generators
 from .cross_timeframe import create_default_cross_timeframe_generators
 # regime.py deleted - replaced by advanced HMM regime system
-from .legacy import create_default_legacy_generators
+# from .legacy import create_default_legacy_generators  # File doesn't exist
 from .time import create_default_time_generators
 
 # NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
@@ -252,10 +253,8 @@ __all__ = [
     "VolumeVolatilityElasticityGenerator",
     "VolatilityFeatureGenerator",
     "GARCHFeatureGenerator",
-    "NormalizationFeatureGenerator",
-    "RollingZScoreGenerator",
-    "VolatilityScalingGenerator",
-    "CrossSectionalNormalizer",
+    # Note: NormalizationFeatureGenerator and related classes removed from __all__ 
+    # to avoid circular imports - they will be imported lazily when needed
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",

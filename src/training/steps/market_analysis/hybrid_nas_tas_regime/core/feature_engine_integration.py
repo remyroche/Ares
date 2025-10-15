@@ -92,16 +92,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 class FeatureIntegrationMode(Enum):
     """Modes for feature engine integration."""
@@ -110,14 +105,12 @@ class FeatureIntegrationMode(Enum):
     FALLBACK_MODE = "fallback_mode"
     CUSTOM_FEATURES = "custom_features"
 
-
 class RegimeAwareFeatureMode(Enum):
     """Modes for regime-aware feature engineering."""
     REGIME_SPECIFIC = "regime_specific"
     REGIME_ADAPTIVE = "regime_adaptive"
     REGIME_ENSEMBLE = "regime_ensemble"
     REGIME_TRANSITION = "regime_transition"
-
 
 @dataclass
 class FeatureEngineIntegrationConfig:
@@ -184,7 +177,6 @@ class FeatureEngineIntegrationConfig:
     n_jobs: int = -1
     chunk_size: int = 1000
 
-
 @dataclass
 class FeatureIntegrationResult:
     """Result from feature engine integration."""
@@ -199,7 +191,6 @@ class FeatureIntegrationResult:
     processing_time: float
     n_features: int
     n_regimes: int
-
 
 class FeatureEngineIntegrator:
     """Integrates with the existing feature_generation system."""
@@ -908,7 +899,6 @@ class FeatureEngineIntegrator:
             n_features=0,
             n_regimes=0
         )
-
 
 def create_feature_engine_integrator(config: FeatureEngineIntegrationConfig) -> FeatureEngineIntegrator:
     """Create feature engine integrator instance."""

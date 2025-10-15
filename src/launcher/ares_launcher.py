@@ -34,6 +34,25 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 print(f"✅ [IMPORTS] Project root added to path: {project_root}")
 
+# Set TensorFlow environment variables to prevent configuration issues
+print("🔧 [IMPORTS] Configuring TensorFlow environment...")
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress TensorFlow logging
+os.environ['TF_ENABLE_GPU_GARBAGE_COLLECTION'] = 'false'  # Disable GPU garbage collection
+os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'  # Use async GPU allocator
+
+# Configure TensorFlow to avoid KeyError issues
+try:
+    import tensorflow as tf
+    # Set TensorFlow logging level to avoid configuration errors
+    tf.get_logger().setLevel('ERROR')
+    # Disable eager execution warnings that might cause issues
+    tf.config.experimental.set_visible_devices([], 'GPU')  # Use CPU only to avoid GPU issues
+    print("✅ [IMPORTS] TensorFlow configured successfully")
+except ImportError:
+    print("ℹ️ [IMPORTS] TensorFlow not available, skipping configuration")
+except Exception as e:
+    print(f"⚠️ [IMPORTS] TensorFlow configuration warning: {e}")
+
 # Temporarily use simple logger to bypass initialization issues
 print("🔧 [IMPORTS] Setting up additional paths...")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -48,7 +67,8 @@ from src.utils.tprint import tprint
 print("✅ [IMPORTS] Tprint imported")
 
 from src.training.steps.main_training_pipeline import SubPipelineStatus
-print("✅ [IMPORTS] SubPipelineStatus imported")
+from src.utils.ml_common.pipeline_orchestrator import PipelineStatus
+print("✅ [IMPORTS] SubPipelineStatus and PipelineStatus imported")
 
 tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time

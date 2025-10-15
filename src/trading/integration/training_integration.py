@@ -1,4 +1,5 @@
 """
+import warnings
 Training Integration
 
 Integration utilities for connecting trading operations
@@ -238,12 +239,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     async def _update_feature_cache(self):

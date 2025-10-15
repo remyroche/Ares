@@ -1,4 +1,5 @@
 """
+import warnings
 Optimized Cross Timeframe Analysis Integration
 
 This module integrates all the optimized components and provides the main interface
@@ -43,12 +44,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = system_logger.getChild('OptimizedCrossTimeframeIntegration')
@@ -488,7 +485,7 @@ def create_optimized_config(
     Args:
         timeframes: List of timeframes to analyze
         enable_m1_optimizations: Enable M1 hardware optimizations
-        enable_gpu_acceleration: Enable GPU acceleration
+        enable_gpu_acceleration: Enable 
         enable_advanced_feature_selection: Enable advanced feature selection
         memory_limit_gb: Memory limit in GB
         max_workers: Maximum number of workers for parallel processing

@@ -1,4 +1,5 @@
 """
+import warnings
 Model Enhancement Guide for Overfitting and Underfitting
 
 Comprehensive guide for addressing overfitting and underfitting issues
@@ -649,12 +650,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 X_synthetic, y_synthetic = make_regression(

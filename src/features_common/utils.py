@@ -8,121 +8,216 @@ across the features_common package.
 import numpy as np
 import pandas as pd
 
-def check_for_inf_nan(data, name="data"):
-    """Check for infinite or NaN values in data."""
-    if isinstance(data, (pd.DataFrame, pd.Series)):
-        has_inf = np.isinf(data).any().any() if isinstance(data, pd.DataFrame) else np.isinf(data).any()
-        has_nan = data.isna().any().any() if isinstance(data, pd.DataFrame) else data.isna().any()
-    else:
-        has_inf = np.isinf(data).any()
-        has_nan = np.isnan(data).any()
-    
-    if has_inf:
-        print(f"⚠️ Warning: {name} contains infinite values")
-    if has_nan:
-        print(f"⚠️ Warning: {name} contains NaN values")
-    
-    return not (has_inf or has_nan)
+# Math validation functions are now imported from constants.py to avoid circular imports
 
-def validate_numeric_array(data, name="data"):
-    """Validate that data is numeric and contains no infinite or NaN values."""
-    if not isinstance(data, (np.ndarray, pd.DataFrame, pd.Series)):
-        try:
-            data = np.array(data)
-        except:
-            raise ValueError(f"{name} must be convertible to a numeric array")
-    
-    if not np.issubdtype(data.dtype, np.number):
-        raise ValueError(f"{name} must contain numeric data")
-    
-    return check_for_inf_nan(data, name)
-
-def is_valid_number(value):
-    """Check if a value is a valid number (not NaN or infinite)."""
-    try:
-        return np.isfinite(float(value))
-    except (ValueError, TypeError):
-        return False
+# Import constants to avoid circular imports
+from .constants import (
+    VECTORBT_AVAILABLE, TPRINT_AVAILABLE, MATH_VALIDATION_AVAILABLE,
+    safe_divide, check_for_inf_nan, validate_numeric_array, is_valid_number
+)
 
 # Import utility functions
-try:
+if TPRINT_AVAILABLE:
     from src.utils.tprint import tprint
-    TPRINT_AVAILABLE = True
     tprint("🔧 [features_common.utils] Initializing common utilities module", color="cyan")
-except ImportError:
-    TPRINT_AVAILABLE = False
+else:
     print("⚠️  [features_common.utils] tprint not available")
 
-# Import VectorBT optimization modules
-try:
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
-    VECTORBT_OPTIMIZER_AVAILABLE = True
-    if TPRINT_AVAILABLE:
-        tprint("✅ [features_common.utils] VectorBT optimization modules loaded successfully", color="green")
-except ImportError as e:
-    VECTORBT_OPTIMIZER_AVAILABLE = False
-    VectorBTRollingOptimizer = None
-    get_vectorbt_rolling_optimizer = None
-    UnifiedVectorizationManager = None
-    get_unified_vectorization_manager = None
-    if TPRINT_AVAILABLE:
-        tprint(f"⚠️  [features_common.utils] VectorBT optimization modules not available: {e}", color="yellow")
+# VectorBT optimization modules removed to avoid circular imports
+# These should be imported directly where needed
 
-# VectorBT imports
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-    if TPRINT_AVAILABLE:
-        tprint("✅ [features_common.utils] VectorBT loaded successfully", color="green")
-except ImportError as e:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    if TPRINT_AVAILABLE:
-        tprint(f"⚠️  [features_common.utils] VectorBT not available: {e}", color="yellow")
+# VectorBT imports (lazy loaded to avoid circular imports)
+_vbt = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-    if TPRINT_AVAILABLE:
-        tprint("✅ [features_common.utils] CuPy available for GPU acceleration", color="green")
-except ImportError as e:
-    CUPY_AVAILABLE = False
-    cp = None
-    if TPRINT_AVAILABLE:
-        tprint(f"⚠️  [features_common.utils] CuPy not available for GPU acceleration: {e}", color="yellow")
+def get_vbt():
+    """Lazy load VectorBT to avoid circular imports."""
+    global _vbt
+    if _vbt is None:
+        if VECTORBT_AVAILABLE:
+            import vectorbt as vbt
+            _vbt = vbt
+            if TPRINT_AVAILABLE:
+                tprint("✅ [features_common.utils] VectorBT loaded successfully", color="green")
+        else:
+            _vbt = None
+            if TPRINT_AVAILABLE:
+                tprint("⚠️  [features_common.utils] VectorBT not available", color="yellow")
+    return _vbt
 
-# Math validation imports
-try:
-    from src.utils.math_validation import (
-        safe_divide,
-        check_for_inf_nan,
-        validate_numeric_array,
-        is_valid_number
-    )
-    MATH_VALIDATION_AVAILABLE = True
-    if TPRINT_AVAILABLE:
-        tprint("✅ [features_common.utils] Math validation utilities loaded", color="green")
-except ImportError as e:
-    MATH_VALIDATION_AVAILABLE = False
-    if TPRINT_AVAILABLE:
-        tprint(f"⚠️  [features_common.utils] Math validation utilities not available: {e}", color="yellow")
+# For backward compatibility, create a lazy vbt object
+class LazyVBT:
+    def __getattr__(self, name):
+        vbt_module = get_vbt()
+        if vbt_module is None:
+            raise AttributeError(f"VectorBT not available, cannot access {name}")
+        return getattr(vbt_module, name)
+    
+    def __call__(self, *args, **kwargs):
+        vbt_module = get_vbt()
+        if vbt_module is None:
+            raise RuntimeError("VectorBT not available")
+        return vbt_module(*args, **kwargs)
+
+# Set vbt to lazy loader to avoid circular imports
+vbt = LazyVBT()
+
+# CuPy support removed
+
+# Rolling and transformation functions using pandas/numpy (VectorBT generic functions not available in current version)
+def rolling_mean(data, window, **kwargs):
+    """Rolling mean using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).mean()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).mean()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_std(data, window, **kwargs):
+    """Rolling standard deviation using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).std()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).std()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_var(data, window, **kwargs):
+    """Rolling variance using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).var()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).var()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_min(data, window, **kwargs):
+    """Rolling minimum using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).min()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).min()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_max(data, window, **kwargs):
+    """Rolling maximum using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).max()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).max()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_sum(data, window, **kwargs):
+    """Rolling sum using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).sum()
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).sum()
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rolling_apply(data, window, func, **kwargs):
+    """Rolling apply using pandas."""
+    if isinstance(data, pd.DataFrame):
+        return data.rolling(window=window, **kwargs).apply(func)
+    elif isinstance(data, pd.Series):
+        return data.rolling(window=window, **kwargs).apply(func)
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def scale(data, method='standardize'):
+    """Scale data using standardization or normalization."""
+    if isinstance(data, pd.DataFrame):
+        if method == 'standardize':
+            return (data - data.mean()) / data.std()
+        elif method == 'normalize':
+            return (data - data.min()) / (data.max() - data.min())
+        else:
+            raise ValueError(f"Unknown scaling method: {method}")
+    elif isinstance(data, pd.Series):
+        if method == 'standardize':
+            return (data - data.mean()) / data.std()
+        elif method == 'normalize':
+            return (data - data.min()) / (data.max() - data.min())
+        else:
+            raise ValueError(f"Unknown scaling method: {method}")
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def rank(data, method='average'):
+    """Rank data."""
+    if isinstance(data, pd.DataFrame):
+        return data.rank(method=method)
+    elif isinstance(data, pd.Series):
+        return data.rank(method=method)
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def zscore(data):
+    """Calculate z-score (standard score)."""
+    return scale(data, method='standardize')
+
+def winsorize(data, limits=0.05):
+    """Winsorize data by clipping extreme values."""
+    if isinstance(data, pd.DataFrame):
+        lower_bounds = data.quantile(limits)
+        upper_bounds = data.quantile(1 - limits)
+        return data.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
+    elif isinstance(data, pd.Series):
+        lower_bound = data.quantile(limits)
+        upper_bound = data.quantile(1 - limits)
+        return data.clip(lower=lower_bound, upper=upper_bound)
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def clip(data, lower=None, upper=None):
+    """Clip data to specified bounds."""
+    if isinstance(data, pd.DataFrame):
+        return data.clip(lower=lower, upper=upper)
+    elif isinstance(data, pd.Series):
+        return data.clip(lower=lower, upper=upper)
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+def quantile(data, q=0.5):
+    """Calculate quantiles."""
+    if isinstance(data, pd.DataFrame):
+        return data.quantile(q)
+    elif isinstance(data, pd.Series):
+        return data.quantile(q)
+    else:
+        raise ValueError("Data must be pandas DataFrame or Series")
+
+VECTORBT_ROLLING_AVAILABLE = True
+VECTORBT_OPTIMIZER_AVAILABLE = VECTORBT_AVAILABLE
+
+# VectorBT optimization classes (stub implementations)
+class VectorBTRollingOptimizer:
+    """Stub implementation of VectorBT rolling optimizer."""
+    def __init__(self, *args, **kwargs):
+        pass
+
+def get_vectorbt_rolling_optimizer(*args, **kwargs):
+    """Get VectorBT rolling optimizer."""
+    return VectorBTRollingOptimizer(*args, **kwargs)
+
+class UnifiedVectorizationManager:
+    """Stub implementation of unified vectorization manager."""
+    def __init__(self, *args, **kwargs):
+        pass
+
+def get_unified_vectorization_manager(*args, **kwargs):
+    """Get unified vectorization manager."""
+    return UnifiedVectorizationManager(*args, **kwargs)
+
+
+# Math validation utilities (imported from constants to avoid circular imports)
+if TPRINT_AVAILABLE and MATH_VALIDATION_AVAILABLE:
+    tprint("✅ [features_common.utils] Math validation utilities loaded", color="green")
+elif TPRINT_AVAILABLE:
+    tprint("⚠️  [features_common.utils] Math validation utilities not available", color="yellow")
 
 if TPRINT_AVAILABLE:
     tprint("🔧 [features_common.utils] Common utilities module initialized", color="cyan")

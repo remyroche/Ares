@@ -17,13 +17,11 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error
 import warnings
 
-
 class SelectionCriteria(Enum):
     """Criteria for lookback selection."""
     IC = "ic"  # Information Coefficient
     AUC = "auc"  # Area Under Curve
     SIMPLICITY = "simplicity"  # Prefer shorter windows
-
 
 @dataclass
 class LookbackChoice:
@@ -37,14 +35,12 @@ class LookbackChoice:
     simplicity_bonus: float
     spec_hash: str
 
-
 @dataclass
 class LookbackMenu:
     """Menu of lookback options for a feature family."""
     family: str
     options: List[int]
     description: str
-
 
 class LookbackSelector:
     """Lookback selection with nested CV and hysteresis."""
@@ -240,7 +236,6 @@ class LookbackSelector:
         
         return global_choices
 
-
 class LookbackOptimizer:
     """Optimizer for lookback selection with advanced metrics."""
     
@@ -320,12 +315,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             auc = roc_auc_score(binary_targets, clean_features)
             return auc if not pd.isna(auc) else 0.5
@@ -349,7 +340,6 @@ except ImportError:
             'ic_abs': abs(ic),
             'auc_centered': auc - 0.5
         }
-
 
 def create_feature_families(feature_names: List[str]) -> Dict[str, List[str]]:
     """Create feature families from feature names."""

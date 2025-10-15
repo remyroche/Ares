@@ -1,5 +1,6 @@
 # src/training/steps/step06_labeling_components/fractional_triple_barrier_labeling.py
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+import warnings
 
 from src.core.decorators import handles_errors
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -45,12 +46,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class FractionalTripleBarrierLabeling:

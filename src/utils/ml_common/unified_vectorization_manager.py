@@ -224,7 +224,7 @@ class UnifiedVectorizationManager:
         try:
             # Feature importance analyzer
             tprint("🔄 Loading feature importance analyzer...")
-            from ..feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer
+            from ...feature_selection.analysis.feature_importance_analyzer import FeatureImportanceAnalyzer
             self.feature_analyzer = FeatureImportanceAnalyzer()
             self.feature_selection_available = True
             tprint("✅ Feature importance analyzer loaded")
@@ -236,7 +236,7 @@ class UnifiedVectorizationManager:
         try:
             # Technical indicators
             tprint("🔄 Loading technical indicators...")
-            from ..utils.feature_generators import FeatureGenerators
+            from ...feature_generation.utils.feature_generators import FeatureGenerators
             self.technical_indicators = FeatureGenerators()
             self.technical_indicators_available = True
             tprint("✅ Technical indicators loaded")
@@ -248,7 +248,7 @@ class UnifiedVectorizationManager:
         try:
             # HMM operations
             tprint("🔄 Loading HMM operations...")
-            from ..hmm_composite_manager import EnhancedHMMCompositeManager
+            from src.utils.hmm import EnhancedHMMCompositeManager
             self.hmm_manager = EnhancedHMMCompositeManager()
             self.hmm_available = True
             tprint("✅ HMM operations loaded")

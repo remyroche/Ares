@@ -24,7 +24,39 @@ from sklearn.metrics import r2_score, mean_squared_error
 from scipy.stats import pearsonr
 import concurrent.futures
 import multiprocessing
+import traceback
 from functools import partial
+warnings.filterwarnings('ignore')
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+except ImportError:
+    
+    cp = None
 
 # Hardware optimization imports
 try:
@@ -152,7 +184,7 @@ class ParameterOptimizationEngine:
         self.logger.info(f"⚙️ Hardware optimization: {self.config.enable_hardware_optimization}")
         if self.config.enable_hardware_optimization:
             self.logger.info(f"   🖥️ Memory limit: {self.config.memory_limit_gb} GB")
-            self.logger.info(f"   🚀 GPU acceleration: {self.config.enable_gpu_acceleration}")
+            self.logger.info(f"   🚀 Hardware acceleration: Enabled")
             self.logger.info(f"   📊 Chunk size: {self.config.chunk_size}")
 
         self.logger.info(f"🔄 Parallel processing: {self.config.enable_parallel_processing}")
@@ -384,7 +416,7 @@ class ParameterOptimizationEngine:
                                      market_data: pd.DataFrame) -> Optional[float]:
         """Evaluate a single parameter set with hardware optimization."""
         try:
-            # Use GPU acceleration if available
+            # Use 
             if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
                 return self._evaluate_parameters_gpu_accelerated(params, backtest_results, market_data)
             else:
@@ -394,9 +426,9 @@ class ParameterOptimizationEngine:
             self.logger.warning(f"Parameter evaluation failed: {e}")
             return None
     
-    def _evaluate_parameters_gpu_accelerated(self, params: Dict[str, Any], 
-                                           backtest_results: List[Any], 
-                                           market_data: pd.DataFrame) -> float:
+    def _evaluate_parameters_gpu_accelerated(self, params: Dict[str, Any],
+                                            backtest_results: List[Any],
+                                            market_data: pd.DataFrame) -> float:
         """Evaluate parameters using GPU acceleration."""
         try:
             import torch
@@ -847,40 +879,6 @@ class ParameterOptimizationEngine:
             
             # Generate more realistic parameters using market data characteristics
             import random
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
             random.seed(42)  # For reproducibility
 
             # Use market data volatility to create more realistic parameter values
@@ -1317,7 +1315,6 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"Quality score calculation failed: {e}")
             return 0.0
-    
 
 def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConfig] = None) -> ParameterOptimizationEngine:
     """Get a parameter optimization engine instance."""
@@ -1372,12 +1369,12 @@ def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConf
         else:
             raise ValueError(f"Unsupported operation: {operation}")
     
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

@@ -65,7 +65,7 @@ except ImportError:
 
 # Import VectorBT rolling optimizer
 try:
-    from ...feature_generation.utils.vectorbt_rolling_optimizer import (
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     )
     VECTORBT_ROLLING_AVAILABLE = True
@@ -1023,112 +1023,112 @@ def compute_hypervolume(
     # Use improved hypervolume computation for 3+ dimensions
     if dims == 3:
         # Use WFG algorithm for 3D (more accurate than Monte Carlo)
-        return self._compute_hypervolume_3d(norm, reference_point)
+        return _compute_hypervolume_3d(norm, reference_point)
     else:
         # Use improved Monte Carlo with adaptive sampling for higher dimensions
-        return self._compute_hypervolume_monte_carlo_adaptive(norm, reference_point, dims)
+        return _compute_hypervolume_monte_carlo_adaptive(norm, reference_point, dims)
 
-    def _compute_hypervolume_3d(self, norm_matrix: np.ndarray, reference_point: Dict[str, float]) -> float:
-        """Compute 3D hypervolume using WFG (Walking Fish Group) algorithm."""
-        if len(norm_matrix) == 0:
-            return 0.0
+def _compute_hypervolume_3d(norm_matrix: np.ndarray, reference_point: Dict[str, float]) -> float:
+    """Compute 3D hypervolume using WFG (Walking Fish Group) algorithm."""
+    if len(norm_matrix) == 0:
+        return 0.0
 
-        # Sort points by first objective (descending)
-        sorted_points = norm_matrix[np.argsort(-norm_matrix[:, 0])]
+    # Sort points by first objective (descending)
+    sorted_points = norm_matrix[np.argsort(-norm_matrix[:, 0])]
 
-        # WFG algorithm for 3D hypervolume
-        volume = 0.0
-        prev_x = 1.0  # Start from reference point
+    # WFG algorithm for 3D hypervolume
+    volume = 0.0
+    prev_x = 1.0  # Start from reference point
 
-        for i, point in enumerate(sorted_points):
-            x, y, z = point
+    for i, point in enumerate(sorted_points):
+        x, y, z = point
 
-            # Calculate volume contribution of this slice
-            slice_volume = (prev_x - x) * y * z
-            volume += slice_volume
+        # Calculate volume contribution of this slice
+        slice_volume = (prev_x - x) * y * z
+        volume += slice_volume
 
-            prev_x = x
+        prev_x = x
 
-            # Early termination if point is dominated by reference
-            if x <= 0 or y <= 0 or z <= 0:
-                break
+        # Early termination if point is dominated by reference
+        if x <= 0 or y <= 0 or z <= 0:
+            break
 
-        return float(np.clip(volume, 0.0, 1.0))
+    return float(np.clip(volume, 0.0, 1.0))
 
-    def _compute_hypervolume_monte_carlo_adaptive(self, norm_matrix: np.ndarray,
-                                                reference_point: Dict[str, float], dims: int) -> float:
-        """Adaptive Monte Carlo hypervolume computation with importance sampling."""
-        if len(norm_matrix) == 0:
-            return 0.0
+def _compute_hypervolume_monte_carlo_adaptive(norm_matrix: np.ndarray,
+                                            reference_point: Dict[str, float], dims: int) -> float:
+    """Adaptive Monte Carlo hypervolume computation with importance sampling."""
+    if len(norm_matrix) == 0:
+        return 0.0
 
-        # Adaptive sample size based on dimensionality and Pareto front size
-        base_samples = 10000
-        adaptive_factor = min(5.0, max(1.0, len(norm_matrix) / 100.0))
-        sample_size = int(base_samples * adaptive_factor * (dims ** 0.5))
+    # Adaptive sample size based on dimensionality and Pareto front size
+    base_samples = 10000
+    adaptive_factor = min(5.0, max(1.0, len(norm_matrix) / 100.0))
+    sample_size = int(base_samples * adaptive_factor * (dims ** 0.5))
 
-        # Use stratified sampling for better coverage
-        samples_per_dim = int(sample_size ** (1.0 / dims))
+    # Use stratified sampling for better coverage
+    samples_per_dim = int(sample_size ** (1.0 / dims))
 
-        # Generate stratified samples
-        samples = self._generate_stratified_samples(dims, samples_per_dim)
+    # Generate stratified samples
+    samples = _generate_stratified_samples(dims, samples_per_dim)
 
-        # Count dominated samples
-        dominated_count = 0
-        for sample in samples:
-            if self._is_dominated_by_pareto(sample, norm_matrix):
-                dominated_count += 1
+    # Count dominated samples
+    dominated_count = 0
+    for sample in samples:
+        if _is_dominated_by_pareto(sample, norm_matrix):
+            dominated_count += 1
 
-        # Estimate hypervolume
-        estimated_volume = dominated_count / len(samples)
+    # Estimate hypervolume
+    estimated_volume = dominated_count / len(samples)
 
-        # Apply correction for boundary effects
-        boundary_correction = self._compute_boundary_correction(norm_matrix, dims)
-        corrected_volume = estimated_volume * boundary_correction
+    # Apply correction for boundary effects
+    boundary_correction = _compute_boundary_correction(norm_matrix, dims)
+    corrected_volume = estimated_volume * boundary_correction
 
-        return float(np.clip(corrected_volume, 0.0, 1.0))
+    return float(np.clip(corrected_volume, 0.0, 1.0))
 
-    def _generate_stratified_samples(self, dims: int, samples_per_dim: int) -> np.ndarray:
-        """Generate stratified samples for better Monte Carlo coverage."""
-        # Create coordinate arrays for each dimension
-        coords = []
-        for d in range(dims):
-            # Use Latin Hypercube-like sampling
-            dim_samples = np.linspace(0, 1, samples_per_dim, endpoint=False) + np.random.random(samples_per_dim) / samples_per_dim
-            coords.append(dim_samples)
+def _generate_stratified_samples(dims: int, samples_per_dim: int) -> np.ndarray:
+    """Generate stratified samples for better Monte Carlo coverage."""
+    # Create coordinate arrays for each dimension
+    coords = []
+    for d in range(dims):
+        # Use Latin Hypercube-like sampling
+        dim_samples = np.linspace(0, 1, samples_per_dim, endpoint=False) + np.random.random(samples_per_dim) / samples_per_dim
+        coords.append(dim_samples)
 
-        # Create meshgrid for all combinations
-        mesh = np.meshgrid(*coords)
-        samples = np.column_stack([m.ravel() for m in mesh])
+    # Create meshgrid for all combinations
+    mesh = np.meshgrid(*coords)
+    samples = np.column_stack([m.ravel() for m in mesh])
 
-        # Shuffle samples for randomness
-        np.random.shuffle(samples)
+    # Shuffle samples for randomness
+    np.random.shuffle(samples)
 
-        return samples
+    return samples
 
-    def _is_dominated_by_pareto(self, sample: np.ndarray, pareto_matrix: np.ndarray) -> bool:
-        """Check if sample is dominated by any point in Pareto front."""
-        # A sample is dominated if there exists a Pareto point that is >= sample in all dimensions
-        return np.any(np.all(pareto_matrix >= sample, axis=1))
+def _is_dominated_by_pareto(sample: np.ndarray, pareto_matrix: np.ndarray) -> bool:
+    """Check if sample is dominated by any point in Pareto front."""
+    # A sample is dominated if there exists a Pareto point that is >= sample in all dimensions
+    return np.any(np.all(pareto_matrix >= sample, axis=1))
 
-    def _compute_boundary_correction(self, norm_matrix: np.ndarray, dims: int) -> float:
-        """Compute boundary correction factor for Monte Carlo hypervolume."""
-        if len(norm_matrix) == 0:
-            return 1.0
+def _compute_boundary_correction(norm_matrix: np.ndarray, dims: int) -> float:
+    """Compute boundary correction factor for Monte Carlo hypervolume."""
+    if len(norm_matrix) == 0:
+        return 1.0
 
-        # Simple boundary correction based on Pareto front coverage
-        min_bounds = np.min(norm_matrix, axis=0)
-        max_bounds = np.max(norm_matrix, axis=0)
+    # Simple boundary correction based on Pareto front coverage
+    min_bounds = np.min(norm_matrix, axis=0)
+    max_bounds = np.max(norm_matrix, axis=0)
 
-        # Estimate coverage ratio
-        coverage = np.prod(max_bounds - min_bounds)
+    # Estimate coverage ratio
+    coverage = np.prod(max_bounds - min_bounds)
 
-        # Correction factor to account for uncovered regions
-        if coverage > 0:
-            correction = min(1.2, 1.0 / (coverage + 0.1))
-        else:
-            correction = 1.0
+    # Correction factor to account for uncovered regions
+    if coverage > 0:
+        correction = min(1.2, 1.0 / (coverage + 0.1))
+    else:
+        correction = 1.0
 
-        return correction
+    return correction
 
     def compute_diversity_metrics(self, pareto_solutions: List[Solution],
                                  objectives: ObjectiveDirection) -> Dict[str, float]:

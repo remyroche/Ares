@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
 from ...utils.logger import system_logger
 from .core.decorators import handles_errors
@@ -946,12 +945,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         keys = list(param_ranges.keys())
         values = list(param_ranges.values())

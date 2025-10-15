@@ -30,12 +30,23 @@ except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
     logging.warning(f"Feature selection framework not available: {e}")
 
-# Import directional optimization results
-from src.training.steps.pre_training.feature_lookback_optimization.directional_lookback_optimizer import (
-    DirectionalOptimizationResult,
-    DirectionalFeatureResult
-)
-
+# Import directional optimization results - REMOVED (feature_lookback_optimization no longer used)
+# try:
+#     from src.training.steps.pre_training.feature_lookback_optimization.directional_lookback_optimizer import (
+#         DirectionalOptimizationResult,
+#         DirectionalFeatureResult
+#     )
+#     DIRECTIONAL_OPTIMIZATION_AVAILABLE = True
+# except ImportError as e:
+#     DIRECTIONAL_OPTIMIZATION_AVAILABLE = False
+#     logging.warning(f"Directional optimization not available: {e}")
+#     # Create placeholder classes to avoid import errors
+#     class DirectionalOptimizationResult:
+# DIRECTIONAL_OPTIMIZATION_AVAILABLE = False
+#         pass
+#     class DirectionalFeatureResult:
+#         pass
+# 
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
 
@@ -212,7 +223,7 @@ class DirectionalFeatureSelectionAdapter:
             tprint(f"ℹ️ Using default configuration for model type: {self.config.model_type}")
     
     def select_optimal_directional_features(self,
-                                          directional_result: DirectionalOptimizationResult,
+#                                           directional_result: DirectionalOptimizationResult,
                                           data: Optional[pd.DataFrame] = None,
                                           target_column: str = 'returns') -> DirectionalFeatureSelectionResult:
         """
@@ -275,8 +286,8 @@ class DirectionalFeatureSelectionAdapter:
         return selection_result
     
     def _quality_filter_features(self,
-                               directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult],
-                                                                                         Dict[str, DirectionalFeatureResult]]:
+#                                directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult],
+#                                                                                          Dict[str, DirectionalFeatureResult]]:
         """Filter features based on quality thresholds."""
         tprint("🧹 Performing quality filtering on directional features")
         filtered_long = {}
@@ -299,7 +310,7 @@ class DirectionalFeatureSelectionAdapter:
         tprint(f"📊 Quality filtering: {len(filtered_long)} long + {len(filtered_short)} short features passed")
         return filtered_long, filtered_short
     
-    def _passes_quality_check(self, feature_result: DirectionalFeatureResult) -> bool:
+#     def _passes_quality_check(self, feature_result: DirectionalFeatureResult) -> bool:
         """Check if a feature passes quality thresholds."""
         tprint(f"🔎 Evaluating quality for feature {feature_result.feature_name} ({feature_result.direction})")
         checks = [
@@ -318,10 +329,10 @@ class DirectionalFeatureSelectionAdapter:
         return passed
     
     def _cross_directional_filter(self,
-                                long_features: Dict[str, DirectionalFeatureResult],
-                                short_features: Dict[str, DirectionalFeatureResult],
-                                directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult], 
-                                                                                          Dict[str, DirectionalFeatureResult]]:
+#                                 long_features: Dict[str, DirectionalFeatureResult],
+#                                 short_features: Dict[str, DirectionalFeatureResult],
+#                                 directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult], 
+#                                                                                           Dict[str, DirectionalFeatureResult]]:
         """Filter features based on cross-directional analysis."""
         tprint("🔁 Executing cross-directional filtering")
         filtered_long = long_features.copy()
@@ -352,7 +363,7 @@ class DirectionalFeatureSelectionAdapter:
         
         return filtered_long, filtered_short
     
-    def _rank_features_by_performance(self, features: Dict[str, DirectionalFeatureResult]) -> List[Tuple[str, DirectionalFeatureResult, float]]:
+#     def _rank_features_by_performance(self, features: Dict[str, DirectionalFeatureResult]) -> List[Tuple[str, DirectionalFeatureResult, float]]:
         """Rank features by performance score."""
         tprint(f"🏅 Ranking {len(features)} features by performance")
         ranked_features = []
@@ -376,8 +387,8 @@ class DirectionalFeatureSelectionAdapter:
         return ranked_features
     
     def _balanced_feature_selection(self,
-                                  ranked_long: List[Tuple[str, DirectionalFeatureResult, float]],
-                                  ranked_short: List[Tuple[str, DirectionalFeatureResult, float]],
+#                                   ranked_long: List[Tuple[str, DirectionalFeatureResult, float]],
+#                                   ranked_short: List[Tuple[str, DirectionalFeatureResult, float]],
                                   selection_result: DirectionalFeatureSelectionResult) -> DirectionalFeatureSelectionResult:
         """Select features with directional balance."""
         tprint("⚖️ Executing balanced feature selection")
@@ -458,7 +469,7 @@ class DirectionalFeatureSelectionAdapter:
     
     def _final_validation_and_optimization(self,
                                          selection_result: DirectionalFeatureSelectionResult,
-                                         directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
+#                                          directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
         """Final validation and optimization of selected features."""
         tprint("🧪 Performing final validation and optimization")
 
@@ -525,7 +536,7 @@ class DirectionalFeatureSelectionAdapter:
     
     def _increase_feature_count(self,
                               selection_result: DirectionalFeatureSelectionResult,
-                              directional_result: DirectionalOptimizationResult,
+#                               directional_result: DirectionalOptimizationResult,
                               target_count: int) -> DirectionalFeatureSelectionResult:
         """Increase feature count if possible."""
         # This would require access to the filtered features that weren't selected
@@ -552,7 +563,7 @@ class DirectionalFeatureSelectionAdapter:
     
     def _calculate_selection_metrics(self,
                                    selection_result: DirectionalFeatureSelectionResult,
-                                   directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
+#                                    directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
         """Calculate final selection metrics."""
         tprint("📊 Calculating selection metrics")
 
@@ -623,7 +634,7 @@ class DirectionalFeatureSelectionAdapter:
         }
 
 # Convenience function for easy integration
-def select_directional_features(directional_result: DirectionalOptimizationResult,
+# def select_directional_features(directional_result: DirectionalOptimizationResult,
                                data: Optional[pd.DataFrame] = None,
                                target_column: str = 'returns',
                                config: Optional[DirectionalFeatureSelectionConfig] = None) -> DirectionalFeatureSelectionResult:

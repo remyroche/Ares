@@ -33,7 +33,6 @@ from src.utils.tprint import (
 from ..shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
-
 @dataclass
 class ClusterStatistics:
     """Statistics for a single cluster."""
@@ -49,7 +48,6 @@ class ClusterStatistics:
     persistence_score: float
     economic_score: float
 
-
 @dataclass
 class EconomicDistinctivenessResults:
     """Results of economic distinctiveness analysis."""
@@ -60,7 +58,6 @@ class EconomicDistinctivenessResults:
     effect_sizes: Dict[str, float]           # Effect sizes for all tests
     fdr_corrected_pvalues: Dict[str, float]  # FDR-corrected p-values
 
-
 @dataclass
 class PersistenceAnalysisResults:
     """Results of regime persistence analysis."""
@@ -68,7 +65,6 @@ class PersistenceAnalysisResults:
     transition_matrix: np.ndarray            # Regime transition probabilities
     stability_metrics: Dict[str, float]     # Various stability measures
     horizon_analysis: Dict[int, Dict[str, float]]  # Analysis by horizon
-
 
 @dataclass
 class ComprehensiveReport:
@@ -81,7 +77,6 @@ class ComprehensiveReport:
     summary_statistics: Dict[str, Any]
     recommendations: List[str]
     timestamp: str
-
 
 class ComprehensiveReporter:
     """Comprehensive clustering reporter with economic and statistical analysis."""
@@ -534,7 +529,7 @@ class ComprehensiveReporter:
             return {}
     
     def _fdr_correction(
-        self, 
+        self,
         volatility_separation: Dict[str, float],
         return_differences: Dict[str, float],
         sharpe_differences: Dict[str, float]
@@ -542,72 +537,40 @@ class ComprehensiveReporter:
         """Apply FDR correction to p-values."""
         try:
             from statsmodels.stats.multitest import multipletests
+        except ImportError:
+            multipletests = None
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            
             # Collect all p-values
             all_pvalues = []
             all_keys = []
-            
+
             for key, pval in volatility_separation.items():
                 all_pvalues.append(pval)
                 all_keys.append(f"volatility_{key}")
-            
+
             for key, pval in return_differences.items():
                 all_pvalues.append(pval)
                 all_keys.append(f"return_{key}")
-            
+
             for key, pval in sharpe_differences.items():
                 all_pvalues.append(pval)
                 all_keys.append(f"sharpe_{key}")
-            
+
             if len(all_pvalues) > 0:
                 # Apply FDR correction
                 rejected, pvals_corrected, _, _ = multipletests(
                     all_pvalues, method='fdr_bh', alpha=0.05
                 )
-                
+
                 # Create corrected results dictionary
                 corrected_results = {}
                 for i, key in enumerate(all_keys):
                     corrected_results[key] = pvals_corrected[i]
-                
+
                 return corrected_results
             else:
                 return {}
-                
+
         except Exception as e:
             self.logger.warning(f"FDR correction failed: {e}")
             return {}
@@ -617,17 +580,17 @@ except ImportError:
         try:
             survival_probs = []
             n_samples = len(assignments)
-            
+
             for i in range(n_samples - horizon):
                 current_regime = assignments[i]
                 future_regimes = assignments[i:i+horizon+1]
-                
+
                 # Calculate survival probability (fraction of time in same regime)
                 survival_prob = np.mean(future_regimes == current_regime)
                 survival_probs.append(survival_prob)
-            
+
             return survival_probs
-            
+
         except Exception as e:
             self.logger.warning(f"Survival probability calculation failed: {e}")
             return []
@@ -660,8 +623,8 @@ except ImportError:
             self.logger.warning(f"Transition matrix calculation failed: {e}")
             return np.array([])
     
-    def _calculate_stability_metrics(self, assignments: np.ndarray, transition_matrix: np.ndarray) -> Dict[str, float]:
-        """Calculate various stability metrics."""
+            def _calculate_stability_metrics(self, assignments: np.ndarray, transition_matrix: np.ndarray) -> Dict[str, float]:
+                """Calculate various stability metrics."""
         try:
             metrics = {}
             
@@ -704,8 +667,8 @@ except ImportError:
             self.logger.warning(f"Stability metrics calculation failed: {e}")
             return {}
     
-    def _analyze_horizon_stability(self, assignments: np.ndarray, horizon: int) -> Dict[str, float]:
-        """Analyze stability at a specific horizon."""
+            def _analyze_horizon_stability(self, assignments: np.ndarray, horizon: int) -> Dict[str, float]:
+                """Analyze stability at a specific horizon."""
         try:
             stability_metrics = {}
             
@@ -743,8 +706,8 @@ except ImportError:
             self.logger.warning(f"Horizon stability analysis failed: {e}")
             return {}
     
-    def _calculate_persistence_score(self, assignments: np.ndarray, cluster_id: int) -> float:
-        """Calculate persistence score for a specific cluster."""
+            def _calculate_persistence_score(self, assignments: np.ndarray, cluster_id: int) -> float:
+                """Calculate persistence score for a specific cluster."""
         try:
             cluster_mask = assignments == cluster_id
             cluster_assignments = assignments[cluster_mask]
@@ -769,14 +732,14 @@ except ImportError:
         except Exception as e:
             return 0.0
     
-    def _calculate_economic_score(
+            def _calculate_economic_score(
         self, 
         mean_return: float, 
         sharpe_ratio: float, 
         max_drawdown: float, 
         mean_volatility: float
-    ) -> float:
-        """Calculate economic score for a cluster."""
+            ) -> float:
+                """Calculate economic score for a cluster."""
         try:
             # Normalize metrics (higher is better)
             return_score = max(0, mean_return)  # Only positive returns
@@ -797,8 +760,8 @@ except ImportError:
         except Exception as e:
             return 0.0
     
-    def _calculate_in_sample_metrics(self, assignments: np.ndarray, market_data: pd.DataFrame) -> Dict[str, float]:
-        """Calculate in-sample metrics."""
+            def _calculate_in_sample_metrics(self, assignments: np.ndarray, market_data: pd.DataFrame) -> Dict[str, float]:
+                """Calculate in-sample metrics."""
         try:
             metrics = {}
             
@@ -817,14 +780,14 @@ except ImportError:
             self.logger.warning(f"In-sample metrics calculation failed: {e}")
             return {}
     
-    def _calculate_out_of_sample_metrics(
+            def _calculate_out_of_sample_metrics(
         self, 
         assignments: np.ndarray, 
         market_data: pd.DataFrame, 
         test_size: float, 
         n_splits: int
-    ) -> Dict[str, float]:
-        """Calculate out-of-sample metrics using time series cross-validation."""
+            ) -> Dict[str, float]:
+                """Calculate out-of-sample metrics using time series cross-validation."""
         try:
             metrics = {}
             
@@ -855,13 +818,13 @@ except ImportError:
             self.logger.warning(f"Out-of-sample metrics calculation failed: {e}")
             return {}
     
-    def _calculate_summary_statistics(
+            def _calculate_summary_statistics(
         self, 
         cluster_stats: List[ClusterStatistics],
         economic_results: EconomicDistinctivenessResults,
         persistence_results: PersistenceAnalysisResults
-    ) -> Dict[str, Any]:
-        """Calculate summary statistics."""
+            ) -> Dict[str, Any]:
+                """Calculate summary statistics."""
         try:
             summary = {}
             
@@ -894,13 +857,13 @@ except ImportError:
             self.logger.warning(f"Summary statistics calculation failed: {e}")
             return {}
     
-    def _generate_recommendations(
+            def _generate_recommendations(
         self, 
         cluster_stats: List[ClusterStatistics],
         economic_results: EconomicDistinctivenessResults,
         persistence_results: PersistenceAnalysisResults
-    ) -> List[str]:
-        """Generate recommendations based on analysis."""
+            ) -> List[str]:
+                """Generate recommendations based on analysis."""
         try:
             recommendations = []
             
@@ -933,8 +896,8 @@ except ImportError:
             self.logger.warning(f"Recommendations generation failed: {e}")
             return ["Unable to generate recommendations due to analysis errors"]
     
-    def save_report(self, report: ComprehensiveReport, output_path: str) -> None:
-        """Save comprehensive report to file."""
+            def save_report(self, report: ComprehensiveReport, output_path: str) -> None:
+                """Save comprehensive report to file."""
         try:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)

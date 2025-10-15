@@ -76,6 +76,44 @@ def validate_finite(value: Any, name: str = "value") -> Any:
     except Exception as e:
         raise ValueError(f"Invalid {name}: {e}")
 
+def validate_array_finite(array: np.ndarray, name: str = "array") -> np.ndarray:
+    """Validate that an array contains only finite values."""
+    if array is None:
+        raise ValueError(f"{name} cannot be None")
+    
+    if not isinstance(array, np.ndarray):
+        raise TypeError(f"{name} must be a numpy array, got {type(array)}")
+    
+    if array.size == 0:
+        raise ValueError(f"{name} cannot be empty")
+    
+    # Check for non-finite values
+    finite_mask = np.isfinite(array)
+    if not finite_mask.all():
+        non_finite_count = np.sum(~finite_mask)
+        raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+    
+    return array
+
+def validate_matrix_finite(matrix: np.ndarray, name: str = "matrix") -> np.ndarray:
+    """Validate that a matrix contains only finite values."""
+    if matrix is None:
+        raise ValueError(f"{name} cannot be None")
+    
+    if not isinstance(matrix, np.ndarray):
+        raise TypeError(f"{name} must be a numpy array, got {type(matrix)}")
+    
+    if matrix.size == 0:
+        raise ValueError(f"{name} cannot be empty")
+    
+    # Check for non-finite values
+    finite_mask = np.isfinite(matrix)
+    if not finite_mask.all():
+        non_finite_count = np.sum(~finite_mask)
+        raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+    
+    return matrix
+
 def validate_positive(value, name: str = "value") -> Optional[float]:
     """Validate that a value is positive."""
     if value is None:
@@ -318,6 +356,31 @@ def safe_matrix_inverse(matrix: np.ndarray) -> np.ndarray:
         return np.linalg.pinv(matrix)
     except Exception:
         return np.eye(matrix.shape[0])
+
+def check_for_inf_nan(data, name="data"):
+    """Check for infinite or NaN values in data."""
+    import pandas as pd
+
+    if isinstance(data, (pd.DataFrame, pd.Series)):
+        has_inf = np.isinf(data).any().any() if isinstance(data, pd.DataFrame) else np.isinf(data).any()
+        has_nan = data.isna().any().any() if isinstance(data, pd.DataFrame) else data.isna().any()
+    else:
+        has_inf = np.isinf(data).any()
+        has_nan = np.isnan(data).any()
+
+    if has_inf:
+        logger.warning(f"{name} contains infinite values")
+    if has_nan:
+        logger.warning(f"{name} contains NaN values")
+
+    return not (has_inf or has_nan)
+
+def is_valid_number(value):
+    """Check if a value is a valid number (not NaN or infinite)."""
+    try:
+        return np.isfinite(float(value))
+    except (ValueError, TypeError):
+        return False
 
 def math_safe(func: Callable, *args, default: Any = 0.0, **kwargs) -> Any:
     """Safely execute math function."""

@@ -1,4 +1,5 @@
 """
+import warnings
 Temporal Feature Integration Module
 
 This module provides hierarchical temporal analysis by combining:
@@ -67,12 +68,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         analyze_cross_timeframes_optimized, create_optimized_config
     )

@@ -35,12 +35,12 @@ from .mixins import (
 )
 
 # Factory imports temporarily disabled
-# from .factories import (
+from .factories import (
 #     ScalerFactory, create_optimized_scaler, create_batch_scaler,
-#     OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
-#     RegistryFactory, create_registry, create_feature_registry,
-#     UnifiedFactory, create_optimized_component
-# )
+    OptimizerFactory, create_optimizer, create_vectorbt_optimizer,
+    RegistryFactory, create_registry, create_feature_registry,
+    UnifiedFactory, create_optimized_component
+)
 
 from .vectorbt import (
     UnifiedVectorBTManager, get_unified_vectorbt_manager,
@@ -48,6 +48,18 @@ from .vectorbt import (
     GPUAccelerator, get_gpu_accelerator,
     VectorBTPerformanceMonitor, get_performance_monitor
 )
+
+# Note: Normalization feature generators removed from direct imports to avoid circular dependencies
+# They will be imported lazily when needed
+# from .normalization import (
+#     NormalizationFeatureGenerator,
+#     RollingZScoreGenerator,
+#     VolatilityScalingGenerator,
+#     CrossSectionalNormalizer,
+#     create_data_normalizer,
+#     create_default_normalization_generators,
+#     NormalizationConfig
+# )
 
 # Error handling and logging
 from .error_handling import (
@@ -126,6 +138,9 @@ __all__ = [
     # Backward compatibility
     'create_enhanced_scaler',
     'enable_enhanced_logging',
+    
+    # Note: Normalization feature generators removed from __all__ to avoid circular imports
+    # They will be imported lazily when needed
 ]
 
 # Add VectorBT optimization components to __all__ if available

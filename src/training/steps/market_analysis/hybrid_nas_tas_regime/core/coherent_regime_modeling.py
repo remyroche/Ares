@@ -25,7 +25,6 @@ from src.utils.tprint import (
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class CoherentRegimeResult:
     """Result from coherent regime modeling."""
@@ -39,7 +38,6 @@ class CoherentRegimeResult:
     modeling_timestamp: str
     metadata: Dict[str, Any]
 
-
 @dataclass
 class MicroRegime:
     """Micro-regime definition."""
@@ -50,7 +48,6 @@ class MicroRegime:
     significance_score: float
     stability_score: float
     transition_patterns: List[str]
-
 
 class CoherentRegimeModeler:
     """
@@ -292,8 +289,17 @@ class CoherentRegimeModeler:
             # Trend characteristics
             if len(close_prices) > 10:
                 from scipy.stats import linregress
+                slope, intercept, r_value, p_value, std_err = linregress(np.arange(len(close_prices)), close_prices)
+                trend_strength = abs(r_value)
+                characteristics['trend_strength'] = trend_strength
 
-# VectorBT imports for native optimization
+            return characteristics
+
+        except Exception as e:
+            self.logger.warning(f"Regime characteristics extraction failed: {e}")
+            return {}
+
+    # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
@@ -319,42 +325,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-                x = np.arange(len(close_prices))
-                slope, _, r_value, _, _ = linregress(x, close_prices)
-                characteristics['trend_slope'] = slope
-                characteristics['trend_r_squared'] = r_value ** 2
-
-            # Volume characteristics
-            if 'volume' in regime_data.columns:
-                volume = regime_data['volume'].values
-                characteristics['mean_volume'] = np.mean(volume)
-                characteristics['volume_volatility'] = np.std(volume) / np.mean(volume) if np.mean(volume) > 0 else 0
-
-            # Price level characteristics
-            characteristics['price_level'] = np.mean(close_prices)
-            characteristics['price_range'] = np.max(close_prices) - np.min(close_prices)
-
-            # Market efficiency (autocorrelation)
-            if len(returns) > 1:
-                characteristics['autocorrelation'] = pd.Series(returns).autocorr(lag=1)
-
-            # Liquidity characteristics
-            high_low_spread = (regime_data['high'] - regime_data['low']) / regime_data['close']
-            characteristics['avg_spread'] = np.mean(high_low_spread)
-            characteristics['max_spread'] = np.max(high_low_spread)
-
-            return characteristics
-
-        except Exception as e:
-            self.logger.warning(f"Regime characteristics calculation failed: {e}")
-            return {}
 
     def _calculate_economic_significance(self, regime_data: pd.DataFrame, characteristics: Dict[str, float]) -> float:
         """Calculate economic significance of a regime."""
@@ -1047,7 +1020,6 @@ except ImportError:
 
         except:
             return 0.5
-
 
 def create_coherent_regime_modeler(config: Dict[str, Any]) -> CoherentRegimeModeler:
     """Create coherent regime modeler."""

@@ -76,6 +76,25 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             tprint(f"❌ Error initializing AutoOptimizedFeatureGenerator '{config.name}': {e}")
             raise
     
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """
+        Generate the feature. This is an abstract method that must be implemented by subclasses.
+        This base implementation provides auto-optimization wrapper functionality.
+        
+        Args:
+            data: Input data DataFrame
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            pd.Series: Generated feature series
+            
+        Raises:
+            NotImplementedError: If subclass doesn't implement this method
+        """
+        raise NotImplementedError(
+            f"Subclass {self.__class__.__name__} must implement _generate_feature method"
+        )
+    
     def _apply_level_settings(self):
         """Apply settings based on optimization level."""
         try:

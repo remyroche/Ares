@@ -1,4 +1,5 @@
 """
+import warnings
 Configuration System for Feature Lookback Optimization
 
 This module provides a comprehensive configuration system for feature lookback
@@ -39,12 +40,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)

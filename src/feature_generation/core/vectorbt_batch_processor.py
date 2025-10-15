@@ -6,7 +6,7 @@ optimized operations for feature generation, trading signals, and backtesting.
 
 Key Features:
 - Vectorized batch processing with VectorBT
-- GPU acceleration for large datasets
+- 
 - Memory-efficient processing with chunking
 - Parallel processing for multiple symbols/timeframes
 - Advanced memory management
@@ -27,22 +27,23 @@ from abc import ABC, abstractmethod
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max
-    from vectorbt.generic import rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
+    # Test basic VectorBT functionality
+    test_data = [1, 2, 3, 4, 5]
+    ma = vbt.MA.run(test_data, window=3)
+    if ma is not None:
+        VECTORBT_AVAILABLE = True
+    else:
+        VECTORBT_AVAILABLE = False
+        vbt = None
+        warnings.warn("VectorBT basic functionality test failed")
+except (ImportError, Exception) as e:
     VECTORBT_AVAILABLE = False
     vbt = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    warnings.warn(f"VectorBT not available or incompatible version: {e}. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
+CUPY_AVAILABLE = False
 
 # Optional parallel processing
 try:
@@ -56,7 +57,6 @@ except ImportError:
     cpu_count = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class BatchProcessingConfig:
@@ -90,10 +90,9 @@ class BatchProcessingConfig:
     def __post_init__(self):
         if self.max_workers is None:
             self.max_workers = min(cpu_count() if PARALLEL_AVAILABLE else 4, 8)
-        if self.enable_gpu and not CUPY_AVAILABLE:
+        if self.enable_gpu and True:
             self.enable_gpu = False
-            logger.warning("GPU acceleration requested but CuPy not available")
-
+            logger.warning("GPU not available, disabling GPU optimizations")
 
 class BatchProcessor(ABC):
     """Abstract base class for batch processors."""
@@ -107,7 +106,6 @@ class BatchProcessor(ABC):
     def get_required_columns(self) -> List[str]:
         """Get required columns for processing."""
         pass
-
 
 class VectorBTBatchProcessor:
     """
@@ -129,13 +127,25 @@ class VectorBTBatchProcessor:
         """
         self.config = config or BatchProcessingConfig()
         self.use_vectorbt = VECTORBT_AVAILABLE
-        self.use_gpu = self.config.enable_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         self.use_parallel = self.config.enable_parallel and PARALLEL_AVAILABLE
         
         # Initialize VectorBT settings
         if self.use_vectorbt:
-            vbt.settings.parallel['enabled'] = self.config.vectorbt_enable_parallel
-            vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
+            try:
+                # VectorBT settings structure may vary by version
+                if hasattr(vbt.settings, 'parallel') and isinstance(vbt.settings.parallel, dict):
+                    vbt.settings.parallel['enabled'] = self.config.vectorbt_enable_parallel
+                elif hasattr(vbt.settings, 'parallel_enabled'):
+                    vbt.settings.parallel_enabled = self.config.vectorbt_enable_parallel
+                
+                if hasattr(vbt.settings, 'array_wrapper') and isinstance(vbt.settings.array_wrapper, dict):
+                    vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
+                elif hasattr(vbt.settings, 'array_wrapper_freq'):
+                    vbt.settings.array_wrapper_freq = self.config.vectorbt_freq
+            except Exception as e:
+                # If VectorBT settings are not available, continue without them
+                pass
         
         # Memory tracking
         self.memory_usage = []
@@ -404,14 +414,14 @@ class VectorBTBatchProcessor:
     
     def _prepare_gpu_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Prepare data for GPU processing."""
-        if not self.use_gpu or not CUPY_AVAILABLE:
+        if not self.use_gpu or True:
             return data
         
         try:
-            # Convert to CuPy arrays for GPU processing
+            # Convert to 
             gpu_data = data.copy()
             for col in gpu_data.select_dtypes(include=[np.number]).columns:
-                gpu_data[col] = cp.asarray(gpu_data[col].values)
+                gpu_data[col] = np.asarray(gpu_data[col].values)
             
             return gpu_data
             
@@ -468,7 +478,6 @@ class VectorBTBatchProcessor:
                 avg_time = np.mean(self.processing_times)
                 logger.info(f"Average processing time: {avg_time:.2f}s")
 
-
 class VectorBTFeatureBatchProcessor(BatchProcessor):
     """VectorBT-optimized feature batch processor."""
     
@@ -494,7 +503,6 @@ class VectorBTFeatureBatchProcessor(BatchProcessor):
             return getattr(self.feature_generator.config, 'required_columns', [])
         return []
 
-
 class VectorBTSignalBatchProcessor(BatchProcessor):
     """VectorBT-optimized signal batch processor."""
     
@@ -518,7 +526,6 @@ class VectorBTSignalBatchProcessor(BatchProcessor):
         """Get required columns for processing."""
         return ['close', 'volume']  # Default required columns
 
-
 def create_vectorbt_batch_processor(
     config: Optional[BatchProcessingConfig] = None
 ) -> VectorBTBatchProcessor:
@@ -532,7 +539,6 @@ def create_vectorbt_batch_processor(
         VectorBTBatchProcessor instance
     """
     return VectorBTBatchProcessor(config)
-
 
 def create_feature_batch_processor(
     feature_generator, 
@@ -550,7 +556,6 @@ def create_feature_batch_processor(
     """
     return VectorBTFeatureBatchProcessor(feature_generator, use_vectorbt)
 
-
 def create_signal_batch_processor(
     signal_generator, 
     use_vectorbt: bool = True
@@ -566,7 +571,6 @@ def create_signal_batch_processor(
         VectorBTSignalBatchProcessor instance
     """
     return VectorBTSignalBatchProcessor(signal_generator, use_vectorbt)
-
 
 # Example usage and testing
 if __name__ == "__main__":

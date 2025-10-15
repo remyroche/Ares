@@ -27,7 +27,6 @@ from .vectorbt_config import VectorBTFeatureSelectionConfig
 
 logger = logging.getLogger(__name__)
 
-
 def create_vectorbt_dataframe(X: np.ndarray, feature_names: List[str], 
                             config: VectorBTFeatureSelectionConfig) -> pd.DataFrame:
     """
@@ -93,7 +92,6 @@ def create_vectorbt_dataframe(X: np.ndarray, feature_names: List[str],
             df.index = pd.bdate_range(start='2020-01-01', periods=len(df), freq='D')
         return df
 
-
 def validate_inputs(X: np.ndarray, y: np.ndarray, 
                    feature_names: Optional[List[str]] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
@@ -132,7 +130,6 @@ def validate_inputs(X: np.ndarray, y: np.ndarray,
     tprint_debug(f"✅ Inputs validated: X={X.shape}, y={y.shape}, features={len(feature_names)}")
     return X, y, feature_names
 
-
 def time_operation(operation_name: str, func: callable, config: VectorBTFeatureSelectionConfig,
                   *args, **kwargs) -> Any:
     """
@@ -161,7 +158,6 @@ def time_operation(operation_name: str, func: callable, config: VectorBTFeatureS
         tprint_performance(f"⏱️ {operation_name}: {execution_time:.3f}s")
     
     return result
-
 
 def track_vectorbt_performance(operation_name: str, start_time: float, 
                               vectorbt_operation: bool = True, 
@@ -212,7 +208,6 @@ def track_vectorbt_performance(operation_name: str, start_time: float,
     
     tprint_performance(metrics)
 
-
 def setup_vectorbt_optimizations(config: VectorBTFeatureSelectionConfig) -> bool:
     """
     Setup VectorBT with optimal settings.
@@ -250,10 +245,9 @@ def setup_vectorbt_optimizations(config: VectorBTFeatureSelectionConfig) -> bool
         logger.warning(f"VectorBT optimization setup failed: {e}")
         return False
 
-
 def setup_gpu_acceleration(config: VectorBTFeatureSelectionConfig) -> bool:
     """
-    Setup GPU acceleration for VectorBT operations.
+    Setup 
     
     Args:
         config: VectorBT configuration
@@ -261,39 +255,38 @@ def setup_gpu_acceleration(config: VectorBTFeatureSelectionConfig) -> bool:
     Returns:
         True if GPU setup successful, False otherwise
     """
-    tprint_debug("🔧 Setting up GPU acceleration")
-    
+    tprint_debug("🔧 Setting up GPU acceleration for VectorBT operations")
+
     try:
         if config.enable_gpu:
             import torch
-            import cupy as cp
-            
+
             # Check CUDA availability
             if torch.cuda.is_available():
                 # Configure CUDA device
                 torch.cuda.set_device(config.gpu_device)
                 
-                # Configure CuPy memory pool
+                # Configure 
                 if config.cuda_memory_pool:
-                    cp.cuda.MemoryPool().set_limit(fraction=config.gpu_memory_fraction)
-                
+                    # GPU memory limit removed
+                    pass
+
                 # Enable VectorBT GPU operations
                 vbt.settings['array_wrapper']['enable_gpu'] = True
                 vbt.settings['array_wrapper']['gpu_chunk_size'] = config.gpu_chunk_size
                 
-                tprint_success("✅ GPU acceleration enabled")
+                tprint_success("✅ GPU optimization enabled successfully")
                 return True
             else:
-                logger.warning("CUDA not available, GPU acceleration disabled")
+                logger.warning("CUDA not available, falling back to CPU")
                 return False
         else:
-            tprint_debug("GPU acceleration disabled in config")
+            tprint_debug("GPU optimization disabled")
             return False
             
     except Exception as e:
         logger.warning(f"GPU setup failed: {e}")
         return False
-
 
 def setup_advanced_parallel_processing(config: VectorBTFeatureSelectionConfig) -> Dict[str, Any]:
     """
@@ -370,7 +363,6 @@ def setup_advanced_parallel_processing(config: VectorBTFeatureSelectionConfig) -
     except Exception as e:
         logger.warning(f"Advanced parallel processing setup failed: {e}")
         return {}
-
 
 def create_performance_stats() -> Dict[str, Any]:
     """

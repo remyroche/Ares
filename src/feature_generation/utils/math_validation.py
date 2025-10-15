@@ -37,12 +37,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Setup logging
@@ -80,6 +76,52 @@ def validate_range(value, min_val, max_val, name="value"):
     if not (min_val <= value <= max_val):
         raise ValueError(f"{name} must be between {min_val} and {max_val}, got {value}")
     return value
+
+def validate_finite(value, name="value"):
+    """Validate that a value is finite."""
+    import numpy as np
+    try:
+        # Handle numpy arrays
+        if isinstance(value, np.ndarray):
+            if value.size == 0:
+                raise ValueError(f"{name} cannot be empty")
+            # Check for non-finite values using explicit boolean array handling
+            finite_mask = np.isfinite(value)
+            has_non_finite = not finite_mask.all()
+            if has_non_finite:
+                non_finite_count = np.sum(~finite_mask)
+                raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
+            return value
+
+        # Handle scalar values - check if it's a single-element array first
+        if hasattr(value, '__len__') and len(value) == 1:
+            # Single-element array or list
+            val = float(value[0])
+        elif hasattr(value, '__len__') and len(value) > 1:
+            # Multi-element array - convert to numpy array for validation
+            val_array = np.array(value)
+            finite_mask = np.isfinite(val_array)
+            if not finite_mask.all():
+                raise ValueError(f"{name} contains non-finite values")
+            return val_array
+        else:
+            # Scalar value
+            val = float(value)
+
+        if not np.isfinite(val):
+            raise ValueError(f"{name} must be finite, got {val}")
+        return val
+    except Exception as e:
+        raise ValueError(f"Invalid {name}: {e}")
+
+def safe_percentage_change(old_value, new_value):
+    """Safely calculate percentage change."""
+    try:
+        if old_value == 0:
+            return 0.0
+        return ((new_value - old_value) / old_value) * 100
+    except Exception:
+        return 0.0
 
 class MathValidationError(Exception):
     """Math validation error."""

@@ -9,10 +9,37 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 import logging
+import warnings
 from dataclasses import dataclass
 import time
 from datetime import datetime
 from enum import Enum
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer
@@ -65,9 +92,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
-
-
 class FeatureSelectionMethod(Enum):
     """Feature selection methods."""
     CORRELATION = "correlation"
@@ -79,7 +103,6 @@ class FeatureSelectionMethod(Enum):
     LASSO = "lasso"
     RIDGE = "ridge"
     ELASTIC_NET = "elastic_net"
-
 
 @dataclass
 class FeaturePipelineConfig:
@@ -126,7 +149,6 @@ class FeaturePipelineConfig:
         if self.lookback_periods is None:
             self.lookback_periods = [5, 10, 20, 50]
 
-
 @dataclass
 class FeaturePipelineResult:
     """Result from feature engineering pipeline."""
@@ -141,7 +163,6 @@ class FeaturePipelineResult:
     error_message: Optional[str] = None
     hardware_optimization_applied: bool = False
     matrix_operations_used: bool = False
-
 
 class FeatureEngineeringPipeline:
     """Advanced feature engineering pipeline with systematic feature selection and validation."""
@@ -455,40 +476,6 @@ class FeatureEngineeringPipeline:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Generator {generator.config.name} failed for {category}: {e}")
                     import traceback
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
                     self.logger.warning(f"⚠️ Generator {generator.config.name} traceback: {traceback.format_exc()}")
                     continue
             
@@ -691,8 +678,7 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"⚠️ Oscillator feature generation failed: {e}")
             return pd.DataFrame()
-    
-    
+
     def _generate_interaction_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate interaction features between existing features."""
         try:
@@ -940,7 +926,6 @@ except ImportError:
             self.logger.warning(f"⚠️ Feature categorization failed: {e}")
             return {'other': list(features.columns)}
 
-
 def create_feature_pipeline(config: Optional[FeaturePipelineConfig] = None) -> FeatureEngineeringPipeline:
     """Create a feature engineering pipeline instance.
     
@@ -953,7 +938,6 @@ def create_feature_pipeline(config: Optional[FeaturePipelineConfig] = None) -> F
     if config is None:
         config = FeaturePipelineConfig()
     return FeatureEngineeringPipeline(config)
-
 
 def quick_feature_engineering(data: pd.DataFrame,
                             target: Optional[pd.Series] = None,

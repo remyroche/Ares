@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import json
+import warnings
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,11 @@ from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_p
     run_feature_selection_step
 )
 
+from src.training.steps.pre_training.components.base_component import (
+    BasePreTrainingComponent, ComponentConfig, ComponentResult
+)
+from src.utils.common_operations import safe_dataframe_operation
+from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 @dataclass
 class FeatureSelectionResult:
@@ -33,10 +39,11 @@ class FeatureSelectionResult:
     error_message: Optional[str] = None
 
 
-class FeatureGenerationFeatureSelectionStep:
+class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
     """Feature selection step that calls the consolidated pipeline."""
     
-    def __init__(self):
+    def __init__(self, config: Optional[ComponentConfig] = None):
+    super().__init__(config or ComponentConfig())
         """Initialize the feature selection step."""
         self.logger = logging.getLogger(__name__)
     
@@ -162,3 +169,35 @@ async def handle_feature_generation_feature_selection_step(
         exchange=exchange,
         custom_overrides=custom_overrides
     )
+
+
+    # Required utility methods for BasePreTrainingComponent
+    def safe_dataframe_operation(self, operation_func, *args, **kwargs):
+        """Safe dataframe operation wrapper."""
+        return safe_dataframe_operation(operation_func, *args, **kwargs)
+
+    def safe_matrix_multiply(self, a, b):
+        """Safe matrix multiplication."""
+        return safe_matrix_multiply(a, b)
+
+    def optimize_dataframe_for_matrix_ops(self, df):
+        """Optimize dataframe for matrix operations."""
+        return optimize_dataframe(df)
+
+
+# Register component with factory
+def _register_feature_generation_feature_selection_step():
+    """Register the FeatureGenerationFeatureSelectionStep component with the factory."""
+    try:
+        from ...components.component_factory import ComponentFactory
+        ComponentFactory.register_component(
+            'feature_generation_feature_selection_step',
+            FeatureGenerationFeatureSelectionStep
+        )
+    except ImportError:
+        # Component factory not available, skip registration
+        pass
+
+
+# Register the component when module is imported
+_register_feature_generation_feature_selection_step()

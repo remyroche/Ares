@@ -15,6 +15,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for native optimization
@@ -45,13 +46,13 @@ except ImportError:
 
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.consolidated_rolling_optimizer import (
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
         ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
         get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
         RollingOperationConfig,
         RollingOperationType
     )
-    from ..utils.statistical_calculations_optimizer import (
+    from src.feature_generation.utils.statistical_calculations_optimizer import (
         StatisticalCalculationsOptimizer as VectorizationOptimizer,
         get_global_statistical_optimizer as get_vectorization_optimizer,
         StatisticalOperationConfig,
@@ -62,7 +63,7 @@ try:
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
         ROLLING_OPTIMIZER_AVAILABLE = True
         OPTIMIZATION_AVAILABLE = False
     except ImportError:
@@ -73,28 +74,25 @@ except ImportError:
 
 # Unified Vectorization Manager
 try:
-    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType
+    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OperationConfig
     UNIFIED_MANAGER_AVAILABLE = True
 except ImportError:
     UNIFIED_MANAGER_AVAILABLE = False
     get_unified_vectorization_manager = None
     UnifiedVectorizationManager = None
     OperationType = None
+    OperationConfig = None
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 from ..base_calculations import (
@@ -852,7 +850,7 @@ class ADXGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         self.period = period
         
         # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
@@ -936,15 +934,14 @@ class ADXGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         return adx.values
 
-    
 class DirectionalSignalGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Directional Signal (EMA_8 - EMA_20) with VectorBT optimization."""
 # ADXGenerator moved to oscillator.py to avoid duplication
 # Import from oscillator module instead
 from .oscillator import ADXGenerator
 # Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+# Removed VectorBTScaler import to avoid circular import
 from ..core.feature_bank import get_global_feature_bank
 class DirectionalSignalGenerator(VectorizedFeatureGenerator):
     """Generator for Directional Signal (EMA_8 - EMA_20)."""
@@ -964,7 +961,7 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
         # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
@@ -1010,7 +1007,6 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
 
         return directional_signal
 
-    
 class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Trend Score (normalized directional signal * ADX) with VectorBT optimization."""
 
@@ -1037,7 +1033,7 @@ class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         self.adx_period = adx_period
         
         # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
@@ -1149,7 +1145,6 @@ class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
 
         return trend_score
 
-    
 class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Simple Moving Average with different base calculations and VectorBT optimization."""
 
@@ -1193,7 +1188,7 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         self.base_calculation = base_calculation
         
         # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
@@ -1219,7 +1214,6 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             sma = base_values.rolling(window=self.period).mean()
             return sma
 
-    
 class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for Exponential Moving Average with different base calculations and VectorBT optimization."""
 
@@ -1263,7 +1257,7 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         self.base_calculation = base_calculation
         
         # Initialize VectorBT optimizer
-        if VECTORBT_OPTIMIZER_AVAILABLE:
+        if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
@@ -1313,7 +1307,7 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
 def create_default_trend_generators() -> List[FeatureGenerator]:
     return create_trend_generators()
 
-# WMA (Weighted Moving Average)class WMAGenerator(VectorizedFeatureGenerator):
+class WMAGenerator(VectorizedFeatureGenerator):
     """Generator for WMA (Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1386,7 +1380,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             )
             return wma
 
-# DEMA (Double Exponential Moving Average)class DEMAGenerator(VectorizedFeatureGenerator):
+class DEMAGenerator(VectorizedFeatureGenerator):
     """Generator for DEMA (Double Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1456,7 +1450,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             dema = 2 * ema1 - ema2
             return dema
 
-# TEMA (Triple Exponential Moving Average)class TEMAGenerator(VectorizedFeatureGenerator):
+class TEMAGenerator(VectorizedFeatureGenerator):
     """Generator for TEMA (Triple Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1529,7 +1523,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             tema = 3 * ema1 - 3 * ema2 + ema3
             return tema
 
-# TRIMA (Triangular Moving Average)class TRIMAGenerator(VectorizedFeatureGenerator):
+class TRIMAGenerator(VectorizedFeatureGenerator):
     """Generator for TRIMA (Triangular Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1676,7 +1670,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             mama = self._calculate_ema_vectorized(base_values, 20)
             return mama
 
-# VWMA (Volume Weighted Moving Average)class VWMAGenerator(VectorizedFeatureGenerator):
+class VWMAGenerator(VectorizedFeatureGenerator):
     """Generator for VWMA (Volume Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1742,7 +1736,6 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
-
 
 class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
     """Generator for Keltner Channels with different base calculations."""
@@ -1834,7 +1827,6 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             ema = base_values.ewm(span=self.period).mean()
             return ema
 
-
 def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of trend feature generators."""
     if periods is None:
@@ -1898,7 +1890,6 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
         generators.append(TrendScoreGenerator(adx_period=period))
 
     return generators
-
 
 class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Optimized trend feature generator using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
@@ -2068,7 +2059,6 @@ class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
         
         return features
 
-
 class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend feature generator with comprehensive indicators."""
     
@@ -2174,7 +2164,6 @@ class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
         
         return trend.rename(f'vectorbt_trend_{self.period}')
 
-
 class VectorBTSMAGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Simple Moving Average generator."""
     
@@ -2209,7 +2198,6 @@ class VectorBTSMAGenerator(VectorBTFeatureGenerator):
         sma = self._vectorbt_rolling_operation(data['close'], 'mean', window=self.period)
         
         return sma.rename(f'vectorbt_sma_{self.period}')
-
 
 class VectorBTEMAGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Exponential Moving Average generator."""
@@ -2246,7 +2234,6 @@ class VectorBTEMAGenerator(VectorBTFeatureGenerator):
         
         return ema.rename(f'vectorbt_ema_{self.period}')
 
-
 class VectorBTADXGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized ADX generator."""
     
@@ -2281,7 +2268,6 @@ class VectorBTADXGenerator(VectorBTFeatureGenerator):
         adx = self._vectorbt_technical_indicator(data, 'adx', window=self.period)
         
         return adx.rename(f'vectorbt_adx_{self.period}')
-
 
 def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
@@ -2418,7 +2404,6 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
 
     return generators
 
-
 class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Ichimoku Cloud generator."""
     
@@ -2529,7 +2514,6 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Ichimoku Cloud: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
-
 
 class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Parabolic SAR generator."""
@@ -2643,7 +2627,6 @@ class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             self.logger.error(f"Error generating Parabolic SAR: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_parabolic_sar_{self.acceleration}')
-
 
 class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized ZigZag indicator generator."""
@@ -2764,7 +2747,6 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
             self.logger.error(f"Error generating ZigZag indicator: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
 
-
 def create_optimized_trend_generators(periods: List[int] = None, use_unified_manager: bool = True) -> List[FeatureGenerator]:
     """Create a list of optimized trend feature generators using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
     if periods is None:
@@ -2798,13 +2780,11 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
         generators.append(VectorBTSMAGenerator(period=period))
         generators.append(VectorBTEMAGenerator(period=period))
         generators.append(VectorBTADXGenerator(period=period))
-        generators.append(VectorBTIchimokuGenerator(tenkan_period=period))
+        generators.append(VectorBTIchimokuCloudGenerator(tenkan_period=period))
         generators.append(VectorBTParabolicSARGenerator(acceleration=0.02))
         generators.append(VectorBTZigZagGenerator(deviation=0.05))
 
     return generators
-
-
 
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
                                    window: int, **kwargs) -> pd.Series:
@@ -2852,13 +2832,22 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
             raise ValueError(f"Unsupported operation: {operation}")
     
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
+        """Normalize feature using direct scaling to avoid circular imports."""
         try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
+            if method == 'zscore':
+                return (data - data.mean()) / data.std()
+            elif method == 'minmax':
+                return (data - data.min()) / (data.max() - data.min())
+            elif method == 'robust':
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / mad
+            else:
+                logger.warning(f"Unsupported normalization method: {method}, using zscore")
+                return (data - data.mean()) / data.std()
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
+            logger.warning(f"Normalization failed: {e}, using simple zscore")
+            return (data - data.mean()) / data.std()
     
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
@@ -2949,7 +2938,6 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
             return self._calculate_rolling_sum_vectorized(data, window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-
 
 class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """
@@ -3212,7 +3200,6 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 len(data) > 100 and 
                 self.vectorbt_optimizer is not None and
                 not data.isna().all())
-
 
 def create_general_trend_generators(adx_periods: List[int] = None, 
                                   macd_configs: List[Dict[str, int]] = None,

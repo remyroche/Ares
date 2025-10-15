@@ -54,12 +54,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     STATSMODELS_AVAILABLE = True
     logger.info("✅ Statsmodels available for advanced time series analysis")
@@ -245,7 +241,6 @@ class StatsmodelsIntegration:
         except Exception as e:
             self.logger.error(f"❌ Seasonal decomposition failed: {e}")
             return {}
-
 
     def _is_stationary(self, series: pd.Series, significance: float = 0.05) -> bool:
         """Test if series is stationary using ADF test."""

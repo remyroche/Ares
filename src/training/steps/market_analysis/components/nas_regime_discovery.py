@@ -20,7 +20,6 @@ from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning,
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 
-
 class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     """
     NAS Regime Discovery Component.
@@ -430,12 +429,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     def _calculate_nas_regime_metrics(self, regime_predictions: np.ndarray, nas_result: Any) -> Dict[str, Any]:

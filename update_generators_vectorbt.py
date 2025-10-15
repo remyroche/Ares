@@ -54,12 +54,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None'''
     
     def update_file(self, file_path: Path) -> bool:
@@ -241,7 +237,6 @@ except ImportError:
         logger.info("\n🎉 VectorBT integration update complete!")
         logger.info("All feature generators and transformers now natively use VectorBT optimizations.")
 
-
 def main():
     """Main execution function."""
     logger.info("🚀 Starting VectorBT integration update...")
@@ -249,7 +244,6 @@ def main():
     updater = VectorBTUpdater()
     updater.update_all_generators()
     updater.generate_report()
-
 
 if __name__ == "__main__":
     main()

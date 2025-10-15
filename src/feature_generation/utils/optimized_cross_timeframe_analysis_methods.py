@@ -1,4 +1,5 @@
 """
+import warnings
 Optimized Cross Timeframe Analysis Methods
 
 This module previously contained optimized implementation methods for cross timeframe analysis.
@@ -33,12 +34,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = system_logger.getChild('OptimizedCrossTimeframeMethods')

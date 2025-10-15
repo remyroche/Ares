@@ -1,4 +1,5 @@
 """
+import warnings
 Enhanced Feature Lookback Optimization System
 
 This module integrates hardware optimization, feature selection tools, and safe math
@@ -572,7 +573,7 @@ class EnhancedOptimizationSystem:
                 )
                 self.logger.debug(f"Optimal chunk size: {optimal_chunk_size}")
             
-            # GPU acceleration if available
+            # 
             if self.gpu_manager and self.gpu_manager.is_mps_available():
                 result = await self._gpu_accelerated_optimization(
                     data, feature_name, periods, optimization_method, 
@@ -613,7 +614,7 @@ class EnhancedOptimizationSystem:
         regime_column: Optional[str]
     ) -> Dict[str, Any]:
         """GPU-accelerated optimization using M1 GPU."""
-        self.logger.info(f"🚀 Using GPU acceleration for {feature_name}")
+        self.logger.info(f"🚀 Using 
         
         try:
             import torch
@@ -644,12 +645,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             
             # Convert data to tensor if possible

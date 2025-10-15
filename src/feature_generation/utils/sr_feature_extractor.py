@@ -1,4 +1,5 @@
 """
+import warnings
 SR Feature Extractor - Comprehensive Support/Resistance Feature Engineering
 
 This module provides comprehensive SR (Support/Resistance) feature extraction with:
@@ -79,12 +80,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         log_step_functions, log_important_calls, log_all_calls
     )
@@ -794,11 +791,9 @@ class SRFeatureExtractor:
             self.logger.error(f"Failed to load optimized parameters: {e}")
             return None
 
-
 def get_sr_feature_extractor(config: Optional[SRFeatureConfig] = None) -> SRFeatureExtractor:
     """Get an SR feature extractor instance."""
     return SRFeatureExtractor(config)
-
 
 # Convenience function for quick SR feature extraction
 def extract_sr_features(data: pd.DataFrame, 

@@ -21,7 +21,7 @@ warnings.warn(
 
 try:
     # Try to import from the new unified feature generation system
-    from ...feature_generation import FeatureGenerators as NewFeatureGenerators
+    from ..feature_generation import FeatureGenerators as NewFeatureGenerators
     logger.info("✅ Successfully imported FeatureGenerators from new unified system")
     
     # Export the new class as the old name for compatibility
@@ -32,7 +32,7 @@ except ImportError as e:
     
     # Try simple compatibility layer
     try:
-        from ...feature_generation.compatibility.simple_hmm_compatibility import FeatureGenerators as SimpleFeatureGenerators
+        from ..feature_generation.compatibility.simple_hmm_compatibility import FeatureGenerators as SimpleFeatureGenerators
         logger.info("✅ Using simple HMM compatibility layer")
         FeatureGenerators = SimpleFeatureGenerators
         
@@ -42,6 +42,10 @@ except ImportError as e:
         # Fallback to original implementation if available
         try:
             from .feature_generators import FeatureGenerators as OriginalFeatureGenerators
+            FeatureGenerators = OriginalFeatureGenerators
+        except ImportError as e3:
+            logger.error(f"❌ All FeatureGenerators compatibility layers failed: {e3}")
+            raise ImportError("No compatible FeatureGenerators implementation found")
 
 # VectorBT imports for native optimization
 try:
@@ -69,12 +73,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             logger.warning("⚠️ Using original FeatureGenerators as fallback")
             FeatureGenerators = OriginalFeatureGenerators

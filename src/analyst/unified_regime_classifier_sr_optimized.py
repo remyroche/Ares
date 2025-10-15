@@ -1,4 +1,5 @@
 """
+import warnings
 S/R-Focused Unified Regime Classifier with Optimized Relevance Weights
 
 This version includes:
@@ -203,12 +204,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         weights_file = os.path.join(self.config.get('model_dir', 'models'), f'sr_weights_{self.exchange}_{self.symbol}.json')
         try:

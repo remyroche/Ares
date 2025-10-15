@@ -21,7 +21,7 @@ Built on existing utilities:
 - Uses data_processing_utils.py for data handling
 - Leverages math_validation.py for safe operations
 - Integrates with common_operations.py for robust error handling
-- Uses m1_gpu_utils.py for GPU acceleration
+- Uses m1_gpu_utils.py for 
 - Leverages m1_memory_optimizer.py for memory management
 """
 
@@ -72,7 +72,6 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited data quality functionality")
-
 
 class DataQualityUtilities:
     """Comprehensive data quality assessment and preprocessing utilities."""
@@ -1009,7 +1008,7 @@ class DataQualityUtilities:
     def enhanced_automated_data_cleaning(self, df: pd.DataFrame,
                                        cleaning_config: Optional[Dict[str, Any]] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Enhanced automated data cleaning with advanced strategies and GPU acceleration.
+        Enhanced automated data cleaning with advanced strategies and 
 
         Args:
             df: DataFrame to clean
@@ -1555,12 +1554,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                 corr_matrix = np.zeros((X.shape[1], X.shape[1]))
                 for i in range(X.shape[1]):
@@ -1624,7 +1619,6 @@ except ImportError:
 
         except Exception as e:
             return df, {'error': str(e)}
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

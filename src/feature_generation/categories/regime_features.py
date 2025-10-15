@@ -81,10 +81,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
+
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Local imports
@@ -98,10 +97,10 @@ from ..base_calculations import (
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
-    from ..utils.unified_optimization_system import get_unified_optimization_system, UnifiedOptimizationSystem
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.unified_optimization_system import get_unified_optimization_system, UnifiedOptimizationSystem
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -118,7 +117,6 @@ try:
 except ImportError:
     def tprint(*args, **kwargs):
         print(*args, **kwargs)
-
 
 class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
     """
@@ -182,7 +180,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                 )
                 
                 # Initialize Unified Optimization System
-                from ..utils.unified_optimization_system import UnifiedOptimizationConfig
+                from src.feature_generation.utils.unified_optimization_system import UnifiedOptimizationConfig
                 unified_config = UnifiedOptimizationConfig(
                     enable_normalization=True,
                     enable_scaling=True,
@@ -873,7 +871,6 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         if self.vectorbt_optimizer:
             self.vectorbt_optimizer.reset_stats()
 
-
 class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for structural trend regime features optimized for 15m timeframe."""
     
@@ -911,7 +908,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
                 )
                 
                 # Initialize Unified Optimization System
-                from ..utils.unified_optimization_system import UnifiedOptimizationConfig
+                from src.feature_generation.utils.unified_optimization_system import UnifiedOptimizationConfig
                 unified_config = UnifiedOptimizationConfig(
                     enable_normalization=True,
                     enable_scaling=True,
@@ -1875,7 +1872,6 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
-
 class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility regime features optimized for 15m timeframe."""
     
@@ -2466,7 +2462,6 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
             return rolling_obj.kurt()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-
 
 class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volume regime features optimized for 15m timeframe."""
@@ -3094,7 +3089,6 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
-
 # Advanced Regime Features (Entropy, Complexity, Fractal Dimension, etc.)
 class RegimeEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for regime entropy features with VectorBT optimization."""
@@ -3176,7 +3170,6 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
                 entropy_values.append(entropy)
         
         return pd.Series(entropy_values, index=index)
-
 
 class RegimeComplexityGenerator(VectorizedFeatureGenerator):
     """Generator for regime complexity features with VectorBT optimization."""
@@ -3284,7 +3277,6 @@ class RegimeComplexityGenerator(VectorizedFeatureGenerator):
             
         except Exception:
             return 0.0
-
 
 class RegimeFractalDimensionGenerator(VectorizedFeatureGenerator):
     """Generator for regime fractal dimension features with VectorBT optimization."""
@@ -3395,7 +3387,6 @@ class RegimeFractalDimensionGenerator(VectorizedFeatureGenerator):
             
         except Exception:
             return 1.0
-
 
 class RegimeHurstExponentGenerator(VectorizedFeatureGenerator):
     """Generator for regime Hurst exponent features with VectorBT optimization."""
@@ -3517,7 +3508,6 @@ class RegimeHurstExponentGenerator(VectorizedFeatureGenerator):
         except Exception:
             return 0.5
 
-
 class RegimeMemoryStrengthGenerator(VectorizedFeatureGenerator):
     """Generator for regime memory strength features with VectorBT optimization."""
     
@@ -3612,7 +3602,6 @@ class RegimeMemoryStrengthGenerator(VectorizedFeatureGenerator):
         except Exception:
             return 0.0
 
-
 # Factory functions for creating regime feature generators
 def create_regime_feature_generators() -> List[FeatureGenerator]:
     """Create all regime feature generators."""
@@ -3642,7 +3631,6 @@ def create_regime_feature_generators() -> List[FeatureGenerator]:
     
     return generators
 
-
 def create_advanced_regime_generators() -> List[FeatureGenerator]:
     """Create advanced regime feature generators with VectorBT optimization."""
     generators = []
@@ -3668,7 +3656,6 @@ def create_advanced_regime_generators() -> List[FeatureGenerator]:
         generators.append(RegimeMemoryStrengthGenerator(window))
     
     return generators
-
 
 def process_regime_features_batch(data: pd.DataFrame, 
                                 generators: Optional[List[FeatureGenerator]] = None,
@@ -3704,7 +3691,6 @@ def process_regime_features_batch(data: pd.DataFrame,
     else:
         return _process_regime_features_sequential(data, generators, **kwargs)
 
-
 def _process_regime_features_sequential(data: pd.DataFrame, 
                                       generators: List[FeatureGenerator],
                                       **kwargs) -> pd.DataFrame:
@@ -3724,7 +3710,6 @@ def _process_regime_features_sequential(data: pd.DataFrame,
         return pd.concat(results, axis=1)
     else:
         return pd.DataFrame(index=data.index)
-
 
 # Regime Feature Integration Classes
 from dataclasses import dataclass
@@ -3794,7 +3779,6 @@ class RegimeFeatureConfig:
 
         if self.min_temporal_stability is None:
             self.min_temporal_stability = quality_thresholds.get("min_temporal_stability", 0.1)
-
 
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """
@@ -4694,7 +4678,6 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
 
         return summary
 
-
 # Analyst Features - Regime generators
 class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability trending feature."""
@@ -4728,7 +4711,6 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
         prob_trending_series = pd.Series([prob_trending] * len(data), index=data.index, name=self.config.name)
         return prob_trending_series
 
-
 class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability choppy feature."""
 
@@ -4760,7 +4742,6 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
 
         prob_choppy_series = pd.Series([prob_choppy] * len(data), index=data.index, name=self.config.name)
         return prob_choppy_series
-
 
 class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
     """Generator for regime stability feature."""
@@ -4800,7 +4781,6 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
         stability_series = pd.Series([stability] * len(data), index=data.index, name=self.config.name)
         return stability_series
 
-
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame, 
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
@@ -4822,7 +4802,6 @@ def generate_regime_features(data: pd.DataFrame,
     summary = generator.get_feature_summary(features, generator._latest_quality_stats)
 
     return features, summary
-
 
 __all__ = [
     'RegimeStatisticalFeatureGenerator',

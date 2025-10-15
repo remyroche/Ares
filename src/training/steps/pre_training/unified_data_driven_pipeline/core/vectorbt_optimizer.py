@@ -70,7 +70,13 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+    Portfolio = None
+    Returns = None
     tprint_warning("⚠️ VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# GPU/CuPy support removed
+CUPY_AVAILABLE = False
+cp = None
 
 # Import optimization utilities
 try:
@@ -96,24 +102,8 @@ except ImportError:
     BayesianOptimizationConfig = None
     tprint_warning("⚠️ Optimization utilities not available")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-    tprint_info("✅ CuPy available for GPU acceleration")
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-    tprint_debug("CuPy not available, using CPU-only operations")
-
-# Create a dummy type for type hints when CuPy is not available
-if cp is None:
-    class DummyCupyArray:
-        pass
-    cp = type('CuPy', (), {'ndarray': DummyCupyArray, 'asarray': lambda x: x, 'asnumpy': lambda x: x, 'mean': lambda x, **kwargs: x, 'std': lambda x, **kwargs: x, 'var': lambda x, **kwargs: x, 'min': lambda x, **kwargs: x, 'max': lambda x, **kwargs: x, 'sum': lambda x, **kwargs: x})()
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class VectorBTConfig:
@@ -141,7 +131,6 @@ class VectorBTConfig:
     enable_caching: bool = True
     cache_size: int = 1000
 
-
 @dataclass
 class OptimizationResult:
     """Result from VectorBT optimization."""
@@ -164,7 +153,6 @@ class OptimizationResult:
     # Success indicators
     success: bool
     error_message: Optional[str] = None
-
 
 class VectorBTOptimizer:
     """
@@ -201,7 +189,7 @@ class VectorBTOptimizer:
         
         tprint_info("🚀 VectorBT Optimizer initialized")
         tprint_debug(f"📊 VectorBT available: {VECTORBT_AVAILABLE}")
-        tprint_debug(f"📊 GPU available: {CUPY_AVAILABLE}")
+        tprint_debug(f"📊 GPU available: False (GPU support removed)")
         tprint_debug(f"📊 Config: {self.config}")
     
     def rolling_operation(self, 
@@ -542,7 +530,7 @@ class VectorBTOptimizer:
                      operation: str,
                      **kwargs) -> OptimizationResult:
         """
-        Perform operation using GPU acceleration if available.
+        Perform operation using 
         
         Args:
             data: Input data
@@ -554,18 +542,18 @@ class VectorBTOptimizer:
         """
         start_time = time.time()
         
-        if not CUPY_AVAILABLE or not self.config.enable_gpu:
+        if True or not self.config.enable_gpu:
             # Fallback to CPU operation
             return self.rolling_operation(data, operation, **kwargs)
         
         try:
-            # Convert to CuPy array
+            # Convert to 
             if isinstance(data, pd.Series):
-                gpu_data = cp.asarray(data.values)
+                gpu_data = np.asarray(data.values)
             elif isinstance(data, pd.DataFrame):
-                gpu_data = cp.asarray(data.values)
+                gpu_data = np.asarray(data.values)
             else:
-                gpu_data = cp.asarray(data)
+                gpu_data = np.asarray(data)
             
             # Execute GPU operation
             result = self._gpu_operation(gpu_data, operation, **kwargs)
@@ -595,30 +583,30 @@ class VectorBTOptimizer:
             return self.rolling_operation(data, operation, **kwargs)
     
     def _gpu_operation(self, 
-                      gpu_data: cp.ndarray,
+                      gpu_data,
                       operation: str,
-                      **kwargs) -> cp.ndarray:
+                      **kwargs):
         """Execute operation on GPU."""
         if operation == 'mean':
-            return cp.mean(gpu_data, axis=0)
+            return np.mean(gpu_data, axis=0)
         elif operation == 'std':
-            return cp.std(gpu_data, axis=0)
+            return np.std(gpu_data, axis=0)
         elif operation == 'var':
-            return cp.var(gpu_data, axis=0)
+            return np.var(gpu_data, axis=0)
         elif operation == 'min':
-            return cp.min(gpu_data, axis=0)
+            return np.min(gpu_data, axis=0)
         elif operation == 'max':
-            return cp.max(gpu_data, axis=0)
+            return np.max(gpu_data, axis=0)
         elif operation == 'sum':
-            return cp.sum(gpu_data, axis=0)
+            return np.sum(gpu_data, axis=0)
         else:
             raise ValueError(f"Unsupported GPU operation: {operation}")
     
     def _convert_gpu_result_to_pandas(self, 
-                                    gpu_result: cp.ndarray,
+                                    gpu_result,
                                     original_data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
         """Convert GPU result back to pandas format."""
-        cpu_result = cp.asnumpy(gpu_result)
+        cpu_result = np.asarray(gpu_result)
         
         if isinstance(original_data, pd.Series):
             return pd.Series(cpu_result, index=original_data.index)
@@ -1110,12 +1098,10 @@ class VectorBTOptimizer:
             'method': 'fallback_random_search'
         }
 
-
 # Convenience functions
 def create_vectorbt_optimizer(config: Optional[VectorBTConfig] = None) -> VectorBTOptimizer:
     """Create a VectorBT optimizer with default configuration."""
     return VectorBTOptimizer(config)
-
 
 def optimize_with_vectorbt(data: Union[pd.Series, pd.DataFrame],
                           operation: str,
@@ -1133,7 +1119,6 @@ def optimize_with_vectorbt(data: Union[pd.Series, pd.DataFrame],
     """
     optimizer = create_vectorbt_optimizer()
     return optimizer.rolling_operation(data, operation, **kwargs)
-
 
 # Export main classes and functions
 __all__ = [

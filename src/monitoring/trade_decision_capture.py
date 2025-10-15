@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+import warnings
 Trade Decision Context Capture System
 
 Captures comprehensive trade decision context including exchange, token, time, price,
@@ -45,12 +46,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 @dataclass

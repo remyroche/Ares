@@ -8,7 +8,7 @@ instead of pandas operations for better performance on large datasets.
 Key optimizations:
 1. Replace pandas rolling operations with VectorBT equivalents
 2. Add VectorBT batch processing for multiple features
-3. Implement GPU acceleration where available
+3. Implement 
 4. Add memory optimization for large datasets
 5. Create performance benchmarks
 
@@ -42,14 +42,8 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     print("❌ VectorBT not available. Install with: pip install vectorbt")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-    print("✅ CuPy is available for GPU acceleration")
-except ImportError:
-    CUPY_AVAILABLE = False
-    print("ℹ️  CuPy not available. GPU acceleration disabled")
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -160,7 +154,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_ema(self) -> Dict[str, Any]:
@@ -170,7 +164,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'ewm_mean',
             'performance_gain': '2-4x',
             'memory_saving': '15-25%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_ratio(self) -> Dict[str, Any]:
@@ -180,7 +174,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean + division',
             'performance_gain': '3-6x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_roc(self) -> Dict[str, Any]:
@@ -190,7 +184,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'pct_change',
             'performance_gain': '2-3x',
             'memory_saving': '10-20%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_std(self) -> Dict[str, Any]:
@@ -200,7 +194,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_std',
             'performance_gain': '4-8x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_percentile(self) -> Dict[str, Any]:
@@ -210,7 +204,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_rank',
             'performance_gain': '5-10x',
             'memory_saving': '35-45%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_trend_strength(self) -> Dict[str, Any]:
@@ -220,7 +214,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean + division',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_oscillator(self) -> Dict[str, Any]:
@@ -230,7 +224,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean + subtraction',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_momentum(self) -> Dict[str, Any]:
@@ -240,7 +234,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'shift + subtraction',
             'performance_gain': '2-3x',
             'memory_saving': '15-25%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_vwap(self) -> Dict[str, Any]:
@@ -250,7 +244,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_sum + division',
             'performance_gain': '4-7x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_price_trend(self) -> Dict[str, Any]:
@@ -260,7 +254,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'pct_change + multiplication + cumsum',
             'performance_gain': '3-6x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volume_accumulation_distribution(self) -> Dict[str, Any]:
@@ -270,7 +264,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'complex_calculation + cumsum',
             'performance_gain': '4-8x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_sma(self) -> Dict[str, Any]:
@@ -280,7 +274,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_ema(self) -> Dict[str, Any]:
@@ -290,7 +284,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'ewm_mean',
             'performance_gain': '2-4x',
             'memory_saving': '15-25%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_wma(self) -> Dict[str, Any]:
@@ -300,7 +294,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_apply + weighted_average',
             'performance_gain': '4-6x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_dema(self) -> Dict[str, Any]:
@@ -310,7 +304,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'double_ewm_mean',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_tema(self) -> Dict[str, Any]:
@@ -320,7 +314,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'triple_ewm_mean',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_trima(self) -> Dict[str, Any]:
@@ -330,7 +324,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'double_rolling_mean',
             'performance_gain': '4-6x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_mama(self) -> Dict[str, Any]:
@@ -340,7 +334,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'adaptive_ewm_mean',
             'performance_gain': '2-4x',
             'memory_saving': '15-25%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_vwma(self) -> Dict[str, Any]:
@@ -350,7 +344,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'volume_weighted_rolling_mean',
             'performance_gain': '4-7x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_keltner_channels(self) -> Dict[str, Any]:
@@ -360,7 +354,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'ema + atr + bands',
             'performance_gain': '5-10x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_adx(self) -> Dict[str, Any]:
@@ -370,7 +364,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'complex_directional_calculation',
             'performance_gain': '6-12x',
             'memory_saving': '35-45%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_directional_signal(self) -> Dict[str, Any]:
@@ -380,7 +374,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'ema_difference',
             'performance_gain': '3-5x',
             'memory_saving': '20-30%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_trend_score(self) -> Dict[str, Any]:
@@ -390,7 +384,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'normalized_signal + adx',
             'performance_gain': '4-8x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_bollinger_bands(self) -> Dict[str, Any]:
@@ -400,7 +394,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_mean + rolling_std + bands',
             'performance_gain': '5-10x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_atr(self) -> Dict[str, Any]:
@@ -410,7 +404,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'true_range + rolling_mean',
             'performance_gain': '4-8x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volatility_std(self) -> Dict[str, Any]:
@@ -420,7 +414,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_std',
             'performance_gain': '4-8x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_volatility_var(self) -> Dict[str, Any]:
@@ -430,7 +424,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_var',
             'performance_gain': '4-8x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_keltner_channels_volatility(self) -> Dict[str, Any]:
@@ -440,7 +434,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'ema + atr + bands',
             'performance_gain': '5-10x',
             'memory_saving': '30-40%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def _optimize_donchian_channels(self) -> Dict[str, Any]:
@@ -450,7 +444,7 @@ class VectorBTOptimizer:
             'vectorbt_function': 'rolling_min + rolling_max + bands',
             'performance_gain': '4-8x',
             'memory_saving': '25-35%',
-            'gpu_acceleration': CUPY_AVAILABLE
+            'gpu_acceleration': False  # GPU support removed
         }
     
     def create_performance_benchmark(self, data_size: int = 10000) -> Dict[str, Any]:
@@ -526,7 +520,7 @@ class VectorBTOptimizer:
         report.append(f"## Summary")
         report.append(f"- Total optimizations applied: {self.optimizations_applied}")
         report.append(f"- VectorBT available: {VECTORBT_AVAILABLE}")
-        report.append(f"- GPU acceleration available: {CUPY_AVAILABLE}")
+        report.append(f"- 
         report.append("")
         
         report.append("## Performance Improvements")
@@ -541,7 +535,7 @@ class VectorBTOptimizer:
         report.append("1. **Rolling Operations**: Replaced pandas rolling with VectorBT equivalents")
         report.append("2. **Batch Processing**: Added VectorBT batch operations for multiple features")
         report.append("3. **Memory Optimization**: Reduced memory usage with efficient data structures")
-        report.append("4. **GPU Acceleration**: Added CuPy support for large datasets")
+        report.append("4. **GPU Acceleration**: Added 
         report.append("5. **Error Handling**: Graceful fallbacks to pandas when VectorBT fails")
         report.append("")
         
@@ -561,7 +555,7 @@ class VectorBTOptimizer:
         report.append("config = FeatureConfig(")
         report.append("    use_vectorbt=True,")
         report.append("    vectorbt_threshold=1000,  # Auto-activation threshold")
-        report.append("    enable_gpu=True,           # Enable GPU acceleration")
+        report.append("    enable_gpu=True,           # Enable 
         report.append("    enable_parallel=True       # Enable parallel processing")
         report.append(")")
         report.append("```")

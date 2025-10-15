@@ -54,6 +54,10 @@ class ConfigurationError(OptimizationError):
     """Configuration-related errors."""
     pass
 
+class DataValidationError(OptimizationError):
+    """Data validation errors."""
+    pass
+
 @dataclass
 class ErrorRecoveryResult:
     """Result of error recovery attempt."""
@@ -472,3 +476,33 @@ def get_global_error_handler() -> ErrorHandler:
     if _global_error_handler is None:
         _global_error_handler = ErrorHandler()
     return _global_error_handler
+
+
+def safe_operation(operation_name: str, default_value: Any = None, log_level: str = "warning"):
+    """
+    Decorator for safe operations with error handling and fallback to default values.
+
+    Args:
+        operation_name: Name of the operation for logging
+        default_value: Default value to return if operation fails
+        log_level: Logging level for errors ("debug", "info", "warning", "error")
+
+    Returns:
+        Decorated function that handles errors gracefully
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                # Log the error
+                logger.log(
+                    getattr(logging, log_level.upper(), logging.WARNING),
+                    f"🚨 Operation '{operation_name}' failed: {e}"
+                )
+
+                # Return default value if provided
+                return default_value
+
+        return wrapper
+    return decorator

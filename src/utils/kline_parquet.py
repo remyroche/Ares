@@ -115,8 +115,8 @@ class KlinesParquetManager:
         self.logger.info(f"✅ KlinesParquetManager initialized with base_dir: {self.base_dir}")
     
     @handles_errors(default_return=False, context="KlinesParquetManager.store_klines")
-    @traced
-    @log_execution_time
+    @traced()
+    @log_execution_time()
     def store_klines(
         self,
         df: pd.DataFrame,
@@ -188,8 +188,8 @@ class KlinesParquetManager:
             return False
     
     @handles_errors(default_return=pd.DataFrame(), context="KlinesParquetManager.load_klines")
-    @traced
-    @log_execution_time
+    @traced()
+    @log_execution_time()
     def load_klines(
         self,
         symbol: str,

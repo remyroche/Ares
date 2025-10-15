@@ -1,4 +1,5 @@
 """
+import warnings
 Optimized Feature Engineering Pipeline
 
 This module provides a unified, hardware-optimized feature engineering pipeline
@@ -19,7 +20,8 @@ import multiprocessing as mp
 
 # Import core components
 from ..core.feature_bank import FeatureBank, FeatureBankConfig, get_global_feature_bank
-from ..categories.normalization import NormalizationFeatureGenerator, create_data_normalizer
+# Note: Removed direct import of NormalizationFeatureGenerator to avoid circular import
+# Will use lazy import pattern instead
 from ...utils.intensity_scaler import get_intensity_config, apply_intensity_scaling
 from ...utils.matrix_operations import get_unified_matrix_operations
 from ...utils.hardware.unified_hardware_manager import get_unified_hardware_manager, WorkloadType, OptimizationLevel
@@ -131,13 +133,29 @@ class OptimizedFeaturePipeline:
             self.feature_bank = FeatureBank(feature_bank_config)
             self.logger.info("✅ Feature Bank initialized")
             
-            # Initialize Normalizer
-            from ...training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.data_normalization import (
-                NormalizationConfig, NormalizationMethod, create_data_normalizer
-            )
+            # Initialize Normalizer - using lazy import to avoid circular dependencies
+            try:
+                from ...training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.data_normalization import (
+                    NormalizationConfig, NormalizationMethod, create_data_normalizer
+                )
+            except ImportError:
+                # Fallback: use features_common normalization
+                from src.features_common.normalization import create_data_normalizer
+                # Create a simple config class for fallback
+                class NormalizationConfig:
+                    def __init__(self, method="ZSCORE", use_hardware_acceleration=False, 
+                               use_matrix_operations=False, batch_size=1000, memory_limit_gb=8.0):
+                        self.method = method
+                        self.use_hardware_acceleration = use_hardware_acceleration
+                        self.use_matrix_operations = use_matrix_operations
+                        self.batch_size = batch_size
+                        self.memory_limit_gb = memory_limit_gb
+                
+                class NormalizationMethod:
+                    ZSCORE = "ZSCORE"
             
             normalization_config = NormalizationConfig(
-                method=NormalizationMethod(self.config.normalization_method.upper()),
+                method=getattr(NormalizationMethod, self.config.normalization_method.upper(), NormalizationMethod.ZSCORE),
                 use_hardware_acceleration=self.config.enable_hardware_optimization,
                 use_matrix_operations=self.config.enable_matrix_operations,
                 batch_size=self.config.chunk_size,
@@ -457,14 +475,10 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    
     cp = None
     
     def _update_performance_stats(self, processing_time: float, memory_usage: float, success: bool):

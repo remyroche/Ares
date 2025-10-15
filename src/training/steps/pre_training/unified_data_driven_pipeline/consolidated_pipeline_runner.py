@@ -32,6 +32,10 @@ except ImportError:
     def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
+# Ensure tprint_error is always available
+if not TPRINT_AVAILABLE:
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+
 from .consolidated_pipeline import (
     UnifiedDataDrivenPipeline,
     create_unified_pipeline,
@@ -897,15 +901,6 @@ class ConsolidatedPipelineRunner:
     async def _generate_data_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """
         Generate human-readable report for data validation step.
-        """Generate human-readable report for data validation step."""
-        # Create outcomes directory
-        outcomes_dir = Path("outcomes")
-        outcomes_dir.mkdir(exist_ok=True)
-        
-        # Generate timestamp for filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        report_filename = f"data_validation_report_{timestamp}.md"
-        report_path = outcomes_dir / report_filename
         
         Args:
             result: Validation result dictionary
@@ -915,6 +910,14 @@ class ConsolidatedPipelineRunner:
             OSError: If report file cannot be created
             ValueError: If result data is invalid
         """
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+        
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"data_validation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
         try:
             tprint_info("📄 Generating data validation report")
             
@@ -946,7 +949,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {status_emoji}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Quality Score**: {quality_score:.3f}
 
 ## Validation Results
@@ -1012,7 +1015,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Generated Features**: {len(result.get('generated_features', pd.DataFrame()).columns)}
 
 ## Generation Results
@@ -1054,7 +1057,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Selected Features**: {len(result.get('selected_features', pd.DataFrame()).columns)}
 
 ## Selection Results
@@ -1096,7 +1099,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Optimized Periods**: {len(result.get('optimal_periods', {}))}
 
 ## Optimization Results
@@ -1138,7 +1141,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Optimized Lookbacks**: {len(result.get('optimal_lookbacks', {}))}
 
 ## Optimization Results
@@ -1180,7 +1183,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Interaction Features**: {len(result.get('interaction_features', pd.DataFrame()).columns)}
 
 ## Generation Results
@@ -1222,7 +1225,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Vectorized Features**: {len(result.get('vectorized_features', pd.DataFrame()).columns)}
 
 ## Vectorization Results
@@ -1264,7 +1267,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Labeled Data**: {len(result.get('labeled_data', pd.DataFrame()).columns)}
 
 ## Labeling Results
@@ -1306,7 +1309,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
 - **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
-- **Data Shape**: {data.shape[0]} rows × {data.shape[1]} columns
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
 - **Final Dataset**: {len(result.get('final_dataset', pd.DataFrame()).columns)}
 
 ## Validation Results

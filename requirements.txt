@@ -12,3 +12,4 @@ imodels>=1.0.0
 arch>=5.0.0  # For GARCH models
 pandera>=0.16.0
 tensorflow>=2.8.0  # For TCN models and deep learning components
+vectorbt>=0.25.0  # For enhanced performance optimizations

@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import numpy as np
@@ -705,7 +706,6 @@ class AsyncFileProcessor:
             'peak_memory_gb': max(self.processing_stats['memory_peaks']) if self.processing_stats['memory_peaks'] else 0
         }
 
-
 class MemoryPoolManager:
     """Memory pool manager for efficient memory usage during data processing."""
 
@@ -756,7 +756,6 @@ class MemoryPoolManager:
     def should_use_streaming(self, data_size_bytes: int) -> bool:
         """Determine if streaming processing should be used."""
         return data_size_bytes > self.chunk_size_bytes or self.current_usage > self.gc_threshold
-
 
 class DataTypeOptimizer:
     """Data type optimizer for memory-efficient DataFrame processing."""
@@ -830,7 +829,6 @@ class DataTypeOptimizer:
                 'null_ratio': series.isnull().sum() / len(series) if len(series) > 0 else 0
             }
         return info
-
 
 class RegimeDataSplittingStep:
     """Step 4: Regime Data Splitting with standardized data quality management."""
@@ -3106,12 +3104,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
             # Create streamlined regime splitting instance

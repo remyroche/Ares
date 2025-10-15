@@ -1,4 +1,5 @@
 """
+import warnings
 Limited Market Microstructure Features Extraction
 Extracts maximum value from available market data without multi-level order book
 """
@@ -40,12 +41,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class LimitedMicrostructureFeatures:

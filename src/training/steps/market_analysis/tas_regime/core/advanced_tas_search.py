@@ -1,4 +1,5 @@
 """
+import warnings
 Advanced Trading Architecture Search (Advanced TAS)
 
 This module provides the most sophisticated TAS implementation with:
@@ -65,7 +66,6 @@ class EconomicValidator:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class AdvancedTASResult:
     """Result of advanced TAS optimization."""
@@ -92,7 +92,6 @@ class AdvancedTASResult:
 
     execution_time: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class AdvancedTradingArchitectureSearch:
     """Most advanced TAS implementation with all cutting-edge features."""
@@ -697,12 +696,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             # KMeans clustering removed - will be handled in subsequent step
 
@@ -848,7 +843,6 @@ except ImportError:
                 characteristics[col] = regime_data[col].mean()
 
         return characteristics
-
 
 # Convenience functions for advanced TAS
 def optimize_advanced_trading_architecture(market_data: pd.DataFrame,

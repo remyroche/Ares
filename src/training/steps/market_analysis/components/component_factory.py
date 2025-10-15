@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import glob
 import pickle
+import warnings
 from typing import Dict, Type, Any, Optional, List
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
@@ -39,7 +40,6 @@ try:
 except ImportError:
     NEW_CLUSTERING_AVAILABLE = False
     NewNASTASClusteringComponent = None
-
 
 class NewNASTASClusteringWrapper(BaseMarketAnalysisComponent):
     """
@@ -106,7 +106,6 @@ class NewNASTASClusteringWrapper(BaseMarketAnalysisComponent):
                 error_message=str(e),
                 metadata={'component_type': 'new_nas_tas_clustering'}
             )
-
 
 class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
@@ -458,7 +457,6 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 metadata={'component_type': 'hmm_models_training'}
             )
 
-
 class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for HMM Ensemble Training Component to work as a component."""
     
@@ -696,7 +694,6 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 metadata={'component_type': 'hmm_ensemble_training'}
             )
 
-
 class ComponentFactory:
     """
     Factory for creating market analysis pipeline components.
@@ -819,12 +816,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     @classmethod

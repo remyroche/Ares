@@ -1,7 +1,7 @@
 from src.utils.tprint import tprint
+import warnings
 
 # src/analyst/analyst.py
-
 
 from datetime import datetime
 import logging
@@ -44,7 +44,6 @@ from src.utils.performance_utils import PerformanceMonitor, global_monitor
 from src.utils.unified_cache import cached
 # Live trading validation
 from src.utils.trading_decorators import validate_trading_inputs
-
 
 # Import dual model system and other components
 
@@ -405,12 +404,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             )
             self.liquidation_risk_model = None

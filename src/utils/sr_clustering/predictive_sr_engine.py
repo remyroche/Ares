@@ -196,16 +196,10 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return {'status': 'failed', 'error': str(e)}
     
+    cp = None
+
     def _optimize_weights(self, backtest_results: List[BacktestResult], 
                          historical_data: pd.DataFrame) -> None:
         """Optimize weights using the weight optimization engine."""

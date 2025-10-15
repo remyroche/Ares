@@ -1,4 +1,5 @@
 """
+import warnings
 Trading Tree Architecture Search (Trading-TAS)
 
 Specialized TAS implementation for financial trading applications with:
@@ -27,7 +28,6 @@ from src.training.steps.market_analysis.nas_clustering.core.nas_config import NA
 
 logger = logging.getLogger(__name__)
 
-
 class TradingObjective(Enum):
     """Trading-specific optimization objectives."""
     PROFITABILITY = "profitability"
@@ -38,7 +38,6 @@ class TradingObjective(Enum):
     ADAPTATION_SPEED = "adaptation_speed"
     ROBUSTNESS = "robustness"
     TRANSACTION_COSTS = "transaction_costs"
-
 
 class MarketRegime(Enum):
     """Market regime types for trading."""
@@ -52,7 +51,6 @@ class MarketRegime(Enum):
     CRISIS = "crisis"
     NORMAL = "normal"
     UNKNOWN = "unknown"
-
 
 @dataclass
 class TradingTASConfig:
@@ -106,7 +104,6 @@ class TradingTASConfig:
     integrate_with_nas_clustering: bool = True
     use_existing_regime_detection: bool = True
 
-
 @dataclass
 class TradingRegime:
     """Represents a detected market regime."""
@@ -119,7 +116,6 @@ class TradingRegime:
     optimal_architecture: Optional[TreeArchitectureCandidate] = None
     performance_metrics: Dict[str, float] = field(default_factory=dict)
     transition_probability: float = 0.0
-
 
 @dataclass
 class TradingTASResult:
@@ -142,7 +138,6 @@ class TradingTASResult:
 
     execution_time: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class TradingTreeArchitectureSearch:
     """Trading-specific TAS implementation."""
@@ -437,12 +432,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
             # Try different numbers of regimes
@@ -926,7 +917,6 @@ except ImportError:
 
         self.logger.info(f"🔄 Model adapted to: {new_architecture.n_trees} trees, depth {new_architecture.max_depth}")
 
-
 # Convenience functions for trading TAS
 def optimize_trading_regimes(market_data: pd.DataFrame,
                            target_returns: pd.Series,
@@ -947,7 +937,6 @@ def optimize_trading_regimes(market_data: pd.DataFrame,
 
     tas = TradingTreeArchitectureSearch(config)
     return tas.optimize_for_trading_regimes(market_data, target_returns)
-
 
 def select_trading_model(current_market_data: pd.DataFrame,
                         current_regime: Optional[MarketRegime] = None,

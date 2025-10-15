@@ -1,4 +1,5 @@
 """
+import warnings
 Regime Detection and Trading Optimized Pure Tree NAS
 
 This module provides tree-based NAS specifically optimized for:
@@ -58,7 +59,6 @@ except ImportError:
     cb = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class RegimeTradingTreeNASConfig:
@@ -154,7 +154,6 @@ class RegimeTradingTreeNASConfig:
     n_jobs: int = -1
     memory_limit_gb: float = 8.0
 
-
 class RegimeDetectionTree:
     """Tree model optimized for regime detection."""
     
@@ -240,12 +239,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             
             # Calculate clustering quality metrics
@@ -333,7 +328,6 @@ except ImportError:
             logger.warning(f"Regime separation calculation failed: {e}")
             return 0.0
 
-
 class TradingSignalTree:
     """Tree model optimized for trading signal generation."""
     
@@ -410,7 +404,6 @@ class TradingSignalTree:
         else:  # Regression
             return np.abs(signal_proba.flatten())
 
-
 class RiskManagementTree:
     """Tree model optimized for risk management."""
     
@@ -465,7 +458,6 @@ class RiskManagementTree:
             return risk_proba[:, 1]  # High risk probability
         else:
             return risk_proba.flatten()
-
 
 class PositionSizingTree:
     """Tree model optimized for position sizing."""
@@ -538,7 +530,6 @@ class PositionSizingTree:
             'recommendations': np.array(recommendations),
             'confidence': np.abs(position_sizes)
         }
-
 
 class RegimeTradingTreeNAS:
     """Regime Detection and Trading Optimized Pure Tree NAS."""
@@ -882,7 +873,6 @@ class RegimeTradingTreeNAS:
         except Exception as e:
             self.logger.error(f"Combined results generation failed: {e}")
             return {'error': str(e)}
-
 
 # Convenience function
 def search_regime_trading_architecture(market_data: pd.DataFrame,

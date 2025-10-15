@@ -55,17 +55,12 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class RegimeDetectionConfig:
@@ -121,7 +116,6 @@ class RegimeDetectionConfig:
     enable_streaming: bool = True
     stream_buffer_size: int = 1000
     stream_processing_delay: float = 0.1  # seconds
-
 
 class UnsupervisedRegimeDetector:
     """

@@ -56,7 +56,7 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
@@ -73,12 +73,8 @@ except ImportError:
     UNIFIED_VECTORIZATION_MANAGER_AVAILABLE = False
     UnifiedVectorizationManager = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -727,7 +723,6 @@ class CandlestickPatternFeatureGenerator(VectorizedFeatureGenerator):
             'total_computation_time': 0.0
         }
 
-
 def create_candlestick_pattern_generators(patterns: List[str] = None) -> List[FeatureGenerator]:
     """Create a set of candlestick pattern feature generators."""
     if patterns is None:
@@ -761,7 +756,6 @@ def create_candlestick_pattern_generators(patterns: List[str] = None) -> List[Fe
 def create_default_candlestick_pattern_generators() -> List[FeatureGenerator]:
     """Create default set of candlestick pattern generators."""
     return create_candlestick_pattern_generators()
-
 
 def test_candlestick_pattern_generator():
     """Test function for the candlestick pattern generator with VectorBT optimization."""
@@ -832,7 +826,6 @@ def test_candlestick_pattern_generator():
     
     print("\n🎉 Candlestick Pattern Generator test completed successfully!")
     return generator, pattern_score
-
 
 if __name__ == "__main__":
     # Run test when executed directly

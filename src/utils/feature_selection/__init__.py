@@ -22,6 +22,7 @@ warnings.warn(
 from src.feature_selection.core.framework import (
     get_feature_selection_framework,
     select_features,
+    run_comprehensive_feature_selection,
     benchmark_methods,
     get_performance_stats,
     reset_framework,
@@ -46,6 +47,7 @@ from src.feature_selection.dimensionality import (
 __all__ = [
     'get_feature_selection_framework',
     'select_features',
+    'run_comprehensive_feature_selection',
     'benchmark_methods',
     'get_performance_stats',
     'reset_framework',

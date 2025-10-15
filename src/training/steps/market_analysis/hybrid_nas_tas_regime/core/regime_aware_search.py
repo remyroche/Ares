@@ -51,16 +51,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 class RegimeDetectionMethod(Enum):
     """Methods for regime detection."""
@@ -71,7 +66,6 @@ class RegimeDetectionMethod(Enum):
     WAVELET = "wavelet"
     ADAPTIVE = "adaptive"
 
-
 class RegimeTransitionType(Enum):
     """Types of regime transitions."""
     GRADUAL = "gradual"
@@ -79,7 +73,6 @@ class RegimeTransitionType(Enum):
     CYCLICAL = "cyclical"
     RANDOM = "random"
     TREND_BASED = "trend_based"
-
 
 @dataclass
 class RegimeAwareSearchConfig:
@@ -115,7 +108,6 @@ class RegimeAwareSearchConfig:
     regime_performance_window: int = 100
     regime_performance_threshold: float = 0.6
 
-
 @dataclass
 class RegimeInfo:
     """Information about a detected regime."""
@@ -129,7 +121,6 @@ class RegimeInfo:
     performance_metrics: Dict[str, float]
     transition_probability: float
 
-
 @dataclass
 class RegimeTransition:
     """Information about regime transitions."""
@@ -140,7 +131,6 @@ class RegimeTransition:
     transition_strength: float
     transition_duration: int
     transition_indicators: Dict[str, float]
-
 
 @dataclass
 class RegimeAwareSearchResult:
@@ -155,7 +145,6 @@ class RegimeAwareSearchResult:
     convergence_info: Dict[str, Any]
     execution_time: float
     n_evaluations: int
-
 
 class RegimeDetector:
     """Detects market regimes from financial data."""
@@ -488,7 +477,6 @@ class RegimeDetector:
             'momentum_change': np.random.uniform(-0.6, 0.6)
         }
 
-
 class RegimeAwareSearch:
     """Regime-aware search system for financial architectures."""
     
@@ -809,7 +797,6 @@ class RegimeAwareSearch:
             n_evaluations=0
         )
 
-
 class RegimePerformanceTracker:
     """Tracks performance by regime."""
     
@@ -832,7 +819,6 @@ class RegimePerformanceTracker:
             self.regime_architecture_performance[regime][arch_type] = []
         self.regime_architecture_performance[regime][arch_type].append(performance)
 
-
 class RegimeArchitectureMapper:
     """Maps regimes to optimal architectures."""
     
@@ -851,7 +837,6 @@ class RegimeArchitectureMapper:
             'regime_aware': True,
             'volatility_sensitive': True
         }
-
 
 def create_regime_aware_search(config: RegimeAwareSearchConfig) -> RegimeAwareSearch:
     """Create regime-aware search instance."""

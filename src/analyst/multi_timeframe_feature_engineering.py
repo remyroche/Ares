@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 import numpy as np
 from ...utils.logger import system_logger
@@ -55,12 +56,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Add the project root to the Python path
@@ -938,7 +935,6 @@ class MultiTimeframeFeatureEngineering:
             "last_cache_cleanup": self.last_cache_cleanup.isoformat(),
             "timeframe_parameters_count": len(self.timeframe_parameters),
         }
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

@@ -23,7 +23,6 @@ from src.utils.tprint import (
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
-
 class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     """
     TAS Regime Discovery Component.
@@ -479,12 +478,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     def _calculate_tas_regime_metrics(self, regime_predictions: np.ndarray, tas_result: Any) -> Dict[str, Any]:

@@ -45,7 +45,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class PreprocessingStep(Enum):
     """Preprocessing steps."""
     CLEANING = "cleaning"
@@ -55,7 +54,6 @@ class PreprocessingStep(Enum):
     MISSING_DATA_HANDLING = "missing_data_handling"
     TIMESTAMP_REGULARIZATION = "timestamp_regularization"
     DATA_VALIDATION = "data_validation"
-
 
 @dataclass
 class PreprocessingConfig:
@@ -128,7 +126,6 @@ class PreprocessingConfig:
     output_directory: str = "preprocessed_data"
     cache_intermediate_results: bool = True
 
-
 @dataclass
 class PreprocessingResult:
     """Result of data preprocessing."""
@@ -168,7 +165,6 @@ class PreprocessingResult:
     config: PreprocessingConfig
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
-
 
 class DataPreprocessor:
     """
@@ -952,12 +948,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             metadata = {
                 'data_shape': result.data_shape,

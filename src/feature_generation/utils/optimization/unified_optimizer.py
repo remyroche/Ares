@@ -139,7 +139,6 @@ class FeatureOptimizationResult:
     warnings: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
 
-
 class FeatureGenerationOptimizer:
     """
     Optimizes feature generation parameters using data-driven approaches.
@@ -757,12 +756,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     def _calculate_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
@@ -983,7 +978,6 @@ async def optimize_feature_lookback(
 
 # Additional lookback-specific functionality
 # (Integrated into FeatureGenerationOptimizer above)
-
 
 class OptimizationConfigManager:
     """Manager for optimization configurations."""

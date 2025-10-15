@@ -9,19 +9,19 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
@@ -60,12 +60,8 @@ except ImportError:
     import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
@@ -267,7 +263,6 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
 
         super()._finalize_state(data, feature_data)
 
-    
     def generate_returns_features_batch(self, data: pd.DataFrame, 
                                       feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -495,7 +490,6 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(log_returns, index=data.index)
 
-    
 class SimpleReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Returns with different base calculations - VECTORIZED with VectorBT optimization."""
     
@@ -600,7 +594,6 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(simple_returns, index=data.index)
 
-    
 class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Cumulative Returns with different base calculations - VECTORIZED."""
     
@@ -677,7 +670,6 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(cumulative_returns, index=data.index)
 
-    
 class RollingReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Rolling Returns with different base calculations - VECTORIZED."""
     
@@ -748,7 +740,6 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(rolling_returns, index=data.index)
 
-    
 class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Volatility with different base calculations - VECTORIZED."""
     
@@ -825,7 +816,6 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(volatility, index=data.index)
 
-    
 class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Skewness with different base calculations - VECTORIZED."""
     
@@ -905,7 +895,6 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(skewness, index=data.index)
 
-    
 class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Kurtosis with different base calculations - VECTORIZED."""
     
@@ -985,7 +974,6 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(kurtosis, index=data.index)
 
-    
 class SharpeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for Sharpe Ratio with different base calculations - VECTORIZED."""
     
@@ -1349,7 +1337,6 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     
     return generators
 
-    
 class ReturnGenerator(SimpleReturnsGenerator):
     """Legacy alias for SimpleReturnsGenerator for backward compatibility."""
     pass
@@ -1357,7 +1344,6 @@ class ReturnGenerator(SimpleReturnsGenerator):
 def create_default_returns_generators() -> List[FeatureGenerator]:
     """Create default returns generators."""
     return create_returns_generators()
-
 
 class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
     """
@@ -1603,7 +1589,6 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             stats['pandas_fallback_percentage'] = 0
         
         return stats
-
 
 def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
     """Create VectorBT-optimized returns feature generators."""

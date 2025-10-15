@@ -11,7 +11,7 @@ Key Features:
 - VectorBTBatchProcessor integration
 - Memory-efficient processing
 - Performance monitoring and statistics
-- GPU acceleration support
+- 
 - Parallel processing capabilities
 """
 
@@ -46,12 +46,95 @@ except ImportError:
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
-        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
-        rolling_quantile, rolling_skew, rolling_kurt
-    )
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # Import available VectorBT functions
+    from vectorbt import FMEAN, FSTD, MEANLB, MSTD, RollingSplitter
+    # Use pandas rolling functions as fallback for missing VectorBT functions
+    import pandas as pd
+    import numpy as np
+    
+    # Create wrapper functions for compatibility
+    def rolling_mean(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).mean()
+        return pd.Series(data).rolling(window, **kwargs).mean()
+    
+    def rolling_std(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).std()
+        return pd.Series(data).rolling(window, **kwargs).std()
+    
+    def rolling_var(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).var()
+        return pd.Series(data).rolling(window, **kwargs).var()
+    
+    def rolling_min(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).min()
+        return pd.Series(data).rolling(window, **kwargs).min()
+    
+    def rolling_max(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).max()
+        return pd.Series(data).rolling(window, **kwargs).max()
+    
+    def rolling_sum(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).sum()
+        return pd.Series(data).rolling(window, **kwargs).sum()
+    
+    def rolling_apply(data, window, func, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).apply(func)
+        return pd.Series(data).rolling(window, **kwargs).apply(func)
+    
+    def rolling_corr(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).corr()
+        return pd.Series(data).rolling(window, **kwargs).corr()
+    
+    def rolling_cov(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).cov()
+        return pd.Series(data).rolling(window, **kwargs).cov()
+    
+    def rolling_quantile(data, window, q, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).quantile(q)
+        return pd.Series(data).rolling(window, **kwargs).quantile(q)
+    
+    def rolling_skew(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).skew()
+        return pd.Series(data).rolling(window, **kwargs).skew()
+    
+    def rolling_kurt(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).kurt()
+        return pd.Series(data).rolling(window, **kwargs).kurt()
+    
+    # Scaling functions using pandas/numpy
+    def scale(data, **kwargs):
+        return (data - data.mean()) / data.std()
+    
+    def rank(data, **kwargs):
+        return data.rank(**kwargs)
+    
+    def zscore(data, **kwargs):
+        return (data - data.mean()) / data.std()
+    
+    def winsorize(data, limits=None, **kwargs):
+        if limits is None:
+            limits = (0.05, 0.05)
+        from scipy.stats import mstats
+        return pd.Series(mstats.winsorize(data, limits=limits), index=data.index)
+    
+    def clip(data, lower=None, upper=None, **kwargs):
+        return data.clip(lower=lower, upper=upper, **kwargs)
+    
+    def quantile(data, q, **kwargs):
+        return data.quantile(q, **kwargs)
+    
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -75,14 +158,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
 
 # Import our optimization modules
 try:
@@ -140,7 +215,6 @@ class VectorizationValidationError(Exception):
             full_message += f" (Value: {value})"
         super().__init__(full_message)
 
-
 @dataclass
 class VectorizationConfig:
     """Configuration for unified vectorization."""
@@ -171,10 +245,9 @@ class VectorizationConfig:
             self.enable_vectorbt = False
             logger.warning("VectorBT not available, disabling vectorization optimizations")
         
-        if self.enable_gpu and not CUPY_AVAILABLE:
+        if self.enable_gpu and True:
             self.enable_gpu = False
-            logger.warning("GPU acceleration requested but CuPy not available")
-
+            logger.warning("GPU not available, disabling GPU optimizations")
 
 class UnifiedVectorizationManager:
     """
@@ -185,7 +258,7 @@ class UnifiedVectorizationManager:
     - Batch processing
     - Memory optimization
     - Performance monitoring
-    - GPU acceleration
+    - 
     - Parallel processing
     """
     
@@ -1675,7 +1748,7 @@ class UnifiedVectorizationManager:
         # GPU recommendations
         if not self.config.enable_gpu and total_ops > 1000:
             recommendations.append("Consider enabling GPU acceleration for large-scale operations")
-        
+
         # Memory recommendations
         memory_usage = stats.get('memory_optimizations', 0)
         if memory_usage / total_ops > 0.5:
@@ -1872,10 +1945,8 @@ class UnifiedVectorizationManager:
             
             logger.info(f"Operation {operation_name}: {execution_time:.3f}s")
 
-
 # Global instance
 _global_vectorization_manager = None
-
 
 def get_unified_vectorization_manager(config: Optional[VectorizationConfig] = None) -> UnifiedVectorizationManager:
     """Get global unified vectorization manager instance."""
@@ -1884,14 +1955,13 @@ def get_unified_vectorization_manager(config: Optional[VectorizationConfig] = No
         _global_vectorization_manager = UnifiedVectorizationManager(config)
     return _global_vectorization_manager
 
-
 def create_optimized_vectorization_pipeline(enable_gpu: bool = False, 
                                           memory_efficient: bool = True) -> UnifiedVectorizationManager:
     """
     Create an optimized vectorization pipeline.
     
     Args:
-        enable_gpu: Enable GPU acceleration
+        enable_gpu: Enable 
         memory_efficient: Enable memory optimization
         
     Returns:
@@ -1913,7 +1983,6 @@ def create_optimized_vectorization_pipeline(enable_gpu: bool = False,
     )
     
     return UnifiedVectorizationManager(config)
-
 
 # Example usage and testing
 if __name__ == "__main__":

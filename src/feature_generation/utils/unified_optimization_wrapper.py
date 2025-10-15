@@ -166,6 +166,7 @@ class UnifiedOptimizationWrapper:
         """Initialize all optimization components."""
         # Initialize rolling optimizer
         rolling_config = BatchRollingConfig(
+            operations=[],  # Default empty operations list
             enable_gpu=self.config.enable_gpu,
             enable_parallel=self.config.enable_parallel,
             performance_threshold=self.config.performance_threshold
@@ -174,6 +175,7 @@ class UnifiedOptimizationWrapper:
         
         # Initialize statistical optimizer
         statistical_config = BatchStatisticalConfig(
+            operations=[],  # Default empty operations list
             enable_gpu=self.config.enable_gpu,
             enable_parallel=self.config.enable_parallel,
             performance_threshold=self.config.performance_threshold
@@ -193,7 +195,7 @@ class UnifiedOptimizationWrapper:
                 enable_gpu=self.config.enable_gpu,
                 enable_parallel=self.config.enable_parallel,
                 chunk_size=self.config.chunk_size,
-                memory_limit_gb=self.config.memory_limit_gb
+                max_memory_gb=self.config.memory_limit_gb
             )
             self.batch_processor = create_vectorbt_batch_processor(batch_config)
         else:

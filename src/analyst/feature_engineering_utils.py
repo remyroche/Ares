@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 from src.core.decorators import handles_errors
 """Utility functions and classes for advanced feature engineering."""
@@ -36,14 +37,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class TechnicalIndicatorCalculator:
     """Collection of technical indicator calculation methods."""
@@ -215,7 +211,6 @@ class TechnicalIndicatorCalculator:
         adx = dx.rolling(window = window).mean()
         return adx
 
-
 class VolatilityCalculator:
     """Handles volatility calculations and regime detection."""
     
@@ -277,7 +272,6 @@ class VolatilityCalculator:
         except Exception as e:
             self.logger.warning(f"Error calculating volatility regime: {e}")
             return "medium"
-
 
 class MomentumCalculator:
     """Handles momentum calculations and analysis."""
@@ -342,7 +336,6 @@ class MomentumCalculator:
             self.logger.debug(f"Error calculating momentum features: {e}")
             return {}
 
-
 class LiquidityCalculator:
     """Handles liquidity calculations and analysis."""
     
@@ -392,7 +385,6 @@ class LiquidityCalculator:
             self.logger.debug(f"Error calculating liquidity features: {e}")
             return {}
 
-
 class CorrelationCalculator:
     """Handles correlation calculations and analysis."""
     
@@ -438,7 +430,6 @@ class CorrelationCalculator:
         except (KeyError, IndexError, ValueError) as e:
             self.logger.debug(f"Error calculating correlation features: {e}")
             return {}
-
 
 class MicrostructureCalculator:
     """Handles market microstructure calculations."""
@@ -580,7 +571,6 @@ class MicrostructureCalculator:
             self.logger.debug(f"Error calculating volume profile: {e}")
             return {}
 
-
 class AdaptiveIndicatorCalculator:
     """Handles adaptive technical indicator calculations."""
     
@@ -626,16 +616,13 @@ class AdaptiveIndicatorCalculator:
             self.logger.debug(f"Error calculating adaptive moving averages: {e}")
             return {}
 
-
 def initialization_error(message: str) -> str:
     """Format initialization error message."""
     return f"❌ {message}"
 
-
 def print_message(message: str) -> None:
     """Print message with proper formatting."""
     tprint(message)
-
 
 class VectorBTOptimizedFeatureCalculator:
     """

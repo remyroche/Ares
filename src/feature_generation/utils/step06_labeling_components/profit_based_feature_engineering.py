@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from src.utils.tprint import tprint
+import warnings
 
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
@@ -133,7 +134,7 @@ class ProfitBasedFeatureEngineering:
             use_numba: Whether to use Numba acceleration
             memory_efficient: Whether to use memory-efficient operations
             enable_m1_optimizations: Whether to enable M1-specific optimizations
-            enable_gpu_acceleration: Whether to enable GPU acceleration
+            enable_gpu_acceleration: Whether to enable 
         """
         self.profit_column = profit_column
         self.volume_column = volume_column
@@ -316,9 +317,9 @@ class ProfitBasedFeatureEngineering:
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks {correlation_id}")
                 return self._chunked_profit_feature_engineering(data, feature_categories, correlation_id)
             
-            # Use GPU acceleration for heavy computations
+            # Use 
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info(f"🎯 Using GPU acceleration for profit features {correlation_id}")
+                self.logger.info(f"🎯 Using 
                 return self._gpu_accelerated_profit_features(data, feature_categories, correlation_id)
             
             # Standard M1-optimized processing
@@ -350,7 +351,7 @@ class ProfitBasedFeatureEngineering:
         return result
 
     def _gpu_accelerated_profit_features(self, data: pd.DataFrame, feature_categories: Optional[List[str]], correlation_id: str) -> pd.DataFrame:
-        """Use GPU acceleration for profit feature calculations."""
+        """Use 
         try:
             with self.matrix_ops.gpu_context(f"profit_features_{correlation_id}"):
                 # Convert profit data to tensor
@@ -386,7 +387,7 @@ class ProfitBasedFeatureEngineering:
                 return result_data
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ GPU acceleration failed: {e}, falling back to CPU {correlation_id}")
+            self.logger.warning(f"⚠️ 
             return self._m1_optimized_profit_features(data, feature_categories, correlation_id)
 
     def _m1_optimized_profit_features(self, data: pd.DataFrame, feature_categories: Optional[List[str]], correlation_id: str) -> pd.DataFrame:
@@ -421,7 +422,7 @@ class ProfitBasedFeatureEngineering:
         return result_data
 
     def _gpu_calculate_momentum_features(self, profit_tensor) -> Dict[str, Any]:
-        """Calculate momentum features using GPU acceleration."""
+        """Calculate momentum features using 
         if not TORCH_AVAILABLE or torch is None:
             # Fallback to numpy-based calculation
             return self._cpu_calculate_momentum_features(profit_tensor)
@@ -482,7 +483,7 @@ class ProfitBasedFeatureEngineering:
         return features
 
     def _gpu_calculate_volatility_features(self, profit_tensor) -> Dict[str, Any]:
-        """Calculate volatility features using GPU acceleration."""
+        """Calculate volatility features using 
         if not TORCH_AVAILABLE or torch is None:
             # Fallback to numpy-based calculation
             return self._cpu_calculate_volatility_features(profit_tensor)
@@ -980,12 +981,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                 # Filter out categorical features for mutual info
                 numerical_features = []

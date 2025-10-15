@@ -104,25 +104,27 @@ except ImportError as e:
     TPE_OPTIMIZER_AVAILABLE = False
     BayesianTPEOptimizer = None
 
-# Import feature processing components
-try:
-    from src.training.steps.pre_training.feature_lookback_optimization import (
-        FeatureLookbackOptimizationComponent as _FeatureLookbackOptimizationComponent
-    )
-    _ = _FeatureLookbackOptimizationComponent
-    FEATURE_OPTIMIZATION_AVAILABLE = True
-except ImportError as e:
-    FEATURE_OPTIMIZATION_AVAILABLE = False
-    tprint_warning(f"⚠️ Feature lookback optimization not available: {e}")
+# Import feature processing components - REMOVED (feature_lookback_optimization no longer used)
+# try:
+#     from src.training.steps.pre_training.feature_lookback_optimization import (
+#         FeatureLookbackOptimizationComponent as _FeatureLookbackOptimizationComponent
+#     )
+#     _ = _FeatureLookbackOptimizationComponent
+#     FEATURE_OPTIMIZATION_AVAILABLE = True
+# except ImportError as e:
+#     FEATURE_OPTIMIZATION_AVAILABLE = False
+#     tprint_warning(f"⚠️ Feature lookback optimization not available: {e}")
+FEATURE_OPTIMIZATION_AVAILABLE = False
 
-try:
-    from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation import (
-        InteractiveFeatureGenerationComponent
-    )
-    INTERACTIVE_GENERATION_AVAILABLE = True
-except ImportError as e:
-    INTERACTIVE_GENERATION_AVAILABLE = False
-    tprint_warning(f"⚠️ Interactive feature generation not available: {e}")
+# try:
+#     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation import (
+#         InteractiveFeatureGenerationComponent
+#     )
+#     INTERACTIVE_GENERATION_AVAILABLE = True
+# except ImportError as e:
+#     INTERACTIVE_GENERATION_AVAILABLE = False
+#     tprint_warning(f"⚠️ Interactive feature generation not available: {e}")
+INTERACTIVE_GENERATION_AVAILABLE = False
 
 try:
     from src.training.steps.pre_training.multi_horizon_profit_labeler import (
@@ -137,13 +139,13 @@ try:
     from src.training.steps.pre_training.final_feature_selection_step import (
         FinalFeatureSelectionStep
     )
-    from src.training.steps.pre_training.final_feature_selection_pipeline import (
-        FeatureSelectionConfig
-    )
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
     tprint_warning(f"⚠️ Final feature selection not available: {e}")
+# except ImportError as e:
+#     FEATURE_SELECTION_AVAILABLE = False
+#     tprint_warning(f"⚠️ Final feature selection not available: {e}")
 
 from src.training.steps.pre_training.components import ComponentFactory, ComponentConfig
 
@@ -226,6 +228,22 @@ class OrchestratorConfig:
     enable_memory_optimization: bool = True
     batch_size: int = 10000  # Process data in batches for memory efficiency
     enable_progress_tracking: bool = True
+
+
+
+@dataclass
+class FeatureSelectionConfig:
+    """Configuration for feature selection in Tactician pre-ML pipeline."""
+    initial_features: int
+    stage_1_target: int
+    stage_2_target: int
+    stage_3_target: int
+    direction_mode: str
+    separate_directional_features: bool
+    directional_feature_prefixes: Dict[str, str]
+    output_directory: str
+    save_analysis: bool
+    verbose: bool
 
 
 @dataclass
@@ -592,12 +610,13 @@ class TacticianPreMLOrchestrator:
         }
 
         # Initialize components using consolidated helper
-        self.feature_optimizer = self._init_factory_component(
-            'feature_optimization',
-            self.config.enable_feature_optimization,
-            FEATURE_OPTIMIZATION_AVAILABLE,
-            "Feature lookback optimization"
-        )
+        # self.feature_optimizer = self._init_factory_component(
+        #     'feature_optimization',
+        #     self.config.enable_feature_optimization,
+        #     FEATURE_OPTIMIZATION_AVAILABLE,  # Always False now
+        #     "Feature lookback optimization"
+        # )
+        self.feature_optimizer = None
         
         self.interactive_generator = self._init_factory_component(
             'interactive_generation',
@@ -634,9 +653,9 @@ class TacticianPreMLOrchestrator:
         # Final feature selection
         if not self.config.enable_feature_selection:
             self.feature_selector = None
-        elif not FEATURE_SELECTION_AVAILABLE:
-            self.feature_selector = None
-            tprint_warning("⚠️ Feature selection requested but not available")
+        # elif not FEATURE_SELECTION_AVAILABLE:  # Always False now
+        #     self.feature_selector = None
+        #     tprint_warning("⚠️ Feature selection requested but not available")
         else:
             if not self.factory_component_status.get('feature_selection', False):
                 self._log_factory_unavailable('feature_selection')

@@ -442,12 +442,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     async def train_models(self, training_data: Dict[str, pd.DataFrame], 
                           model_trainer: Any, model_config: Dict[str, Any]) -> bool:
@@ -1152,7 +1148,7 @@ except ImportError:
             
             # Hardware optimization summary
             if self.gpu_manager:
-                self.logger.info("   🚀 GPU acceleration: Enabled")
+                self.logger.info("   🚀 
             if self.memory_optimizer:
                 self.logger.info("   🧠 Memory optimization: Enabled")
             if self.parallel_optimizer:

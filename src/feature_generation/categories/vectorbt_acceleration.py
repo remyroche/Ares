@@ -33,11 +33,11 @@ from scipy import stats
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.feature_generator import FeatureConfig, FeatureCategory, VectorizedFeatureGenerator, FeatureGenerator
 from ..base_calculations import BaseCalculationType, create_base_calculator
-from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
+from src.feature_generation.utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
@@ -53,8 +53,8 @@ except ImportError:
 
 # Additional optimization utilities for AccelerationFeatureGenerator
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False

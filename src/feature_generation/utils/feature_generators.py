@@ -1,4 +1,5 @@
 """
+import warnings
 Enhanced Feature Generators for Lookback Optimization
 
 This module provides comprehensive feature generator functions for all
@@ -153,7 +154,7 @@ class FeatureGenerators:
             data: Input DataFrame with OHLCV data
             indicator_configs: Dict mapping indicator names to list of periods
                              e.g., {'sma': [5, 10, 20], 'ema': [8, 12, 26]}
-            use_gpu: Whether to use GPU acceleration if available
+            use_gpu: Whether to use 
             batch_size: Size of chunks for memory-efficient processing
 
         Returns:
@@ -2457,6 +2458,8 @@ def create_cdl_harami_config(**kwargs) -> Dict[str, Any]:
 # This allows existing code to continue working while we migrate to the new system
 try:
     from .feature_generators_compatibility import FeatureGenerators as CompatibleFeatureGenerators
+except ImportError:
+    CompatibleFeatureGenerators = None
 
 # VectorBT imports for native optimization
 try:
@@ -2484,13 +2487,7 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
     # Export the compatible version
     FeatureGenerators = CompatibleFeatureGenerators
     logger.info("✅ FeatureGenerators redirected to new unified system")

@@ -7,6 +7,7 @@ to improve clustering quality, particularly the CV ratio (variance ratio).
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, List, Optional, Tuple
 from sklearn.metrics import calinski_harabasz_score
 
@@ -38,14 +39,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class RegimeDiscriminativeFeatures:
     """
@@ -176,7 +172,6 @@ class RegimeDiscriminativeFeatures:
         
         return persistence
 
-
 class AdaptiveWeightScheduler:
     """
     Adaptive weight scheduler that adjusts optimization weights based on iteration progress.
@@ -243,7 +238,6 @@ class AdaptiveWeightScheduler:
                   f"Sil={weights['w_sil']:.3f}, Bal={weights['w_bal']:.3f}", "INFO")
         
         return weights
-
 
 class EnhancedVarianceRatioCalculator:
     """
@@ -354,7 +348,6 @@ class EnhancedVarianceRatioCalculator:
         except:
             return 0.0
 
-
 def apply_cv_enhancement_strategies(df: pd.DataFrame,
                                     add_regime_features: bool = True) -> pd.DataFrame:
     """
@@ -396,7 +389,6 @@ def apply_cv_enhancement_strategies(df: pd.DataFrame,
     except Exception as e:
         tprint(f"❌ CV enhancement failed: {e}", "ERROR")
         return df
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

@@ -8,9 +8,7 @@ vectorbt>=0.25.0
 numba>=0.56.0  # JIT compilation for faster execution
 numba[extras]  # Additional numba features
 
-# Optional GPU acceleration (if available)
-# cupy-cuda11x  # For CUDA 11.x (uncomment if you have CUDA)
-# cupy-cuda12x  # For CUDA 12.x (uncomment if you have CUDA)
+# Optional GPU acceleration removed (CuPy not supported on all platforms)
 
 # Optional dependencies for additional features
 scipy>=1.9.0  # For advanced mathematical functions

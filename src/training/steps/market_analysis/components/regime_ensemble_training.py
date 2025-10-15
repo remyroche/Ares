@@ -44,7 +44,6 @@ except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
     tprint(f"⚠️ [REGIME_ENSEMBLE] Feature generation system not available: {e}", color="yellow")
 
-
 class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
     """
     Regime Detection Ensemble Training Component.
@@ -1333,6 +1332,44 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Use RegimeProbabilityAnalyzer for comprehensive analysis
             from src.utils.regime_probability_analyzer import RegimeProbabilityAnalyzer
 
+            analyzer = RegimeProbabilityAnalyzer()
+
+            # Create prediction result for analysis
+            prediction_result = {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'ensemble_probabilities': ensemble_probabilities,
+                'dominance': dominance,
+                'timestamp': pd.Timestamp.now()
+            }
+
+            # Analyze prediction quality and stability
+            analysis_result = analyzer.analyze_regime_prediction_quality(prediction_result)
+
+            # Extract key metrics
+            confidence_score = analysis_result.get('confidence_score', 0.0)
+            stability_score = analysis_result.get('stability_score', 0.0)
+            regime_consistency = analysis_result.get('regime_consistency', 0.0)
+
+            return {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'confidence_score': confidence_score,
+                'stability_score': stability_score,
+                'regime_consistency': regime_consistency,
+                'dominance': dominance
+            }
+        except ImportError:
+            # Fallback if RegimeProbabilityAnalyzer is not available
+            return {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'confidence_score': 0.0,
+                'stability_score': 0.0,
+                'regime_consistency': 0.0,
+                'dominance': dominance
+            }
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -1358,75 +1395,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            analyzer = RegimeProbabilityAnalyzer()
-            
-            # Create prediction result for analysis
-            prediction_result = {
-                'regime_labels': regime_labels,
-                'regime_probabilities': regime_probabilities,
-                'n_regimes': n_regimes,
-                'ensemble_probabilities': ensemble_probabilities
-            }
-            
-            # Perform comprehensive analysis
-            analysis_results = analyzer.analyze_regime_predictions(prediction_result, 'stacker_lgbm_calibrated')
-            
-            # Extract analysis components
-            regime_analysis = analysis_results.get('regime_analysis', {})
-            regime_transitions = analysis_results.get('transition_analysis', {})
-            regime_persistence = analysis_results.get('persistence_analysis', {})
-            
-            # Create comprehensive prediction result
-            prediction_result = {
-                'regime_labels': regime_labels,
-                'regime_probabilities': regime_probabilities,
-                'confidence_scores': confidence_scores,
-                'n_regimes': n_regimes,
-                'regime_counts': regime_counts.tolist(),
-                'regime_percentages': regime_percentages.tolist(),
-                'avg_regime_probabilities': avg_regime_probabilities.tolist(),
-                'regime_stability': regime_stability.tolist(),
-                'entropy': entropy,
-                'dominance': dominance,
-                'model_used': 'stacker_lgbm_calibrated',
-                'ensemble_probabilities': ensemble_probabilities,
-                'regime_analysis': regime_analysis,
-                'regime_transitions': regime_transitions,
-                'regime_persistence': regime_persistence,
-                'prediction_metadata': {
-                    'model_type': type(meta_learner).__name__,
-                    'n_samples': len(regime_labels),
-                    'feature_count': X.shape[1],
-                    'prediction_timestamp': datetime.now().isoformat(),
-                    'scaled_features_used': scaler is not None,
-                    'ensemble_models_used': len(ensemble_probabilities) if ensemble_probabilities else 0,
-                    'base_models_used': len(base_models),
-                    'meta_features_shape': meta_features.shape
-                }
-            }
-            
-            tprint(f"✅ [REGIME_ENSEMBLE] Ensemble prediction completed: {len(regime_labels)} samples, {n_regimes} regimes", color="green")
-            tprint(f"📊 [REGIME_ENSEMBLE] Confidence range: [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]", color="cyan")
-            tprint(f"📈 [REGIME_ENSEMBLE] Regime distribution: {dict(zip(range(n_regimes), regime_counts))}", color="cyan")
-            
-            return prediction_result
-            
-        except Exception as e:
-            tprint(f"❌ [REGIME_ENSEMBLE] Ensemble prediction failed: {e}", color="red")
-            self.logger.error(f"Error in ensemble regime prediction: {e}", exc_info=True)
-            return {
-                'regime_labels': np.array([]),
-                'regime_probabilities': np.array([]),
-                'error': str(e)
-            }
 
     async def _generate_regime_probability_report(
         self, 

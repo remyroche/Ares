@@ -28,7 +28,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class FeatureType(Enum):
     """Feature types."""
     TECHNICAL_INDICATORS = "technical_indicators"
@@ -41,7 +40,6 @@ class FeatureType(Enum):
     INTERACTION_FEATURES = "interaction_features"
     POLYNOMIAL_FEATURES = "polynomial_features"
     CROSS_TIMEFRAME_FEATURES = "cross_timeframe_features"
-
 
 @dataclass
 class FeatureConfig:
@@ -131,7 +129,6 @@ class FeatureConfig:
     output_directory: str = "engineered_features"
     cache_features: bool = True
 
-
 @dataclass
 class FeatureResult:
     """Result of feature engineering."""
@@ -162,7 +159,6 @@ class FeatureResult:
     config: FeatureConfig
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
-
 
 class FeatureEngineer:
     """
@@ -840,12 +836,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             metadata = {
                 'feature_names': result.feature_names,

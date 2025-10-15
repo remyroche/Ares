@@ -10,10 +10,11 @@ Implements exactly one transform per parent:
 
 VectorBT Optimizations:
 - Vectorized operations for batch processing
-- GPU acceleration for large datasets
+- 
 - Memory-efficient operations
 - Parallel processing for multiple features
 """
+
 
 from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
 from dataclasses import dataclass
@@ -39,14 +40,8 @@ except ImportError:
     rolling_apply_parallel = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 class TransformType(Enum):
     """Types of transforms available."""
@@ -56,14 +51,12 @@ class TransformType(Enum):
     MAD = "mad"
     WINSOR = "winsor"
 
-
 @dataclass
 class TransformConfig:
     """Configuration for a transform."""
     transform_type: TransformType
     params: Dict[str, Any]
     spec_hash: str
-
 
 class OnlineEWZ(BaseScaler):
     """Online EW-Z transform with stateful computation and VectorBT optimization."""
@@ -76,7 +69,7 @@ class OnlineEWZ(BaseScaler):
         self.var_state = 1.0
         self.count = 0
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit and transform data with online state."""
@@ -112,11 +105,11 @@ class OnlineEWZ(BaseScaler):
                 result.iloc[i] = 0.0
         
         self.fitted = True
-        return result
+        return resultt
     
     def _fit_transform_vectorbt(self, data: pd.Series) -> pd.Series:
         """VectorBT-optimized implementation for large datasets."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._fit_transform_gpu(data)
         else:
             return self._fit_transform_cpu_vectorized(data)
@@ -215,56 +208,12 @@ class OnlineEWZ(BaseScaler):
         return pd.Series(z_scores, index=data.index)
     
     def _fit_transform_gpu(self, data: pd.Series) -> pd.Series:
-        """GPU-accelerated implementation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated implementation using VectorBT."""
+        if True:
             return self._fit_transform_cpu_vectorized(data)
             
-        # Convert to CuPy array
-        values = cp.asarray(data.values, dtype=cp.float32)
-        n = len(values)
-        
-        # Initialize arrays on GPU
-        means = cp.zeros(n, dtype=cp.float32)
-        vars = cp.zeros(n, dtype=cp.float32)
-        z_scores = cp.zeros(n, dtype=cp.float32)
-        
-        # First value
-        means[0] = values[0] if not cp.isnan(values[0]) else 0.0
-        vars[0] = 1.0
-        z_scores[0] = 0.0
-        
-        # GPU-accelerated online updates
-        for i in range(1, n):
-            if cp.isnan(values[i]):
-                means[i] = means[i-1]
-                vars[i] = vars[i-1]
-                z_scores[i] = cp.nan
-                continue
-                
-            # Online mean update
-            means[i] = (1 - self.alpha) * means[i-1] + self.alpha * values[i]
-            
-            # Online variance update
-            if i > 1:
-                delta = values[i] - means[i-1]
-                vars[i] = (1 - self.alpha) * vars[i-1] + self.alpha * delta * delta
-            else:
-                vars[i] = 1.0
-            
-            # Z-score
-            if vars[i] > 0:
-                z_scores[i] = (values[i] - means[i]) / cp.sqrt(vars[i])
-            else:
-                z_scores[i] = 0.0
-        
-        # Convert back to CPU and update state
-        z_scores_cpu = cp.asnumpy(z_scores)
-        self.mean_state = float(cp.asnumpy(means[-1]))
-        self.var_state = float(cp.asnumpy(vars[-1]))
-        self.count = n
-        self.fitted = True
-        
-        return pd.Series(z_scores_cpu, index=data.index)
+        # CPU implementation (GPU support removed)
+        return self._fit_transform_cpu_vectorized(data)
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using existing state."""
@@ -288,7 +237,6 @@ class OnlineEWZ(BaseScaler):
         self.var_state = state['var_state']
         self.count = state['count']
 
-
 class TODRank(BaseScaler):
     """Time-of-day rank transform using EW histograms with VectorBT optimization."""
     
@@ -299,7 +247,7 @@ class TODRank(BaseScaler):
         self.histograms = {}  # bucket -> EW histogram
         self.alpha = 0.01  # EW decay for histograms
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         
     def _get_tod_bucket(self, timestamp: pd.Timestamp) -> int:
         """Get time-of-day bucket for timestamp."""
@@ -349,11 +297,11 @@ class TODRank(BaseScaler):
             result.iloc[i] = percentile
         
         self.fitted = True
-        return result
+        return resultt
     
     def _fit_transform_vectorbt(self, data: pd.Series) -> pd.Series:
         """VectorBT-optimized implementation for large datasets."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._fit_transform_gpu(data)
         else:
             return self._fit_transform_cpu_vectorized(data)
@@ -409,60 +357,12 @@ class TODRank(BaseScaler):
         return pd.Series(result, index=data.index)
     
     def _fit_transform_gpu(self, data: pd.Series) -> pd.Series:
-        """GPU-accelerated implementation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated implementation using VectorBT."""
+        if True:
             return self._fit_transform_cpu_vectorized(data)
             
-        # Get all timestamps and values
-        timestamps = data.index
-        values = cp.asarray(data.values, dtype=cp.float32)
-        
-        # Vectorized bucket calculation on GPU
-        minutes_since_midnight = cp.asarray(timestamps.hour * 60 + timestamps.minute, dtype=cp.int32)
-        buckets = (minutes_since_midnight // self.granularity_minutes) % self.n_buckets
-        
-        # Initialize result array on GPU
-        result = cp.full(len(values), 0.5, dtype=cp.float32)  # Default neutral value
-        
-        # Process each bucket
-        for bucket in range(self.n_buckets):
-            bucket_mask = buckets == bucket
-            bucket_values = values[bucket_mask]
-            bucket_indices = cp.where(bucket_mask)[0]
-            
-            if len(bucket_values) == 0:
-                continue
-                
-            # Initialize histogram for this bucket if needed
-            if bucket not in self.histograms:
-                self.histograms[bucket] = {}
-            
-            # Process values in this bucket
-            for i in range(len(bucket_values)):
-                value = float(cp.asnumpy(bucket_values[i]))
-                if np.isnan(value):
-                    result[bucket_indices[i]] = cp.nan
-                    continue
-                
-                # Update EW histogram
-                hist = self.histograms[bucket]
-                hist[value] = hist.get(value, 0) * (1 - self.alpha) + self.alpha
-                
-                # Calculate percentile rank
-                total_weight = sum(hist.values())
-                if total_weight > 0:
-                    # Count values <= current value
-                    rank_weight = sum(weight for val, weight in hist.items() if val <= value)
-                    percentile = rank_weight / total_weight
-                else:
-                    percentile = 0.5
-                
-                result[bucket_indices[i]] = percentile
-        
-        # Convert back to CPU
-        result_cpu = cp.asnumpy(result)
-        self.fitted = True
-        return pd.Series(result_cpu, index=data.index)
+        # CPU implementation (GPU support removed)
+        return self._fit_transform_cpu_vectorized(data)
     
     def transform(self, data: pd.Series) -> pd.Series:
         """Transform new data using existing histograms."""
@@ -483,7 +383,6 @@ class TODRank(BaseScaler):
         self.granularity_minutes = state['granularity_minutes']
         self.histograms = state['histograms']
         self.alpha = state['alpha']
-
 
 class SignedLog(BaseScaler):
     """Signed log transform for heavy tails."""
@@ -508,7 +407,6 @@ class SignedLog(BaseScaler):
         """Set state (no state for signed log)."""
         pass
 
-
 class MADScaler(BaseScaler):
     """Median absolute deviation scaler with persistent state and VectorBT optimization."""
 
@@ -517,7 +415,7 @@ class MADScaler(BaseScaler):
         self.median: Optional[float] = None
         self.mad: Optional[float] = None
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
 
     @staticmethod
     def _compute_mad(values: pd.Series, center: float) -> float:
@@ -533,13 +431,9 @@ class MADScaler(BaseScaler):
         return float(mad)
     
     @staticmethod
-    def _compute_mad_gpu(values: 'cp.ndarray', center: float) -> float:
-        """GPU-accelerated MAD computation."""
-        if not CUPY_AVAILABLE:
-            return MADScaler._compute_mad_vectorized(cp.asnumpy(values), center)
-        deviations = cp.abs(values - center)
-        mad = cp.median(deviations)
-        return float(cp.asnumpy(mad))
+    def _compute_mad_gpu(values: np.ndarray, center: float) -> float:
+        """CPU-based MAD computation (GPU support removed)."""
+        return MADScaler._compute_mad_vectorized(values, center)
 
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit median and MAD, then scale data."""
@@ -569,7 +463,7 @@ class MADScaler(BaseScaler):
     
     def _fit_transform_vectorbt(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
         """VectorBT-optimized implementation for large datasets."""
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._fit_transform_gpu(data, finite_data)
         else:
             return self._fit_transform_cpu_vectorized(data, finite_data)
@@ -590,43 +484,31 @@ class MADScaler(BaseScaler):
         return (data - self.median) / self.mad
     
     def _fit_transform_gpu(self, data: pd.Series, finite_data: pd.Series) -> pd.Series:
-        """GPU-accelerated implementation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated implementation using VectorBT."""
+        if True:
             return self._fit_transform_cpu_vectorized(data, finite_data)
             
-        finite_values = cp.asarray(finite_data.values, dtype=cp.float32)
+        # CPU implementation (GPU support removed)
+        finite_values = finite_data.values
         
-        # GPU-accelerated median computation
-        self.median = float(cp.asnumpy(cp.median(finite_values)))
+        # CPU-based median computation
+        self.median = float(np.median(finite_values))
         
-        # GPU-accelerated MAD computation
-        mad = self._compute_mad_gpu(finite_values, self.median)
+        # CPU-based MAD computation
+        mad = self._compute_mad_vectorized(finite_values, self.median)
         self.mad = mad if mad != 0 else 1.0
         self.fitted = True
 
-        # GPU-accelerated scaling
-        data_gpu = cp.asarray(data.values, dtype=cp.float32)
-        scaled_gpu = (data_gpu - self.median) / self.mad
-        scaled_cpu = cp.asnumpy(scaled_gpu)
-        
-        return pd.Series(scaled_cpu, index=data.index)
+        # CPU-based scaling
+        return (data - self.median) / self.mad
 
     def transform(self, data: pd.Series) -> pd.Series:
         """Scale using stored median and MAD."""
         if not self.fitted or self.median is None or self.mad is None:
             raise ValueError("MADScaler must be fitted before calling transform.")
 
-        if self.use_vectorbt and len(data) > 1000:
-            if self.use_gpu and CUPY_AVAILABLE:
-                data_gpu = cp.asarray(data.values, dtype=cp.float32)
-                scaled_gpu = (data_gpu - self.median) / self.mad
-                scaled_cpu = cp.asnumpy(scaled_gpu)
-                return pd.Series(scaled_cpu, index=data.index)
-            else:
-                # Vectorized CPU scaling
-                return (data - self.median) / self.mad
-        else:
-            return (data - self.median) / self.mad
+        # CPU-based scaling (GPU support removed)
+        return (data - self.median) / self.mad
 
     def get_state(self) -> Dict[str, Any]:
         """Return state for persistence."""
@@ -641,7 +523,6 @@ class MADScaler(BaseScaler):
         self.median = state.get('median')
         self.mad = state.get('mad')
         self.fitted = state.get('fitted', False)
-
 
 class Winsorization(BaseScaler):
     """Winsorization transform using frozen quantiles."""
@@ -690,7 +571,6 @@ class Winsorization(BaseScaler):
         self.upper_bound = state['upper_bound']
         self.fitted = state['fitted']
 
-
 class TransformRouter:
     """Router for applying transforms to parent features with VectorBT optimization."""
     
@@ -698,7 +578,7 @@ class TransformRouter:
         self.config = config
         self.transformers = {}
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
         self._initialize_transformers()
     
@@ -769,7 +649,7 @@ class TransformRouter:
                 'val': val_df
             }
         
-        return results
+        return resultts
     
     def _fit_transform_parallel(self, train_data: pd.DataFrame, val_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """VectorBT-optimized parallel implementation for large datasets."""
@@ -783,7 +663,7 @@ class TransformRouter:
             return {}
         
         # Use VectorBT's parallel processing capabilities
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._fit_transform_gpu_parallel(train_data, val_data, feature_names)
         else:
             return self._fit_transform_cpu_parallel(train_data, val_data, feature_names)
@@ -817,16 +697,16 @@ class TransformRouter:
                 'val': val_df
             }
         
-        return results
+        return resultts
     
     def _fit_transform_gpu_parallel(self, train_data: pd.DataFrame, val_data: pd.DataFrame, feature_names: List[str]) -> Dict[str, pd.DataFrame]:
-        """GPU-accelerated parallel implementation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated parallel implementation using VectorBT (GPU support removed)."""
+        if True:
             return self._fit_transform_cpu_parallel(train_data, val_data, feature_names)
         
         results = {}
         
-        # Process features with GPU acceleration
+        # Process features with 
         for feature_name in feature_names:
             transformer = self.transformers[feature_name]
             transform_config = self.config[feature_name]
@@ -851,7 +731,7 @@ class TransformRouter:
                 'val': val_df
             }
         
-        return results
+        return resultts
     
     def transform(self, data: pd.DataFrame) -> pd.DataFrame:
         """Transform new data using fitted transformers."""
@@ -888,14 +768,12 @@ class TransformRouter:
             if feature_name in self.transformers:
                 self.transformers[feature_name].set_state(state)
 
-
 def _iter_feature_metadata(
     feature_inputs: Union[List[str], Dict[str, Dict[str, Any]]]
 ) -> Iterable[Tuple[str, Dict[str, Any]]]:
     if isinstance(feature_inputs, dict):
         return feature_inputs.items()
     return [(name, {}) for name in feature_inputs]
-
 
 def create_default_transform_config(
     feature_inputs: Union[List[str], Dict[str, Dict[str, Any]]]
@@ -933,7 +811,6 @@ def create_default_transform_config(
         )
 
     return config
-
 
 def apply_winsorization(data: pd.DataFrame, 
                        quantiles: Tuple[float, float] = (0.001, 0.999)) -> pd.DataFrame:

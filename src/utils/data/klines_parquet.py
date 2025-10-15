@@ -1401,6 +1401,64 @@ def validate_klines_data(df: pd.DataFrame) -> Dict[str, Any]:
     }
 
 
+def process_klines_data(
+    df: pd.DataFrame,
+    symbol: str = None,
+    interval: str = None,
+    data_type: str = "raw"
+) -> pd.DataFrame:
+    """Process klines data for enhanced analysis.
+    
+    Args:
+        df: DataFrame with klines data
+        symbol: Trading symbol (optional, for metadata)
+        interval: Data interval (optional, for metadata)
+        data_type: 'raw' or 'processed'
+        
+    Returns:
+        Processed DataFrame with enhanced features
+    """
+    if df is None or df.empty:
+        return df
+    
+    try:
+        # Create a copy to avoid modifying original
+        processed_df = df.copy()
+        
+        # Add metadata if provided
+        if symbol is not None:
+            processed_df['symbol'] = symbol
+        if interval is not None:
+            processed_df['interval'] = interval
+        
+        # Ensure proper datetime index
+        if not isinstance(processed_df.index, pd.DatetimeIndex):
+            if 'timestamp' in processed_df.columns:
+                processed_df.index = pd.to_datetime(processed_df['timestamp'], unit='s')
+            elif 'open_time' in processed_df.columns:
+                processed_df.index = pd.to_datetime(processed_df['open_time'], unit='ms')
+        
+        # Sort by index
+        processed_df = processed_df.sort_index()
+        
+        # Remove duplicates
+        processed_df = processed_df[~processed_df.index.duplicated(keep='last')]
+        
+        # Basic data validation
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        for col in required_columns:
+            if col in processed_df.columns:
+                # Remove any non-finite values
+                processed_df = processed_df[np.isfinite(processed_df[col])]
+        
+        return processed_df
+        
+    except Exception as e:
+        logger = system_logger.getChild("process_klines_data")
+        logger.warning(f"Error processing klines data: {e}")
+        return df
+
+
 if __name__ == "__main__":
     # Example usage
     manager = get_klines_manager()

@@ -1,4 +1,5 @@
 """
+import warnings
 Tree-based CVLSA (Cascade Variable Length Selection Architecture) for TAS
 
 This module implements a sophisticated tree-based architecture leveraging the existing
@@ -31,7 +32,6 @@ from src.utils.ml_common.optimization.tree_architecture_search import TreeArchit
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class CVLSAResult:
     """Result of CVLSA optimization."""
@@ -54,7 +54,6 @@ class CVLSAResult:
 
     execution_time: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class TreeCVLSASearch:
     """Advanced tree-based CVLSA implementation."""
@@ -585,12 +584,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
         if len(np.unique(target)) <= 10:
@@ -1022,7 +1017,6 @@ except ImportError:
 
         self.logger.info(f"✅ Micro-regime analysis completed: {len(micro_regimes)} micro-regimes detected")
         return dict(micro_regime_analysis)
-
 
 # Convenience functions for CVLSA
 def optimize_cvlSA_architecture(market_data: pd.DataFrame,

@@ -5,6 +5,7 @@ This module provides feature generators for oscillator indicators,
 including CCI, ADX, Aroon, Ultimate Oscillator, KST, APO, CMO, NATR, PFE, T3, KAMA, and more.
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 import logging
@@ -16,18 +17,71 @@ from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # Import tprint for consistent logging
 try:
-    from tprint import tprint
+    from tprint import tprint  # type: ignore
 except ImportError:
     def tprint(*args, **kwargs):
         print(*args, **kwargs)
+
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+
+    # CCI indicator - using our custom implementation
+    # Note: This should ideally be imported from vectorbt.indicators.custom.CCI if available
+    # For now, using our custom implementation
+
+    # CCI indicator using VectorBT's IndicatorFactory
+    try:
+        def _cci_custom_func(high, low, close, window):
+            """Custom function for CCI calculation using VectorBT's indicator framework."""
+            import pandas as pd
+            import numpy as np
+
+            # Convert inputs to numpy arrays if they aren't already
+            high = np.asarray(high).flatten()
+            low = np.asarray(low).flatten()
+            close = np.asarray(close).flatten()
+
+            # Extract window as scalar
+            window_scalar = int(np.asarray(window).flatten()[0])
+
+            # Convert numpy arrays to pandas Series for rolling operations
+            high_series = pd.Series(high)
+            low_series = pd.Series(low)
+            close_series = pd.Series(close)
+
+            # Calculate typical price
+            typical_price = (high_series + low_series + close_series) / 3
+
+            # Calculate Simple Moving Average of typical price
+            sma_tp = typical_price.rolling(window=window_scalar).mean()
+
+            # Calculate Mean Deviation
+            mean_deviation = (typical_price - sma_tp).abs().rolling(window=window_scalar).mean()
+
+            # Calculate CCI - avoid division by zero
+            mean_deviation = np.where(mean_deviation == 0, 1e-8, mean_deviation)
+            cci_values = (typical_price - sma_tp) / (0.015 * mean_deviation)
+
+            return cci_values.values
+
+        # Create CCI indicator using VectorBT's IndicatorFactory
+        CCI = vbt.IndicatorFactory(
+            input_names=['high', 'low', 'close'],
+            param_names=['window'],
+            output_names=['cci']
+        ).from_custom_func(_cci_custom_func)
+    except (ImportError, AttributeError):
+        CCI = None
+
     VECTORBT_AVAILABLE = True
 except ImportError:
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
     VECTORBT_AVAILABLE = False
     vbt = None
     rolling_mean = None
@@ -45,17 +99,16 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # VectorBT Rolling Optimizer - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.consolidated_rolling_optimizer import (
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
         ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
         get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
         RollingOperationConfig,
         RollingOperationType
     )
-    from ..utils.statistical_calculations_optimizer import (
+    from src.feature_generation.utils.statistical_calculations_optimizer import (
         StatisticalCalculationsOptimizer as VectorizationOptimizer,
         get_global_statistical_optimizer as get_vectorization_optimizer,
         StatisticalOperationConfig,
@@ -66,7 +119,7 @@ try:
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
         VECTORBT_OPTIMIZER_AVAILABLE = True
         OPTIMIZATION_AVAILABLE = False
     except ImportError:
@@ -91,18 +144,14 @@ except ImportError:
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 from ..base_calculations import (
@@ -111,8 +160,8 @@ from ..base_calculations import (
 )
 
 # Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+# Removed VectorBTScaler import to avoid circular import - using direct scaling instead
 from ..core.feature_bank import get_global_feature_bank
 
 logger = logging.getLogger(__name__)
@@ -140,7 +189,7 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         }
         
         # Initialize optimization components
-        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel
         self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
         
@@ -535,15 +584,15 @@ def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[F
     
     # PFE generators
     for period in periods.get('pfe', [12]):
-        generators.append(PFEGenerator(period=period))
-    
+        generators.append(PFEGenerator(period=period))  # type: ignore
+
     # T3 generators
     for period in periods.get('t3', [14]):
-        generators.append(T3Generator(period=period))
-    
+        generators.append(T3Generator(period=period))  # type: ignore
+
     # KAMA generators
     for period in periods.get('kama', [30]):
-        generators.append(KAMAGenerator(period=period))
+        generators.append(KAMAGenerator(period=period))  # type: ignore
     
     return generators
 
@@ -551,7 +600,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
     return create_oscillator_generators()
 
 # CCI (Commodity Channel Index)
-    
+
 
 class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for CCI (Commodity Channel Index) with comprehensive VectorBT optimization."""
@@ -614,7 +663,7 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         }
         
         # Initialize optimization components
-        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel
         self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
         
@@ -634,104 +683,104 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             self.unified_manager = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate CCI based on the specified base calculation with comprehensive VectorBT optimization."""
         start_time = time.time()
-        
+
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate CCI based on the specified base calculation with comprehensive VectorBT optimization."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+            # Handle price level calculations (OHLC data)
+            if not all(col in data.columns for col in ['high', 'low', 'close']):
+                raise ValueError("CCI with PRICE_LEVELS base calculation requires 'high', 'low', 'close' columns")
+
             high = data['high']
             low = data['low']
             close = data['close']
-            
-            # Use VectorBT native CCI if available
-            if CCI and VECTORBT_AVAILABLE and self._should_use_vectorbt(close):
+
+            # Use VectorBT CCI indicator
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(close):
                 try:
                     cci_result = CCI.run(high, low, close, window=self.period)
                     self.performance_stats['vectorbt_operations'] += 1
                     return cci_result.cci
                 except Exception as e:
-                    self.logger.warning(f"VectorBT native CCI failed: {e}, using custom calculation")
-            
-            try:
-                # Use VectorBT for CCI calculation
-                if self.vectorbt_optimizer and self._should_use_vectorbt(close):
-                    try:
-                        # Calculate typical price
-                        typical_price = (high + low + close) / 3
-                        
-                        # Calculate CCI using VectorBT rolling operations
-                        sma_tp = self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)
-                        # Vectorized MAD: use rolling mean of absolute deviations
-                        mad = self.vectorbt_optimizer.rolling_mean((typical_price - self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
-                        cci = (typical_price - sma_tp) / (0.015 * mad)
-                        
-                        self.performance_stats['vectorbt_operations'] += 1
-                        return cci
-                    except Exception as e:
-                        self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
-                        result = self._generate_cci_pandas_fallback(high, low, close)
-                        self.performance_stats['pandas_fallbacks'] += 1
-                        return result
-                else:
-                    result = self._generate_cci_pandas_fallback(high, low, close)
+                    self.logger.warning(f"VectorBT CCI failed: {e}, using custom calculation")
+
+            # Use VectorBT optimized calculation or pandas fallback
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
+                try:
+                    # Calculate typical price
+                    typical_price = (high + low + close) / 3
+
+                    # Calculate CCI using VectorBT rolling operations
+                    sma_tp = self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad = self.vectorbt_optimizer.rolling_mean(
+                        (typical_price - self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)).abs(),
+                        window=self.period
+                    )
+                    cci = (typical_price - sma_tp) / (0.015 * mad)
+
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return cci
+                except Exception as e:
+                    self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
                     self.performance_stats['pandas_fallbacks'] += 1
-                    return result
-            finally:
-                # Update performance statistics
-                self.performance_stats['total_calculations'] += 1
-                self.performance_stats['total_time'] += time.time() - start_time
-                if self.performance_stats['total_calculations'] > 0:
-                    self.performance_stats['average_time_per_calculation'] = (
-                    self.performance_stats['total_time'] / self.performance_stats['total_calculations']
-                )
-    
-    def _generate_cci_pandas_fallback(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
-        """Generate CCI using pandas fallback."""
-        # Calculate typical price
-        typical_price = (high + low + close) / 3
-        
-        # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
-        sma_tp = typical_price.rolling(window=self.period).mean()
-        # Vectorized MAD: use rolling mean of absolute deviations
-        mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-        cci = (typical_price - sma_tp) / (0.015 * mad)
-        
-        return cci
-    
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate CCI feature using base calculation."""
-        base_values = self.base_calculator.calculate(data)
-        
-        # Use VectorBT for CCI calculation on base values
-        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
-            try:
-                # Calculate CCI on base values using VectorBT
-                sma_base = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)
-                # Vectorized MAD: use rolling mean of absolute deviations
-                mad_base = self.vectorbt_optimizer.rolling_mean((base_values - self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)).abs(), window=self.period)
-                cci = (base_values - sma_base) / (0.015 * mad_base)
-                
-                return cci
-            except Exception as e:
-                self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
-                # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
-                sma_base = base_values.rolling(window=self.period).mean()
-                # Vectorized MAD: use rolling mean of absolute deviations
-                mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-                cci = (base_values - sma_base) / (0.015 * mad_base)
-                
-                return cci
+                    return self._generate_cci_pandas_fallback(high, low, close)
+            else:
+                self.performance_stats['pandas_fallbacks'] += 1
+                return self._generate_cci_pandas_fallback(high, low, close)
+
         else:
+            # Handle other base calculation types (returns, VWAP, etc.)
+            base_values = self.base_calculator.calculate(data)
+
+            # Use VectorBT for CCI calculation on base values
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
+                try:
+                    # Calculate CCI on base values using VectorBT
+                    sma_base = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad_base = self.vectorbt_optimizer.rolling_mean(
+                        (base_values - self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)).abs(),
+                        window=self.period
+                    )
+                    cci = (base_values - sma_base) / (0.015 * mad_base)
+
+                    return cci
+                except Exception as e:
+                    self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
+
             # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
             sma_base = base_values.rolling(window=self.period).mean()
             # Vectorized MAD: use rolling mean of absolute deviations
             mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
             cci = (base_values - sma_base) / (0.015 * mad_base)
-            
+
             return cci
+
+        # Update performance statistics (this should be outside the else block)
+        self.performance_stats['total_calculations'] += 1
+        self.performance_stats['total_time'] += time.time() - start_time
+        if self.performance_stats['total_calculations'] > 0:
+            self.performance_stats['average_time_per_calculation'] = (
+                self.performance_stats['total_time'] / self.performance_stats['total_calculations']
+            )
+
+    def _generate_cci_pandas_fallback(self, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+        """Generate CCI using pandas fallback."""
+        # Calculate typical price
+        typical_price = (high + low + close) / 3
+
+        # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
+        sma_tp = typical_price.rolling(window=self.period).mean()
+        # Vectorized MAD: use rolling mean of absolute deviations
+        mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+        cci = (typical_price - sma_tp) / (0.015 * mad)
+
+        return cci
 
 # ADX (Average Directional Index)
 class ADXGenerator(VectorizedFeatureGenerator):
@@ -1905,13 +1954,22 @@ class NATRGenerator(VectorizedFeatureGenerator):
             raise ValueError(f"Unsupported operation: {operation}")
     
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
-        """Normalize feature using centralized VectorBTScaler."""
+        """Normalize feature using direct scaling to avoid circular imports."""
         try:
-            scaler = create_vectorbt_scaler(method=method)
-            return scaler.fit_transform(data)
+            if method == 'zscore':
+                return (data - data.mean()) / data.std()
+            elif method == 'minmax':
+                return (data - data.min()) / (data.max() - data.min())
+            elif method == 'robust':
+                median = data.median()
+                mad = (data - median).abs().median()
+                return (data - median) / mad
+            else:
+                logger.warning(f"Unsupported normalization method: {method}, using zscore")
+                return (data - data.mean()) / data.std()
         except Exception as e:
-            logger.warning(f"VectorBT scaling failed: {e}, using fallback")
-            return self._fallback_normalize(data, method)
+            logger.warning(f"Normalization failed: {e}, using simple zscore")
+            return (data - data.mean()) / data.std()
     
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""

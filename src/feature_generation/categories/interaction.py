@@ -16,9 +16,9 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -158,7 +158,6 @@ class OptimizedInteractionFeatureGenerator(VectorizedFeatureGenerator):
         # Fallback to basic optimization
         return data.copy()
 
-
 class InteractionFeatureGenerator(OptimizedInteractionFeatureGenerator):
     """Feature generator for interaction-based features (backward compatibility)."""
     
@@ -186,7 +185,6 @@ class InteractionFeatureGenerator(OptimizedInteractionFeatureGenerator):
         )
 
 # Momentum Divergence Generator
-    
 
 class MomentumDivergenceGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum divergence between price and volume using VectorBT optimization."""
@@ -227,7 +225,6 @@ class MomentumDivergenceGenerator(OptimizedInteractionFeatureGenerator):
         return divergence
 
 # Momentum Volume Generator
-    
 
 class MomentumVolumeGenerator(FeatureGenerator):
     """Generator for momentum-volume interaction."""
@@ -269,7 +266,6 @@ class MomentumVolumeGenerator(FeatureGenerator):
         return interaction
 
 # Momentum Volatility Generator
-    
 
 class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum-volatility interaction using VectorBT optimization."""
@@ -649,7 +645,6 @@ class MomentumVolatilityGenerator(OptimizedInteractionFeatureGenerator):
         return True
 
 # Momentum Trend Generator
-    
 
 class MomentumTrendGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for momentum-trend interaction using VectorBT optimization."""
@@ -706,7 +701,6 @@ class MomentumTrendGenerator(OptimizedInteractionFeatureGenerator):
         return interaction
 
 # Volatility Volume Generator
-    
 
 class VolatilityVolumeGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-volume interaction using VectorBT optimization."""
@@ -748,7 +742,6 @@ class VolatilityVolumeGenerator(OptimizedInteractionFeatureGenerator):
         return interaction
 
 # Volatility Price Generator
-    
 
 class VolatilityPriceGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-price interaction using VectorBT optimization."""
@@ -792,7 +785,6 @@ class VolatilityPriceGenerator(OptimizedInteractionFeatureGenerator):
         return interaction
 
 # Volatility High-Low Generator
-    
 
 class VolatilityHighLowGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-high-low range interaction using VectorBT optimization."""
@@ -833,7 +825,6 @@ class VolatilityHighLowGenerator(OptimizedInteractionFeatureGenerator):
         return interaction
 
 # Volatility Momentum Generator
-    
 
 class VolatilityMomentumGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-momentum interaction using VectorBT optimization."""
@@ -875,7 +866,6 @@ class VolatilityMomentumGenerator(OptimizedInteractionFeatureGenerator):
         return interaction
 
 # Volatility Trend Generator
-    
 
 class VolatilityTrendGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for volatility-trend interaction using VectorBT optimization."""
@@ -964,11 +954,8 @@ def create_interaction_generators() -> List[FeatureGenerator]:
     
     return generators
 
-
 # Legacy Interaction Generators
 # =============================
-
-    
 
 class CrossTimeframeInteractionGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for cross-timeframe feature interactions using VectorBT optimization."""
@@ -1024,9 +1011,6 @@ class CrossTimeframeInteractionGenerator(OptimizedInteractionFeatureGenerator):
         
         return interaction
 
-
-    
-
 class FeatureRatioGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for ratios between different features using VectorBT optimization."""
     
@@ -1063,9 +1047,6 @@ class FeatureRatioGenerator(OptimizedInteractionFeatureGenerator):
         
         ratio = numerator / (denominator + 1e-8)  # Add small epsilon to prevent division by zero
         return ratio
-
-
-    
 
 class PolynomialFeatureGenerator(FeatureGenerator):
     """Generator for polynomial transformations of features."""
@@ -1165,9 +1146,6 @@ class PolynomialFeatureGenerator(FeatureGenerator):
         
         return result
 
-
-    
-
 class CorrelationInteractionGenerator(OptimizedInteractionFeatureGenerator):
     """Generator for correlation-based feature interactions using VectorBT optimization."""
     
@@ -1205,7 +1183,6 @@ class CorrelationInteractionGenerator(OptimizedInteractionFeatureGenerator):
         )
         
         return correlation
-
 
 def create_default_interaction_generators() -> List[FeatureGenerator]:
     """Create default set of legacy interaction generators."""
@@ -1257,12 +1234,8 @@ __all__ = [
 
 warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 def _should_use_vectorbt(self, data) -> bool:

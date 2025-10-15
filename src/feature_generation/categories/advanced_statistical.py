@@ -80,8 +80,8 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -89,7 +89,7 @@ except ImportError:
     get_optimized_feature_pipeline = None
 
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     VECTORBT_ROLLING_OPTIMIZER_AVAILABLE = False
@@ -706,7 +706,7 @@ def process_advanced_statistical_features_batch(data: pd.DataFrame,
     if use_vectorbt and OPTIMIZATION_AVAILABLE:
         try:
             # Use unified optimization system for batch processing
-            from ..utils.unified_optimization_system import get_unified_optimization_system
+            from src.feature_generation.utils.unified_optimization_system import get_unified_optimization_system
             unified_optimizer = get_unified_optimization_system()
             
             # Process features in batch

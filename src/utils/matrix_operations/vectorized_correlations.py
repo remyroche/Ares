@@ -16,7 +16,6 @@ from .error_handling import safe_operation, DataValidationError
 # Suppress warnings for cleaner output
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
-
 @dataclass
 class CorrelationResult:
     """Result of vectorized correlation calculation."""
@@ -26,7 +25,6 @@ class CorrelationResult:
     r_squared: float
     n_valid: int
     computation_time: float
-
 
 class SafeNaNHandler:
     """Safe NaN handling that preserves data integrity."""
@@ -104,7 +102,6 @@ class SafeNaNHandler:
             'valid_rate': (len(feature_values) - either_nans) / len(feature_values)
         }
 
-
 @dataclass
 class AlignmentResult:
     """Result of array alignment with NaN handling."""
@@ -113,7 +110,6 @@ class AlignmentResult:
     valid_indices: np.ndarray
     n_valid: int
     n_dropped: int
-
 
 class VectorizedCorrelationCalculator:
     """High-performance vectorized correlation calculator."""
@@ -125,15 +121,12 @@ class VectorizedCorrelationCalculator:
     
     def _check_gpu_availability(self) -> bool:
         """Check if GPU acceleration is available."""
+        # GPU acceleration removed - CuPy not supported on all platforms
         try:
-            import cupy as cp
-            return True
+            import torch
+            return torch.cuda.is_available()
         except ImportError:
-            try:
-                import torch
-                return torch.cuda.is_available()
-            except ImportError:
-                return False
+            return False
     
     @safe_operation("vectorized correlation calculation", default_value=None)
     def calculate_comprehensive_correlations_vectorized(
@@ -375,7 +368,6 @@ class VectorizedCorrelationCalculator:
             ) if hasattr(self.nan_handler, 'get_nan_statistics') else {}
         }
 
-
 # Convenience functions for easy integration
 def calculate_correlations_vectorized(
     feature_values: np.ndarray, 
@@ -408,7 +400,6 @@ def calculate_correlations_vectorized(
         'r_squared': result.r_squared
     }
 
-
 def calculate_batch_correlations_vectorized(
     feature_matrix: np.ndarray, 
     target_values: np.ndarray,
@@ -439,7 +430,6 @@ def calculate_batch_correlations_vectorized(
         }
         for r in results
     ]
-
 
 def safe_correlation_with_nan_handling(
     feature_values: np.ndarray,
@@ -483,25 +473,13 @@ def safe_correlation_with_nan_handling(
         logger.error(f"Unexpected error in correlation calculation: {e}")
         return 0.0
 
-
 def safe_mutual_information_with_nan_handling(
     feature_values: np.ndarray,
     target_values: np.ndarray,
     n_bins: int = 10,
     min_samples: int = 20
 ) -> float:
-    """
-    Calculate mutual information with proper NaN handling.
-
-    Args:
-        feature_values: Feature array
-        target_values: Target array
-        n_bins: Number of bins for discretization
-        min_samples: Minimum samples required
-
-    Returns:
-        Mutual information value (0.0 if insufficient data)
-    """
+    """Calculate mutual information with proper NaN handling."""
     try:
         handler = SafeNaNHandler()
         alignment = handler.align_arrays_safely(feature_values, target_values, min_samples)

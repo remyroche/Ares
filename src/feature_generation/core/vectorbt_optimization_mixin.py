@@ -45,12 +45,8 @@ except ImportError:
     clip = None
     quantile = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class VectorBTOptimizationMixin:
@@ -94,15 +90,19 @@ class VectorBTOptimizationMixin:
             return
         
         try:
-            # Configure advanced caching
-            vbt.settings.setting('caching', True)
-            vbt.settings.setting('cache_size', self.cache_size)
-            vbt.settings.setting('cache_ttl', self.cache_ttl)
-            vbt.settings.setting('cache_compression', True)
-            vbt.settings.setting('caching_dir', 'data_cache/vectorbt_advanced_cache')
-            
+            # Configure advanced caching using newer API
+            vbt.settings['caching']['enabled'] = True
+
+            # Check if these specific settings are available in this VectorBT version
+            if hasattr(vbt.settings, 'caching') and 'cache_size' in vbt.settings['caching']:
+                vbt.settings['caching']['cache_size'] = self.cache_size
+            if hasattr(vbt.settings, 'caching') and 'cache_ttl' in vbt.settings['caching']:
+                vbt.settings['caching']['cache_ttl'] = self.cache_ttl
+            if hasattr(vbt.settings, 'caching') and 'cache_compression' in vbt.settings['caching']:
+                vbt.settings['caching']['cache_compression'] = True
+
             self.logger.info(f"✅ VectorBT advanced caching enabled: {self.cache_size}MB, TTL: {self.cache_ttl}s")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT caching configuration failed: {e}")
             self.enable_caching = False
@@ -150,7 +150,7 @@ class VectorBTOptimizationMixin:
                 result = self._execute_vectorbt_operation(data, operation, window, **kwargs)
                 self.performance_stats['vectorbt_operations'] += 1
                 
-                # Check for GPU acceleration
+                # Check for 
                 if self.enable_gpu and CUPY_AVAILABLE:
                     if hasattr(result, 'values') and hasattr(result.values, 'device'):
                         self.performance_stats['gpu_accelerations'] += 1

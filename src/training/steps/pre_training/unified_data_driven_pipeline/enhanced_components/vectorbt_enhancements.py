@@ -42,12 +42,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# GPU acceleration
+# 
 try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
+
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 try:
@@ -66,7 +65,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class VectorBTOptimizationConfig:
     """Configuration for VectorBT optimizations."""
@@ -77,9 +75,8 @@ class VectorBTOptimizationConfig:
     batch_size: int = 1000
     max_workers: int = 4
     chunk_size: int = 10000
-    use_cupy: bool = False
+    use_cupy: bool = False  # GPU support removed
     optimization_level: str = "high"  # "low", "medium", "high", "maximum"
-
 
 class EnhancedVectorBTOptimizer:
     """
@@ -1140,7 +1137,6 @@ class EnhancedVectorBTOptimizer:
             'total_execution_time': 0.0,
             'memory_usage': 0.0
         }
-
 
 def create_enhanced_vectorbt_optimizer(config: Optional[VectorBTOptimizationConfig] = None) -> EnhancedVectorBTOptimizer:
     """Create an enhanced VectorBT optimizer with default configuration."""

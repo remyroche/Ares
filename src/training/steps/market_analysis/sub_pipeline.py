@@ -15,6 +15,7 @@ This module provides the complete market analysis sub-pipeline with exactly 9 re
 """
 
 import json
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from enum import Enum
@@ -81,7 +82,6 @@ class LoggingConfig:
     log_file: Optional[str] = None
 
 DEFAULT_DATA_DIR = "historical_data"
-
 
 @dataclass
 class SubPipelineConfig:
@@ -1102,7 +1102,6 @@ class MarketAnalysisSubPipeline:
             self._current_pipeline_state.update({
                 'regime_data': results['regime_data']
             })
-            
 
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')
@@ -1750,12 +1749,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
     def get_execution_summary(self) -> Dict[str, Any]:

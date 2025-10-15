@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any
 import warnings
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
 
-# VectorBT imports for native optimization
+# VectorBT imports for native optimization - no longer using features_common.utils to avoid circular imports
 try:
     import vectorbt as vbt
     from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
@@ -42,8 +42,8 @@ except ImportError:
 
 # Import VectorBT optimization utilities
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
     VECTORBT_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     VECTORBT_OPTIMIZATION_AVAILABLE = False
@@ -51,12 +51,8 @@ except ImportError:
     get_unified_vectorization_manager = None
     VectorizationConfig = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Base class for VectorBT-optimized time features
@@ -98,9 +94,12 @@ class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
         else:
             return self._pandas_fallback_operation(data, operation, window, **kwargs)
     
-    def _direct_vectorbt_operation(self, data: pd.Series, operation: str, 
+    def _direct_vectorbt_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Direct VectorBT operation fallback."""
+        if not VECTORBT_AVAILABLE:
+            raise RuntimeError("VectorBT not available for direct operations")
+
         if operation == 'mean':
             return rolling_mean(data, window=window, **kwargs)
         elif operation == 'std':
@@ -675,7 +674,7 @@ def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenera
     
     # Use UnifiedVectorizationManager for batch processing if available
     try:
-        from ..utils.unified_vectorization_manager import get_unified_vectorization_manager
+        from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager
         manager = get_unified_vectorization_manager()
         
         # Generate features using batch processing

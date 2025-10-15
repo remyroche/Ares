@@ -43,7 +43,7 @@ except ImportError:
 
 # Import VectorBTRollingOptimizer and UnifiedVectorizationManager
 try:
-    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     VECTORBT_ROLLING_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"VectorBTRollingOptimizer not available: {e}")
@@ -52,7 +52,7 @@ except ImportError as e:
     get_vectorbt_rolling_optimizer = None
 
 try:
-    from ...feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
     UNIFIED_VECTORIZATION_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"UnifiedVectorizationManager not available: {e}")

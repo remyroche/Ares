@@ -49,19 +49,14 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class ScoringModelResult:
@@ -74,7 +69,6 @@ class ScoringModelResult:
     confidence_scores: Dict[str, float]
     model_metadata: Dict[str, Any]
 
-
 @dataclass
 class ModelPerformance:
     """Model performance metrics."""
@@ -86,7 +80,6 @@ class ModelPerformance:
     cv_std: float
     feature_importance: Dict[str, float]
     model_metadata: Dict[str, Any]
-
 
 class RobustScoringModels:
     """
@@ -588,7 +581,6 @@ class RobustScoringModels:
         except Exception as e:
             self.logger.warning(f"Model performance summary failed: {e}")
             return {}
-
 
 def create_robust_scoring_models(config: Dict[str, Any]) -> RobustScoringModels:
     """Create robust scoring models."""

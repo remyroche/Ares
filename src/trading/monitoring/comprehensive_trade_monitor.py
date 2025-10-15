@@ -1,4 +1,5 @@
 """
+import warnings
 Comprehensive Trade Monitor
 
 Advanced monitoring system for trading operations with detailed metrics,
@@ -707,12 +708,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Import trading components

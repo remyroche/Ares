@@ -1,4 +1,5 @@
 """
+import warnings
 Autoencoder Feature Generator
 
 This module provides feature generators for autoencoder-based indicators,
@@ -43,12 +44,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 from ..base_calculations import (
@@ -115,7 +112,6 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(autoencoder, index=data.index, name='autoencoder_placeholder')
 
 # Autoencoder Encoded Feature Generator
-    
 
 class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder encoded features."""
@@ -180,7 +176,6 @@ class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
         return encoded_feature
 
 # Autoencoder Reconstruction Error Generator
-    
 
 class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error features."""
@@ -240,7 +235,6 @@ class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
         return reconstruction_error
 
 # Autoencoder Reconstruction Error MA Generator
-    
 
 class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error moving average features."""
@@ -306,7 +300,6 @@ class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_ma
 
 # Autoencoder Reconstruction Error Std Generator
-    
 
 class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error standard deviation features."""
@@ -372,7 +365,6 @@ class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_std
 
 # Autoencoder Reconstruction Error Skew Generator
-    
 
 class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error skewness features."""
@@ -438,7 +430,6 @@ class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_skew
 
 # Autoencoder Reconstruction Error Kurtosis Generator
-    
 
 class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error kurtosis features."""
@@ -504,7 +495,6 @@ class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator
         return reconstruction_error_kurtosis
 
 # Autoencoder Reconstruction Error Ratio Generator
-    
 
 class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error ratio features."""
@@ -571,7 +561,6 @@ class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_ratio
 
 # Autoencoder Reconstruction Error Diff Generator
-    
 
 class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error difference features."""
@@ -637,7 +626,6 @@ class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_diff
 
 # Autoencoder Reconstruction Error Product Generator
-    
 
 class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error product features."""
@@ -704,7 +692,6 @@ class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator)
         return reconstruction_error_product
 
 # Autoencoder Reconstruction Error Squared Generator
-    
 
 class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error squared features."""
@@ -766,7 +753,6 @@ class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator)
         return reconstruction_error_squared
 
 # Autoencoder Reconstruction Error Cubed Generator
-    
 
 class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cubed features."""
@@ -828,7 +814,6 @@ class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_cubed
 
 # Autoencoder Reconstruction Error Cross Timeframe Generator
-    
 
 class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cross timeframe features."""
@@ -894,7 +879,6 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGen
         return reconstruction_error_cross_timeframe
 
 # Autoencoder Reconstruction Error Regime Generator
-    
 
 class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error regime features."""
@@ -962,7 +946,6 @@ class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
         return reconstruction_error_regime
 
 # Autoencoder Reconstruction Error Interaction Generator
-    
 
 class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error interaction features."""

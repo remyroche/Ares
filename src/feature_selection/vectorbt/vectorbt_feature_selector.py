@@ -12,9 +12,15 @@ import logging
 import hashlib
 import pickle
 import threading
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable, TYPE_CHECKING
 from dataclasses import dataclass
 from functools import lru_cache
+
+if TYPE_CHECKING:
+    try:
+        import dask.array as da  # type: ignore[import]
+    except ImportError:
+        da = None  # type: ignore[assignment]
 
 # VectorBT imports
 try:
@@ -28,6 +34,8 @@ except ImportError:
     Portfolio = None
     Records = None
 
+# CuPy support removed
+
 # Import utilities
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 from src.utils.math_validation import validate_numeric_array, validate_finite
@@ -35,7 +43,6 @@ from src.utils.math_validation import validate_numeric_array, validate_finite
 from .vectorbt_config import VectorBTFeatureSelectionConfig
 
 logger = logging.getLogger(__name__)
-
 
 class VectorBTCache:
     """Enhanced VectorBT-aware caching system."""
@@ -160,19 +167,18 @@ class VectorBTCache:
                 'ttl': self.config.cache_ttl
             }
 
-
 class VectorBTFeatureSelector:
     """
     VectorBT-optimized feature selector with significant performance improvements.
-    
+
     This class provides:
-    - 10-100x performance improvements with VectorBT vectorized operations
+    - Performance improvements with VectorBT vectorized operations
     - Memory-efficient processing for large datasets
     - Parallel processing capabilities
     - Financial data optimization
     - Unified API across all feature selection methods
     """
-    
+
     def __init__(self, config: Optional[VectorBTFeatureSelectionConfig] = None):
         """Initialize VectorBT feature selector."""
         self.config = config or VectorBTFeatureSelectionConfig()
@@ -188,9 +194,6 @@ class VectorBTFeatureSelector:
         # Initialize caching system
         self.cache = VectorBTCache(self.config)
         
-        # Initialize GPU acceleration
-        self.gpu_available = self._setup_gpu_acceleration()
-        
         # Initialize advanced parallel processing
         self.parallel_clients = self._setup_advanced_parallel_processing()
         
@@ -203,7 +206,6 @@ class VectorBTFeatureSelector:
             'speedup': 0.0,
             'memory_saved_mb': 0.0,
             'vectorbt_efficiency': 0.0,
-            'gpu_operations': 0,
             'cache_hits': 0,
             'cache_misses': 0
         }
@@ -236,13 +238,7 @@ class VectorBTFeatureSelector:
         except Exception as e:
             tprint_warning(f"⚠️ VectorBT setup warning: {e}")
     
-    def _setup_gpu_acceleration(self) -> bool:
-        """Setup GPU acceleration for VectorBT operations."""
-        try:
-            return self.config.setup_gpu_acceleration()
-        except Exception as e:
-            self.logger.warning(f"GPU acceleration setup failed: {e}")
-            return False
+    # GPU acceleration removed
     
     def _setup_advanced_parallel_processing(self) -> Dict[str, Any]:
         """Setup advanced parallel processing with Dask/Ray."""
@@ -252,38 +248,18 @@ class VectorBTFeatureSelector:
             self.logger.warning(f"Advanced parallel processing setup failed: {e}")
             return {}
     
-    def _gpu_correlation_computation(self, X: np.ndarray) -> np.ndarray:
-        """GPU-accelerated correlation computation."""
-        try:
-            if self.gpu_available and self.config.enable_gpu:
-                import cupy as cp
-                
-                # Move data to GPU
-                X_gpu = cp.asarray(X)
-                
-                # GPU-accelerated correlation
-                corr_matrix = cp.corrcoef(X_gpu.T)
-                
-                # Move result back to CPU
-                result = cp.asnumpy(corr_matrix)
-                
-                # Clean up GPU memory
-                del X_gpu, corr_matrix
-                cp.get_default_memory_pool().free_all_blocks()
-                
-                self.performance_stats['gpu_operations'] += 1
-                return result
-            else:
-                return np.corrcoef(X.T)
-        except Exception as e:
-            self.logger.warning(f"GPU correlation computation failed: {e}")
-            return np.corrcoef(X.T)
+    # GPU correlation computation removed
     
     def _dask_parallel_mutual_information(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Dask-accelerated mutual information computation."""
         try:
             if 'dask' in self.parallel_clients:
-                import dask.array as da
+                try:
+                    import dask.array as da  # type: ignore[import]
+                    DASK_AVAILABLE = True
+                except ImportError:
+                    self.logger.warning("Dask not available for parallel MI computation")
+                    return self._compute_mutual_information_standard(X, y)
                 
                 # Convert to Dask array with proper chunking for features
                 X_dask = da.from_array(X, chunks=(self.config.lazy_chunk_size, X.shape[1]))
@@ -333,8 +309,12 @@ class VectorBTFeatureSelector:
             
             # Lazy evaluation with Dask
             if self.config.enable_lazy_evaluation and 'dask' in self.parallel_clients:
-                import dask.array as da
-                X_lazy = da.from_array(X, chunks=(self.config.lazy_chunk_size, 100))
+                try:
+                    import dask.array as da  # type: ignore[import]
+                    X_lazy = da.from_array(X, chunks=(self.config.lazy_chunk_size, 100))
+                except ImportError:
+                    self.logger.warning("Dask not available for lazy evaluation")
+                    return self._fallback_memory_optimization(X, operation)
                 result = self._process_lazy_data(X_lazy, operation)
             else:
                 result = self._process_chunked_data(X, operation)
@@ -570,7 +550,7 @@ class VectorBTFeatureSelector:
             return df
     
     def vectorbt_correlation_filter(self, X: np.ndarray, threshold: float = None) -> np.ndarray:
-        """Enhanced VectorBT-optimized correlation filtering with 10-100x performance improvement."""
+        """Enhanced VectorBT-optimized correlation filtering with performance improvements."""
         threshold = threshold or self.config.correlation_threshold
         
         def _enhanced_correlation_filter():
@@ -587,11 +567,8 @@ class VectorBTFeatureSelector:
                 
                 self.performance_stats['cache_misses'] += 1
                 
-                # Use GPU acceleration if available
-                if self.gpu_available and X.shape[1] > 1000:
-                    corr_matrix = self._gpu_correlation_computation(X)
-                    self._track_vectorbt_performance("GPU Correlation", time.time(), True, X.shape)
-                elif hasattr(df, 'vbt'):
+                # Use VectorBT if available
+                if hasattr(df, 'vbt'):
                     # Use VectorBT's optimized correlation computation
                     try:
                         # Leverage VectorBT's rolling correlation for efficiency
@@ -1002,9 +979,7 @@ class VectorBTFeatureSelector:
         else:
             stats['cache_hit_rate'] = 0.0
         
-        # GPU statistics
-        stats['gpu_available'] = self.gpu_available
-        stats['gpu_operations'] = stats.get('gpu_operations', 0)
+        # GPU support removed
         
         # Parallel processing statistics
         stats['parallel_clients'] = list(self.parallel_clients.keys())

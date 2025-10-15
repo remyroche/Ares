@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import json
+import warnings
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,30 @@ from dataclasses import dataclass
 from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
     run_data_validation_step
 )
+from src.training.steps.pre_training.components.base_component import (
+    BasePreTrainingComponent, ComponentConfig, ComponentResult
+)
+from src.utils.common_operations import safe_dataframe_operation
+from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+
+# Import tprint utilities for enhanced logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_performance, tprint_step, tprint_result
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
+    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
 
 @dataclass
@@ -33,28 +58,33 @@ class DataValidationResult:
     error_message: Optional[str] = None
 
 
-class FeatureGenerationDataValidationStep:
+class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
     """Data validation step that calls the consolidated pipeline."""
-    
-    def __init__(self):
+
+    def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the data validation step."""
+        super().__init__(config or ComponentConfig())
         self.logger = logging.getLogger(__name__)
     
     async def execute(self,
-                     data: pd.DataFrame,
-                     symbol: str = "ETHUSDT",
-                     timeframe: str = "15m",
-                     direction: str = "longs",
-                     intensity: str = "blank",
-                     lookback_days: Optional[int] = None,
-                     start_date: Optional[str] = None,
-                     end_date: Optional[str] = None,
-                     exchange: str = "binance",
-                     custom_overrides: Optional[Dict[str, Any]] = None) -> DataValidationResult:
+                     training_input: Dict[str, Any],
+                     pipeline_state: Dict[str, Any]) -> ComponentResult:
         """Execute data validation step using consolidated pipeline."""
-        
+
         self.logger.info("🔍 Starting data validation step using consolidated pipeline")
-        
+
+        # Extract parameters from training_input
+        data = training_input.get('data')
+        symbol = self.config.symbol
+        timeframe = self.config.timeframe
+        direction = training_input.get('direction', 'longs')
+        intensity = training_input.get('intensity', 'blank')
+        lookback_days = training_input.get('lookback_days')
+        start_date = training_input.get('start_date')
+        end_date = training_input.get('end_date')
+        exchange = self.config.exchange
+        custom_overrides = training_input.get('custom_overrides')
+
         try:
             # Call the consolidated pipeline runner
             result = await run_data_validation_step(
@@ -69,32 +99,47 @@ class FeatureGenerationDataValidationStep:
                 exchange=exchange,
                 custom_overrides=custom_overrides
             )
-            
-            # Convert result to DataValidationResult
-            validation_result = DataValidationResult(
+
+            # Convert result to ComponentResult
+            component_result = ComponentResult(
                 success=result['success'],
-                data_quality_score=result.get('data_quality_score', 0.0),
-                validation_metadata=result.get('validation_metadata', {}),
                 artifacts=result.get('artifacts', {}),
+                metadata={
+                    'data_quality_score': result.get('data_quality_score', 0.0),
+                    'validation_metadata': result.get('validation_metadata', {}),
+                    **result.get('metadata', {})
+                },
                 error_message=result.get('error_message')
             )
-            
-            if validation_result.success:
-                self.logger.info(f"✅ Data validation completed successfully with quality score: {validation_result.data_quality_score:.3f}")
+
+            if component_result.success:
+                self.logger.info(f"✅ Data validation completed successfully with quality score: {component_result.metadata.get('data_quality_score', 0):.3f}")
             else:
-                self.logger.error(f"❌ Data validation failed: {validation_result.error_message}")
-            
-            return validation_result
-            
+                self.logger.error(f"❌ Data validation failed: {component_result.error_message}")
+
+            return component_result
+
         except Exception as e:
             self.logger.error(f"❌ Data validation step failed with exception: {e}")
-            return DataValidationResult(
+            return ComponentResult(
                 success=False,
-                data_quality_score=0.0,
-                validation_metadata={},
                 artifacts={},
+                metadata={},
                 error_message=str(e)
             )
+
+    # Required utility methods for BasePreTrainingComponent
+    def safe_dataframe_operation(self, operation_func, *args, **kwargs):
+        """Safe dataframe operation wrapper."""
+        return safe_dataframe_operation(operation_func, *args, **kwargs)
+
+    def safe_matrix_multiply(self, a, b):
+        """Safe matrix multiplication."""
+        return safe_matrix_multiply(a, b)
+
+    def optimize_dataframe_for_matrix_ops(self, df):
+        """Optimize dataframe for matrix operations."""
+        return optimize_dataframe(df)
 
 
 # Command handler for ares_launcher integration
@@ -152,3 +197,21 @@ async def handle_feature_generation_data_validation_step(
         exchange=exchange,
         custom_overrides=custom_overrides
     )
+
+
+# Register component with factory
+def _register_feature_generation_data_validation_step():
+    """Register the feature generation data validation step component with the factory."""
+    try:
+        from ...components.component_factory import ComponentFactory
+        ComponentFactory.register_component(
+            'feature_generation_data_validation_step',
+            FeatureGenerationDataValidationStep
+        )
+    except ImportError:
+        # Component factory not available, skip registration
+        pass
+
+
+# Register the component when module is imported
+_register_feature_generation_data_validation_step()

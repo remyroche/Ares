@@ -1,4 +1,5 @@
 """
+import warnings
 Tactician Lookback Optimization Step
 
 This step optimizes indicator lookback periods specifically for Tactician models
@@ -112,7 +113,6 @@ except ImportError:
 
 logger = system_logger.getChild('TacticianLookbackOptimization')
 
-
 @dataclass
 class TacticianLookbackConfig:
     """Configuration for Tactician-specific lookback optimization."""
@@ -174,7 +174,6 @@ class TacticianLookbackConfig:
     min_timing_accuracy: float = 0.6
     min_signal_quality: float = 0.5
     max_correlation_threshold: float = 0.8
-
 
 class TacticianLookbackOptimizer:
     """
@@ -909,12 +908,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             tprint_debug(f"Validation traceback: {traceback.format_exc()}")
             return False
@@ -2251,7 +2246,6 @@ except ImportError:
             tprint_warning(f"⚠️ Failed to generate convergence analysis: {e}")
             return {'error': str(e)}
 
-
 # Convenience functions for integration
 
 async def optimize_tactician_lookbacks(
@@ -2291,7 +2285,6 @@ async def optimize_tactician_lookbacks(
     except Exception as e:
         tprint_error(f"❌ Tactician lookback optimization failed: {e}")
         raise
-
 
 def create_tactician_lookback_config(
     timeframe: str = "1m",

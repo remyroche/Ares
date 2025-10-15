@@ -1,4 +1,5 @@
 """
+import warnings
 Data Contracts for End-to-End Roadmap System
 
 Defines data structures and validation for:
@@ -14,13 +15,11 @@ import pandas as pd
 import numpy as np
 from enum import Enum
 
-
 class BarType(Enum):
     """Types of bar data available."""
     OHLCV = "ohlcv"
     BOOK = "book"
     CONTEXT = "context"
-
 
 @dataclass
 class InputBar:
@@ -57,7 +56,6 @@ class InputBar:
         if self.bid is not None and self.ask is not None and self.bid >= self.ask:
             raise ValueError("Bid must be < ask")
 
-
 @dataclass
 class FeatureStore:
     """Feature store contract - wide format by timestamp."""
@@ -80,7 +78,6 @@ class FeatureStore:
         if not self.spec_hash:
             raise ValueError("spec_hash is required for reproducibility")
 
-
 @dataclass
 class TransformParams:
     """Transform parameters for reproducibility."""
@@ -94,7 +91,6 @@ class TransformParams:
         if self.transform_type not in valid_types:
             raise ValueError(f"Transform type must be one of {valid_types}")
 
-
 @dataclass
 class LookbackChoice:
     """Lookback choice for a feature family."""
@@ -104,7 +100,6 @@ class LookbackChoice:
     confidence_score: float
     spec_hash: str
 
-
 @dataclass
 class InteractionConfig:
     """Interaction configuration."""
@@ -113,7 +108,6 @@ class InteractionConfig:
     required_fields: List[str]
     regime_dependent: bool
     spec_hash: str
-
 
 @dataclass
 class ModelArtifact:
@@ -129,7 +123,6 @@ class ModelArtifact:
         valid_types = ['lightgbm', 'patch', 'gru']
         if self.model_type not in valid_types:
             raise ValueError(f"Model type must be one of {valid_types}")
-
 
 @dataclass
 class ArtifactsRegistry:
@@ -150,7 +143,6 @@ class ArtifactsRegistry:
             import hashlib
             content = str(sorted(self.__dict__.items()))
             self.spec_hash = hashlib.md5(content.encode()).hexdigest()
-
 
 class DataContractValidator:
     """Validator for data contracts."""
@@ -198,7 +190,6 @@ class DataContractValidator:
         
         return True
 
-
 def create_input_bars_from_dataframe(df: pd.DataFrame, 
                                    symbol: str,
                                    exchange: str) -> List[InputBar]:
@@ -225,7 +216,6 @@ def create_input_bars_from_dataframe(df: pd.DataFrame,
         bars.append(bar)
     
     return bars
-
 
 def create_feature_store(timestamp: pd.DatetimeIndex,
                         features: pd.DataFrame,
@@ -259,12 +249,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     
     # Generate spec_hash

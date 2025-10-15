@@ -237,16 +237,6 @@ except ImportError as e:
 
 # VectorBT optimizations
 try:
-    from .categories.advanced_volatility_features import (
-        AdvancedVolatilityFeatures,
-        VolatilityConfig,
-        create_advanced_volatility_generator
-    )
-    from .categories.advanced_volume_features import (
-        AdvancedVolumeFeatures,
-        VolumeConfig,
-        create_advanced_volume_generator
-    )
     from .core.vectorbt_batch_processor import (
         VectorBTBatchProcessor,
         BatchProcessingConfig,
@@ -256,7 +246,14 @@ try:
         create_feature_batch_processor,
         create_signal_batch_processor
     )
-    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+    # Check if VectorBT is actually available by testing the import in the module
+    from .core.vectorbt_batch_processor import VECTORBT_AVAILABLE
+    if VECTORBT_AVAILABLE:
+        VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+    else:
+        VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+        logger = logging.getLogger(__name__)
+        logger.warning("VectorBT optimizations not available - vectorbt package not properly installed")
 except ImportError as e:
     VECTORBT_OPTIMIZATIONS_AVAILABLE = False
     logger = logging.getLogger(__name__)
@@ -389,16 +386,6 @@ if UTILS_AVAILABLE:
 # VectorBT optimizations
 if VECTORBT_OPTIMIZATIONS_AVAILABLE:
     __all__.extend([
-        # Advanced volatility features
-        "AdvancedVolatilityFeatures",
-        "VolatilityConfig",
-        "create_advanced_volatility_generator",
-        
-        # Advanced volume features
-        "AdvancedVolumeFeatures",
-        "VolumeConfig",
-        "create_advanced_volume_generator",
-        
         # Batch processing
         "VectorBTBatchProcessor",
         "BatchProcessingConfig",

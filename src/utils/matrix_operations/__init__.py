@@ -247,7 +247,7 @@ except ImportError as e:
 
 # VectorBT Rolling Optimizer and Unified Vectorization Manager
 try:
-    from ...feature_generation.utils.vectorbt_rolling_optimizer import (
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer,
         get_vectorbt_rolling_optimizer,
     )
@@ -257,7 +257,7 @@ except ImportError as e:
     logger.warning(f"VectorBTRollingOptimizer not available: {e}")
 
 try:
-    from ...feature_generation.utils.unified_vectorization_manager import (
+    from src.feature_generation.utils.unified_vectorization_manager import (
         UnifiedVectorizationManager,
         get_unified_vectorization_manager,
     )

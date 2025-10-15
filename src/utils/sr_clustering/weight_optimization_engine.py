@@ -13,10 +13,13 @@ from typing import Dict, List, Any, Tuple, Optional, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
+import warnings
+import traceback
 from abc import ABC, abstractmethod
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, r2_score
 from scipy.optimize import minimize
+from scipy.stats import pearsonr
 import itertools
 
 from ..logger import system_logger
@@ -207,45 +210,21 @@ class WeightOptimizationEngine:
             
         except Exception as e:
             self.logger.error(f"❌ Weight optimization failed: {e}")
-            import traceback
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            return {}
 
-    def optimize_weights_m1_optimized(self, backtest_results: List[BacktestResult], 
+    def optimize_weights_m1_optimized(self, backtest_results: List[BacktestResult],
                                     market_data: pd.DataFrame) -> Dict[str, Any]:
         """Optimize quality score parameter weights using M1-optimized backtesting."""
         if not self.enable_m1_optimizations:
@@ -265,9 +244,9 @@ except ImportError:
                     self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
                     return self._chunked_weight_optimization(backtest_results, market_data)
                 
-                # Use GPU acceleration for optimization if available
+                # Use
                 if self.enable_gpu_acceleration and self.matrix_ops:
-                    self.logger.info("🎯 Using GPU acceleration for weight optimization")
+                    self.logger.info("🎯 Using GPU-accelerated weight optimization")
                     return self._gpu_accelerated_weight_optimization(backtest_results, market_data)
                 
                 # Standard M1-optimized processing
@@ -1275,26 +1254,45 @@ except ImportError:
                               weights: Dict[str, float]) -> float:
         """Calculate a simple score for weight evaluation."""
         try:
+            # Input validation
+            if not backtest_results:
+                return 0.0
+
+            if not weights:
+                return 0.0
+
             # Calculate weighted quality scores
             weighted_scores = []
+            actual_scores = []
+
             for result in backtest_results:
+                if not hasattr(result, 'quality_score'):
+                    continue
+
                 weighted_score = 0.0
                 total_weight = 0.0
-                
+
                 for feature, weight in weights.items():
                     value = getattr(result, feature, 0.0)
                     weighted_score += weight * value
                     total_weight += weight
-                
+
                 if total_weight > 0:
                     weighted_score = weighted_score / total_weight
-                
+                else:
+                    # If no weights were applied, use a neutral score
+                    weighted_score = 0.0
+
                 weighted_scores.append(weighted_score)
-            
+                actual_scores.append(result.quality_score)
+
+            # Ensure we have enough data points for correlation
+            if len(weighted_scores) < 2:
+                return 0.0
+
             # Calculate correlation with actual quality scores
-            actual_scores = [result.quality_score for result in backtest_results]
             correlation, _ = pearsonr(weighted_scores, actual_scores)
-            
+
             return correlation if not np.isnan(correlation) else 0.0
             
         except Exception as e:

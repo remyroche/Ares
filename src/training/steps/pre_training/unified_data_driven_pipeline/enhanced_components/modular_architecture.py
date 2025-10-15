@@ -38,7 +38,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class ValidationLevel(Enum):
     """Validation levels for input data."""
     BASIC = "basic"
@@ -46,14 +45,12 @@ class ValidationLevel(Enum):
     STRICT = "strict"
     EXHAUSTIVE = "exhaustive"
 
-
 class ErrorSeverity(Enum):
     """Error severity levels."""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
-
 
 class ErrorCategory(Enum):
     """Error categories."""
@@ -64,7 +61,6 @@ class ErrorCategory(Enum):
     CONFIGURATION = "configuration"
     EXTERNAL = "external"
 
-
 @dataclass
 class ValidationResult:
     """Result from input validation."""
@@ -73,7 +69,6 @@ class ValidationResult:
     errors: List[str]
     warnings: List[str]
     metadata: Dict[str, Any]
-
 
 @dataclass
 class ErrorInfo:
@@ -87,7 +82,6 @@ class ErrorInfo:
     stack_trace: str
     context: Dict[str, Any]
 
-
 @dataclass
 class PerformanceMetric:
     """Performance metric data."""
@@ -97,7 +91,6 @@ class PerformanceMetric:
     timestamp: float
     component: str
     metadata: Dict[str, Any]
-
 
 class InputValidator:
     """Enhanced input validation component."""
@@ -212,7 +205,6 @@ class InputValidator:
         if inf_cols:
             warnings.append(f"Columns with infinite values: {inf_cols}")
 
-
 class ErrorHandler:
     """Enhanced error handling component."""
     
@@ -261,7 +253,6 @@ class ErrorHandler:
             'recent_errors': self.error_history[-10:] if self.error_history else [],
             'critical_errors': [e for e in self.error_history if e.severity == ErrorSeverity.CRITICAL]
         }
-
 
 class PerformanceMonitor:
     """Enhanced performance monitoring component."""
@@ -343,7 +334,6 @@ class PerformanceMonitor:
         
         return summary
 
-
 class MemoryManager:
     """Enhanced memory management component."""
     
@@ -388,7 +378,6 @@ class MemoryManager:
             tprint_debug(f"Memory optimization failed: {e}")
             return {'error': str(e)}
 
-
 class HardwareAccelerator:
     """Hardware acceleration detection and management."""
     
@@ -405,15 +394,9 @@ class HardwareAccelerator:
             'cuda_available': False
         }
         
-        # Check for CUDA availability
-        try:
-            import cupy
-            hardware['cuda_available'] = True
-            hardware['gpu_available'] = True
-            tprint_debug("✅ CuPy detected - CUDA support available")
-        except ImportError as e:
-            tprint_debug(f"ℹ️ CuPy not available: {str(e)}")
-            hardware['cuda_available'] = False
+        # GPU support removed
+        hardware['cuda_available'] = False
+        hardware['gpu_available'] = False
         
         # Check for other GPU libraries
         try:
@@ -432,7 +415,6 @@ class HardwareAccelerator:
     def get_hardware_info(self) -> Dict[str, Any]:
         """Get hardware information."""
         return self.hardware_info.copy()
-
 
 class ModularArchitecture:
     """Enhanced modular architecture coordinator."""
@@ -477,13 +459,11 @@ class ModularArchitecture:
             'hardware_info': self.hardware_accelerator.get_hardware_info()
         }
 
-
 # Convenience functions
 def create_modular_architecture(component_name: str, 
                                logger: Optional[logging.Logger] = None) -> ModularArchitecture:
     """Create an enhanced modular architecture instance."""
     return ModularArchitecture(component_name, logger)
-
 
 # Export main classes and functions
 __all__ = [

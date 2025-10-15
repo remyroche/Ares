@@ -91,16 +91,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class HybridRegimeResult:
@@ -123,7 +118,6 @@ class HybridRegimeResult:
     metadata: Dict[str, Any]
     micro_regime_predictions: Optional[np.ndarray] = None
     error_message: Optional[str] = None
-
 
 class HybridNASTASRegimeDetector:
     """
@@ -1031,7 +1025,6 @@ class HybridNASTASRegimeDetector:
             labels = np.random.randint(0, self.config.n_regimes, n_samples)
             return labels, {'silhouette_score': 0.0, 'calinski_harabasz_score': 0.0}
 
-
 # Convenience functions
 def create_hybrid_regime_detector(config: Optional[HybridRegimeConfig] = None) -> HybridNASTASRegimeDetector:
     """Create a hybrid NAS-TAS regime detector."""
@@ -1042,7 +1035,6 @@ def create_hybrid_regime_detector(config: Optional[HybridRegimeConfig] = None) -
     detector = HybridNASTASRegimeDetector(config)
     tprint("✅ HybridNASTASRegimeDetector created successfully", color="green")
     return detector
-
 
 def quick_hybrid_regime_detection(market_data: Union[pd.DataFrame, np.ndarray],
                                  n_regimes: int = 8) -> HybridRegimeResult:

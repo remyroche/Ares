@@ -19,7 +19,6 @@ warnings.filterwarnings('ignore')
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class RegimeQualificationConfig:
     """Configuration for regime qualification."""
@@ -52,7 +51,6 @@ class RegimeQualificationConfig:
     min_price_movement: float = 0.02
     min_volume_ratio: float = 0.8
     min_liquidity_score: float = 0.5
-
 
 class RegimeQualifier:
     """
@@ -616,12 +614,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             _, r_value, _ = probplot(returns, dist="norm")
             tests['qq_plot'] = {

@@ -54,12 +54,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None'''
     
     def convert_file(self, file_path: Path) -> bool:
@@ -284,7 +280,6 @@ except ImportError:
         logger.info("\n🎉 VectorBT conversion complete!")
         logger.info("All remaining files now use VectorBT optimizations.")
 
-
 def main():
     """Main execution function."""
     logger.info("🚀 Starting comprehensive VectorBT conversion...")
@@ -292,7 +287,6 @@ def main():
     converter = VectorBTConverter()
     converter.convert_all_remaining_files()
     converter.generate_conversion_report()
-
 
 if __name__ == "__main__":
     main()

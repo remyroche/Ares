@@ -39,12 +39,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -54,7 +50,7 @@ class MatrixFeatureProcessor:
     Processor for matrix-optimized feature generation.
     
     This class integrates with the matrix operations framework to provide
-    optimized feature computation using vectorized operations and GPU acceleration.
+    optimized feature computation using vectorized operations and 
     """
     
     def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True):
@@ -62,7 +58,7 @@ class MatrixFeatureProcessor:
         Initialize the matrix feature processor.
         
         Args:
-            enable_gpu: Whether to enable GPU acceleration
+            enable_gpu: Whether to enable 
             enable_parallel: Whether to enable parallel processing
         """
         self.logger = logger.getChild('MatrixFeatureProcessor')
@@ -404,7 +400,7 @@ def get_matrix_processor(enable_gpu: bool = True, enable_parallel: bool = True) 
     Get the global matrix processor instance.
     
     Args:
-        enable_gpu: Whether to enable GPU acceleration
+        enable_gpu: Whether to enable 
         enable_parallel: Whether to enable parallel processing
         
     Returns:

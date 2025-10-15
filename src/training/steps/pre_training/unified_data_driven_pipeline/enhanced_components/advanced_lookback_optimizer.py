@@ -76,8 +76,8 @@ except ImportError:
 
 # Import VectorBT optimizations
 try:
-    from src.features_common.utils import (
-        VectorBTRollingOptimizer, 
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import (
+        VectorBTRollingOptimizer,
         get_vectorbt_rolling_optimizer,
         optimized_rolling_mean,
         optimized_rolling_std,

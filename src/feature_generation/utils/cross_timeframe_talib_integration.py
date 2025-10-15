@@ -1,4 +1,5 @@
 """
+import warnings
 Cross Timeframe TA-Lib Integration for Short-Term Crypto Trading
 
 This module integrates the Top 20 TA-Lib indicators with cross-timeframe analysis,
@@ -66,12 +67,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     INTEGRATION_AVAILABLE = True
 except ImportError as e:
@@ -592,7 +589,7 @@ def create_crypto_trading_integration(
     Create a pre-configured integration optimized for crypto trading.
 
     Args:
-        enable_gpu: Enable GPU acceleration if available
+        enable_gpu: Enable 
         enable_parallel: Enable parallel processing
         max_leverage: Maximum leverage multiplier
 

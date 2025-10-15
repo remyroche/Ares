@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 import pandas as pd
 import numpy as np
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
@@ -315,12 +314,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
                 # Get symbol and timeframe from config or use defaults

@@ -10,7 +10,7 @@ VECTORBT OPTIMIZATIONS:
 - Enhanced entropy calculation with multiple methods (variance, quantile, IQR)
 - Automatic fallback to pandas/numpy when VectorBT unavailable
 - Memory-efficient chunked processing for large datasets
-- GPU acceleration support (when available)
+- 
 - Parallel processing for multi-core systems
 
 PERFORMANCE IMPROVEMENTS:
@@ -23,14 +23,15 @@ PERFORMANCE IMPROVEMENTS:
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -67,7 +68,7 @@ except ImportError:
 
 # Import VectorBT optimization utilities
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, OperationType, OperationConfig
     VECTORBT_OPTIMIZATION_AVAILABLE = True
 except ImportError:
@@ -78,12 +79,8 @@ except ImportError:
     OperationType = None
     OperationConfig = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # OPTIMIZED: Enhanced vectorized entropy calculation function using VectorBT
@@ -146,8 +143,8 @@ def calculate_vectorized_entropy(series: pd.Series, window: int, use_vectorbt: b
 class BaseEntropyGenerator(VectorizedFeatureGenerator):
     """Base class for entropy generators with VectorBT optimization."""
     
-    def __init__(self, config: FeatureConfig):
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+    def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True, enable_vectorization_optimization: bool = True):
+        super().__init__(config, enable_matrix_ops=enable_matrix_ops, enable_vectorization_optimization=enable_vectorization_optimization)
         self._initialize_vectorbt_optimization()
     
     def _initialize_vectorbt_optimization(self):
@@ -170,7 +167,6 @@ class BaseEntropyGenerator(VectorizedFeatureGenerator):
             self.vectorbt_optimizer = None
             self.unified_manager = None
             self.use_vectorbt = False
-    
 
 class EntropyFeatureGenerator(BaseEntropyGenerator):
     """Feature generator for entropy-based features with VectorBT optimization."""
@@ -178,7 +174,7 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -317,7 +313,7 @@ class PriceEntropyGenerator(BaseEntropyGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -354,7 +350,7 @@ class VolumeEntropyGenerator(BaseEntropyGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
@@ -636,7 +632,6 @@ class MomentumEntropyGenerator(BaseEntropyGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(momentum, self.window)
 
-    
 class RSIEntropyGenerator(BaseEntropyGenerator):
     """Generator for RSI entropy features."""
     
@@ -670,7 +665,6 @@ class RSIEntropyGenerator(BaseEntropyGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(rsi, self.window)
 
-    
 class MACDEntropyGenerator(BaseEntropyGenerator):
     """Generator for MACD entropy features."""
     
@@ -703,7 +697,6 @@ class MACDEntropyGenerator(BaseEntropyGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(macd, self.window)
 
-    
 class BollingerBandsEntropyGenerator(BaseEntropyGenerator):
     """Generator for Bollinger Bands position entropy features."""
     
@@ -738,7 +731,6 @@ class BollingerBandsEntropyGenerator(BaseEntropyGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(bb_position, self.window)
 
-    
 class CrossAssetEntropyGenerator(BaseEntropyGenerator):
     """Generator for cross-asset correlation entropy features."""
     
@@ -770,7 +762,6 @@ class CrossAssetEntropyGenerator(BaseEntropyGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(correlation, self.window)
 
-    
 class RegimeEntropyGenerator(BaseEntropyGenerator):
     """Generator for regime transition entropy features."""
     

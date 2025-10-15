@@ -1,4 +1,5 @@
 """
+import warnings
 Tactician Entry Labeler - Differentiated Entry Timing Labels for Tactician Models
 
 This module provides entry timing label generation for Tactician models,
@@ -1155,4 +1156,22 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                 }
             )
             return result
+
+
+# Register component with factory
+def _register_tactician_entry_labeler():
+    """Register the tactician entry labeler component with the factory."""
+    try:
+        from ..components.component_factory import ComponentFactory
+        ComponentFactory.register_component(
+            'tactician_entry_labeler',
+            TacticianEntryLabelerComponent
+        )
+    except ImportError:
+        # Component factory not available, skip registration
+        pass
+
+
+# Register the component when module is imported
+_register_tactician_entry_labeler()
 

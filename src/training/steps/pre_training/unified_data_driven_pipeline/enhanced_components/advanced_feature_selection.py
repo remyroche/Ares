@@ -38,28 +38,7 @@ except ImportError:
     rolling_cov = None
     warnings.warn("VectorBT not available for advanced feature selection")
 
-        # Import feature selection utilities
-        try:
-            from src.feature_selection import (
-                VectorBTMRMRSelector, VectorBTRegularizationSelector, VectorBTRFESelector,
-                MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator,
-                FeatureImportanceRanker, CorrelationBasedFilter
-            )
-            from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
-            FEATURE_SELECTION_AVAILABLE = True
-        except ImportError:
-            FEATURE_SELECTION_AVAILABLE = False
-            tprint_warning("⚠️ Advanced feature selection utilities not available")
-        
-        # Import LGBM and SHAP
-        try:
-            import lightgbm as lgb
-            import shap
-            LGBM_SHAP_AVAILABLE = True
-        except ImportError:
-            LGBM_SHAP_AVAILABLE = False
-            tprint_warning("⚠️ LightGBM/SHAP not available. Install with: pip install lightgbm shap")
-
+# Import tprint utilities first
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
@@ -73,6 +52,27 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
+# Import feature selection utilities
+try:
+    from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
+    from src.feature_selection.core import get_feature_selection_framework
+    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
+    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+    from src.training.utils.feature_selection.selection_methods import MRMRSelector, RecursiveFeatureEliminator, FeatureImportanceRanker
+    FEATURE_SELECTION_AVAILABLE = True
+except ImportError:
+    FEATURE_SELECTION_AVAILABLE = False
+    tprint_warning("⚠️ Advanced feature selection utilities not available")
+        
+# Import LGBM and SHAP
+try:
+    import lightgbm as lgb
+    import shap
+    LGBM_SHAP_AVAILABLE = True
+except ImportError:
+    LGBM_SHAP_AVAILABLE = False
+    tprint_warning("⚠️ LightGBM/SHAP not available. Install with: pip install lightgbm shap")
 
 logger = logging.getLogger(__name__)
 

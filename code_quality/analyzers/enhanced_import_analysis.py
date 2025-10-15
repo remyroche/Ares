@@ -1,4 +1,9 @@
-from src.utils.tprint import tprint
+# Simple tprint replacement for standalone usage
+def tprint(*args, **kwargs):
+    """Simple print function with timestamp for standalone usage."""
+    import datetime
+    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+    print(f"[{timestamp}]", *args, **kwargs)
 
 from typing import Dict, List, Any, Optional
 #!/usr/bin/env python3

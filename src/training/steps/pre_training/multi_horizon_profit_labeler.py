@@ -2942,3 +2942,21 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 error_message=str(e),
                 metadata={'component_type': 'multi_horizon_profit_labeler'}
             )
+
+
+# Register component with factory
+def _register_multi_horizon_profit_labeler():
+    """Register the multi-horizon profit labeler component with the factory."""
+    try:
+        from ..components.component_factory import ComponentFactory
+        ComponentFactory.register_component(
+            'multi_horizon_profit_labeler',
+            MultiHorizonProfitLabelerComponent
+        )
+    except ImportError:
+        # Component factory not available, skip registration
+        pass
+
+
+# Register the component when module is imported
+_register_multi_horizon_profit_labeler()

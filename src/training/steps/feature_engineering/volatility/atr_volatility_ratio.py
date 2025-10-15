@@ -1,4 +1,5 @@
 """
+import warnings
 ATR Volatility Ratio Feature Engineering
 
 This module implements the ATR Volatility Ratio feature for normalizing volatility
@@ -11,8 +12,16 @@ Skip when r_t > 1.5-2.0 (too jumpy) - no "too quiet" filter
 
 import numpy as np
 import pandas as pd
+import warnings
+import time
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
+
+# Import logger
+from src.utils.logger import system_logger
+
+# Set up logger for this module
+logger = system_logger.getChild('ATRVolatilityRatio')
 
 # Import existing utilities
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error
@@ -46,16 +55,27 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
     cp = None
-
 
 @dataclass
 class ATRVolatilityRatioConfig:
@@ -76,7 +96,6 @@ class ATRVolatilityRatioConfig:
     include_atr_ratio: bool = True  # Include ATR ratio
     include_atr_grade: bool = True  # Include normalized grade (0.0-1.0)
     include_atr_class: bool = True  # Include ATR classification
-
 
 class ATRVolatilityRatioFeature:
     """
@@ -220,7 +239,6 @@ class ATRVolatilityRatioFeature:
             }
         }
 
-
 class ATRVolatilityRatioGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible ATR Volatility Ratio feature generator.
@@ -361,24 +379,6 @@ class ATRVolatilityRatioGenerator(VectorizedFeatureGenerator):
         return self.feature_engine.calculate_features(data)
 
 
-# Convenience function for external usage
-def calculate_atr_volatility_ratio_features(
-    data: pd.DataFrame,
-    config: Optional[ATRVolatilityRatioConfig] = None
-) -> Dict[str, pd.Series]:
-    """
-    Calculate ATR Volatility Ratio features.
-    
-    Args:
-        data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
-        config: Optional configuration
-        
-    Returns:
-        Dictionary of feature Series
-    """
-    feature_engine = ATRVolatilityRatioFeature(config)
-    return feature_engine.calculate_features(data)
-
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
@@ -439,3 +439,22 @@ def calculate_atr_volatility_ratio_features(
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+
+# Convenience function for external usage
+def calculate_atr_volatility_ratio_features(
+    data: pd.DataFrame,
+    config: Optional[ATRVolatilityRatioConfig] = None
+) -> Dict[str, pd.Series]:
+    """
+    Calculate ATR Volatility Ratio features.
+
+    Args:
+        data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
+        config: Optional configuration
+
+    Returns:
+        Dictionary of feature Series
+    """
+    feature_engine = ATRVolatilityRatioFeature(config)
+    return feature_engine.calculate_features(data)

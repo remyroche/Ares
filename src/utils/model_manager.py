@@ -1,6 +1,6 @@
 from ..core.decorators import handles_errors
-"""
 from .logger import system_logger
+"""
 Model manager for loading, serving, and hot-swapping trading models.
 
 This module manages the loading, serving, and hot-swapping of trading models, parameters,
@@ -42,7 +42,8 @@ _NP_ORIGINAL_BITGEN_CTOR = None  # type: ignore[var-annotated]
 
 # type: ignore[override]
 def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: Any, **kwargs: Any) -> Any:
-    """Normalized ctor to keep picklable; avoids closures."
+    """
+    Normalized ctor to keep picklable; avoids closures.
 
     Attempts to resolve the bit generator by name/class and call the original constructor
     with a possibly adjusted signature for cross-version compatibility.
@@ -56,7 +57,8 @@ def _normalized_numpy_bitgen_ctor(bit_generator_name: Any, state: Any, *args: An
             name_candidate = name_candidate.split(".")[-1].split("'>")[0]
     except Exception as e:
         # Log the exception for debugging but don't fail the operation
-        logger.warning(f"Failed to parse name_candidate: {e}")
+        import logging
+        logging.getLogger(__name__).warning(f"Failed to parse name_candidate: {e}")
 
     effective_state = kwargs.get("state", state)
     try:

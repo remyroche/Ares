@@ -6,7 +6,7 @@ manual NumPy-based statistical computations across feature generators.
 
 Key Features:
 - VectorBT-optimized statistical functions
-- GPU acceleration support
+- 
 - Batch processing capabilities
 - Memory-efficient operations
 - Consistent error handling
@@ -48,13 +48,13 @@ except ImportError:
     clip = None
     quantile = None
 
-# GPU acceleration
+# Import optimization modules
 try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
+    from .unified_vectorization_manager import UnifiedVectorizationManager, VECTORBT_AVAILABLE
+    UNIFIED_MANAGER_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+    UNIFIED_MANAGER_AVAILABLE = False
+    VECTORBT_AVAILABLE = False
 
 # Scipy for advanced statistics
 try:
@@ -92,7 +92,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class StatisticalOperationType(Enum):
     """Types of statistical operations supported."""
     # Basic statistics
@@ -126,7 +125,6 @@ class StatisticalOperationType(Enum):
     # Custom operations
     CUSTOM = "custom"
 
-
 @dataclass
 class StatisticalOperationConfig:
     """Configuration for statistical operations."""
@@ -148,17 +146,21 @@ class StatisticalOperationConfig:
     lower: Optional[float] = None
     upper: Optional[float] = None
 
-
 @dataclass
 class BatchStatisticalConfig:
     """Configuration for batch statistical operations."""
-    operations: List[StatisticalOperationConfig]
+    operations: List[StatisticalOperationConfig] = None
     enable_gpu: bool = True
     enable_parallel: bool = True
     memory_optimization: bool = True
     chunk_size: int = 1000
     performance_threshold: int = 1000
 
+    def __init__(self, operations: Optional[List[StatisticalOperationConfig]] = None, **kwargs):
+        """Initialize BatchStatisticalConfig with operations."""
+        self.operations = operations
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 class StatisticalCalculationsOptimizer:
     """
@@ -204,13 +206,13 @@ class StatisticalCalculationsOptimizer:
             self.logger.warning("Unified Vectorization Manager not available")
         
         # Check GPU availability
-        self.gpu_available = CUPY_AVAILABLE and self.config.enable_gpu
+        self.gpu_available =  self.config.enable_gpu
         if self.gpu_available:
             try:
                 # Test GPU memory
-                test_array = cp.array([1, 2, 3])
+                test_array = np.array([1, 2, 3])
                 del test_array
-                self.logger.info("GPU acceleration enabled for statistical calculations")
+                self.logger.info("GPU memory test successful")
             except Exception as e:
                 self.gpu_available = False
                 self.logger.warning(f"GPU not available: {e}")
@@ -221,7 +223,7 @@ class StatisticalCalculationsOptimizer:
                 data_size >= self.config.performance_threshold)
     
     def should_use_gpu(self, data_size: int) -> bool:
-        """Determine if GPU acceleration should be used."""
+        """Determine if GPU optimization should be used."""
         return (self.gpu_available and 
                 data_size >= self.config.performance_threshold * 2)
     
@@ -527,7 +529,6 @@ class StatisticalCalculationsOptimizer:
             'memory_savings_mb': 0.0
         }
 
-
 # Convenience functions
 def create_statistical_optimizer(enable_gpu: bool = True, 
                                enable_parallel: bool = True,
@@ -540,7 +541,6 @@ def create_statistical_optimizer(enable_gpu: bool = True,
     )
     return StatisticalCalculationsOptimizer(config)
 
-
 def batch_statistical_operations(data: Union[pd.Series, pd.DataFrame],
                                operations: List[str],
                                windows: Optional[List[int]] = None,
@@ -552,7 +552,7 @@ def batch_statistical_operations(data: Union[pd.Series, pd.DataFrame],
         data: Input data
         operations: List of operation names ('mean', 'std', 'skew', etc.)
         windows: List of window sizes (None for non-rolling operations)
-        enable_gpu: Whether to enable GPU acceleration
+        enable_gpu: Whether to enable 
         
     Returns:
         Dictionary of results
@@ -576,7 +576,6 @@ def batch_statistical_operations(data: Union[pd.Series, pd.DataFrame],
             configs.append(config)
     
     return optimizer.batch_statistical_operations(data, configs)
-
 
 # Global instance for easy access
 _global_statistical_optimizer = None

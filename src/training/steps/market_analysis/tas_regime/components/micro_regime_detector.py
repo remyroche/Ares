@@ -1,4 +1,5 @@
 """
+import warnings
 Micro-Regime Detector for Advanced TAS
 
 This module provides sophisticated micro-regime detection capabilities for:
@@ -52,16 +53,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class MicroRegimeDetectionResult:
@@ -74,7 +70,6 @@ class MicroRegimeDetectionResult:
     signal_strength: float = 0.0
     duration_minutes: float = 0.0
     transition_probability: float = 0.0
-
 
 class MicroRegimeDetector:
     """Advanced micro-regime detector for short-term trading."""

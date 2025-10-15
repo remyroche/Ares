@@ -17,6 +17,7 @@ Each engine implements:
 
 import numpy as np
 import pandas as pd
+import warnings
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -81,22 +82,15 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class ProcessType(Enum):
     """Types of processes that can be optimized."""
-    FEATURE_LOOKBACK_OPTIMIZATION = "feature_lookback_optimization"
     INTERACTIVE_FEATURE_GENERATION = "interactive_feature_generation"
     MULTI_HORIZON_PROFIT_LABELER = "multi_horizon_profit_labeler"
     FINAL_FEATURE_SELECTION = "final_feature_selection"
-
 
 class BaseOptimizedProcessEngine:
     """Base class for all optimized process engines."""
@@ -182,7 +176,6 @@ class BaseOptimizedProcessEngine:
         self._cache_hits = 0
         self._cache_misses = 0
 
-
 class OptimizedFeatureLookbackEngine(BaseOptimizedProcessEngine):
     """Optimized engine for feature lookback optimization."""
     
@@ -244,7 +237,7 @@ class OptimizedFeatureLookbackEngine(BaseOptimizedProcessEngine):
             # Use hardware-optimized workload processing
             if self.hardware_manager:
                 workload_config = {
-                    'workload_type': 'feature_lookback_optimization',
+                    'workload_type': 'interactive_feature_generation',
                     'data_size': len(features_df),
                     'complexity': 'medium',
                     'memory_intensive': False
@@ -372,7 +365,6 @@ class OptimizedFeatureLookbackEngine(BaseOptimizedProcessEngine):
         except Exception as e:
             tprint(f"⚠️ Result aggregation failed: {e}")
             return {'optimized_features': {}, 'optimization_metrics': {}}
-
 
 class OptimizedInteractiveFeatureEngine(BaseOptimizedProcessEngine):
     """Optimized engine for interactive feature generation."""
@@ -682,7 +674,6 @@ class OptimizedInteractiveFeatureEngine(BaseOptimizedProcessEngine):
             tprint(f"⚠️ Interactive result aggregation failed: {e}")
             return {'generated_features': pd.DataFrame(), 'feature_metadata': {}}
 
-
 class OptimizedMultiHorizonEngine(BaseOptimizedProcessEngine):
     """Optimized engine for multi-horizon profit labeling."""
     
@@ -875,7 +866,6 @@ class OptimizedMultiHorizonEngine(BaseOptimizedProcessEngine):
             tprint(f"⚠️ Labeling result aggregation failed: {e}")
             return {'labels': pd.DataFrame(), 'labeling_metadata': {}}
 
-
 class OptimizedFeatureSelectionEngine(BaseOptimizedProcessEngine):
     """Optimized engine for final feature selection."""
     
@@ -1058,7 +1048,6 @@ class OptimizedFeatureSelectionEngine(BaseOptimizedProcessEngine):
             tprint(f"⚠️ Selection result aggregation failed: {e}")
             return {'selection_results': {}, 'final_features': []}
 
-
 # Factory function to create optimized engines
 def create_optimized_engine(process_type: ProcessType, **kwargs) -> BaseOptimizedProcessEngine:
     """Factory function to create optimized engines."""
@@ -1074,7 +1063,6 @@ def create_optimized_engine(process_type: ProcessType, **kwargs) -> BaseOptimize
         raise ValueError(f"Unknown process type: {process_type}")
     
     return engine_class(**kwargs)
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

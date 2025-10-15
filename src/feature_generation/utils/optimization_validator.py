@@ -1,4 +1,5 @@
 """
+import warnings
 Optimization Validation Framework
 
 This module provides comprehensive validation for feature lookback optimization results,
@@ -38,12 +39,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)

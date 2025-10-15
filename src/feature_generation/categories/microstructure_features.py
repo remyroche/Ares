@@ -28,10 +28,10 @@ from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    from ..utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -41,7 +41,7 @@ except ImportError:
     VectorBTRollingOptimizer = None
 
 from ..base_calculations import BaseCalculationType, create_base_calculator
-from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
+from src.feature_generation.utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
 # VectorBT imports for native optimization
 try:
@@ -76,12 +76,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Import scipy for advanced statistical functions
@@ -100,7 +96,6 @@ except ImportError:
         print(*args, **kwargs)
 
 logger = logging.getLogger(__name__)
-
 
 # ============================================================================
 # CORE MICROSTRUCTURE FEATURES
@@ -383,7 +378,6 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         
         return features
 
-
 class BidAskSpreadGenerator(VectorizedFeatureGenerator):
     """Generator for bid-ask spread features."""
     
@@ -426,7 +420,6 @@ class BidAskSpreadGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Bid-ask spread calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for order flow imbalance features."""
     
@@ -466,7 +459,6 @@ class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Order flow imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class TradeSizeImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for trade size imbalance features."""
     
@@ -504,7 +496,6 @@ class TradeSizeImbalanceGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Trade size imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class PriceImpactGenerator(VectorizedFeatureGenerator):
     """Generator for price impact features."""
@@ -544,7 +535,6 @@ class PriceImpactGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Price impact calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VolumeWeightedPriceGenerator(VectorizedFeatureGenerator):
     """Generator for volume-weighted price features."""
     
@@ -581,7 +571,6 @@ class VolumeWeightedPriceGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Volume-weighted price calculation failed: {e}")
             return pd.Series(np.ones(len(data)), index=data.index)
-
 
 class TradeIntensityGenerator(VectorizedFeatureGenerator):
     """Generator for trade intensity features."""
@@ -620,7 +609,6 @@ class TradeIntensityGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Trade intensity calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class LiquidityProxyGenerator(VectorizedFeatureGenerator):
     """Generator for liquidity proxy features."""
@@ -663,7 +651,6 @@ class LiquidityProxyGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Liquidity proxy calculation failed: {e}")
             return pd.Series(np.ones(len(data)) * 0.5, index=data.index)
 
-
 class MarketDepthGenerator(VectorizedFeatureGenerator):
     """Generator for market depth features."""
     
@@ -701,7 +688,6 @@ class MarketDepthGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Market depth calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 # ============================================================================
 # VECTORBT-OPTIMIZED ORDER FLOW FEATURES
@@ -766,7 +752,6 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Taker buy ratio calculation failed: {e}")
             return pd.Series(np.ones(len(data)) * 0.5, index=data.index)
 
-
 class VectorBTTakerSellRatioGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized taker sell ratio generator."""
     
@@ -826,7 +811,6 @@ class VectorBTTakerSellRatioGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Taker sell ratio calculation failed: {e}")
             return pd.Series(np.ones(len(data)) * 0.5, index=data.index)
 
-
 class VectorBTMarketAggressionIndexGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized market aggression index generator."""
     
@@ -879,7 +863,6 @@ class VectorBTMarketAggressionIndexGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Market aggression index calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTOrderFlowImbalanceGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow imbalance generator."""
     
@@ -930,7 +913,6 @@ class VectorBTOrderFlowImbalanceGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Order flow imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized bid-ask imbalance generator."""
@@ -986,7 +968,6 @@ class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Bid-ask imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTMarketOrderFlowGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized market order flow generator."""
     
@@ -1038,7 +1019,6 @@ class VectorBTMarketOrderFlowGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Market order flow calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTVolumeWeightedOrderFlowGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volume-weighted order flow generator."""
     
@@ -1089,7 +1069,6 @@ class VectorBTVolumeWeightedOrderFlowGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Volume-weighted order flow calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class VectorBTOrderFlowMomentumGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow momentum generator."""
@@ -1144,7 +1123,6 @@ class VectorBTOrderFlowMomentumGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow momentum calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTOrderFlowVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow volatility generator."""
     
@@ -1198,7 +1176,6 @@ class VectorBTOrderFlowVolatilityGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow volatility calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTOrderFlowTrendStrengthGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow trend strength generator."""
     
@@ -1251,7 +1228,6 @@ class VectorBTOrderFlowTrendStrengthGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Order flow trend strength calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class VectorBTOrderFlowConsistencyGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow consistency generator."""
@@ -1308,7 +1284,6 @@ class VectorBTOrderFlowConsistencyGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow consistency calculation failed: {e}")
             return pd.Series(np.ones(len(data)) * 0.5, index=data.index)
 
-
 class VectorBTOrderFlowAccelerationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow acceleration generator."""
     
@@ -1363,7 +1338,6 @@ class VectorBTOrderFlowAccelerationGenerator(VectorBTFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Order flow acceleration calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class VectorBTOrderFlowJerkGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow jerk generator."""
@@ -1422,7 +1396,6 @@ class VectorBTOrderFlowJerkGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow jerk calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class VectorBTOrderFlowRegimeGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized order flow regime generator."""
     
@@ -1478,7 +1451,6 @@ class VectorBTOrderFlowRegimeGenerator(VectorBTFeatureGenerator):
             tprint(f"⚠️ Order flow regime calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 # ============================================================================
 # ANALYST FEATURES
 # ============================================================================
@@ -1525,7 +1497,6 @@ class AnalystSpreadNormalizedGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Analyst spread normalized calculation failed: {e}")
             return pd.Series(np.ones(len(data)), index=data.index)
 
-
 class AnalystTickImbalanceGenerator(VectorizedFeatureGenerator):
     """Generator for analyst tick imbalance feature."""
     
@@ -1566,7 +1537,6 @@ class AnalystTickImbalanceGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Analyst tick imbalance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class CorwinSchultzSpreadMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for Corwin-Schultz spread momentum feature."""
     
@@ -1606,7 +1576,6 @@ class CorwinSchultzSpreadMomentumGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Corwin-Schultz spread momentum calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class AmihudIlliquidityVWAPDistanceGenerator(VectorizedFeatureGenerator):
     """Generator for Amihud illiquidity VWAP distance feature."""
@@ -1658,7 +1627,6 @@ class AmihudIlliquidityVWAPDistanceGenerator(VectorizedFeatureGenerator):
             tprint(f"⚠️ Amihud illiquidity VWAP distance calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 class RollLambdaRVShortGenerator(VectorizedFeatureGenerator):
     """Generator for Roll lambda RV short feature."""
     
@@ -1698,7 +1666,6 @@ class RollLambdaRVShortGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Roll lambda RV short calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 class RangeVolumeShockOpen30Generator(VectorizedFeatureGenerator):
     """Generator for range volume shock open 30 feature."""
@@ -1743,7 +1710,6 @@ class RangeVolumeShockOpen30Generator(VectorizedFeatureGenerator):
         except Exception as e:
             tprint(f"⚠️ Range volume shock open 30 calculation failed: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
-
 
 # ============================================================================
 # FACTORY FUNCTIONS
@@ -1791,7 +1757,6 @@ def create_microstructure_feature_generators() -> List[FeatureGenerator]:
     
     return generators
 
-
 def create_core_microstructure_generators() -> List[FeatureGenerator]:
     """Create core microstructure feature generators."""
     generators = []
@@ -1807,7 +1772,6 @@ def create_core_microstructure_generators() -> List[FeatureGenerator]:
     generators.append(MarketDepthGenerator())
     
     return generators
-
 
 def create_vectorbt_microstructure_generators() -> List[FeatureGenerator]:
     """Create VectorBT-optimized microstructure feature generators."""
@@ -1831,7 +1795,6 @@ def create_vectorbt_microstructure_generators() -> List[FeatureGenerator]:
     
     return generators
 
-
 def create_analyst_microstructure_generators() -> List[FeatureGenerator]:
     """Create analyst microstructure feature generators."""
     generators = []
@@ -1844,7 +1807,6 @@ def create_analyst_microstructure_generators() -> List[FeatureGenerator]:
     generators.append(RangeVolumeShockOpen30Generator())
     
     return generators
-
 
 def process_microstructure_features_batch(data: pd.DataFrame, 
                                         generators: Optional[List[FeatureGenerator]] = None,
@@ -1868,7 +1830,7 @@ def process_microstructure_features_batch(data: pd.DataFrame,
     if use_vectorbt and OPTIMIZATION_AVAILABLE:
         try:
             # Use unified optimization system for batch processing
-            from ..utils.unified_optimization_system import get_unified_optimization_system
+            from src.feature_generation.utils.unified_optimization_system import get_unified_optimization_system
             unified_optimizer = get_unified_optimization_system()
             
             # Process features in batch
@@ -1880,7 +1842,6 @@ def process_microstructure_features_batch(data: pd.DataFrame,
             return _process_microstructure_features_sequential(data, generators, **kwargs)
     else:
         return _process_microstructure_features_sequential(data, generators, **kwargs)
-
 
 def _process_microstructure_features_sequential(data: pd.DataFrame, 
                                               generators: List[FeatureGenerator],
@@ -1901,7 +1862,6 @@ def _process_microstructure_features_sequential(data: pd.DataFrame,
         return pd.concat(results, axis=1)
     else:
         return pd.DataFrame(index=data.index)
-
 
 __all__ = [
     # Core Microstructure Features

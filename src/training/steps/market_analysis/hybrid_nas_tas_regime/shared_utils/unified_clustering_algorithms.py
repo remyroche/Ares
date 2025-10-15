@@ -22,7 +22,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import tprint utilities
-from src.utils.tprint import (
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 
 # VectorBT imports for native optimization
 try:
@@ -50,19 +50,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
-)
 
 logger = logging.getLogger(__name__)
-
 
 class ClusteringAlgorithmType(Enum):
     """Types of clustering algorithms available."""
@@ -76,7 +68,6 @@ class ClusteringAlgorithmType(Enum):
     ENSEMBLE_CLUSTERING = "ensemble_clustering"
     ADAPTIVE_CLUSTERING = "adaptive_clustering"
 
-
 @dataclass
 class ClusteringResult:
     """Result from clustering operation."""
@@ -88,7 +79,6 @@ class ClusteringResult:
     execution_time: float
     success: bool
     error_message: Optional[str] = None
-
 
 class UnifiedClusteringAlgorithm:
     """Unified clustering algorithm that combines multiple approaches."""
@@ -762,7 +752,6 @@ class UnifiedClusteringAlgorithm:
         except Exception as e:
             self.logger.warning(f"Quality score calculation failed: {e}")
             return 0.0
-
 
 def create_unified_clustering_algorithm(config: Dict[str, Any]) -> UnifiedClusteringAlgorithm:
     """Create a unified clustering algorithm instance.

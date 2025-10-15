@@ -9,7 +9,7 @@ Implements 15 locked interactions with theory-first approach:
 
 VectorBT Optimizations:
 - Vectorized interaction calculations
-- GPU acceleration for large datasets
+- 
 - Parallel processing for multiple interactions
 - Memory-efficient operations
 """
@@ -34,14 +34,8 @@ except ImportError:
     rolling_apply_parallel = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
 
 class InteractionType(Enum):
     """Types of interactions."""
@@ -49,7 +43,6 @@ class InteractionType(Enum):
     MICRO = "micro"
     VOL = "vol"
     MODEL = "model"
-
 
 @dataclass
 class InteractionConfig:
@@ -61,11 +54,9 @@ class InteractionConfig:
     interaction_type: InteractionType
     description: str
 
-
 def _matching_columns(data: pd.DataFrame, prefix: str) -> List[str]:
     """Return columns whose name matches a given prefix ignoring transform suffix."""
     return [col for col in data.columns if col == prefix or col.startswith(f"{prefix}/")]
-
 
 class RegimeFlags:
     """Regime flags derived from transformed parents."""
@@ -117,7 +108,6 @@ class RegimeFlags:
         spread_values = data[spread_cols].mean(axis=1)
         return (spread_values > self.quantiles['wide_spread_q70']).astype(int)
 
-
 class InteractionEngine:
     """Engine for creating interactions from transformed features with VectorBT optimization."""
     
@@ -126,7 +116,7 @@ class InteractionEngine:
         self.regime_flags = RegimeFlags()
         self.interaction_cache = {}
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.use_gpu = use_gpu and CUPY_AVAILABLE
+        self.use_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
     
     def build_interactions(self,
@@ -178,7 +168,7 @@ class InteractionEngine:
         self.regime_flags.calculate_quantiles(transformed_data)
 
         # Use VectorBT's parallel processing capabilities
-        if self.use_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             return self._build_interactions_gpu_parallel(transformed_data, patch_df)
         else:
             return self._build_interactions_cpu_parallel(transformed_data, patch_df)
@@ -209,13 +199,13 @@ class InteractionEngine:
     def _build_interactions_gpu_parallel(self,
                                        transformed_data: pd.DataFrame,
                                        patch_df: pd.DataFrame) -> pd.DataFrame:
-        """GPU-accelerated parallel implementation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated parallel implementation using VectorBT."""
+        if True:
             return self._build_interactions_cpu_parallel(transformed_data, patch_df)
         
         interactions = {}
 
-        # Process interactions with GPU acceleration
+        # Process interactions with 
         for interaction_id, config in self.config.items():
             try:
                 interaction = self._create_interaction_gpu(
@@ -363,8 +353,8 @@ class InteractionEngine:
                               config: InteractionConfig,
                               data: pd.DataFrame,
                               patch_features: Optional[pd.DataFrame] = None) -> Optional[pd.Series]:
-        """GPU-accelerated interaction creation using CuPy."""
-        if not CUPY_AVAILABLE:
+        """GPU-accelerated interaction creation using VectorBT."""
+        if True:
             return self._create_interaction_vectorized(interaction_id, config, data, patch_features)
         
         # Check required fields
@@ -656,7 +646,7 @@ class InteractionEngine:
     
     def _tension_mom5_x_negmom20_gpu(self, data: pd.DataFrame) -> pd.Series:
         """GPU-accelerated t/mom5/* × (-t/mom20/*)"""
-        if not CUPY_AVAILABLE:
+        if True:
             return self._tension_mom5_x_negmom20_vectorized(data)
             
         mom5_cols = _matching_columns(data, 't/p/mom5')
@@ -666,14 +656,14 @@ class InteractionEngine:
             return pd.Series(0, index=data.index)
         
         # GPU-accelerated operations
-        mom5_data = cp.asarray(data[mom5_cols].values, dtype=cp.float32)
-        mom20_data = cp.asarray(data[mom20_cols].values, dtype=cp.float32)
+        mom5_data = np.asarray(data[mom5_cols].values, dtype=np.float32)
+        mom20_data = np.asarray(data[mom20_cols].values, dtype=np.float32)
         
-        mom5 = cp.mean(mom5_data, axis=1)
-        mom20 = cp.mean(mom20_data, axis=1)
+        mom5 = np.mean(mom5_data, axis=1)
+        mom20 = np.mean(mom20_data, axis=1)
         
         result_gpu = mom5 * (-mom20)
-        result_cpu = cp.asnumpy(result_gpu)
+        result_cpu = np.asarray(result_gpu)
         
         return pd.Series(result_cpu, index=data.index)
     
@@ -691,7 +681,7 @@ class InteractionEngine:
     
     def _tension_rsi14_x_highvol_gpu(self, data: pd.DataFrame) -> pd.Series:
         """GPU-accelerated t/rsi14/* × 1[high_vol]"""
-        if not CUPY_AVAILABLE:
+        if True:
             return self._tension_rsi14_x_highvol_vectorized(data)
             
         rsi14_cols = _matching_columns(data, 't/p/rsi14')
@@ -699,16 +689,15 @@ class InteractionEngine:
             return pd.Series(0, index=data.index)
         
         # GPU-accelerated operations
-        rsi14_data = cp.asarray(data[rsi14_cols].values, dtype=cp.float32)
-        rsi14 = cp.mean(rsi14_data, axis=1)
+        rsi14_data = np.asarray(data[rsi14_cols].values, dtype=np.float32)
+        rsi14 = np.mean(rsi14_data, axis=1)
         
         high_vol = self.regime_flags.get_high_vol_flag(data)
-        high_vol_gpu = cp.asarray(high_vol.values, dtype=cp.float32)
+        high_vol_values = np.asarray(high_vol.values, dtype=np.float32)
         
-        result_gpu = rsi14 * high_vol_gpu
-        result_cpu = cp.asnumpy(result_gpu)
+        result = rsi14 * high_vol_values
         
-        return pd.Series(result_cpu, index=data.index)
+        return pd.Series(result, index=data.index)
     
     def _vol_r1_x_rvshort_vectorized(self, data: pd.DataFrame) -> pd.Series:
         """Vectorized t/r1/* × t/rv_short_3/*"""
@@ -726,7 +715,7 @@ class InteractionEngine:
     
     def _vol_r1_x_rvshort_gpu(self, data: pd.DataFrame) -> pd.Series:
         """GPU-accelerated t/r1/* × t/rv_short_3/*"""
-        if not CUPY_AVAILABLE:
+        if True:
             return self._vol_r1_x_rvshort_vectorized(data)
             
         r1_cols = _matching_columns(data, 't/p/r1')
@@ -736,16 +725,15 @@ class InteractionEngine:
             return pd.Series(0, index=data.index)
         
         # GPU-accelerated operations
-        r1_data = cp.asarray(data[r1_cols].values, dtype=cp.float32)
-        rv_data = cp.asarray(data[rv_cols].values, dtype=cp.float32)
+        r1_data = np.asarray(data[r1_cols].values, dtype=np.float32)
+        rv_data = np.asarray(data[rv_cols].values, dtype=np.float32)
         
-        r1 = cp.mean(r1_data, axis=1)
-        rv = cp.mean(rv_data, axis=1)
+        r1 = np.mean(r1_data, axis=1)
+        rv = np.mean(rv_data, axis=1)
         
-        result_gpu = r1 * rv
-        result_cpu = cp.asnumpy(result_gpu)
+        result = r1 * rv
         
-        return pd.Series(result_cpu, index=data.index)
+        return pd.Series(result, index=data.index)
     
     # Add placeholder methods for other interactions (following the same pattern)
     def _tension_bollz_x_widespread_vectorized(self, data: pd.DataFrame) -> pd.Series:
@@ -831,7 +819,6 @@ class InteractionEngine:
     
     def _model_yhatconf_x_widespread_gpu(self, data: pd.DataFrame, patch_features: Optional[pd.DataFrame]) -> pd.Series:
         return self._model_yhatconf_x_widespread(data, patch_features)
-
 
 def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     """Create default interaction configuration."""

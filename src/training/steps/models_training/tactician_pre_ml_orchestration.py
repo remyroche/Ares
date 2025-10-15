@@ -1,4 +1,5 @@
 """
+import warnings
 Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
@@ -66,7 +67,6 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import utilities: {e}")
     UTILS_AVAILABLE = False
 
-
 class OrchestrationPhase(Enum):
     """Orchestration execution phases."""
     DATA_FILTERING = "data_filtering"
@@ -79,13 +79,11 @@ class OrchestrationPhase(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
-
 class EntryOptimizationMethod(Enum):
     """Entry optimization methods for Tactician."""
     RANDOM_FOREST_SURVIVAL = "random_forest_survival"  # Random Forest Survival model
     NAS = "nas"                                        # Neural Architecture Search
     TAS = "tas"                                        # Tree Attention Search
-
 
 @dataclass
 class TacticianLabelingConfig:
@@ -110,14 +108,12 @@ class TacticianLabelingConfig:
     enable_regime_adaptive_labeling: bool = True
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
-
 class EntryLabelingStrategy(str, Enum):
     """Supported entry labeling strategies for the Tactician pipeline."""
 
     RULE_BASED = "rule_based"
     ML_ITERATIVE = "ml_iterative"
     ML_CORRECTED = "ml_corrected"
-
 
 @dataclass
 class Tactician5mConfig:
@@ -150,7 +146,6 @@ class Tactician5mConfig:
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class TacticianPreMLConfig:
@@ -194,7 +189,6 @@ class TacticianPreMLConfig:
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class TacticianPreMLResult:
     """Result of Tactician pre-ML orchestration."""
@@ -225,7 +219,6 @@ class TacticianPreMLResult:
     total_features_generated: int = 0
     final_feature_count: int = 0
     error_message: Optional[str] = None
-
 
 class TacticianDifferentiatedLabeler:
     """Create differentiated entry timing labels for the Tactician pipeline."""
@@ -628,7 +621,6 @@ class TacticianDifferentiatedLabeler:
 
         return metrics
 
-
 @dataclass
 class EntryOptimizationResult:
     """Result of entry optimization process."""
@@ -648,7 +640,6 @@ class EntryOptimizationResult:
     # Analysis metadata
     method_used: Optional[EntryOptimizationMethod] = None
     features_considered: List[str] = field(default_factory=list)
-
 
 class Tactician5mEntryOptimizer:
     """
@@ -900,12 +891,8 @@ except ImportError as e:
     print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
             # For now, return a placeholder model - in production this would load a trained model
@@ -1089,7 +1076,6 @@ except ImportError:
 
             tprint_error(f"❌ Entry optimization failed: {e}")
             return result
-
 
 class TacticianPreMLOrchestrator:
     """
@@ -1788,7 +1774,6 @@ class TacticianPreMLOrchestrator:
                     # Pre-training pipeline might not expose internal state in certain configurations
                     pass
 
-
             # Create sub-pipeline configuration
             sub_config = SubPipelineConfig(
                 symbol=self.config.symbol,
@@ -2001,7 +1986,6 @@ class TacticianPreMLOrchestrator:
             }
         }
 
-
 # Convenience function for external usage
 async def execute_tactician_pre_ml_orchestration(
     training_data: pd.DataFrame,
@@ -2033,7 +2017,6 @@ async def execute_tactician_pre_ml_orchestration(
         regime_data_splitting_result=regime_data_splitting_result,
         **kwargs
     )
-
 
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
                                    window: int, **kwargs) -> pd.Series:

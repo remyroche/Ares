@@ -15,8 +15,8 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 # Import centralized logging and error handling
-from ..utils.centralized_logging import tprint, log_function_execution, fast_fail_error
-from ..utils.error_handling import (
+from src.feature_generation.utils.centralized_logging import tprint, log_function_execution, fast_fail_error
+from src.feature_generation.utils.error_handling import (
     DataValidationError, ConfigurationError, ComputationError,
     validate_required_columns, validate_finite_values, safe_divide
 )
@@ -26,8 +26,8 @@ from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT
 
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -37,7 +37,7 @@ from ..base_calculations import (
     BaseCalculationConfig,
     create_base_calculator
 )
-from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
+from src.feature_generation.utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
 # Legacy features are imported separately to avoid circular imports
 from .entropy import (
@@ -73,13 +73,13 @@ except ImportError:
 
 # Import optimized rolling operations - NOW USING NEW OPTIMIZED VERSION
 try:
-    from ..utils.consolidated_rolling_optimizer import (
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
         ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
         get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
         RollingOperationConfig,
         RollingOperationType
     )
-    from ..utils.statistical_calculations_optimizer import (
+    from src.feature_generation.utils.statistical_calculations_optimizer import (
         StatisticalCalculationsOptimizer as VectorizationOptimizer,
         get_global_statistical_optimizer as get_vectorization_optimizer,
         StatisticalOperationConfig,
@@ -90,7 +90,7 @@ try:
 except ImportError:
     # Fallback to legacy if new version not available
     try:
-        from ..utils.vectorbt_rolling_optimizer import (
+        from src.feature_generation.utils.vectorbt_rolling_optimizer import (
             get_vectorbt_rolling_optimizer,
             optimized_rolling_mean,
             optimized_rolling_std,
@@ -113,6 +113,7 @@ try:
     from ...utils.ml_common.unified_vectorization_manager import (
         get_unified_vectorization_manager,
         OperationType,
+        OperationConfig,
         optimize_financial_operation
     )
     UNIFIED_VECTORIZATION_AVAILABLE = True
@@ -121,17 +122,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-
 # Centralized utility imports
-from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from ...features_common.transforms.vectorbt_scaler import VectorBTScaler, create_vectorbt_scaler
+from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+# Removed VectorBTScaler import to avoid circular import
 from ..core.feature_bank import get_global_feature_bank
 
 # LegacyRSIGenerator, LegacyMACDGenerator, LegacyStochasticGenerator, and LegacyWilliamsRGenerator removed - use VectorBT versions instead
@@ -339,7 +332,8 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         
         return pd.DataFrame(results, index=data.index)
 
-# Analyst Features - Cross-timeframe momentum generatorsclass AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
+# Analyst Features - Cross-timeframe momentum generators
+class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
     """Generator for 5-minute timeframe momentum feature."""
 
     def __init__(self, lookback: int = 20):
@@ -478,7 +472,6 @@ class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
 
         return alignment
 
-
 class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
 
@@ -583,7 +576,6 @@ class RSIGenerator(VectorizedFeatureGenerator):
             
             return rsi
 
-
 class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
@@ -651,7 +643,6 @@ class MACDGenerator(VectorizedFeatureGenerator):
         macd = ema_fast - ema_slow
         
         return macd
-
 
 class StochasticGenerator(VectorizedFeatureGenerator):
     """Generator for Stochastic Oscillator with different base calculations."""
@@ -756,7 +747,6 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             
             return k_percent
 
-
 class WilliamsRGenerator(VectorizedFeatureGenerator):
     """Generator for Williams %R with different base calculations."""
     
@@ -856,7 +846,6 @@ class WilliamsRGenerator(VectorizedFeatureGenerator):
             
             return williams_r
 
-
 class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Momentum Oscillator with different base calculations."""
     
@@ -912,7 +901,6 @@ class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
         momentum = base_values - base_values.shift(self.period)
         
         return momentum
-
 
 class RateOfChangeGenerator(VectorizedFeatureGenerator):
     """Generator for Rate of Change (ROC) with different base calculations."""
@@ -1369,7 +1357,59 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
     for period in periods.get('donchian_periods', [20]):
         generators.append(DonchianChannelGenerator(period))
     
-    return generators# AdvancedMomentumGenerator removed - functionality consolidated into MomentumFeatureGeneratorclass PriceAccelerationGenerator(VectorizedFeatureGenerator):
+    return generators
+
+class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
+    """Generator for advanced momentum indicators for regime detection."""
+
+    def __init__(self, fast_period: int = 5, slow_period: int = 20):
+        config = FeatureConfig(
+            name=f"advanced_momentum_{fast_period}_{slow_period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Advanced momentum indicator ({fast_period}/{slow_period}) for regime detection",
+            required_columns=["close"],
+            default_lookback=slow_period,
+            min_lookback=slow_period,
+            max_lookback=slow_period * 2,
+            parameters={"fast_period": fast_period, "slow_period": slow_period}
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
+        """Calculate enhanced momentum indicator with regime persistence."""
+        close = data['close']
+
+        # Fast and slow momentum with regime smoothing
+        fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
+        slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+
+        # Enhanced momentum ratio with regime strength
+        momentum_ratio = (fast_ma - slow_ma) / (slow_ma + 1e-8)  # Avoid division by zero
+
+        # Regime persistence measure
+        momentum_volatility = self._vectorbt_rolling_operation(momentum_ratio, "std", 10)
+        momentum_trend = self._vectorbt_rolling_operation(momentum_ratio, "mean", 5)
+
+        # Regime strength: higher when momentum is consistent and trending
+        regime_strength = np.abs(momentum_trend) / (momentum_volatility + 1e-8)
+
+        # Enhanced regime indicator combining momentum and persistence
+        enhanced_momentum = momentum_ratio * (1 + regime_strength)
+
+        # Add regime transition detection
+        momentum_change = momentum_ratio.diff().abs()
+        regime_transition = self._vectorbt_rolling_operation(momentum_change, "mean", 3)
+
+        # Combine momentum with regime transition awareness
+        regime_aware_momentum = enhanced_momentum * (1 - regime_transition)
+
+        return regime_aware_momentum
+
+class PriceAccelerationGenerator(VectorizedFeatureGenerator):
     """Generator for price acceleration indicators."""
 
     def __init__(self, period: int = 10):
@@ -1401,7 +1441,6 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
 
         return acceleration
 
-
 class VolumeMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for volume-based momentum indicators."""
 
@@ -1431,7 +1470,6 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
         volume_momentum = (volume - volume_ma) / volume_ma
 
         return volume_momentum
-
 
 # UnifiedMomentumFeatureGenerator removed - functionality consolidated into MomentumFeatureGenerator
 
@@ -1509,13 +1547,10 @@ class VectorBTMomentumFeatureGenerator(VectorBTFeatureGenerator):
         
         return momentum.rename(f'vectorbt_momentum_{self.period}')
 
-
 # VectorBTRSIGenerator removed - functionality consolidated into RSIGenerator
-
 
 # VectorBTMACDGenerator removed - functionality consolidated into MACDGenerator
 # VectorBTStochasticGenerator removed - functionality consolidated into StochasticGenerator
-
 
 def create_default_momentum_generators() -> List[FeatureGenerator]:
     """Create default momentum generators including legacy and entropy features."""
@@ -1545,6 +1580,10 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     generators.append(RSIZScoreGenerator())
     generators.append(StochasticKDGenerator())
     generators.append(DonchianChannelGenerator(20))
+
+    # Advanced momentum generators for regime detection
+    generators.append(AdvancedMomentumGenerator(5, 20))
+    generators.append(AdvancedMomentumGenerator(10, 30))
     
     # Entropy-based momentum generators
     generators.append(RSIEntropyGenerator())

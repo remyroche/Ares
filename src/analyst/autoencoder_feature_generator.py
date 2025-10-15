@@ -1,4 +1,5 @@
 from src.utils.tprint import tprint
+import warnings
 
 import logging
 import os
@@ -951,12 +952,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
                 perm_model = LogisticRegression(random_state = 42, max_iter = 2000)

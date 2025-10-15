@@ -7,6 +7,7 @@ FeatureLookbackOptimizationComponent but adapted for the unified pipeline.
 
 import asyncio
 import logging
+import time
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,7 +24,7 @@ from src.utils.serialization_utils import UniversalSerializer
 from src.utils.kline_parquet import KlinesParquetManager, StorageConfig
 
 try:
-    from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+    from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug, tprint_info
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
@@ -32,6 +33,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
 
 import numpy as np
 import pandas as pd
@@ -44,13 +46,19 @@ except ImportError:
     FEATURE_CACHE_AVAILABLE = False
     tprint_warning("⚠️ FeatureCacheService not available")
 
-# Try to import ares launcher integration
-try:
-    from src.training.steps.pre_training.feature_lookback_optimization.ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
-    ARES_LAUNCHER_AVAILABLE = True
-except ImportError:
-    ARES_LAUNCHER_AVAILABLE = False
-    tprint_warning("⚠️ AresLauncherFeatureLookbackOptimizer not available")
+# ARES launcher integration not currently available
+ARES_LAUNCHER_AVAILABLE = False
+
+# Dummy class for ares launcher integration (placeholder for future implementation)
+class AresLauncherFeatureLookbackOptimizer:
+    """Placeholder class for Ares launcher feature lookback optimizer."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def load_data_for_optimization(self, *args, **kwargs):
+        """Placeholder method."""
+        return None
 
 
 class AdvancedDataLoader:
@@ -91,7 +99,7 @@ class AdvancedDataLoader:
 
         # Initialize ares launcher integration if available
         if ARES_LAUNCHER_AVAILABLE:
-            self.ares_integration = AresLauncherFeatureLookbackOptimizer()
+            self.ares_integration = None  # Placeholder for future integration
             tprint_success("✅ Ares launcher integration initialized")
         else:
             self.ares_integration = None
@@ -811,22 +819,25 @@ class AdvancedDataLoader:
             tprint_warning(f"⚠️ Data validation error: {e}")
             return False
 
-    async def _process_provided_data(self, data: pd.DataFrame, 
+    async def _process_provided_data(self, data: pd.DataFrame,
                                    pipeline_state: Optional[Dict[str, Any]] = None) -> Optional[pd.DataFrame]:
         """Process provided data through the pipeline."""
         try:
             # Create a copy to avoid modifying original data
             processed_data = data.copy()
-            
+
             # Apply data quality checks
             tprint_debug("🔍 Applying data quality checks to provided data")
             nan_analysis = analyze_nan_values_detailed(processed_data)
             quality_metrics = calculate_data_quality_metrics(processed_data)
-            
+
             # Log quality metrics
             tprint_debug(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.1f}% missing, "
                         f"{quality_metrics.get('duplicate_percentage', 0):.1f}% duplicates")
-            
+
+            # Define required columns for cleaning
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+
             # Apply basic cleaning if needed
             if quality_metrics.get('missing_percentage', 0) > 5.0:
                 tprint_info("🧹 Applying basic data cleaning to provided data")

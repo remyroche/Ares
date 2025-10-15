@@ -10,37 +10,15 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
+import warnings
 
-logger = logging.getLogger(__name__)
-
-
-class EnhancedMatrixAccelerator:
-    """Enhanced matrix accelerator with hardware optimization for feature generation."""
-
-    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True, enable_simd: bool = True):
-        self.enable_gpu = enable_gpu
-        self.enable_parallel = enable_parallel
-        self.enable_simd = enable_simd
-
-        # Initialize matrix operations
-        self.matrix_ops = None
-        self._initialize_matrix_operations()
-
-        # Performance tracking
-        self.performance_stats = {
-            'matrix_multiplications': 0,
-            'batch_operations': 0,
-            'gpu_operations': 0,
-            'simd_operations': 0,
-            'total_acceleration_time': 0.0
-        }
-
-        logger.info(f"🚀 Enhanced Matrix Accelerator initialized: GPU={enable_gpu}, Parallel={enable_parallel}, SIMD={enable_simd}")
-
-    def _initialize_matrix_operations(self):
-        """Initialize matrix operations with hardware acceleration."""
-        try:
-            from ...utils.matrix_operations import get_unified_matrix_operations
+# Import matrix operations at module level
+try:
+    from ...utils.matrix_operations import get_unified_matrix_operations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    get_unified_matrix_operations = None
+    MATRIX_OPS_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -68,20 +46,45 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-            self.matrix_ops = get_unified_matrix_operations(
-                enable_gpu=self.enable_gpu,
-                enable_parallel=self.enable_parallel
-            )
-            logger.info("✅ Matrix operations initialized successfully")
-        except ImportError as e:
-            logger.warning(f"⚠️ Matrix operations not available: {e}")
+logger = logging.getLogger(__name__)
+
+class EnhancedMatrixAccelerator:
+    """Enhanced matrix accelerator with hardware optimization for feature generation."""
+
+    def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True, enable_simd: bool = True):
+        self.enable_gpu = enable_gpu
+        self.enable_parallel = enable_parallel
+        self.enable_simd = enable_simd
+
+        # Initialize matrix operations
+        self.matrix_ops = None
+        self._initialize_matrix_operations()
+
+        # Performance tracking
+        self.performance_stats = {
+            'matrix_multiplications': 0,
+            'batch_operations': 0,
+            'gpu_operations': 0,
+            'simd_operations': 0,
+            'total_acceleration_time': 0.0
+        }
+
+        logger.info(f"🚀 Enhanced Matrix Accelerator initialized: GPU={enable_gpu}, Parallel={enable_parallel}, SIMD={enable_simd}")
+
+    def _initialize_matrix_operations(self):
+        """Initialize matrix operations with hardware acceleration."""
+        if MATRIX_OPS_AVAILABLE and get_unified_matrix_operations is not None:
+            try:
+                self.matrix_ops = get_unified_matrix_operations(
+                    enable_gpu=self.enable_gpu,
+                    enable_parallel=self.enable_parallel
+                )
+                logger.info("✅ Matrix operations initialized successfully")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to initialize matrix operations: {e}")
+                self.matrix_ops = None
+        else:
+            logger.warning("⚠️ Matrix operations not available")
             self.matrix_ops = None
 
     def batch_rolling_calculations(self, data: pd.DataFrame, windows: List[int],
@@ -413,7 +416,6 @@ except ImportError:
             'matrix_ops_available': self.matrix_ops is not None,
             'avg_acceleration_time': self.performance_stats['total_acceleration_time'] / max(1, self.performance_stats['batch_operations'])
         }
-
 
 # Global instance for easy access
 _enhanced_matrix_accelerator = None

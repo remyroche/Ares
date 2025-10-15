@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 # Import enhanced features
-from ..feature_selection.feature_importance_analyzer import (
+from ...feature_selection.analysis.feature_importance_analyzer import (
     FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod,
     analyze_feature_importance, get_important_features
 )
@@ -25,7 +25,7 @@ from .data_drift_detector import (
 )
 
 # Import existing HMM tooling (legacy detector has been deprecated)
-from ..hmm_composite_manager import EnhancedHMMCompositeManager
+from src.utils.hmm import EnhancedHMMCompositeManager
 
 # Import system utilities
 from ..logger import get_logger

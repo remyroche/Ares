@@ -1,4 +1,5 @@
 """
+import warnings
 Directional Specialist Model for Analyst Ensemble
 
 This module provides a LightGBM-based directional specialist model that serves
@@ -44,13 +45,11 @@ from .regime_ensembles.base_ensemble import BaseEnsemble
 
 logger = get_logger('DirectionalSpecialistModel')
 
-
 class DirectionType(Enum):
     """Direction types for specialist optimization."""
     LONG = "long"
     SHORT = "short"
     BOTH = "both"
-
 
 class StreamingQuantileTransformer:
     """Streaming quantile transformer storing state for incremental updates."""
@@ -102,7 +101,6 @@ class StreamingQuantileTransformer:
             transformed_df[col] = series
         return transformed_df
 
-
 @dataclass
 class DirectionalConfig:
     """Configuration for directional specialist model."""
@@ -146,7 +144,6 @@ class DirectionalConfig:
         if self.momentum_periods is None:
             self.momentum_periods = [3, 5, 8, 13, 21]
         validate_positive(self.tau, "tau")
-
 
 class DirectionalFeatureEngineer:
     """Feature engineering specialized for directional prediction."""
@@ -310,7 +307,6 @@ class DirectionalFeatureEngineer:
         
         return df
 
-
 class DirectionalSpecialistModel:
     """
     LightGBM-based directional specialist model for Analyst ensemble.
@@ -401,12 +397,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                 CyclicNoiseConfig,
                 add_cyclic_noise,
@@ -591,7 +583,6 @@ except ImportError:
         clear_long = y > self.config.min_directional_threshold
         clear_short = y < -self.config.min_directional_threshold
         weights[clear_long | clear_short] *= 1.2
-
 
         if timestamps is not None:
             timestamp_index = pd.Index(timestamps)
@@ -809,7 +800,6 @@ except ImportError:
         
         return np.clip(confidence_scores, 0.0, 1.0)
 
-
 # Integration with existing ensemble architecture
 class DirectionalSpecialistEnsemble(BaseEnsemble):
     """
@@ -845,7 +835,6 @@ class DirectionalSpecialistEnsemble(BaseEnsemble):
             'directional_stats': self.directional_model.directional_stats if self.directional_model.is_fitted else {}
         }
 
-
 # Convenience functions for easy integration
 def create_directional_specialist_model(config: Optional[DirectionalConfig] = None) -> DirectionalSpecialistModel:
     """Create a directional specialist model with optional configuration."""
@@ -854,7 +843,6 @@ def create_directional_specialist_model(config: Optional[DirectionalConfig] = No
 def create_directional_specialist_ensemble(config: Optional[DirectionalConfig] = None) -> DirectionalSpecialistEnsemble:
     """Create a directional specialist ensemble with optional configuration."""
     return DirectionalSpecialistEnsemble(config)
-
 
 # Example usage and testing
 if __name__ == '__main__':

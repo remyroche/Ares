@@ -25,7 +25,6 @@ from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning,
 
 logger = logging.getLogger(__name__)
 
-
 class FeatureType(Enum):
     """Types of financial features."""
     TECHNICAL = "technical"
@@ -37,7 +36,6 @@ class FeatureType(Enum):
     VOLATILITY = "volatility"
     LIQUIDITY = "liquidity"
 
-
 class NormalizationType(Enum):
     """Types of feature normalization."""
     STANDARD = "standard"
@@ -45,7 +43,6 @@ class NormalizationType(Enum):
     ROBUST = "robust"
     LOG = "log"
     PERCENTILE = "percentile"
-
 
 @dataclass
 class NASFeatureConfig:
@@ -87,7 +84,6 @@ class NASFeatureConfig:
     include_market_depth: bool = True
     include_order_flow: bool = True
 
-
 @dataclass
 class FeatureSet:
     """Container for feature data."""
@@ -96,7 +92,6 @@ class FeatureSet:
     feature_types: Dict[str, FeatureType]
     normalization_info: Dict[str, Any]
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class NASFinancialFeatureEngineer:
     """
@@ -776,12 +771,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
                 pickle.dump(state, f)
 
@@ -792,11 +783,9 @@ except ImportError:
             self.logger.error(f"❌ Failed to save feature engineer: {e}")
             return False
 
-
 def create_nas_financial_feature_engineer(config: NASFeatureConfig) -> NASFinancialFeatureEngineer:
     """Create NAS financial feature engineer instance."""
     return NASFinancialFeatureEngineer(config)
-
 
 def quick_feature_engineering(market_data: pd.DataFrame,
                              config: Optional[NASFeatureConfig] = None) -> FeatureSet:

@@ -18,7 +18,38 @@ from sklearn.model_selection import train_test_split, TimeSeriesSplit, cross_val
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 import joblib
 import warnings
+import traceback
 warnings.filterwarnings('ignore')
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+except ImportError:
+    
+    cp = None
 
 from ..logger import system_logger
 from .sr_backtesting_engine import SRBacktestingEngine, BacktestResult, SRLevel
@@ -584,46 +615,12 @@ class TradingMLIntegration:
             
             # Calculate metrics
             from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
             r2 = r2_score(y_test, y_pred)
             mse = mean_squared_error(y_test, y_pred)
             mae = mean_absolute_error(y_test, y_pred)
-            
+
             self.logger.info(f"Regression metrics: R²={r2:.3f}, MSE={mse:.3f}, MAE={mae:.3f}")
-            
+
             # Cross-validation
             self.logger.info(f"Performing {self.config.cross_validation_folds}-fold cross-validation")
             cv_scores = cross_val_score(model, X_train, y_train, cv=self.config.cross_validation_folds)

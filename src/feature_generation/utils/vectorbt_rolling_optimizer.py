@@ -65,13 +65,9 @@ except ImportError:
     rolling_kurt = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+CUPY_AVAILABLE = False
+cp = None
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +142,7 @@ class VectorBTRollingOptimizer:
         # Validate input parameters
         self._validate_init_parameters(enable_gpu, enable_parallel, memory_efficient, chunk_size)
         
-        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel and VECTORBT_AVAILABLE
         self.memory_efficient = memory_efficient
         self.chunk_size = chunk_size
@@ -807,7 +803,7 @@ class VectorBTRollingOptimizer:
     
     def _should_use_gpu(self, data: Union[pd.Series, pd.DataFrame], window: int) -> bool:
         """Determine if GPU acceleration should be used."""
-        if not self.enable_gpu or not CUPY_AVAILABLE:
+        if not self.enable_gpu:  # GPU support removed
             return False
         
         # Use GPU for very large datasets
@@ -854,40 +850,9 @@ class VectorBTRollingOptimizer:
     
     def _gpu_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str, 
                               window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Perform rolling operation using GPU acceleration."""
-        try:
-            # Convert to CuPy arrays
-            if isinstance(data, pd.Series):
-                gpu_data = cp.asarray(data.values)
-                result = self._gpu_rolling_series(gpu_data, operation, window, **kwargs)
-                return pd.Series(result, index=data.index, name=data.name)
-            else:
-                gpu_data = cp.asarray(data.values)
-                result = self._gpu_rolling_dataframe(gpu_data, operation, window, **kwargs)
-                return pd.DataFrame(result, index=data.index, columns=data.columns)
-        except Exception as e:
-            logger.warning(f"GPU {operation} failed: {e}")
-            raise
-    
-    def _gpu_rolling_series(self, data, operation: str, window: int, **kwargs):
-        """GPU rolling operation for Series."""
-        if operation == 'mean':
-            return cp.convolve(data, cp.ones(window) / window, mode='same')
-        elif operation == 'sum':
-            return cp.convolve(data, cp.ones(window), mode='same')
-        else:
-            # Fallback to CPU for complex operations
-            return self._numpy_rolling_operation(pd.Series(data.get()), operation, window, **kwargs).values
-    
-    def _gpu_rolling_dataframe(self, data, operation: str, window: int, **kwargs):
-        """GPU rolling operation for DataFrame."""
-        if operation == 'mean':
-            return cp.convolve(data, cp.ones((window, 1)) / window, mode='same')
-        elif operation == 'sum':
-            return cp.convolve(data, cp.ones((window, 1)), mode='same')
-        else:
-            # Fallback to CPU for complex operations
-            return self._numpy_rolling_operation(pd.DataFrame(data.get()), operation, window, **kwargs).values
+        """Perform rolling operation using CPU (GPU support removed)."""
+        # Fallback to pandas implementation
+        return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str, 
                                  window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:

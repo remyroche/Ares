@@ -49,12 +49,8 @@ except ImportError:
     import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -292,7 +288,6 @@ def optimize_for_m1_mac() -> None:
         logger.info(f'   Set OMP_NUM_THREADS={optimizer.max_workers}')
         logger.info(f'   Set MKL_NUM_THREADS={optimizer.max_workers}')
         logger.info(f'   Set OPENBLAS_NUM_THREADS={optimizer.max_workers}')
-
 
 class ParallelProcessor:
     """

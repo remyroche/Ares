@@ -1,4 +1,5 @@
 """
+import warnings
 Disagreement Meta-Features for Ensemble Models
 
 This module implements comprehensive disagreement meta-features for ensemble models
@@ -62,12 +63,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class DisagreementMetaFeatures:

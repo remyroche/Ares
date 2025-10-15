@@ -6,6 +6,7 @@ to different timeframes with optimized parquet storage.
 """
 
 import os
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +20,8 @@ from src.utils.data.processing.data_processing import DataProcessor
 # Import unified matrix operations for optimized calculations
 try:
     from src.utils.matrix_operations import get_unified_matrix_operations
+except ImportError:
+    get_unified_matrix_operations = None
 
 # VectorBT imports for native optimization
 try:
@@ -46,18 +49,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     MATRIX_OPERATIONS_AVAILABLE = True
 except ImportError:
     MATRIX_OPERATIONS_AVAILABLE = False
     system_logger.warning("Unified matrix operations not available, falling back to numpy")
-
 
 class FeatureEngineer:
     """Feature engineering and resampling for historical klines data."""
@@ -417,8 +415,7 @@ class FeatureEngineer:
             for lag in [1, 2, 3, 5, 10]:
                 featured_df[f'close_lag_{lag}'] = featured_df['close'].shift(lag)
                 featured_df[f'volume_lag_{lag}'] = featured_df['volume'].shift(lag)
-            
-            
+
             # Optimize data types
             featured_df = self.data_processor.optimize_feature_engineering_pipeline(
                 featured_df, stage="output"
@@ -966,7 +963,6 @@ class FeatureEngineer:
 
         return pd.Series(pct_change, index=series.index)
 
-
 # Convenience functions
 def process_ethusdt_data(
     data_dir: str = "historical_data",
@@ -987,13 +983,11 @@ def process_ethusdt_data(
     engineer = FeatureEngineer(data_dir)
     return engineer.process_symbol_data("ETHUSDT", "1m", target_intervals)
 
-
 if __name__ == "__main__":
     # Example usage
     engineer = FeatureEngineer()
     results = engineer.process_symbol_data("ETHUSDT", "1m", ["5m", "15m", "30m", "1h"])
     print(f"Processing results: {results}")
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

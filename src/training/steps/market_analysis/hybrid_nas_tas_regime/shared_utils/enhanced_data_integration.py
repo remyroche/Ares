@@ -1,4 +1,5 @@
 """
+import warnings
 Enhanced Data Integration Module
 
 This module provides comprehensive data processing capabilities by integrating
@@ -76,17 +77,12 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 # Setup logging
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class DataIntegrationConfig:
@@ -116,7 +112,6 @@ class DataIntegrationConfig:
     enable_performance_monitoring: bool = True
     enable_caching: bool = True
     enable_compression: bool = True
-
 
 class EnhancedDataIntegration:
     """
@@ -692,7 +687,6 @@ class EnhancedDataIntegration:
                 'data_transformer': hasattr(self, 'data_transformer')
             }
         }
-
 
 def create_enhanced_data_integration(config: DataIntegrationConfig = None, 
                                    utility_integration: EnhancedUtilityIntegration = None) -> EnhancedDataIntegration:

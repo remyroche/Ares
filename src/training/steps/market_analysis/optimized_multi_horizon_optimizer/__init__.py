@@ -15,13 +15,13 @@ Key Features:
 
 from .optimized_timeframe_optimizer import OptimizedTimeframeOptimizer
 from .grid_bayesian_optimizer import GridBayesianOptimizer
-from .enhanced_validation import EnhancedValidationFramework
+from .enhanced_validation import EnhancedValidator
 from .optimization_config import OptimizationConfig, ModelType, OptimizationMethod
 
 __all__ = [
     'OptimizedTimeframeOptimizer',
     'GridBayesianOptimizer', 
-    'EnhancedValidationFramework',
+    'EnhancedValidator',
     'OptimizationConfig',
     'ModelType',
     'OptimizationMethod'

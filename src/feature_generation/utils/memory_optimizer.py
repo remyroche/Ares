@@ -30,16 +30,11 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
+CUPY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class MemoryConfig:
@@ -66,7 +61,6 @@ class MemoryConfig:
     # Cleanup settings
     cleanup_frequency: int = 10  # Cleanup every N operations
     aggressive_cleanup_threshold: float = 0.8  # Cleanup when memory usage > 80%
-
 
 class MemoryOptimizer:
     """
@@ -344,10 +338,10 @@ class MemoryOptimizer:
             except Exception as e:
                 logger.warning(f"VectorBT cache cleanup failed: {e}")
         
-        # Clear GPU memory if available
-        if CUPY_AVAILABLE:
+        # Clear GPU memory if available (GPU support removed)
+        if False:  # GPU support removed
             try:
-                cp.get_default_memory_pool().free_all_blocks()
+                # GPU memory cleanup removed
             except Exception as e:
                 logger.warning(f"GPU memory cleanup failed: {e}")
         
@@ -376,7 +370,6 @@ class MemoryOptimizer:
             'dtype_optimizations': 0,
             'total_operations': 0
         }
-
 
 class VectorBTMemoryOptimizer(MemoryOptimizer):
     """
@@ -437,7 +430,6 @@ class VectorBTMemoryOptimizer(MemoryOptimizer):
             if VECTORBT_AVAILABLE:
                 vbt.settings.parallel['enabled'] = original_parallel
 
-
 # Global optimizer instances
 _global_memory_optimizer = None
 _global_vectorbt_optimizer = None
@@ -480,7 +472,6 @@ def process_with_memory_monitoring(
     """Process data with memory monitoring and optimization."""
     optimizer = get_memory_optimizer(config)
     return optimizer.process_with_memory_monitoring(data, processor_func, **kwargs)
-
 
 # Example usage and testing
 if __name__ == "__main__":

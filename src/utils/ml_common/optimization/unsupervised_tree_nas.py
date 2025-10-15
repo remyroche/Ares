@@ -1,4 +1,5 @@
 """
+import warnings
 Unsupervised Tree-Based NAS for Regime Detection and Qualification
 
 This module provides unsupervised tree-based architecture search specifically
@@ -81,12 +82,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     CATBOOST_AVAILABLE = True
 except ImportError:
@@ -94,7 +91,6 @@ except ImportError:
     cb = None
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class UnsupervisedTreeNASConfig:
@@ -155,7 +151,6 @@ class UnsupervisedTreeNASConfig:
     n_jobs: int = -1
     memory_limit_gb: float = 8.0
 
-
 @dataclass
 class RegimeCandidate:
     """A candidate regime detected by unsupervised methods."""
@@ -196,7 +191,6 @@ class RegimeCandidate:
     created_at: datetime = field(default_factory=datetime.now)
     sample_indices: List[int] = field(default_factory=list)
 
-
 @dataclass
 class UnsupervisedArchitectureCandidate:
     """A candidate unsupervised architecture."""
@@ -226,7 +220,6 @@ class UnsupervisedArchitectureCandidate:
     # Metadata
     created_at: datetime = field(default_factory=datetime.now)
     trial_number: int = 0
-
 
 class UnsupervisedTreeNAS:
     """Unsupervised Tree-Based NAS for regime detection and qualification."""
@@ -1102,7 +1095,6 @@ class UnsupervisedTreeNAS:
         except Exception as e:
             self.logger.error(f"Search summary generation failed: {e}")
             return {'error': str(e)}
-
 
 # Convenience function
 def search_unsupervised_regimes(market_data: pd.DataFrame,

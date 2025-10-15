@@ -42,6 +42,87 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     raise
 
+# VectorBT imports with fallback
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    # Define dummy functions for fallback
+    def rolling_mean(data, **kwargs):
+        return data.rolling(**kwargs).mean()
+    def rolling_std(data, **kwargs):
+        return data.rolling(**kwargs).std()
+    def rolling_var(data, **kwargs):
+        return data.rolling(**kwargs).var()
+    def rolling_min(data, **kwargs):
+        return data.rolling(**kwargs).min()
+    def rolling_max(data, **kwargs):
+        return data.rolling(**kwargs).max()
+    def rolling_sum(data, **kwargs):
+        return data.rolling(**kwargs).sum()
+    def rolling_apply(data, func, **kwargs):
+        return data.rolling(**kwargs).apply(func)
+
+@dataclass
+class TacticianEnsembleTrainingConfig:
+    """Configuration for Tactician ensemble training."""
+    # Basic configuration
+    model_name: str = "tactician_ensemble"
+    timeframe: str = "1h"
+    base_models: List[str] = None
+    
+    def __post_init__(self):
+        if self.base_models is None:
+            self.base_models = ["lightgbm", "ridge", "elastic_net", "random_forest"]
+    
+    # Feature integration parameters
+    enable_full_integration: bool = True
+    include_hmm_features: bool = True
+    include_analyst_features: bool = True
+    include_oof_predictions: bool = True
+
+    # Training parameters
+    save_models: bool = True
+    output_directory: str = "generated/tactician_ensemble_training"
+
+    # Hyperparameter optimization parameters
+    enable_hpo: bool = False
+    hpo_n_trials: int = 50
+    hpo_timeout_seconds: int = 1800
+
+    # Hardware optimization
+    enable_parallel_processing: bool = True
+    enable_gpu_acceleration: bool = True
+    memory_limit_gb: float = 8.0
+
+    # Validation parameters
+    validation_split: float = 0.2
+    min_training_samples: int = 100
+    min_samples_per_regime: int = 50
+
+    # Model saving parameters
+    model_save_path: str = "generated/model_training/models/tactician_ensemble_models"
+
+    # Ensemble parameters
+    base_model_types: List[str] = None
+
+    # Overfitting prevention parameters
+    enable_overfitting_prevention: bool = True
+
+    # Model saving format parameters
+    save_format: str = "pickle"
+
+    def __post_init__(self):
+        """Post-initialization setup."""
+        if self.base_model_types is None:
+            self.base_model_types = [
+                "RANDOM_SURVIVAL_FOREST",
+                "XGBOOST",
+                "ELASTIC_NET_CV"
+            ]
+
 # Import enhanced logging and utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.tprint import (
@@ -274,34 +355,34 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 1: Setup and validate configuration
             config = self._setup_configuration(config)
             self._validate_config_consolidated(config)
-            
-            # Step 2: Initialize TAS models storage
+
+            # Step 2: Initialize parent class FIRST (this sets self.config)
+            super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
+
+            # Step 3: Initialize TAS models storage
             self.tas_models = {}
             self.tas_architectures = {}
-            
-            # Step 3: Initialize hardware optimizers (consolidated)
+
+            # Step 4: Initialize hardware optimizers (consolidated)
             self.hardware = self._initialize_hardware_optimizers_consolidated()
-            
-            # Step 4: Initialize data cleaner
+
+            # Step 5: Initialize data cleaner
             self.data_cleaner = self._initialize_data_cleaner() if DATA_CLEANING_AVAILABLE else None
-            
-            # Step 5: Initialize model persistence
+
+            # Step 6: Initialize model persistence (now self.config is available)
             self.model_persistence = self._initialize_model_persistence() if MODEL_PERSISTENCE_AVAILABLE else None
-            
-            # Step 6: Initialize model cache
+
+            # Step 7: Initialize model cache (now self.config is available)
             self.model_cache = self._initialize_model_cache() if MODEL_PERSISTENCE_AVAILABLE else None
-            
-            # Step 7: Initialize parent class
-            super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
-            
+
             # Step 8: Initialize enhanced training utilities if available
             if ENHANCED_TRAINING_AVAILABLE:
                 self._initialize_enhanced_training_utilities()
-            
+
             # Step 9: Initialize progress tracking
             self.progress_tracker: List[TrainingProgress] = []
             self.current_step: Optional[TrainingProgress] = None
-            
+
             # Step 10: Setup consolidated tracking
             self._setup_tracking_consolidated(config)
             
@@ -318,7 +399,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             config = EnsembleTrainingConfig(
                 model_name="tactician_ensemble_models_1m",
                 timeframe="1m",
-                model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
+                base_models=["lightgbm", "ridge", "elastic_net", "random_forest"],
                 hpo_n_trials=100,
                 hpo_timeout_seconds=3600,
                 min_samples_per_regime=1000,
@@ -332,8 +413,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     def _validate_config_consolidated(self, config: EnsembleTrainingConfig) -> None:
         """Consolidated configuration validation using common utilities."""
         with tprint_timer("Config validation"):
-            if not config.model_types or len(config.model_types) == 0:
-                raise ValueError("At least one model type required")
+            if not config.save_models:
+                raise ValueError("Model saving must be enabled")
             
             if config.enable_hpo:
                 validate_positive(config.hpo_n_trials, "hpo_n_trials")
@@ -688,17 +769,17 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     )
             else:
                 # Standard training without advanced optimization
-                results = super().execute(
-                    X=X_enhanced,
-                    y=y_filtered,
-                    regime_labels=regime_labels_filtered,
-                    feature_names=feature_names,
-                    hmm_states=hmm_states,
-                    is_classification=False,  # Tactician ensemble models are typically regression
-                    symbol=None,  # Can be passed as kwargs
-                    exchange=None,
-                    timeframe=self.config.timeframe
-                )
+                    results = super().execute(
+                        X=X_enhanced,
+                        y=y_filtered,
+                        regime_labels=regime_labels_filtered,
+                        feature_names=feature_names,
+                        regime_states=regime_states,
+                        is_classification=False,  # Tactician ensemble models are typically regression
+                        symbol=None,  # Can be passed as kwargs
+                        exchange=None,
+                        timeframe=self.config.timeframe
+                    )
             
             if 'error' in results:
                 self._complete_step(False, f"Parent training failed: {results['error']}")
@@ -1160,11 +1241,11 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             from src.utils.math_validation import validate_finite
             from src.utils.common_utilities import validate_dataframe_columns
             
-            if not hmm_data or 'regime_features' not in hmm_data:
+            if not regime_data or 'regime_features' not in regime_data:
                 tprint_debug("No HMM features available")
                 return None, 0
             
-            hmm_features = hmm_data['regime_features']
+            hmm_features = regime_data['regime_features']
             
             # Validate shape
             if not isinstance(hmm_features, np.ndarray):
@@ -1874,7 +1955,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 'insufficient_regimes': len(regime_analysis.get('insufficient_regimes', [])),
                 'regime_balance': regime_analysis.get('regime_balance_train', 0.0),
                 'timeframe': self.config.timeframe,
-                'ensemble_model_types': self.config.model_types,
+                'ensemble_model_types': self.config.base_models,
                 'base_tactician_models_count': len(base_models) if base_models else 0,
                 'analyst_models_integrated': len(analyst_models) if analyst_models else 0,
                 'analyst_ensembles_integrated': len(analyst_ensembles) if analyst_ensembles else 0,
@@ -1998,7 +2079,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     'configuration': {
                         'model_name': self.config.model_name,
                         'timeframe': self.config.timeframe,
-                        'model_types': self.config.model_types,
+                        'model_types': self.config.base_models,
                         'hpo_enabled': self.config.enable_hpo,
                         'hpo_trials': self.config.hpo_n_trials
                     }
@@ -2508,7 +2589,7 @@ if __name__ == "__main__":
     config = EnsembleTrainingConfig(
         model_name="tactician_ensemble_models_enhanced",
         timeframe="1m",
-        model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
+        base_models=["lightgbm", "ridge", "elastic_net", "random_forest"],
         hpo_n_trials=50,  # Reduced for demo
         enable_hpo=True,
         save_models=True,
@@ -2518,7 +2599,7 @@ if __name__ == "__main__":
     # Create training step
     training_step = create_tactician_ensemble_training_step(config)
 
-    print(f"✅ Created enhanced tactician ensemble training step with {len(config.model_types)} ensemble types")
+    print(f"✅ Created enhanced tactician ensemble training step with {len(config.base_models)} ensemble types")
     print(f"📊 HPO enabled: {config.enable_hpo}")
     print(f"💾 Save models: {config.save_models}")
     print(f"📁 Save path: {config.model_save_path}")

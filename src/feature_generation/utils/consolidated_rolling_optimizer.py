@@ -6,7 +6,7 @@ all rolling calculations across feature generators using VectorBT optimizations.
 
 Key Features:
 - Batch processing of multiple rolling operations
-- Automatic VectorBT/GPU acceleration selection
+- Automatic VectorBT optimization selection
 - Memory-efficient processing
 - Consistent error handling and fallbacks
 - Performance monitoring and optimization
@@ -46,13 +46,8 @@ except ImportError:
     rolling_kurt = None
     rolling_quantile = None
 
-# GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
 
 # Unified Vectorization Manager
 try:
@@ -76,7 +71,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class RollingOperationType(Enum):
     """Types of rolling operations supported."""
     MEAN = "mean"
@@ -91,7 +85,6 @@ class RollingOperationType(Enum):
     CORR = "corr"
     COV = "cov"
     APPLY = "apply"
-
 
 @dataclass
 class RollingOperationConfig:
@@ -111,17 +104,21 @@ class RollingOperationConfig:
     corr_other: Optional[Union[pd.Series, np.ndarray]] = None
     apply_func: Optional[Callable] = None
 
-
 @dataclass
 class BatchRollingConfig:
     """Configuration for batch rolling operations."""
-    operations: List[RollingOperationConfig]
+    operations: List[RollingOperationConfig] = None
     enable_gpu: bool = True
     enable_parallel: bool = True
     memory_optimization: bool = True
     chunk_size: int = 1000
     performance_threshold: int = 1000  # Minimum data size for VectorBT optimization
 
+    def __init__(self, operations: Optional[List[RollingOperationConfig]] = None, **kwargs):
+        """Initialize BatchRollingConfig with operations."""
+        self.operations = operations
+        for key, value in kwargs.items():
+            setattr(self, key, value)
 
 class ConsolidatedRollingOptimizer:
     """
@@ -138,7 +135,7 @@ class ConsolidatedRollingOptimizer:
         Args:
             config: Configuration for batch rolling operations
         """
-        self.config = config or BatchRollingConfig()
+        self.config = config or BatchRollingConfig(operations=[])
         self.logger = logging.getLogger(__name__)
         
         # Performance tracking
@@ -166,13 +163,13 @@ class ConsolidatedRollingOptimizer:
             self.logger.warning("Unified Vectorization Manager not available")
         
         # Check GPU availability
-        self.gpu_available = CUPY_AVAILABLE and self.config.enable_gpu
+        self.gpu_available =  self.config.enable_gpu
         if self.gpu_available:
             try:
                 # Test GPU memory
-                test_array = cp.array([1, 2, 3])
+                test_array = np.array([1, 2, 3])
                 del test_array
-                self.logger.info("GPU acceleration enabled")
+                self.logger.info("GPU memory test successful")
             except Exception as e:
                 self.gpu_available = False
                 self.logger.warning(f"GPU not available: {e}")
@@ -183,8 +180,8 @@ class ConsolidatedRollingOptimizer:
                 data_size >= self.config.performance_threshold)
     
     def should_use_gpu(self, data_size: int) -> bool:
-        """Determine if GPU acceleration should be used."""
-        return (self.gpu_available and 
+        """Determine if GPU should be used for this operation."""
+        return (self.gpu_available and
                 data_size >= self.config.performance_threshold * 2)
     
     def single_rolling_operation(self, 
@@ -413,7 +410,6 @@ class ConsolidatedRollingOptimizer:
             'memory_savings_mb': 0.0
         }
 
-
 # Convenience functions
 def create_rolling_optimizer(enable_gpu: bool = True, 
                            enable_parallel: bool = True,
@@ -425,7 +421,6 @@ def create_rolling_optimizer(enable_gpu: bool = True,
         performance_threshold=performance_threshold
     )
     return ConsolidatedRollingOptimizer(config)
-
 
 def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
                            operations: List[str],
@@ -440,7 +435,7 @@ def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
         operations: List of operation names ('mean', 'std', 'var', etc.)
         windows: List of window sizes
         columns: List of columns to process (None for all)
-        enable_gpu: Whether to enable GPU acceleration
+        enable_gpu: Whether to enable 
         
     Returns:
         Dictionary of results
@@ -458,7 +453,6 @@ def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
             configs.append(config)
     
     return optimizer.batch_rolling_operations(data, configs)
-
 
 # Global instance for easy access
 _global_optimizer = None

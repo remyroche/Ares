@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional, Union
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -24,8 +24,8 @@ from ..base_calculations import (
 
 # VectorBT optimization imports
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
-    from ..utils.vectorbt_optimization_integration import get_optimization_manager, VectorBTOptimizationManager
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_optimization_integration import get_optimization_manager, VectorBTOptimizationManager
     VECTORBT_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     VECTORBT_OPTIMIZATION_AVAILABLE = False
@@ -59,12 +59,8 @@ except ImportError:
     clip = None
     quantile = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 class SupportResistanceFeatureGenerator(VectorizedFeatureGenerator):
@@ -660,7 +656,6 @@ def create_default_support_resistance_generators(enable_gpu: bool = False, memor
             generators.append(FibonacciLevelGenerator(level, window, enable_gpu=enable_gpu, memory_efficient=memory_efficient))
     
     return generators
-
 
 # Advanced Support/Resistance Features using VectorBT
 

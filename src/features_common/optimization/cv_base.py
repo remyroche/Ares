@@ -325,14 +325,14 @@ class BaseCVSplitter:
         if self.use_vectorbt_optimization and self.rolling_optimizer is not None:
             optimizer_stats = self.rolling_optimizer.get_performance_stats()
             stats.update({
-                'optimizer_' + k: v for k, v in optimizer_stats.items()
+                'optimizer_' + key: value for key, value in optimizer_stats.items()
             })
-        
+
         # Add manager stats if available
         if self.use_vectorbt_optimization and self.vectorization_manager is not None:
             manager_stats = self.vectorization_manager.get_performance_stats()
             stats.update({
-                'manager_' + k: v for k, v in manager_stats.items()
+                'manager_' + key: value for key, value in manager_stats.items()
             })
         
         return stats

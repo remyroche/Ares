@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass
+from enum import Enum
 import time
 import logging
 import hashlib

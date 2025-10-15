@@ -15,7 +15,7 @@ import numpy as np
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from ..utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
+from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 
 
 @dataclass

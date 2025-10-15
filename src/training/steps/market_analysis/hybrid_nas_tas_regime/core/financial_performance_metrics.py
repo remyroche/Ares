@@ -46,16 +46,11 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = logging.getLogger(__name__)
-
 
 class PerformanceMetricType(Enum):
     """Types of performance metrics."""
@@ -68,14 +63,12 @@ class PerformanceMetricType(Enum):
     VOLATILITY_METRICS = "volatility_metrics"
     MOMENTUM_METRICS = "momentum_metrics"
 
-
 class RegimePerformanceMode(Enum):
     """Modes for regime performance evaluation."""
     REGIME_SPECIFIC = "regime_specific"
     REGIME_WEIGHTED = "regime_weighted"
     REGIME_ADAPTIVE = "regime_adaptive"
     REGIME_ENSEMBLE = "regime_ensemble"
-
 
 @dataclass
 class FinancialPerformanceConfig:
@@ -139,7 +132,6 @@ class FinancialPerformanceConfig:
     regime_stability_threshold: float = 0.7
     regime_transition_threshold: float = 0.3
 
-
 @dataclass
 class FinancialPerformanceResult:
     """Result from financial performance evaluation."""
@@ -155,7 +147,6 @@ class FinancialPerformanceResult:
     performance_summary: Dict[str, Any]
     execution_time: float
     n_samples: int
-
 
 class FinancialPerformanceEvaluator:
     """Evaluates financial performance metrics."""
@@ -768,7 +759,6 @@ class FinancialPerformanceEvaluator:
             execution_time=execution_time,
             n_samples=0
         )
-
 
 def create_financial_performance_evaluator(config: FinancialPerformanceConfig) -> FinancialPerformanceEvaluator:
     """Create financial performance evaluator instance."""

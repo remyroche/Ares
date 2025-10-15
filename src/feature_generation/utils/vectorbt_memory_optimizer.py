@@ -25,16 +25,11 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
+CUPY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-
 
 class VectorBTMemoryOptimizer:
     """
@@ -55,12 +50,12 @@ class VectorBTMemoryOptimizer:
         
         Args:
             max_memory_gb: Maximum memory usage in GB
-            enable_gpu: Enable GPU acceleration
+            enable_gpu: Enable 
             chunk_size: Default chunk size for processing
             enable_monitoring: Enable performance monitoring
         """
         self.max_memory_gb = max_memory_gb
-        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.chunk_size = chunk_size
         self.enable_monitoring = enable_monitoring
         
@@ -176,17 +171,17 @@ class VectorBTMemoryOptimizer:
         Returns:
             GPU-accelerated data
         """
-        if not self.enable_gpu or not CUPY_AVAILABLE:
+        if not self.enable_gpu or True:
             return data
         
         try:
             if isinstance(data, pd.Series):
-                gpu_data = cp.asarray(data.values)
+                gpu_data = np.asarray(data.values)
                 return pd.Series(gpu_data, index=data.index)
             elif isinstance(data, pd.DataFrame):
                 gpu_data = {}
                 for column in data.columns:
-                    gpu_data[column] = cp.asarray(data[column].values)
+                    gpu_data[column] = np.asarray(data[column].values)
                 return pd.DataFrame(gpu_data, index=data.index)
         except Exception as e:
             logger.warning(f"GPU processing failed: {e}")
@@ -385,25 +380,31 @@ class VectorBTMemoryOptimizer:
         if not VECTORBT_AVAILABLE:
             return
         
-        # Configure VectorBT for optimal performance
-        vbt.settings.setting('array_wrapper', 'pandas')
-        vbt.settings.setting('caching', True)
-        vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
-        
+        # Configure VectorBT for optimal performance using newer API
+        # Check if array_wrapper structure exists and set wrapper if available
+        if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
+            vbt.settings['array_wrapper']['wrapper'] = 'pandas'
+        vbt.settings['caching']['enabled'] = True
+
         if self.enable_gpu:
             try:
-                vbt.settings.setting('use_gpu', True)
-                logger.info("VectorBT GPU acceleration enabled")
+                # Check if GPU settings are available in this VectorBT version
+                if hasattr(vbt.settings, 'gpu') and 'enabled' in vbt.settings['gpu']:
+                    vbt.settings['gpu']['enabled'] = True
+                    logger.info("VectorBT GPU acceleration enabled")
+                else:
+                    logger.warning("VectorBT GPU acceleration not available in this version")
             except Exception as e:
                 logger.warning(f"VectorBT GPU acceleration not available: {e}")
-        
+
         # Configure parallel processing
         try:
-            vbt.settings.setting('use_parallel', True)
-            logger.info("VectorBT parallel processing enabled")
+            # Check if parallel settings are available in this VectorBT version
+            if hasattr(vbt.settings, 'parallel') and 'enabled' in vbt.settings['parallel']:
+                vbt.settings['parallel']['enabled'] = True
+                logger.info("VectorBT parallel processing enabled")
         except Exception as e:
             logger.warning(f"VectorBT parallel processing not available: {e}")
-
 
 class VectorBTPerformanceProfiler:
     """
@@ -549,11 +550,9 @@ class VectorBTPerformanceProfiler:
         """Reset profiling data."""
         self.profile_data = []
 
-
 # Global instances
 _memory_optimizer = None
 _performance_profiler = None
-
 
 def get_memory_optimizer(**kwargs) -> VectorBTMemoryOptimizer:
     """Get global memory optimizer instance."""
@@ -562,7 +561,6 @@ def get_memory_optimizer(**kwargs) -> VectorBTMemoryOptimizer:
         _memory_optimizer = VectorBTMemoryOptimizer(**kwargs)
     return _memory_optimizer
 
-
 def get_performance_profiler(**kwargs) -> VectorBTPerformanceProfiler:
     """Get global performance profiler instance."""
     global _performance_profiler
@@ -570,12 +568,10 @@ def get_performance_profiler(**kwargs) -> VectorBTPerformanceProfiler:
         _performance_profiler = VectorBTPerformanceProfiler(**kwargs)
     return _performance_profiler
 
-
 def optimize_dataframe_memory(data: pd.DataFrame, **kwargs) -> pd.DataFrame:
     """Optimize DataFrame memory usage."""
     optimizer = get_memory_optimizer()
     return optimizer.optimize_dataframe(data, **kwargs)
-
 
 def process_with_memory_management(operation: Callable, data: Union[pd.Series, pd.DataFrame], 
                                  **kwargs) -> Any:
@@ -588,12 +584,10 @@ def process_with_memory_management(operation: Callable, data: Union[pd.Series, p
     ):
         return operation(data, **kwargs)
 
-
 def profile_operation(operation_name: str, operation: Callable, *args, **kwargs) -> Any:
     """Profile an operation."""
     profiler = get_performance_profiler()
     return profiler.profile_operation(operation_name, operation, *args, **kwargs)
-
 
 # Example usage
 if __name__ == "__main__":

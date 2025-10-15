@@ -21,7 +21,6 @@ from ..utils import (
     scale, rank, zscore, winsorize, clip, quantile,
     VECTORBT_OPTIMIZER_AVAILABLE, VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer,
     UnifiedVectorizationManager, get_unified_vectorization_manager,
-    CUPY_AVAILABLE, cp,
     MATH_VALIDATION_AVAILABLE, safe_divide, check_for_inf_nan, validate_numeric_array, is_valid_number
 )
 
@@ -48,7 +47,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, ValidationMixin, CachingMixin, MonitoringMixin):
     """
     Enhanced base class for all scaling/transformation operations with comprehensive optimization.
@@ -71,7 +69,7 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
         
         Args:
             use_vectorbt: Whether to use VectorBT optimizations
-            enable_gpu: Whether to enable GPU acceleration
+            enable_gpu: Whether to enable 
             vectorbt_threshold: Minimum data size for VectorBT optimization
             use_optimizer: Whether to use VectorBTRollingOptimizer
             use_unified_manager: Whether to use UnifiedVectorizationManager
@@ -89,7 +87,7 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
         
         # Legacy compatibility
         self.use_vectorbt = use_vectorbt and VECTORBT_AVAILABLE
-        self.enable_gpu = enable_gpu and CUPY_AVAILABLE
+        self.enable_gpu = False  # GPU support removed
         self.vectorbt_threshold = vectorbt_threshold
         self.use_optimizer = use_optimizer and VECTORBT_OPTIMIZER_AVAILABLE
         self.use_unified_manager = use_unified_manager and VECTORBT_OPTIMIZER_AVAILABLE
@@ -568,7 +566,6 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
         if self.use_unified_manager and self.vectorization_manager is not None:
             self.vectorization_manager.reset_stats()
 
-
 class SimpleScaler(BaseScaler):
     """
     Enhanced simple scaler implementation with all optimizations.
@@ -660,7 +657,6 @@ class SimpleScaler(BaseScaler):
         self.std = state.get('std')
         self.fitted = state.get('fitted', False)
 
-
 def create_optimized_scaler(method: str = 'zscore', use_vectorbt: bool = True, 
                            use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs) -> BaseScaler:
     """
@@ -698,7 +694,6 @@ def create_optimized_scaler(method: str = 'zscore', use_vectorbt: bool = True,
         
         # Ultimate fallback to simple scaler with optimization
         return SimpleScaler(use_optimizer=use_optimizer, use_unified_manager=use_unified_manager)
-
 
 def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = True, 
                                  use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs):

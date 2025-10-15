@@ -1,4 +1,5 @@
 """
+import warnings
 NAS-TAS Clustering Component.
 
 This component uses shared utilities to eliminate redundancy between NAS and TAS components.
@@ -43,7 +44,6 @@ except ImportError:
 from joblib import Parallel, delayed
 import os
 import json
-
 
 from src.utils.tprint import (
     tprint,
@@ -100,7 +100,6 @@ from ..shared_utils.calibration_registry import (
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from ..regime_analysis.label_fusion import RegimeOptimizationService
-
 
 # Import matrix operations and hardware utilities
 try:
@@ -306,7 +305,6 @@ except ImportError as e:
 
 from .hardware_setup import HardwareResources, HardwareSetup
 
-
 @dataclass
 class ClusteringContext:
     """Lightweight context for sharing intermediate clustering artifacts with proper memory management."""
@@ -404,7 +402,6 @@ class ClusteringContext:
                 gc.collect()
             except:
                 pass
-
 
 @dataclass
 class NASTASClusteringConfig(BaseConfig):
@@ -525,7 +522,6 @@ class NASTASClusteringConfig(BaseConfig):
         if self.min_temporal_stability is None:
             self.min_temporal_stability = thresholds.get('min_temporal_stability', 0.6)
 
-
 class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     """
     NAS-TAS Clustering Component.
@@ -630,7 +626,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 self.purged_cv = PurgedCrossValidator() if PurgedCrossValidator else None
                 
                 # Initialize validators
-                self.model_validator = ModelValidator() if ModelValidator else None
+                # Import ValidationConfig
+                from src.utils.ml_common.post_training.model_validation import ValidationConfig
+                self.model_validator = ModelValidator(ValidationConfig()) if ModelValidator else None
                 self.performance_validator = PerformanceValidator() if PerformanceValidator else None
                 self.stability_validator = StabilityValidator() if StabilityValidator else None
                 
@@ -700,7 +698,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             )
             
             tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
-
 
     def run_advanced_cross_validation(self, features: np.ndarray, labels: np.ndarray, 
                                      market_data: pd.DataFrame) -> Dict[str, Any]:
@@ -772,9 +769,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             except Exception as exc:
                 tprint_error(f"Advanced cross-validation failed: {exc}")
                 return {}
-
-    
-
 
     def _log(self, message: str, level: str = "INFO") -> None:
         """Log a message using the standard component logger."""
@@ -1529,7 +1523,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         if 'stability' in name or 'persistence' in name or 'quality' in name:
             return 'regime_quality'
         return 'other'
-
 
     def _select_regime_features(
         self,
@@ -2746,8 +2739,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'structural_trend_weight': regime_weights.get('structural_trend', 0.20),
             })
             return fallback_config
-    
-    
+
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform clustering using advanced optimization methods."""
         try:
@@ -5203,9 +5195,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
     # Removed _determine_optimal_k_iterative - no longer needed with dynamic convergence
 
-
-
-
     def _compute_all_distances_vectorized(self, features: np.ndarray, centroids: np.ndarray) -> np.ndarray:
         """Compute all distances between samples and centroids using vectorized operations."""
         try:
@@ -5217,11 +5206,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Distance computation failed: {e}", "ERROR")
             return np.zeros((features.shape[0], centroids.shape[0]))
-
-
-
-
-    
 
     def _calculate_composite_score(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Calculate composite score for regime optimization."""
@@ -5645,7 +5629,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         else:
                             tprint(f"   ⚠️ Multi-metric criteria not met, continuing optimization...", "WARNING")
 
-                    
                     # ENHANCED: Quality-based early stopping
                     if best_score > quality_target:  # If we achieve target quality, stop early
                         tprint(f"🎉 Target quality achieved at iteration {iteration+1}!", "SUCCESS")
@@ -6967,7 +6950,6 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"Results summarization failed: {e}", "ERROR")
             return {'error': str(e), 'success': False}
 
-
 class ClusterStats:
     """Maintains sufficient statistics for O(1) cluster operations."""
 
@@ -7816,9 +7798,6 @@ class CachedClusteringState:
             
         except Exception as e:
             return 0.0
-    
-
-
 
     def _calculate_stability_score(self, assignments: np.ndarray) -> float:
         """Calculate stability score based on regime persistence."""
@@ -8145,10 +8124,6 @@ class CachedClusteringState:
             metric_outputs['temporal'] = self._last_temporal_metric_summary
 
         return metric_outputs
-
-
-
-
 
     def _derive_validation_metric(self, clustering_metrics: Dict[str, Any]) -> float:
         """Derive a validation metric from clustering metrics for weight learning."""
@@ -8599,10 +8574,7 @@ class CachedClusteringState:
     
     # REMOVED: Legacy single-feature methods replaced by vectorized versions
     # These methods were replaced by _calculate_vectorized_* methods for better performance
-    
-    
-    
-    
+
     def _assess_numerical_divergence_with_confidence(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> Dict[str, Any]:
         """Fallback numerical divergence assessment with confidence scoring."""
         try:
@@ -8730,9 +8702,7 @@ class CachedClusteringState:
         except Exception as e:
             tprint(f"Temporal divergence confidence calculation failed: {e}")
             return 0.5
-    
-    
-    
+
     def _compute_regime_centroids_vectorized(self, features: np.ndarray, assignments: np.ndarray, k: int) -> np.ndarray:
         """Compute regime centroids using vectorized operations for performance."""
         try:
@@ -8758,8 +8728,7 @@ class CachedClusteringState:
             centroids = np.array([np.mean(features[assignments == regime], axis=0) 
                                  for regime in unique_regimes])
             return centroids
-            
-    
+
     def _apply_regime_mapping(self, nas_assignments: np.ndarray, regime_mapping: Dict[int, int]) -> np.ndarray:
         """Apply regime mapping to NAS assignments to align with TAS regime IDs."""
         try:
@@ -8781,21 +8750,7 @@ class CachedClusteringState:
         except Exception as e:
             tprint(f"  ⚠️  Regime mapping application failed: {e}", "WARNING")
             return nas_assignments.copy()
-    
-            
-            
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
                                                  sample_idx: int, target_regime: int) -> float:
         """Calculate multi-objective improvement using Pareto optimization principles with M1 hardware optimization."""
@@ -9283,7 +9238,6 @@ class CachedClusteringState:
             tprint(f"❌ Error loading regime discovery from outcomes: {e}", "ERROR")
             return None
 
-    
     def _apply_dawid_skene_fusion(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, features: np.ndarray) -> np.ndarray:
         """Apply Dawid-Skene fusion to combine TAS and NAS regime assignments."""
         try:
@@ -10538,7 +10492,6 @@ class CachedClusteringState:
             tprint(f"Bootstrap stability assessment failed: {e}", "ERROR")
             return {'error': str(e)}
 
-
     def _calculate_temporal_stability(self, train_pred: np.ndarray, test_pred: np.ndarray, 
                                     y_train: np.ndarray, y_test: np.ndarray) -> float:
         """Calculate temporal stability of cluster assignments."""
@@ -11131,12 +11084,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             
             new_assignments = assignments.copy()
@@ -11312,7 +11261,6 @@ except ImportError:
         except Exception as e:
             tprint(f"Global improvement matrix computation failed: {e}", "ERROR")
             return np.zeros((len(assignments), k))
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

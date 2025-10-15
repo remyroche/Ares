@@ -196,7 +196,7 @@ class NegativeLearningFeatureGenerator:
         self.vectorbt_optimizer = None
         if VECTORBT_AVAILABLE:
             try:
-                from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+                from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
                 self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
                 tprint("✅ VectorBT optimizer initialized for NegativeLearningFeatureGenerator")
             except Exception as e:

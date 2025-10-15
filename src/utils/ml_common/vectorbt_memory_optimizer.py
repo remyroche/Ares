@@ -28,16 +28,11 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
-# Optional GPU support
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
+# GPU acceleration removed - CuPy not supported on all platforms
+cp = None
+CUPY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
-
 
 class MemoryStrategy(Enum):
     """Memory optimization strategies."""
@@ -47,7 +42,6 @@ class MemoryStrategy(Enum):
     GPU_ACCELERATION = "gpu_acceleration"
     CACHING = "caching"
     COMPRESSION = "compression"
-
 
 @dataclass
 class MemoryConfig:
@@ -73,7 +67,6 @@ class MemoryConfig:
     enable_disk_caching: bool = False
     cache_directory: str = "./cache"
 
-
 @dataclass
 class MemoryStats:
     """Memory usage statistics."""
@@ -84,7 +77,6 @@ class MemoryStats:
     gpu_memory_gb: Optional[float] = None
     gpu_usage_percent: Optional[float] = None
     cache_hit_rate: Optional[float] = None
-
 
 class VectorBTMemoryOptimizer:
     """
@@ -119,7 +111,7 @@ class VectorBTMemoryOptimizer:
         logger.info("✅ VectorBT Memory Optimizer initialized")
         logger.info(f"📊 Max memory: {self.config.max_memory_gb:.1f}GB")
         logger.info(f"📊 Chunk size: {self.config.chunk_size:,}")
-        logger.info(f"📊 GPU enabled: {self.config.enable_gpu and CUPY_AVAILABLE}")
+        logger.info(f"📊 GPU enabled: False (GPU support removed)")
     
     def _configure_vectorbt(self):
         """Configure VectorBT for optimal memory usage."""
@@ -453,9 +445,9 @@ class VectorBTMemoryOptimizer:
         # Get GPU memory if available
         gpu_memory_gb = None
         gpu_usage_percent = None
-        if self.config.enable_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             try:
-                gpu_memory = cp.cuda.MemoryPool().get_limit()
+                gpu_memory = 0  # GPU support removed
                 gpu_memory_gb = gpu_memory / (1024**3)
                 gpu_usage_percent = 0.5  # Placeholder
             except:
@@ -488,9 +480,9 @@ class VectorBTMemoryOptimizer:
             self._clear_cache()
         
         # GPU memory cleanup
-        if self.config.enable_gpu and CUPY_AVAILABLE:
+        if False:  # GPU support removed
             try:
-                cp.cuda.MemoryPool().free_all_blocks()
+                # GPU memory cleanup removed
             except:
                 pass
     
@@ -661,14 +653,13 @@ class VectorBTMemoryOptimizer:
         if stats.cache_hit_rate is not None and stats.cache_hit_rate < 0.5:
             recommendations.append("Low cache hit rate - consider increasing cache size")
         
-        if self.config.enable_gpu and not CUPY_AVAILABLE:
-            recommendations.append("GPU acceleration not available - install cupy for better performance")
+        if self.config.enable_gpu and True:
+            recommendations.append("
         
         if not VECTORBT_AVAILABLE:
             recommendations.append("VectorBT not available - install vectorbt for memory optimizations")
         
         return recommendations
-
 
 # Convenience functions
 def optimize_memory_usage(data: Union[np.ndarray, pd.DataFrame],
@@ -685,7 +676,6 @@ def optimize_memory_usage(data: Union[np.ndarray, pd.DataFrame],
     """
     optimizer = VectorBTMemoryOptimizer(config)
     return optimizer.optimize_memory_usage(data)
-
 
 def process_large_dataset(data: Union[np.ndarray, pd.DataFrame],
                          processing_func: Callable,
@@ -707,7 +697,6 @@ def process_large_dataset(data: Union[np.ndarray, pd.DataFrame],
     """
     optimizer = VectorBTMemoryOptimizer(config)
     return optimizer.process_large_dataset(data, processing_func, chunk_size, **kwargs)
-
 
 if __name__ == "__main__":
     # Example usage and testing

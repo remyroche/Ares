@@ -1,24 +1,25 @@
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-# Data-driven period selection
-try:
-    from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.data_driven_periods import (
-        DataDrivenPeriodSelector, PeriodAnalysisResult
-    )
-    from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.enhanced_data_driven_period_selector import (
-        EnhancedDataDrivenPeriodSelector, EnhancedPeriodSelectionConfig
-    )
-    DATA_DRIVEN_PERIODS_AVAILABLE = True
-    ENHANCED_PERIOD_SELECTION_AVAILABLE = True
-except ImportError:
-    DATA_DRIVEN_PERIODS_AVAILABLE = False
+# Data-driven period selection - REMOVED (interaction_feature_generator no longer used)
+# try:
+#     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.data_driven_periods import (
+#         DataDrivenPeriodSelector, PeriodAnalysisResult
+#     )
+#     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.enhanced_data_driven_period_selector import (
+#         EnhancedDataDrivenPeriodSelector, EnhancedPeriodSelectionConfig
+#     )
+#     DATA_DRIVEN_PERIODS_AVAILABLE = True
+#     ENHANCED_PERIOD_SELECTION_AVAILABLE = True
+# except ImportError:
+#     DATA_DRIVEN_PERIODS_AVAILABLE = False
+DATA_DRIVEN_PERIODS_AVAILABLE = False
     ENHANCED_PERIOD_SELECTION_AVAILABLE = False
     DataDrivenPeriodSelector = None
-    PeriodAnalysisResult = None
-    EnhancedDataDrivenPeriodSelector = None
-    EnhancedPeriodSelectionConfig = None
-
+#     PeriodAnalysisResult = None
+#     EnhancedDataDrivenPeriodSelector = None
+#     EnhancedPeriodSelectionConfig = None
+# 
 # Data-driven interaction generation (deprecated)
 DATA_DRIVEN_INTERACTIONS_AVAILABLE = False
 # DataDrivenInteractionGenerator has been removed
@@ -1585,12 +1586,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             
             with tempfile.TemporaryDirectory() as temp_dir:

@@ -123,7 +123,7 @@ try:
     )
     from src.training.steps.pre_training.analyst_profit_labeler import (
         AnalystProfitLabelerComponent,
-        AnalystLabelingConfig
+        AnalystProfitLabelerConfig
     )
     TACTICIAN_ANALYST_LABELING_AVAILABLE = True
 except ImportError as e:
@@ -138,7 +138,7 @@ except ImportError as e:
     TacticianDifferentiatedLabeler = None
     TacticianLabelingConfig = None
     AnalystProfitLabelerComponent = None
-    AnalystLabelingConfig = None
+    AnalystProfitLabelerConfig = None
 
 # Import enhanced components
 from .enhanced_components.enhanced_walk_forward_validation import (
@@ -300,9 +300,9 @@ try:
         compute_classification_metrics, compute_regression_metrics, 
         evaluate_model, evaluate_multiple_datasets
     )
-    from src.utils.ml_common.feature_selection import (
-        FeatureSelector, FeatureSelectionConfig
-    )
+    # Feature selection functionality moved to src.feature_selection
+    # FeatureSelector and FeatureSelectionConfig no longer needed here as they are
+    # imported from local modules (.core.intelligent_feature_selector, etc.)
     from src.utils.ml_common.integrated_analysis_pipeline import (
         IntegratedAnalysisPipeline, IntegratedAnalysisConfig
     )
@@ -316,8 +316,8 @@ except ImportError as e:
 
 # Import VectorBT utilities
 try:
-    from src.features_common.utils import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from src.features_common.vectorbt.unified_manager import UnifiedVectorizationManager
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
     from src.features_common.config.vectorbt_config import VectorizationConfig
     VECTORBT_UTILITIES_AVAILABLE = True
     VECTORBT_AVAILABLE = True
@@ -431,7 +431,7 @@ class LabelingAdapter:
             # Check for existing artifacts first
             if existing_artifacts and self._is_artifact_compatible(existing_artifacts):
                 tprint_info("📦 Using existing labeling artifacts")
-                return self._process_existing_artifacts(existing_artifacts)
+                return self._process_existing_artifacts(existing_artifacts, market_data, targets)
             
             # Generate new labels using the volatility-aware labeler
             labeling_result = self.labeler.generate_labels(market_data)
@@ -507,7 +507,8 @@ class LabelingAdapter:
             tprint_warning(f"⚠️ Error checking artifact compatibility: {e}")
             return False
     
-    def _process_existing_artifacts(self, artifacts: Dict[str, Any]) -> Dict[str, Any]:
+    def _process_existing_artifacts(self, artifacts: Dict[str, Any], market_data: pd.DataFrame,
+                                   targets: Optional[pd.Series] = None) -> Dict[str, Any]:
         """Process existing artifacts and return in expected format."""
         try:
             # Extract labeling result from artifacts
@@ -523,9 +524,9 @@ class LabelingAdapter:
                     'quality_score': artifacts.get('quality_score', 0.0),
                     'feature_importance': artifacts.get('feature_importance', {})
                 })()
-            
+
             tprint_success(f"✅ Using existing {self.config.labeling_type} labeling artifacts")
-            
+
             return {
                 'success': True,
                 'labeled_data': labeling_result.labeled_data,
@@ -538,7 +539,7 @@ class LabelingAdapter:
                 'from_artifacts': True,
                 'artifacts': artifacts
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Error processing existing artifacts: {e}")
             # Fall back to generating new labels

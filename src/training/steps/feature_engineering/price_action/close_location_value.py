@@ -11,6 +11,7 @@ Sustained positive CLV → bullish control, sustained negative → bearish contr
 
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
@@ -46,16 +47,27 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
     cp = None
-
 
 @dataclass
 class CLVConfig:
@@ -76,7 +88,6 @@ class CLVConfig:
     include_clv_volatility: bool = True  # Include CLV volatility
     include_clv_grade: bool = True  # Include normalized grade (0.0-1.0)
     include_clv_class: bool = True  # Include CLV classification
-
 
 class CloseLocationValueFeature:
     """
@@ -224,7 +235,6 @@ class CloseLocationValueFeature:
             }
         }
 
-
 class CloseLocationValueGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible Close-Location Value feature generator.
@@ -365,7 +375,6 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
         
         # Generate all features
         return self.feature_engine.calculate_features(data)
-
 
 # Convenience function for external usage
 def calculate_clv_features(

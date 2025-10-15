@@ -85,12 +85,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     PATCHTST_AVAILABLE = True
 except ImportError as e:
@@ -241,9 +237,9 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
                 return self._chunked_ensemble_training(historical_features, historical_targets)
             
-            # Use GPU acceleration for heavy computations
+            # Use 
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info("🎯 Using GPU acceleration for ensemble training")
+                self.logger.info("🎯 Using 
                 return self._gpu_accelerated_ensemble_training(historical_features, historical_targets)
             
             # Standard M1-optimized processing

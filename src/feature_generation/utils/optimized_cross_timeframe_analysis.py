@@ -1,4 +1,5 @@
 """
+import warnings
 Optimized Cross Timeframe Analysis Module
 
 This module provides highly optimized cross timeframe analysis leveraging:
@@ -9,7 +10,7 @@ This module provides highly optimized cross timeframe analysis leveraging:
 - Memory-efficient operations
 
 Key Features:
-- M1-optimized processing with GPU acceleration
+- M1-optimized processing with 
 - Advanced feature selection with regime awareness
 - Comprehensive data quality validation
 - Intelligent caching and memory management
@@ -136,12 +137,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 logger = system_logger.getChild('OptimizedCrossTimeframeAnalysis')

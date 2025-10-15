@@ -1,9 +1,10 @@
 """
+import warnings
 Optimized Feature Generation Orchestrator
 
 This module provides a comprehensive feature generation system that integrates:
 - TA-Lib technical indicators with hardware optimization
-- ARIMA/ARMA time series modeling with M1 GPU acceleration
+- ARIMA/ARMA time series modeling with M1 
 - Parallel processing and memory optimization
 - Safe mathematical operations and error handling
 - Integration with existing ML pipeline
@@ -83,12 +84,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
         STATSMODELS_AVAILABLE = True
     except ImportError:
@@ -183,7 +180,7 @@ class OptimizedFeatureOrchestrator:
         if OPTIMIZATIONS_AVAILABLE:
             capabilities.append("Hardware optimizations")
             if self.gpu_manager and self.gpu_manager.mps_available:
-                capabilities.append("M1 GPU acceleration")
+                capabilities.append("M1 
             if self.parallel_processor:
                 capabilities.append("Parallel processing")
 

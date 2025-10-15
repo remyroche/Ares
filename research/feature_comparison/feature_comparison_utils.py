@@ -61,13 +61,14 @@ class FeatureComparisonUtils:
         return scalers
     
     def get_lookback_optimizer(self) -> Any:
-        """Get the lookback optimizer from feature_lookback_optimization module."""
-        try:
-            from src.training.steps.pre_training.feature_lookback_optimization.core.optimizer import Optimizer
-            return Optimizer
-        except ImportError as e:
-            logger.error(f"Failed to import Optimizer: {e}")
-            return None
+        """Get the lookback optimizer - REMOVED (feature_lookback_optimization no longer used)."""
+        # try:
+        #     from src.training.steps.pre_training.feature_lookback_optimization.core.optimizer import Optimizer
+        #     return Optimizer
+        # except ImportError as e:
+        #     logger.error(f"Failed to import Optimizer: {e}")
+        #     return None
+        return None
     
     def get_feature_selector(self) -> Any:
         """Get feature selection utilities from feature_selection module."""

@@ -111,18 +111,13 @@ except ImportError as e:
     print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
     ML_LABELING_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Corrected ML-based labeling not available: {e}")
     ML_LABELING_AVAILABLE = False
-
 
 class OrchestrationPhase(Enum):
     """Orchestration execution phases."""
@@ -134,7 +129,6 @@ class OrchestrationPhase(Enum):
     FEATURE_SELECTION = "feature_selection"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class TacticianLabelingConfig:
@@ -155,7 +149,6 @@ class TacticianLabelingConfig:
     # Regime-specific parameters
     enable_regime_adaptive_labeling: bool = True
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
-
 
 @dataclass
 class EnhancedTacticianPreMLConfig:
@@ -193,7 +186,6 @@ class EnhancedTacticianPreMLConfig:
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class EnhancedTacticianPreMLResult:
     """Enhanced result of Tactician pre-ML orchestration."""
@@ -225,7 +217,6 @@ class EnhancedTacticianPreMLResult:
     final_feature_count: int = 0
     labeling_quality_metrics: Dict[str, float] = field(default_factory=dict)
     error_message: Optional[str] = None
-
 
 class TacticianDifferentiatedLabeler:
     """Tactician-specific labeling focused on optimal entry timing."""
@@ -466,7 +457,6 @@ class TacticianDifferentiatedLabeler:
         
         return metrics
 
-
 class TacticianPIDFeatureGenerator:
     """PID-based feature generation for Tactician entry timing."""
     
@@ -643,7 +633,6 @@ class TacticianPIDFeatureGenerator:
                 features[f'regime_{regime}_momentum'] = regime_momentum
         
         return features
-
 
 class EnhancedTacticianPreMLOrchestrator:
     """
@@ -1026,7 +1015,6 @@ class EnhancedTacticianPreMLOrchestrator:
                 'pid_generator': self.pid_generator is not None
             }
         }
-
 
 # Convenience function for external usage
 async def execute_enhanced_tactician_pre_ml_orchestration(

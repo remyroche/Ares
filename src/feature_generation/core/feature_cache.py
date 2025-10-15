@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import warnings
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -43,14 +44,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class FeatureCacheService:
     """Persist feature matrices keyed by pipeline configuration."""

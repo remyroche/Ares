@@ -223,15 +223,15 @@ class ModelTrainingSubPipeline:
         
         # Initialize orchestrators
         if ANALYST_PRE_ML_AVAILABLE:
-            self.analyst_pre_ml = AnalystPreMLOrchestrator()
+            from .analyst_pre_ml_orchestration import AnalystPreMLConfig
+            config = AnalystPreMLConfig()
+            self.analyst_pre_ml = AnalystPreMLOrchestrator(config)
         else:
             self.analyst_pre_ml = None
             
         if ANALYST_TRAINING_AVAILABLE:
             analyst_training_config = AnalystTrainingPipelineConfig(
-                train_ensemble_models=False,
-                enable_long_positions=config.enable_long_positions,
-                enable_short_positions=config.enable_short_positions
+                ensemble_models=False
             )
             self.analyst_training = AnalystTrainingPipeline(analyst_training_config)
         else:
@@ -245,15 +245,15 @@ class ModelTrainingSubPipeline:
             self.analyst_ensemble_trainer = None
 
         if TACTICIAN_PRE_ML_AVAILABLE:
-            self.tactician_pre_ml = TacticianPreMLOrchestrator()
+            from .tactician_pre_ml_orchestration import TacticianPreMLConfig
+            config = TacticianPreMLConfig()
+            self.tactician_pre_ml = TacticianPreMLOrchestrator(config)
         else:
             self.tactician_pre_ml = None
 
         if TACTICIAN_TRAINING_AVAILABLE:
             tactician_training_config = TacticianTrainingPipelineConfig(
-                train_ensemble_models=False,
-                enable_long_positions=config.enable_long_positions,
-                enable_short_positions=config.enable_short_positions
+                ensemble_models=False
             )
             self.tactician_training = TacticianTrainingPipeline(tactician_training_config)
         else:

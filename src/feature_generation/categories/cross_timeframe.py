@@ -9,7 +9,7 @@ Key Features:
 - VectorBT-optimized cross-timeframe calculations
 - Advanced multi-timeframe analysis
 - Memory-efficient processing
-- GPU acceleration support
+- 
 - Comprehensive cross-timeframe indicators
 - UnifiedVectorizationManager integration
 - Advanced performance monitoring
@@ -53,7 +53,7 @@ except ImportError:
 
 # VectorBT Rolling Optimizer
 try:
-    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
     ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     ROLLING_OPTIMIZER_AVAILABLE = False
@@ -62,7 +62,7 @@ except ImportError:
 
 # Unified Vectorization Manager
 try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer, VectorizationOptimizer, VectorizationConfig
+    from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer, VectorizationOptimizer, VectorizationConfig
     UNIFIED_VECTORIZATION_AVAILABLE = True
 except ImportError:
     UNIFIED_VECTORIZATION_AVAILABLE = False
@@ -72,7 +72,7 @@ except ImportError:
 
 # Optimization utilities
 try:
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -165,7 +165,6 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             gpu_accelerated=True
         )
 
-    
     def generate_enhanced_cross_timeframe_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate comprehensive cross-timeframe features using VectorBT optimization."""
         import time
@@ -416,7 +415,6 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixi
                 self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Volatility Generator
-    
 
 class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe volatility features with VectorBT optimization."""
@@ -523,7 +521,6 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
                 self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Volume Generator
-    
 
 class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe volume features with VectorBT optimization."""
@@ -629,7 +626,6 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin)
                 self.performance_stats['total_execution_time'] += time.time() - start_time
 
 # Cross-Timeframe Trend Generator
-    
 
 class CrossTimeframeTrendGenerator(FeatureGenerator):
     """Generator for cross-timeframe trend features."""
@@ -677,7 +673,6 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
         return trend
 
 # Cross-Timeframe High-Low Generator
-    
 
 class CrossTimeframeHighLowGenerator(FeatureGenerator):
     """Generator for cross-timeframe high-low range features."""
@@ -713,7 +708,6 @@ class CrossTimeframeHighLowGenerator(FeatureGenerator):
         return hl_range
 
 # Cross-Timeframe Ratio Generator
-    
 
 class CrossTimeframeRatioGenerator(FeatureGenerator):
     """Generator for cross-timeframe ratio features."""
@@ -767,7 +761,6 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
         return ratio
 
 # Cross-Timeframe Correlation Generator
-    
 
 class CrossTimeframeCorrelationGenerator(FeatureGenerator):
     """Generator for cross-timeframe correlation features."""
@@ -819,7 +812,6 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
         return correlation
 
 # Cross-Timeframe Divergence Generator
-    
 
 class CrossTimeframeDivergenceGenerator(FeatureGenerator):
     """Generator for cross-timeframe divergence features."""
@@ -917,8 +909,6 @@ def create_default_cross_timeframe_generators() -> List[FeatureGenerator]:
 
 # Enhanced Cross-Timeframe Generators for Better Aggregation
 
-    
-
 class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
     """Generator for fractional change features across timeframes."""
 
@@ -966,9 +956,6 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
 
         return fractional_change.fillna(0)
 
-
-    
-
 class CrossTimeframeAlignmentGenerator(FeatureGenerator):
     """Generator for properly aligned cross-timeframe features."""
 
@@ -1010,9 +997,6 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
             return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, window=2).fillna(0)
         else:
             return pd.Series(np.zeros(len(data)), index=data.index)
-
-
-    
 
 class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
     """Generator for learned projections across timeframes using PCA/dimensionality reduction."""
@@ -1073,10 +1057,7 @@ class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
             logger.warning(f"Error in learned projection: {e}")
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-
 # Enhanced Cross-Timeframe Features
-
-    
 
 class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
     """Enhanced cross-timeframe feature generator with proper lag handling and fractional changes."""
@@ -1384,10 +1365,6 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None

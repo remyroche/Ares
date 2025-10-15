@@ -1,4 +1,5 @@
 """
+import warnings
 Streamlined Regime Data Splitting Component
 
 This module provides a consolidated, high-performance implementation of regime data splitting
@@ -65,7 +66,6 @@ from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 
-
 class RegimeSplittingStatus(Enum):
     """Status enumeration for regime splitting operations."""
     PENDING = "pending"
@@ -73,7 +73,6 @@ class RegimeSplittingStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     VALIDATION_FAILED = "validation_failed"
-
 
 @dataclass
 class RegimeSplittingMetrics:
@@ -89,7 +88,6 @@ class RegimeSplittingMetrics:
     errors_count: int = 0
     data_quality_score: float = 0.0
     regime_continuity_score: float = 0.0
-
 
 @dataclass
 class RegimeSplittingResult:
@@ -119,7 +117,6 @@ class RegimeSplittingResult:
             errors=[error],
             metadata=metadata or {}
         )
-
 
 class StreamlinedRegimeDataSplitting:
     """
@@ -664,12 +661,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             gc.collect()
 
@@ -870,12 +863,10 @@ except ImportError:
         except Exception as e:
             self.logger.exception(f"Error during resource cleanup: {e}")
 
-
 # Factory function for easy instantiation
 def create_streamlined_regime_splitting(config: Optional[Dict[str, Any]] = None) -> StreamlinedRegimeDataSplitting:
     """Create a streamlined regime data splitting instance."""
     return StreamlinedRegimeDataSplitting(config)
-
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

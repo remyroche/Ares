@@ -46,7 +46,6 @@ def get_m1_gpu_manager():
         logger.warning("⚠️ M1 GPU utilities not available")
         return None
 
-
 def get_m1_memory_optimizer():
     """Get the M1 memory optimizer instance."""
     try:
@@ -56,7 +55,6 @@ def get_m1_memory_optimizer():
         logger.warning("⚠️ M1 memory optimizer not available")
         return None
 
-
 def get_m1_cpu_optimizer():
     """Get the M1 CPU optimizer instance."""
     try:
@@ -65,7 +63,6 @@ def get_m1_cpu_optimizer():
     except ImportError:
         logger.warning("⚠️ M1 CPU optimizer not available")
         return None
-
 
 def cleanup_m1_optimizers():
     """Clean up M1 optimizers and release resources."""
@@ -95,7 +92,6 @@ def cleanup_m1_optimizers():
     except Exception as e:
         logger.error(f"❌ Error during M1 optimizer cleanup: {e}")
         return False
-
 
 def integrate_with_m1_optimizers() -> dict:
     """Integrate with M1 GPU and CPU optimizers.
@@ -1024,7 +1020,6 @@ def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
         logger.error(f"❌ Error listing parquet files in {directory}: {e}")
         return []
 
-
 def get_latest_outcome_file(pattern: str = "market_analysis_optimal_regime_clustering_outcome_*.json") -> Optional[Path]:
     """Get the latest outcome file matching the given pattern from outcomes/ directory.
 
@@ -1057,7 +1052,6 @@ def get_latest_outcome_file(pattern: str = "market_analysis_optimal_regime_clust
     except Exception as e:
         logger.error(f"❌ Error finding latest outcome file with pattern {pattern}: {e}")
         return None
-
 
 def load_latest_optimal_regime_clustering_outcome() -> Optional[Dict[str, Any]]:
     """Load the latest optimal regime clustering outcome file.
@@ -1295,7 +1289,6 @@ def sanitize_string(s: str, max_length: int = 255) -> str:
         logger.error(f"❌ Error sanitizing string: {e}")
         return ""
 
-
 # =============================================================================
 # M1 OPTIMIZATION UTILITIES
 # =============================================================================
@@ -1343,7 +1336,6 @@ def memory_checkpoint(name: str):
 
     return _memory_checkpoint()
 
-
 def gpu_context(name: str):
     """Create a GPU context manager.
 
@@ -1370,7 +1362,6 @@ def gpu_context(name: str):
             yield
 
     return _gpu_context()
-
 
 def optimize_memory() -> Dict[str, Any]:
     """Optimize memory usage across the system.
@@ -1399,7 +1390,6 @@ def optimize_memory() -> Dict[str, Any]:
             'method': 'failed',
             'success': False
         }
-
 
 def get_memory_usage() -> float:
     """Get current memory usage in bytes.
@@ -1443,12 +1433,8 @@ except ImportError:
         # warnings not available in this context
         pass
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
 
 def get_memory_usage() -> float:
@@ -1458,7 +1444,6 @@ def get_memory_usage() -> float:
     except ImportError:
         logger.warning("⚠️ psutil not available for memory monitoring")
         return 0.0
-
 
 def validate_file_path(file_path: Union[str, Path]) -> bool:
     """Validate if a file path exists and is accessible.
@@ -1474,7 +1459,6 @@ def validate_file_path(file_path: Union[str, Path]) -> bool:
         return path.exists() and path.is_file()
     except Exception:
         return False
-
 
 def get_file_size(file_path: Union[str, Path]) -> int:
     """Get the size of a file in bytes.
@@ -1492,7 +1476,6 @@ def get_file_size(file_path: Union[str, Path]) -> int:
         return 0
     except Exception:
         return 0
-
 
 def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[str, Any]:
     """Check if there's sufficient disk space available.
@@ -1535,7 +1518,6 @@ def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[s
             'required_gb': required_gb,
             'available_percentage': 0.0
         }
-
 
 class CommonUtilities:
     """Common utilities class for unified operations."""

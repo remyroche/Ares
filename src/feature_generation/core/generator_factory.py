@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from src.utils.tprint import tprint
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
-from .vectorized_feature_generator import VectorizedFeatureGenerator
+from .feature_generator import VectorizedFeatureGenerator
 from .auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
 from .auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
 from .vectorbt_optimization_mixin import VectorBTOptimizationMixin

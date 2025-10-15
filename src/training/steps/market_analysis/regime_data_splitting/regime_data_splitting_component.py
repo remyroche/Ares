@@ -1,4 +1,5 @@
 """
+import warnings
 Regime Data Splitting Component.
 
 This component tags data by regimes discovered in previous stages.
@@ -122,7 +123,6 @@ from src.utils.ml_common.common_operations import (
     safe_json_dump, safe_json_load, ensure_directory
 )
 
-
 class RegimeSplittingStatus(Enum):
     """Status enumeration for regime splitting operations."""
     PENDING = "pending"
@@ -130,7 +130,6 @@ class RegimeSplittingStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     VALIDATION_FAILED = "validation_failed"
-
 
 @dataclass
 class RegimeSplittingMetrics:
@@ -147,7 +146,6 @@ class RegimeSplittingMetrics:
     data_quality_score: float = 0.0
     regime_continuity_score: float = 0.0
 
-
 @dataclass
 class RegimeSplittingReport:
     """Comprehensive report for regime splitting operations."""
@@ -159,7 +157,6 @@ class RegimeSplittingReport:
     errors: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-
 
 class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     """
@@ -1507,7 +1504,6 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'timestamp': datetime.now().isoformat()
             }
 
-    
     async def _perform_regime_splitting(
         self, 
         market_data: pd.DataFrame, 
@@ -2784,12 +2780,8 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
             gc.collect()
             

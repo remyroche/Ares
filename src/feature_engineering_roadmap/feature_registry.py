@@ -1,4 +1,5 @@
 """
+import warnings
 Feature Registry for End-to-End Roadmap System
 
 Defines parent features with exact formulas and metadata.
@@ -45,14 +46,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
 except ImportError:
-    CUPY_AVAILABLE = False
+    
     cp = None
-
 
 class FeatureFamily(Enum):
     """Feature families for organization."""
@@ -62,7 +58,6 @@ class FeatureFamily(Enum):
     LIQUIDITY_MICRO = "liquidity_micro"
     ANCHORS_TOD = "anchors_tod"
     CONTEXT = "context"
-
 
 @dataclass
 class FeatureMetadata:
@@ -74,7 +69,6 @@ class FeatureMetadata:
     family: FeatureFamily
     description: str
     formula: str
-
 
 class ParentFeature(ABC):
     """Abstract base class for parent features."""
@@ -94,8 +88,6 @@ class ParentFeature(ABC):
         if missing_fields:
             raise ValueError(f"Missing required fields for {self.name}: {missing_fields}")
         return True
-
-
 
 class PriceReturnsFeatures:
     """Price and returns features (10 total)."""
@@ -163,7 +155,6 @@ class PriceReturnsFeatures:
             sd20 = data['close'].rolling(20).std()
         return (data['close'] - ma20) / sd20
 
-
 class VolatilityFeatures:
     """Volatility features (6 total)."""
     
@@ -210,7 +201,6 @@ class VolatilityFeatures:
         epsilon = 1e-8
         return (data['high'] - data['low']) / (data['close'] + epsilon)
 
-
 class MeanReversionFeatures:
     """Mean reversion features (4 total)."""
     
@@ -254,7 +244,6 @@ class MeanReversionFeatures:
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
         rs = gain / loss
         return 100 - (100 / (1 + rs))
-
 
 class LiquidityMicroFeatures:
     """Liquidity and microstructure features (6 total, book-optional)."""
@@ -305,7 +294,6 @@ class LiquidityMicroFeatures:
         microprice = (data['bid'] + data['ask']) / 2
         return (data['close'] - microprice) / data['close']
 
-
 class AnchorsTODFeatures:
     """Anchors and time-of-day features (4 total)."""
     
@@ -336,7 +324,6 @@ class AnchorsTODFeatures:
         # This would need proper session timing - simplified for now
         return pd.Series(0, index=data.index)  # Placeholder
 
-
 class ContextFeatures:
     """Context features (2 total, optional)."""
     
@@ -363,7 +350,6 @@ class ContextFeatures:
         # This would need multiple assets - simplified for now
         r1 = np.log(data['close'] / data['close'].shift(1))
         return r1.rolling(20).std()  # Simplified as single-asset std
-
 
 class FeatureRegistry:
     """Registry of all parent features."""

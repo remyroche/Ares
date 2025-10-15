@@ -11,6 +11,7 @@ import pandas as pd
 from typing import Dict, Any, Optional, Callable, Union, List, Tuple
 import logging
 import time
+import itertools
 from dataclasses import dataclass
 
 try:
@@ -42,10 +43,11 @@ except ImportError as e:
 try:
     import vectorbt as vbt
     from ..unified_vectorization_manager import get_unified_vectorization_manager, OperationType
-    from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-    from ...feature_generation.utils.unified_vectorization_manager import (
-        UnifiedVectorizationManager, VectorizationConfig, get_unified_vectorization_manager as get_feature_vectorization_manager
+    from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, get_unified_vectorization_manager as get_feature_vectorization_manager
     )
+    from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
     VECTORBT_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"VectorBT optimization not available: {e}")
@@ -1378,7 +1380,6 @@ class BayesianTPEOptimizer:
                 return combinations
             else:
                 # Fallback to itertools
-                import itertools
                 combinations = list(itertools.product(*param_combinations))
                 return [dict(combo) for combo in combinations]
                 
@@ -1786,7 +1787,6 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.warning(f"VectorBT combination generation failed: {e}, using itertools")
             # Fallback to itertools
-            import itertools
             return list(itertools.product(*param_values.values()))
     
     def _standard_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
@@ -1953,7 +1953,6 @@ class BayesianTPEOptimizer:
                 return combinations
             else:
                 # Fallback to itertools
-                import itertools
                 combinations = list(itertools.product(*param_combinations))
                 return [dict(combo) for combo in combinations]
                 

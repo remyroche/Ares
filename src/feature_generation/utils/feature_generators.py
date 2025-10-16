@@ -34,10 +34,6 @@ except ImportError as e:
     class M1GPUManager:
         def __init__(self):
             self.logger = logging.getLogger(__name__)
-        def detect_m1(self):
-            return False
-        def check_mps_availability(self):
-            return False
     class M1CPUOptimizer:
         pass
     class M1MemoryOptimizer:

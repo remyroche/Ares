@@ -1,0 +1,164 @@
+# Regime Base Training Configuration
+# Enhanced configurations for regime-specific base model training
+
+# CatBoost (multiclass softprob) Configuration
+catboost:
+  task_type: CPU  # or GPU if available
+  loss_function: MultiClass
+  depth: [4, 5, 6]
+  learning_rate: [0.03, 0.04, 0.05, 0.06]
+  l2_leaf_reg: [6, 8, 10, 12]
+  iterations: [500, 800, 1200]
+  subsample: 0.7  # random row sampling
+  colsample_bylevel: 0.7  # random feature sampling
+  grow_policy: SymmetricTree
+  bootstrap_type: Bayesian  # more stable
+  eval_metric: MultiClass
+  # Stable sweet spot: depth=5, lr=0.05, l2=8, iterations≈800
+  stable_sweet_spot:
+    depth: 5
+    learning_rate: 0.05
+    l2_leaf_reg: 8
+    iterations: 800
+
+# ExtraTrees (Extremely Randomized Trees) Configuration
+extratrees:
+  n_estimators: [300, 500, 800]  # more trees = stabler OOS
+  max_depth: [None, 10, 15]  # None = fully grown
+  min_samples_split: [5, 10, 20]
+  min_samples_leaf: [2, 5, 10]
+  max_features: ["sqrt", 0.3, 0.5]
+  bootstrap: false
+  criterion: "gini"  # or "entropy"
+  random_state: 42
+  # Stable sweet spot: n_estimators=500, max_depth=None, min_samples_leaf=5, max_features="sqrt"
+  stable_sweet_spot:
+    n_estimators: 500
+    max_depth: null
+    min_samples_leaf: 5
+    max_features: "sqrt"
+
+# Bayesian Rule Lists Configuration
+bayesian_rule_lists:
+  # Interpretability and stability
+  listlengthprior: 3         # prior for list length
+  maxcardinality: 2          # maximum cardinality of rules
+  minsupport: 0.02           # ≥2% of samples per rule (raise if dataset is big)
+  # Priors (generic; map to your library's names)
+  alpha: 1.0                 # class prior (Beta/Dirichlet strength)
+  beta: 1.0
+  list_length_lambda: 4      # if supported (Poisson mean ~4 rules)
+  rule_length_penalty: 1.0   # if supported (≥1 encourages shorter rules)
+  # Sampling
+  n_chains: 3
+  n_iter: 10000
+  burn_in: 2000              # discard early samples (if supported)
+  thin: 5                    # keep every 5th sample (if supported)
+  random_state: 42
+  # Candidate rules (upstream mining; if your stack supports these knobs)
+  candidate_source: "trees"  # trees | apriori | mixed
+  max_candidates: 2000
+  discretization: "quantile" # 3–5 bins per continuous feature
+  max_tree_depth_mining: 3
+  min_impurity_decrease: 0.0
+
+# Meta-features Configuration
+meta_features:
+  # Disagreement & uncertainty features
+  disagreement_uncertainty:
+    margin: true  # margin=max_k p̄_k - max_{j≠k*} p̄_j
+    entropy: true  # H(p̄) = -∑_k p̄_k log p̄_k
+    gini_impurity: true  # 1 - ∑_k p̄_k²
+    pairwise_variance: true  # Var_m(p_{k*}^{(m)}) for top class k*
+    disagreement_rate: true  # fraction of base models not equal to ensemble argmax
+    js_divergence_spread: true  # mean pairwise Jensen-Shannon divergence
+  
+  # Temporal dynamics (use short windows: 3–8 bars)
+  temporal_dynamics:
+    probability_slope: true  # Δp̄_{k*} = p̄_{k*}(t) - p̄_{k*}(t-1)
+    momentum_confidence: true  # EWMA of margin (half-life 3–8 bars)
+    flip_pressure: true  # rolling count of argmax changes over last W bars
+    duration_prior: true  # time since last regime change
+  
+  # Calibration & reliability
+  calibration_reliability:
+    brier_components: true  # per-class (p̄_k - 𝟙[y=k])²
+    temperature_proxy: true  # optimize single temperature on rolling window
+  
+  # Diversity & specialist detection
+  diversity_specialist:
+    specialist_gating_cues: true  # each model's own top-class prob and calibration error
+    cohens_kappa: true  # Cohen's κ / Q-statistic between hard predictions
+    diversity_metrics: true  # higher diversity tends to help stacking
+
+# Training Configuration
+training:
+  # Model selection
+  enable_catboost: true
+  enable_extratrees: true
+  enable_bayesian_rules: true
+  
+  # Hyperparameter optimization
+  enable_hpo: true
+  hpo_trials: 100
+  hpo_timeout: 3600
+  
+  # Cross-validation
+  cv_folds: 5
+  validation_split: 0.2
+  
+  # Early stopping
+  enable_early_stopping: true
+  early_stopping_patience: 10
+  
+  # Meta-features
+  enable_meta_features: true
+  meta_feature_selection: true
+  max_meta_features: 10  # Use 2-5 of the most important meta-features
+
+# Performance Configuration
+performance:
+  # Memory management
+  max_memory_usage: 0.8
+  enable_memory_optimization: true
+  
+  # Parallel processing
+  n_jobs: -1
+  enable_parallel_processing: true
+  
+  # Caching
+  enable_caching: true
+  cache_directory: "cache/regime_base_training"
+  
+  # Logging
+  enable_detailed_logging: true
+  log_level: "INFO"
+
+# Regime Detection Models - Specific model configurations for regime detection
+regime_detection_models:
+  base:
+    # Tree-based (fast, robust)
+    catboost:
+      _class: "CatBoostClassifier"
+      iterations: 300
+      depth: 4  # Shallow to avoid overfitting
+      learning_rate: 0.05
+      l2_leaf_reg: 10  # Heavy regularization
+      border_count: 32  # Fewer splits = more stable
+      verbose: false
+
+    # Linear (different inductive bias, interpretable)
+    ridge_classifier:
+      _class: "RidgeClassifierCV"
+      alphas: "np.logspace(-3, 3, 10)"
+      cv: "TimeSeriesSplit(n_splits=5)"
+
+    # Distance-based (captures regime shifts differently)
+    lgbm_dart:
+      _class: "LGBMClassifier"
+      boosting_type: "dart"  # DART = Dropouts meet Multiple Additive Regression Trees
+      n_estimators: 200
+      max_depth: 3
+      learning_rate: 0.05
+      reg_alpha: 1.0
+      reg_lambda: 1.0

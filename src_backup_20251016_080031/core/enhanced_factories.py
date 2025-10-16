@@ -1,0 +1,154 @@
+"""
+Enhanced factory classes that use dependency injection.
+
+This module provides factory classes that create trading components
+using proper dependency injection patterns.
+"""
+from typing import Any
+from .exchange.factory import ExchangeFactory
+from .core.dependency_injection import DependencyContainer
+from .database.firestore_manager import FirestoreManager
+from .database.influxdb_manager import InfluxDBManager
+from src.interfaces.base_interfaces import IAnalyst, IExchangeClient, IPerformanceReporter, IStateManager, IStrategist, ISupervisor, ITactician
+from src.trading.reporting.performance_reporter import PerformanceReporter
+from .utils.logger import system_logger
+from .utils.state_manager import StateManager
+import logging
+
+class TradingSystemFactory:
+    """
+    Factory for creating complete trading systems with dependency injection.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('TradingSystemFactory')
+
+    async def create_complete_trading_system(self, exchange_client: IExchangeClient, state_manager: IStateManager, performance_reporter: IPerformanceReporter) -> dict[str, Any]:
+        """
+        Create a complete trading system with all components.
+
+        Args:
+            exchange_client: Exchange client instance
+            state_manager: State manager instance
+            performance_reporter: Performance reporter instance
+
+        Returns:
+            Dictionary containing all trading components
+        """
+        try:
+            self.logger.info('Creating complete trading system')
+            self.container.register_instance(IExchangeClient, exchange_client)
+            self.container.register_instance(IStateManager, state_manager)
+            self.container.register_instance(IPerformanceReporter, performance_reporter)
+            components = {'analyst': self.container.resolve(IAnalyst), 'strategist': self.container.resolve(IStrategist), 'tactician': self.container.resolve(ITactician), 'supervisor': self.container.resolve(ISupervisor)}
+            for name, component in components.items():
+                if hasattr(component, 'initialize'):
+                    success = await component.initialize()
+                    if not success:
+                        msg = f'Failed to initialize {name}'
+                        raise RuntimeError(msg)
+            self.logger.info('Complete trading system created successfully')
+            return components
+        except Exception as e:
+            self.logger.exception(failed(f'Failed to create trading system: {e}'))
+            raise
+
+class ExchangeClientFactory:
+    """
+    Factory for creating exchange clients with dependency injection support.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('ExchangeClientFactory')
+
+    def create_exchange_client(self, exchange_name: str, config: dict[str, Any] | None = None) -> IExchangeClient:
+        """
+        Create an exchange client with the specified configuration.
+
+        Args:
+            exchange_name: Name of the exchange
+            config: Exchange configuration
+
+        Returns:
+            Exchange client instance
+        """
+        try:
+            factory = ExchangeFactory()
+            client = factory.create_exchange(exchange_name, config or {})
+            self.container.register_instance(IExchangeClient, client)
+            self.logger.info(f'Created exchange client for {exchange_name}')
+            return client
+        except Exception as e:
+            self.logger.exception(f'Failed to create exchange client: {e}')
+            raise
+
+class DatabaseFactory:
+    """
+    Factory for creating database managers with dependency injection support.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('DatabaseFactory')
+
+    def create_firestore_manager(self, config: dict[str, Any]) -> FirestoreManager:
+        """Create a Firestore manager instance."""
+        try:
+            manager = FirestoreManager(config)
+            self.logger.info('Created Firestore manager')
+            return manager
+        except Exception as e:
+            self.logger.exception(f'Failed to create Firestore manager: {e}')
+            raise
+
+    def create_influxdb_manager(self, config: dict[str, Any]) -> InfluxDBManager:
+        """Create an InfluxDB manager instance."""
+        try:
+            manager = InfluxDBManager(config)
+            self.logger.info('Created InfluxDB manager')
+            return manager
+        except Exception as e:
+            self.logger.exception(f'Failed to create InfluxDB manager: {e}')
+            raise
+
+class StateManagerFactory:
+    """
+    Factory for creating state managers with dependency injection support.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('StateManagerFactory')
+
+    def create_state_manager(self, config: dict[str, Any]) -> IStateManager:
+        """Create a state manager instance."""
+        try:
+            manager = StateManager(config)
+            self.container.register_instance(IStateManager, manager)
+            self.logger.info('Created state manager')
+            return manager
+        except Exception as e:
+            self.logger.exception(f'Failed to create state manager: {e}')
+            raise
+
+class PerformanceReporterFactory:
+    """
+    Factory for creating performance reporters with dependency injection support.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('PerformanceReporterFactory')
+
+    def create_performance_reporter(self, config: dict[str, Any]) -> IPerformanceReporter:
+        """Create a performance reporter instance."""
+        try:
+            reporter = PerformanceReporter(config)
+            self.container.register_instance(IPerformanceReporter, reporter)
+            self.logger.info('Created performance reporter')
+            return reporter
+        except Exception as e:
+            self.logger.exception(f'Failed to create performance reporter: {e}')
+            raise

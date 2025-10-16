@@ -1,0 +1,303 @@
+from .core.decorators import handles_errors
+'\nStandardized Model Manager\n\nThis module provides centralized model management functionality including:\n- Model saving/loading with standardized paths\n- Model versioning and metadata tracking\n- Model validation and testing\n- Model lifecycle management\n'
+from .logger import system_logger
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+import joblib
+from .pipeline_standards import pipeline_standards
+from .version_manager import get_version_manager
+import numpy as np
+
+import torch
+
+import pandas as pd
+import logging
+import time
+
+# Optional ML libraries (used when loading certain formats)
+try:
+    import lightgbm as lgb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    lgb = None  # type: ignore
+
+try:
+    import xgboost as xgb  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    xgb = None  # type: ignore
+
+class ModelMetadata:
+    """Model metadata container."""
+
+    def __init__(self, model_id: str, step_name: str, model_type: str, **kwargs) -> None:
+        self.model_id = model_id
+        self.step_name = step_name
+        self.model_type = model_type
+        self.created_at = datetime.now().isoformat()
+        self.version = kwargs.get('version', '1.0.0')
+        self.description = kwargs.get('description', '')
+        self.parameters = kwargs.get('parameters', {})
+        self.metrics = kwargs.get('metrics', {})
+        self.features = kwargs.get('features', [])
+        self.tags = kwargs.get('tags', [])
+        self.file_path = kwargs.get('file_path', '')
+        self.file_size = kwargs.get('file_size', 0)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert metadata to dictionary."""
+        return {'model_id': self.model_id, 'step_name': self.step_name, 'model_type': self.model_type, 'created_at': self.created_at, 'version': self.version, 'description': self.description, 'parameters': self.parameters, 'metrics': self.metrics, 'features': self.features, 'tags': self.tags, 'file_path': self.file_path, 'file_size': self.file_size}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'ModelMetadata':
+        """Create metadata from dictionary."""
+        return cls(**data)
+
+class StandardizedModelManager:
+    """Centralized model management system."""
+
+    def __init__(self, base_path: str | None = None) -> None:
+        """Initialize the model manager.
+
+        Args:
+            base_path: Base path for model storage. Defaults to data_cache/models/
+        """
+        self.standards = pipeline_standards
+        self.logger = system_logger
+        self.version_manager = get_version_manager()
+        if base_path is None:
+            self.base_path = Path('data_cache/models')
+        else:
+            self.base_path = Path(base_path)
+        self.base_path.mkdir(parents = True, exist_ok = True)
+        self.metadata_file = self.base_path / 'model_registry.json'
+        self._load_registry()
+
+    def _load_registry(self) -> None:
+        """Load the model registry from disk."""
+        try:
+            if self.metadata_file.exists():
+                with open(self.metadata_file) as f:
+                    self.registry = json.load(f)
+            else:
+                self.registry = {}
+        except Exception as e:
+            self.logger.warning(f'Could not load model registry: {e}')
+            self.registry = {}
+
+    def _save_registry(self) -> None:
+        """Save the model registry to disk."""
+        try:
+            with open(self.metadata_file, 'w') as f:
+                json.dump(self.registry, f, indent = 2)
+        except Exception as e:
+            self.logger.exception(f'Could not save model registry: {e}')
+
+    @handles_errors(fallback = False)
+    def save_model(self, model: Any, metadata: ModelMetadata | dict[str, Any], step_name: str, model_id: str | None = None) -> bool:
+        """Save a model with metadata.
+
+        Args:
+            model: The model object to save
+            metadata: Model metadata or dictionary
+            step_name: Name of the step that created the model
+            model_id: Optional model ID. If not provided, will be generated
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if isinstance(metadata, dict):
+                metadata = ModelMetadata(**metadata)
+            if model_id is None:
+                # Use versioned naming for model_id
+                version = self.version_manager.get_ares_version()
+                timestamp = self.version_manager.generate_timestamp()
+                model_id = f"{step_name}_{version}_{timestamp}"
+            metadata.model_id = model_id
+            metadata.step_name = step_name
+            step_dir = self.base_path / step_name
+            step_dir.mkdir(parents = True, exist_ok = True)
+            if hasattr(model, 'save') and callable(getattr(model, 'save', None)):
+                file_path = step_dir / f'{model_id}.pth'
+                torch.save(model.state_dict(), file_path)
+            elif hasattr(model, 'save_model'):
+                file_path = step_dir / f'{model_id}.txt'
+                model.save_model(str(file_path))
+            elif hasattr(model, 'save'):
+                file_path = step_dir / f'{model_id}.json'
+                model.save_model(str(file_path))
+            else:
+                file_path = step_dir / f'{model_id}.joblib'
+                joblib.dump(model, file_path)
+            metadata.file_path = str(file_path)
+            metadata.file_size = file_path.stat().st_size if file_path.exists() else 0
+            metadata_path = step_dir / f'{model_id}_metadata.json'
+            with open(metadata_path, 'w') as f:
+                json.dump(metadata.to_dict(), f, indent = 2)
+            self.registry[model_id] = metadata.to_dict()
+            self._save_registry()
+            self.logger.info(f'Model saved successfully: {model_id}')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Error saving model: {e}')
+            return False
+
+    @handles_errors(fallback = None)
+    def load_model(self, model_id: str, step_name: str | None = None) -> tuple[Any, ModelMetadata] | None:
+        """Load a model and its metadata.
+
+        Args:
+            model_id: ID of the model to load
+            step_name: Optional step name for faster lookup
+
+        Returns:
+            Tuple of (model, metadata) or None if failed
+        """
+        try:
+            if model_id not in self.registry:
+                self.logger.error(f'Model not found in registry: {model_id}')
+                return None
+            metadata_dict = self.registry[model_id]
+            metadata = ModelMetadata.from_dict(metadata_dict)
+            if step_name is None:
+                step_name = metadata.step_name
+            file_path = Path(metadata.file_path)
+            if not file_path.exists():
+                self.logger.error(f'Model file not found: {file_path}')
+                return None
+            if file_path.suffix == '.pth':
+                self.logger.warning('PyTorch models require model class for loading')
+                return (None, metadata)
+            if file_path.suffix == '.txt':
+                if lgb is None:
+                    self.logger.error('LightGBM not available to load .txt model')
+                    return None
+                model = lgb.Booster(model_file = str(file_path))
+            elif file_path.suffix == '.json':
+                if xgb is None:
+                    self.logger.error('XGBoost not available to load .json model')
+                    return None
+                model = xgb.Booster()
+                model.load_model(str(file_path))
+            else:
+                model = joblib.load(file_path)
+            self.logger.info(f'Model loaded successfully: {model_id}')
+            return (model, metadata)
+        except Exception as e:
+            self.logger.exception(f'Error loading model: {e}')
+            return None
+
+    @handles_errors(fallback = False)
+    def validate_model(self, model: Any, test_data: pd.DataFrame | np.ndarray, expected_output_shape: tuple | None = None) -> bool:
+        """Validate a model with test data.
+
+        Args:
+            model: The model to validate
+            test_data: Test data for validation
+            expected_output_shape: Expected output shape (optional)
+
+        Returns:
+            bool: True if validation passes
+        """
+        try:
+            if model is None:
+                self.logger.error('Model is None')
+                return False
+            if hasattr(model, 'predict'):
+                predictions = model.predict(test_data)
+                if expected_output_shape is not None:
+                    if predictions.shape != expected_output_shape:
+                        self.logger.error(f'Output shape mismatch: {predictions.shape} != {expected_output_shape}')
+                        return False
+                if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
+                    self.logger.error('Predictions contain NaN or Inf values')
+                    return False
+                self.logger.info('Model validation passed')
+                return True
+            self.logger.error('Model does not have predict method')
+            return False
+        except Exception as e:
+            self.logger.exception(f'Model validation failed: {e}')
+            return False
+
+    def get_model_metadata(self, model_id: str) -> ModelMetadata | None:
+        """Get model metadata by ID.
+
+        Args:
+            model_id: ID of the model
+
+        Returns:
+            ModelMetadata or None if not found
+        """
+        if model_id in self.registry:
+            return ModelMetadata.from_dict(self.registry[model_id])
+        return None
+
+    def list_models(self, step_name: str | None = None) -> list[dict[str, Any]]:
+        """List all models or models for a specific step.
+
+        Args:
+            step_name: Optional step name to filter by
+
+        Returns:
+            List of model metadata dictionaries
+        """
+        if step_name is None:
+            return list(self.registry.values())
+        return [metadata for metadata in self.registry.values() if metadata.get('step_name') == step_name]
+
+    def list_available_models(self, step_name: str | None = None) -> list[str]:
+        """List available model IDs (optionally filtered by step)."""
+        try:
+            if step_name is None:
+                return list(self.registry.keys())
+            return [mid for mid, meta in self.registry.items() if meta.get('step_name') == step_name]
+        except Exception as e:
+            self.logger.exception(f'Error listing available models: {e}')
+            return []
+
+    def delete_model(self, model_id: str) -> bool:
+        """Delete a model and its metadata.
+
+        Args:
+            model_id: ID of the model to delete
+
+        Returns:
+            bool: True if successful
+        """
+        try:
+            if model_id not in self.registry:
+                self.logger.error(f'Model not found: {model_id}')
+                return False
+            metadata = self.registry[model_id]
+            file_path = Path(metadata['file_path'])
+            if file_path.exists():
+                file_path.unlink()
+            metadata_path = file_path.parent / f'{model_id}_metadata.json'
+            if metadata_path.exists():
+                metadata_path.unlink()
+            del self.registry[model_id]
+            self._save_registry()
+            self.logger.info(f'Model deleted successfully: {model_id}')
+            return True
+        except Exception as e:
+            self.logger.exception(f'Error deleting model: {e}')
+            return False
+
+    def get_model_stats(self) -> dict[str, Any]:
+        """Get statistics about stored models.
+
+        Returns:
+            Dictionary with model statistics
+        """
+        stats = {'total_models': len(self.registry), 'models_by_step': {}, 'models_by_type': {}, 'total_size': 0}
+        for metadata in self.registry.values():
+            step_name = metadata.get('step_name', 'unknown')
+            model_type = metadata.get('model_type', 'unknown')
+            file_size = metadata.get('file_size', 0)
+            stats['models_by_step'][step_name] = stats['models_by_step'].get(step_name, 0) + 1
+            stats['models_by_type'][model_type] = stats['models_by_type'].get(model_type, 0) + 1
+            stats['total_size'] += file_size
+        return stats
+standardized_model_manager = StandardizedModelManager()

@@ -1,0 +1,102 @@
+# Optimized Feature Selection Configuration
+# This file contains parameters for the OptimizedFeatureSelectionManager
+
+feature_selection:
+  # Target feature counts for different model types and steps
+  target_features:
+    neural_networks: 80      # CNN, TCN, Transformer models
+    linear_models: 60        # Logistic Regression, Ridge, Lasso
+    ensemble_models: 90      # LightGBM, XGBoost, Random Forest
+    step2_general: 100       # General Step 2 feature engineering
+    step6_hmm: 75           # HMM-based models
+    step7_ensemble: 85      # Analyst ensemble creation
+    step9_tactician: 70     # Tactician specialist training
+  
+  # VIF (Variance Inflation Factor) settings
+  vif_threshold: 10.0        # Maximum VIF allowed
+  enable_matrix_vif: true    # Use matrix-based VIF calculation (much faster)
+  
+  # Correlation analysis settings
+  correlation_threshold: 0.95  # Maximum correlation allowed between features
+  enable_efficient_correlation: true  # Use vectorized correlation analysis
+  
+  # Feature importance settings
+  mutual_info_threshold: 0.001  # Minimum mutual information score
+  shap_threshold: 0.001         # Minimum SHAP importance score
+  enable_shap_analysis: true    # Enable RF+SHAP importance assessment
+  
+  # Data quality settings
+  variance_threshold: 0.01      # Minimum variance required
+  nan_threshold: 0.1            # Maximum fraction of NaN values allowed
+  
+  # Balanced selection settings
+  enable_balanced_selection: true  # Ensure good feature mix across categories
+  max_removal_fraction: 0.5       # Maximum fraction of features to remove
+  
+  # Feature category weights for balanced selection
+  feature_categories:
+    momentum: 0.25        # 25% momentum indicators (RSI, MACD, etc.)
+    volatility: 0.10      # 10% volatility measures (ATR, realized vol, etc.)
+    liquidity: 0.10       # 10% liquidity features (spread, etc.)
+    volume: 0.15          # 15% volume features (volume, tick_volume, etc.)
+    microstructure: 0.10  # 10% microstructure (order flow, etc.)
+    regime: 0.10          # 10% regime features (HMM states, etc.)
+    sr_features: 0.10     # 10% Support/Resistance features (SR distance, etc.)
+    interaction: 0.10     # 10% interaction features (cross-products, etc.)
+  
+  # Model-specific optimization settings
+  model_specific_optimization:
+    neural_networks:
+      prefer_interaction_features: true
+      prefer_normalized_features: true
+      diversity_weight: 0.7
+      
+    linear_models:
+      prefer_uncorrelated_features: true
+      prefer_interpretable_features: true
+      lasso_alpha: 0.01
+      
+    ensemble_models:
+      prefer_diverse_features: true
+      multiple_methods: true
+      diversity_weight: 0.8
+  
+  # Performance optimization settings
+  performance:
+    enable_parallel_processing: true
+    max_workers: -1  # Use all available cores
+    chunk_size: 1000  # Process data in chunks for memory efficiency
+    timeout_seconds: 300  # Maximum time for feature selection
+    
+  # SHAP analysis settings
+  shap_analysis:
+    sample_size: 1000  # Number of samples for SHAP calculation
+    max_features_for_shap: 200  # Maximum features to analyze with SHAP
+    enable_background_data: true  # Use background data for SHAP
+    
+  # Matrix VIF settings
+  matrix_vif:
+    use_ledoit_wolf: true  # Use Ledoit-Wolf shrinkage for robust estimation
+    fallback_to_iterative: true  # Fallback to iterative VIF if matrix fails
+    regularization_alpha: 0.01  # Regularization for matrix inversion
+    
+  # Safety and validation settings
+  safety:
+    enable_safety_checks: true
+    return_original_on_failure: true
+    min_features_to_keep: 10
+    max_iterations: 5
+    
+  # Logging and monitoring
+  logging:
+    enable_detailed_logging: true
+    log_performance_metrics: true
+    save_intermediate_results: false
+    log_feature_categories: true
+    
+  # Advanced settings
+  advanced:
+    enable_feature_interactions: true  # Consider feature interactions
+    enable_nonlinear_detection: true   # Detect non-linear relationships
+    enable_feature_stability: true     # Check feature stability over time
+    enable_adaptive_thresholds: true   # Adapt thresholds based on data characteristics

@@ -406,32 +406,6 @@ class TradingTreeArchitectureSearch:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.cluster import KMeans
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
             # Try different numbers of regimes
             for n_regimes in range(3, 8):  # 3 to 7 regimes
                 try:
@@ -460,6 +434,32 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"Tree-based regime detection failed: {e}")
             return {}
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
     def _optimize_for_single_regime(self,
                                   regime_data: Tuple[pd.DataFrame, pd.Series],

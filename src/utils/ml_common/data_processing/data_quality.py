@@ -1527,6 +1527,19 @@ class DataQualityUtilities:
                 return np.corrcoef(X.T)
             elif method == 'spearman':
                 from scipy.stats import spearmanr
+                corr_matrix = np.zeros((X.shape[1], X.shape[1]))
+                for i in range(X.shape[1]):
+                    for j in range(X.shape[1]):
+                        if i != j:
+                            corr, _ = spearmanr(X[:, i], X[:, j])
+                            corr_matrix[i, j] = corr
+                        else:
+                            corr_matrix[i, j] = 1.0
+                return corr_matrix
+            else:
+                return np.eye(X.shape[1])
+        except Exception:
+            return np.eye(X.shape[1])
 
 # VectorBT imports for native optimization
 try:
@@ -1553,19 +1566,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-                corr_matrix = np.zeros((X.shape[1], X.shape[1]))
-                for i in range(X.shape[1]):
-                    for j in range(X.shape[1]):
-                        if i != j:
-                            corr, _ = spearmanr(X[:, i], X[:, j])
-                            corr_matrix[i, j] = corr
-                        else:
-                            corr_matrix[i, j] = 1.0
-                return corr_matrix
-            else:
-                return np.eye(X.shape[1])
-        except Exception:
-            return np.eye(X.shape[1])
 
     def _calculate_mutual_info_correlation(self, X: np.ndarray) -> np.ndarray:
         """Calculate mutual information correlation matrix."""

@@ -84,6 +84,18 @@ def parallel_apply(df: pd.DataFrame, func: Callable, axis: int = 0, n_jobs: int 
     """Apply function to DataFrame in parallel."""
     try:
         from joblib import Parallel, delayed
+        
+        if axis == 0:
+            # Apply to columns
+            results = Parallel(n_jobs=n_jobs)(delayed(func)(df[col]) for col in df.columns)
+            return pd.DataFrame(dict(zip(df.columns, results)))
+        else:
+            # Apply to rows
+            results = Parallel(n_jobs=n_jobs)(delayed(func)(row) for _, row in df.iterrows())
+            return pd.DataFrame(results)
+    except Exception as e:
+        logger.warning(f"Error in parallel apply, falling back to regular apply: {e}")
+        return df.apply(func, axis=axis)
 
 # VectorBT imports for native optimization
 try:
@@ -110,18 +122,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-        if axis == 0:
-            # Apply to columns
-            results = Parallel(n_jobs=n_jobs)(delayed(func)(df[col]) for col in df.columns)
-            return pd.DataFrame(dict(zip(df.columns, results)))
-        else:
-            # Apply to rows
-            results = Parallel(n_jobs=n_jobs)(delayed(func)(row) for _, row in df.iterrows())
-            return pd.DataFrame(results)
-    except Exception as e:
-        logger.warning(f"Error in parallel apply, falling back to regular apply: {e}")
-        return df.apply(func, axis=axis)
 
 def advanced_fillna(df: pd.DataFrame, method: str = "interpolate", **kwargs) -> pd.DataFrame:
     """Advanced missing value filling."""

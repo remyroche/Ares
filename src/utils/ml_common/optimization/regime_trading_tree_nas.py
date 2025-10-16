@@ -213,6 +213,30 @@ class RegimeDetectionTree:
         try:
             from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 
+            # Calculate clustering quality metrics
+            silhouette = silhouette_score(X, y)
+            calinski_harabasz = calinski_harabasz_score(X, y)
+            davies_bouldin = davies_bouldin_score(X, y)
+
+            # Calculate regime persistence
+            persistence = self._calculate_regime_persistence(y)
+
+            # Calculate regime separation
+            separation = self._calculate_regime_separation(X, y)
+
+            return {
+                'silhouette_score': silhouette,
+                'calinski_harabasz_score': calinski_harabasz,
+                'davies_bouldin_score': davies_bouldin,
+                'persistence': persistence,
+                'separation': separation,
+                'overall_quality': (silhouette + persistence + separation) / 3.0
+            }
+
+        except Exception as e:
+            logger.warning(f"Regime quality calculation failed: {e}")
+            return {'overall_quality': 0.0}
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -238,30 +262,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-            # Calculate clustering quality metrics
-            silhouette = silhouette_score(X, y)
-            calinski_harabasz = calinski_harabasz_score(X, y)
-            davies_bouldin = davies_bouldin_score(X, y)
-
-            # Calculate regime persistence
-            persistence = self._calculate_regime_persistence(y)
-
-            # Calculate regime separation
-            separation = self._calculate_regime_separation(X, y)
-
-            return {
-                'silhouette_score': silhouette,
-                'calinski_harabasz_score': calinski_harabasz,
-                'davies_bouldin_score': davies_bouldin,
-                'persistence': persistence,
-                'separation': separation,
-                'overall_quality': (silhouette + persistence + separation) / 3.0
-            }
-
-        except Exception as e:
-            logger.warning(f"Regime quality calculation failed: {e}")
-            return {'overall_quality': 0.0}
 
     def _calculate_regime_persistence(self, y: np.ndarray) -> float:
         """Calculate regime persistence."""

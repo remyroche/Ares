@@ -415,6 +415,61 @@ class MultiTimeframeTrainer:
 
     @handles_errors(default_return=False, context='Enhanced multi-timeframe training')
     # @log_execution_time  # Temporarily disabled due to import conflicts
+    async def train_models(self, training_data: Dict[str, pd.DataFrame],
+                          model_trainer: Any, model_config: Dict[str, Any]) -> bool:
+        """Enhanced train models across multiple timeframes with advanced feature selection and hardware optimization.
+
+        Args:
+            training_data: Dict mapping timeframe -> training DataFrame
+            model_trainer: Model trainer instance (general, analyst, or tactician)
+            model_config: Model training configuration
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            self.logger.info("🚀 Starting enhanced multi-timeframe model training...")
+            start_time = time.time()
+
+            # Start performance monitoring
+            if self.performance_monitor:
+                self.performance_monitor.start_monitoring()
+
+            # Memory optimization context
+            with self._get_memory_optimization_context():
+                # 1. Advanced feature selection and preparation
+                enhanced_training_data = await self._prepare_enhanced_features(training_data)
+
+                # 2. Parallel timeframe training with hardware optimization
+                timeframe_results = await self._train_timeframes_parallel(enhanced_training_data, model_trainer, model_config)
+
+                # 3. Advanced ensemble training if enabled
+                if self.config.enable_timeframe_ensemble and self.ensemble:
+                    await self._train_advanced_ensemble(enhanced_training_data)
+
+                # 4. Performance analysis and optimization
+                await self._analyze_performance_and_optimize(timeframe_results)
+
+            # Stop performance monitoring
+            if self.performance_monitor:
+                performance_stats = self.performance_monitor.stop_monitoring()
+                self.performance_metrics['training_performance'] = performance_stats
+
+            # Save enhanced training results
+            await self._save_enhanced_training_results()
+
+            self.trained = True
+            total_time = time.time() - start_time
+
+            self.logger.info("✅ Enhanced multi-timeframe training completed!")
+            self.logger.info(f"⏱️ Total training time: {total_time:.2f}s")
+            self._log_training_summary(timeframe_results, total_time)
+
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"💥 Error in enhanced multi-timeframe training: {e}")
+            return False
 
 # VectorBT imports for native optimization
 try:
@@ -1144,7 +1199,7 @@ except ImportError:
 
             # Hardware optimization summary
             if self.gpu_manager:
-                self.logger.info("   🚀
+                self.logger.info("   🚀 GPU acceleration: Enabled")
             if self.memory_optimizer:
                 self.logger.info("   🧠 Memory optimization: Enabled")
             if self.parallel_optimizer:

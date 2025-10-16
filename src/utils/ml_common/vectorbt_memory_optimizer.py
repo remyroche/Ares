@@ -481,10 +481,7 @@ class VectorBTMemoryOptimizer:
 
         # GPU memory cleanup
         if False:  # GPU support removed
-            try:
-                # GPU memory cleanup removed
-            except:
-                pass
+            pass  # GPU memory cleanup removed
 
     def _clear_cache(self):
         """Clear memory cache."""

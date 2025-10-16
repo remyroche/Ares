@@ -1,0 +1,388 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Dead Code Analysis Report</title>
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f7fa; }
+            .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            .header { text-align: center; color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 20px; margin-bottom: 30px; }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+            .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 10px; text-align: center; }
+            .stat-number { font-size: 2.5em; font-weight: bold; margin-bottom: 10px; }
+            .stat-label { font-size: 1em; opacity: 0.9; }
+            .section { margin-bottom: 40px; }
+            .section h2 { color: #2c3e50; border-left: 4px solid #3498db; padding-left: 15px; margin-bottom: 20px; }
+            .table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            .table th { background-color: #f8f9fa; font-weight: bold; color: #495057; }
+            .table tr:nth-child(even) { background-color: #f8f9fa; }
+            .table tr:hover { background-color: #e9ecef; }
+            .confidence-high { color: #dc3545; font-weight: bold; }
+            .confidence-medium { color: #fd7e14; font-weight: bold; }
+            .confidence-low { color: #28a745; font-weight: bold; }
+            .recommendations { background-color: #e8f4fd; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; }
+            .recommendations ul { margin: 0; padding-left: 20px; }
+            .recommendations li { margin-bottom: 8px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🔍 Dead Code Analysis Report</h1>
+                <p>Comprehensive analysis of unused code in the codebase</p>
+                <p><strong>Generated:</strong> /workspace</p>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">7,717</div>
+                    <div class="stat-label">Total Issues</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">7,148</div>
+                    <div class="stat-label">Unused Functions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">569</div>
+                    <div class="stat-label">Unused Classes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">712</div>
+                    <div class="stat-label">High Confidence</div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📊 Analysis Summary</h2>
+                <table class="table">
+                    <tr><td><strong>Total Functions Analyzed</strong></td><td>23,134</td></tr>
+                    <tr><td><strong>Total Classes Analyzed</strong></td><td>4,309</td></tr>
+                    <tr><td><strong>Unused Function Rate</strong></td><td>30.9%</td></tr>
+                    <tr><td><strong>Unused Class Rate</strong></td><td>13.2%</td></tr>
+                    <tr><td><strong>Files with Issues</strong></td><td>1,244</td></tr>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>📁 Files with Most Issues (Top 20)</h2>
+                <table class="table">
+                    <thead>
+                        <tr><th>Rank</th><th>File Name</th><th>Issues</th></tr>
+                    </thead>
+                    <tbody>
+    
+                        <tr>
+                            <td>1</td>
+                            <td>common_operations.py</td>
+                            <td>90</td>
+                        </tr>
+        
+                        <tr>
+                            <td>2</td>
+                            <td>feature_generators.py</td>
+                            <td>75</td>
+                        </tr>
+        
+                        <tr>
+                            <td>3</td>
+                            <td>iterative_optimization.py</td>
+                            <td>65</td>
+                        </tr>
+        
+                        <tr>
+                            <td>4</td>
+                            <td>protocol_types.py</td>
+                            <td>41</td>
+                        </tr>
+        
+                        <tr>
+                            <td>5</td>
+                            <td>nas_tas_clustering_refactored.py</td>
+                            <td>40</td>
+                        </tr>
+        
+                        <tr>
+                            <td>6</td>
+                            <td>feature_registry.py</td>
+                            <td>39</td>
+                        </tr>
+        
+                        <tr>
+                            <td>7</td>
+                            <td>base_interfaces.py</td>
+                            <td>38</td>
+                        </tr>
+        
+                        <tr>
+                            <td>8</td>
+                            <td>unified_framework.py</td>
+                            <td>37</td>
+                        </tr>
+        
+                        <tr>
+                            <td>9</td>
+                            <td>enhanced_interfaces.py</td>
+                            <td>35</td>
+                        </tr>
+        
+                        <tr>
+                            <td>10</td>
+                            <td>analyst_ensemble_training.py</td>
+                            <td>34</td>
+                        </tr>
+        
+                        <tr>
+                            <td>11</td>
+                            <td>feature_bank.py</td>
+                            <td>34</td>
+                        </tr>
+        
+                        <tr>
+                            <td>12</td>
+                            <td>unified_config.py</td>
+                            <td>33</td>
+                        </tr>
+        
+                        <tr>
+                            <td>13</td>
+                            <td>vectorbt_rolling_optimizer.py</td>
+                            <td>33</td>
+                        </tr>
+        
+                        <tr>
+                            <td>14</td>
+                            <td>imports.py</td>
+                            <td>32</td>
+                        </tr>
+        
+                        <tr>
+                            <td>15</td>
+                            <td>base_framework.py</td>
+                            <td>31</td>
+                        </tr>
+        
+                        <tr>
+                            <td>16</td>
+                            <td>generic_base.py</td>
+                            <td>29</td>
+                        </tr>
+        
+                        <tr>
+                            <td>17</td>
+                            <td>interfaces.py</td>
+                            <td>29</td>
+                        </tr>
+        
+                        <tr>
+                            <td>18</td>
+                            <td>feature_selection.py</td>
+                            <td>28</td>
+                        </tr>
+        
+                        <tr>
+                            <td>19</td>
+                            <td>volume.py</td>
+                            <td>28</td>
+                        </tr>
+        
+                        <tr>
+                            <td>20</td>
+                            <td>convenience.py</td>
+                            <td>27</td>
+                        </tr>
+        
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>🎯 High Confidence Issues (Sample)</h2>
+                <p>These are the most reliable findings with confidence >= 80%:</p>
+                <table class="table">
+                    <thead>
+                        <tr><th>File</th><th>Line</th><th>Function/Class</th><th>Confidence</th><th>Severity</th></tr>
+                    </thead>
+                    <tbody>
+    
+                        <tr>
+                            <td>ares_pipeline.py</td>
+                            <td>140</td>
+                            <td>_config_service_factory</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>trading_integration.py</td>
+                            <td>135</td>
+                            <td>monitored_execute_trade</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>trading_integration.py</td>
+                            <td>106</td>
+                            <td>monitored_get_prediction</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>correlation_manager.py</td>
+                            <td>125</td>
+                            <td>get_request</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>correlation_manager.py</td>
+                            <td>128</td>
+                            <td>list_requests</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>performance_monitor.py</td>
+                            <td>79</td>
+                            <td>record_metrics</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>performance_monitor.py</td>
+                            <td>82</td>
+                            <td>latest_metrics</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>metrics_dashboard.py</td>
+                            <td>71</td>
+                            <td>_metrics_update_loop</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>advanced_tracer.py</td>
+                            <td>184</td>
+                            <td>get_trace</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>advanced_tracer.py</td>
+                            <td>187</td>
+                            <td>get_traces_count</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>ml_monitor.py</td>
+                            <td>110</td>
+                            <td>get_latest_performance</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>ml_monitor.py</td>
+                            <td>116</td>
+                            <td>list_alerts</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>502</td>
+                            <td>combine_outputs</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>539</td>
+                            <td>get_gating_state</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>552</td>
+                            <td>load_gating_state</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>569</td>
+                            <td>get_calibration_state</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>587</td>
+                            <td>load_calibration_state</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>stacker_lgbm_gate.py</td>
+                            <td>614</td>
+                            <td>get_gating_loss_history</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>event_bus.py</td>
+                            <td>273</td>
+                            <td>get_status</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                        <tr>
+                            <td>event_bus.py</td>
+                            <td>276</td>
+                            <td>get_history</td>
+                            <td class="confidence-high">80.0%</td>
+                            <td>high</td>
+                        </tr>
+        
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="section">
+                <h2>💡 Recommendations</h2>
+                <div class="recommendations">
+                    <ul>
+                        <li><strong>Focus on high-confidence issues first:</strong> Start with the 712 issues that have 80%+ confidence</li>
+                        <li><strong>Review files with most issues:</strong> Prioritize files with the highest number of unused code</li>
+                        <li><strong>Remove unused utility functions:</strong> Many helper functions appear to be unused</li>
+                        <li><strong>Check for future needs:</strong> Verify if unused code might be needed for planned features</li>
+                        <li><strong>Use version control:</strong> Track changes when removing code to enable rollback if needed</li>
+                        <li><strong>Consider refactoring:</strong> Some unused code might indicate opportunities for better code organization</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    
